@@ -1,0 +1,102 @@
+{
+ "schema_version": "openbnct.transport-case/0.1.0",
+ "case_id": "fir1-k63-water-phantom",
+ "geometry": {
+  "shape": [
+   26,
+   26,
+   94
+  ],
+  "spacing_mm": [
+   20.0,
+   20.0,
+   5.0
+  ],
+  "origin_mm": [
+   -250.0,
+   -250.0,
+   2.5
+  ],
+  "direction": [
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ]
+ },
+ "material": {
+  "schema_version": "openbnct.material-definition/0.1.0",
+  "id": "openbnct.fir1-k63-water-phantom.material.v1",
+  "density_g_cm3": 1.0,
+  "temperature_k": 293.6,
+  "nuclides": [
+   {
+    "name": "H1",
+    "mass_fraction": 0.1117591740049086
+   },
+   {
+    "name": "H2",
+    "mass_fraction": 0.00014070290522680425
+   },
+   {
+    "name": "O16",
+    "mass_fraction": 0.8859389886471125
+   },
+   {
+    "name": "O17",
+    "mass_fraction": 0.00033872096740693585
+   },
+   {
+    "name": "O18",
+    "mass_fraction": 0.0018213134765551761
+   },
+   {
+    "name": "B10",
+    "mass_fraction": 9.9999890000121e-08
+   },
+   {
+    "name": "N14",
+    "mass_fraction": 9.9999890000121e-07
+   }
+  ],
+  "neutron_thermal_treatment": "free_gas"
+ },
+ "source": {
+  "schema_version": "openbnct.fixed-source-definition/0.1.0",
+  "id": "openbnct.fir1-k63-water-phantom.placeholder-source.v1",
+  "particle": "neutron",
+  "source_sites_per_history": 1,
+  "statistical_weight_per_site": 1.0,
+  "space": {
+   "kind": "uniform_cartesian_plane",
+   "x_range_cm": [
+    -5.0,
+    5.0
+   ],
+   "y_range_cm": [
+    -5.0,
+    5.0
+   ],
+   "z_cm": 0.1,
+   "interval_convention": "half_open"
+  },
+  "angle": {
+   "kind": "monodirectional",
+   "unit_vector": [
+    0.0,
+    0.0,
+    1.0
+   ]
+  },
+  "energy": {
+   "kind": "monoenergetic",
+   "energy_ev": 1000.0
+  }
+ },
+ "requested_histories": 20000000
+}

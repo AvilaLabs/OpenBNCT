@@ -1,0 +1,22 @@
+{
+  "schema_version": "openbnct.openmc-neutron-transport-domain/0.1.0",
+  "id": "openbnct.fir1-k63-water-phantom.openmc-endfb81-official-library.b7ad59cb4a3d.v1.openbnct.fir1-k63-water-phantom.material.v1.neutron-transport-domain",
+  "backend_id": "openmc",
+  "openmc_version": "0.16.0",
+  "openmc_source_commit": "617d35a5063c57796b43428bc401e627d2011046",
+  "material": {
+    "id": "openbnct.fir1-k63-water-phantom.material.v1",
+    "sha256": "ce913966f14ea4066b78bc8e6f1fc80650c234a620914a5d17481034bc5e0f93"
+  },
+  "nuclear_data_manifest": {
+    "id": "openbnct.fir1-k63-water-phantom.openmc-endfb81-official-library.b7ad59cb4a3d.v1",
+    "sha256": "e918f566a09b1c4f848842eb9097a2de5bf4faab0017893b954aa45ce12a7fbd"
+  },
+  "energy_range_ev": [
+    9.999999999999999e-6,
+    20000000.0
+  ],
+  "derivation": "common_selected_nuclide_temperature_grid_intersection",
+  "diagnostic_boundary_policy": "closed_conservative",
+  "qualification": "backend_capability_derived_unreviewed"
+}

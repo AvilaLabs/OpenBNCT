@@ -1,0 +1,101 @@
+{
+ "schema_version": "openbnct.evaluated-neutron-source-selection/0.1.0",
+ "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1",
+ "case_id": "fir1-k63-water-phantom",
+ "qualification": "candidate_archive_equivalence_unresolved",
+ "evaluated_data_release": "ENDF/B-VIII.1",
+ "material": {
+  "id": "openbnct.fir1-k63-water-phantom.material.v1",
+  "sha256": "sha256:ce913966f14ea4066b78bc8e6f1fc80650c234a620914a5d17481034bc5e0f93"
+ },
+ "acquisition": {
+  "profile_id": "endfb81-neutron-evaluations-nndc-observed-2026-08-31",
+  "profile_sha256": "8966a40d91064826080554c81be84ab5ac490aa190b5a830afaa650c8e0ab0c4",
+  "receipt_sha256": "f45d6e6f3fdb291aaecdf755a60fad7e241e951579e3f783b5218555fc89d62c",
+  "archive_filename": "neutrons-version.VIII.1.tar.gz",
+  "archive_size_bytes": 343724780,
+  "archive_sha256": "decff90016bfb5c25c8d4c7fb8d81f94ff2f104853165f0fe6a21bf61c4164e4"
+ },
+ "evaluations": [
+  {
+   "nuclide": "B10",
+   "endf_mat": 525,
+   "archive_path": "neutrons-version.VIII.1/n-005_B_010.endf",
+   "extracted_filename": "n-005_B_010.endf",
+   "size_bytes": 869364,
+   "sha256": "18a245e506f6b7d84f50d08f7b54f7ea0122aac5ad4dd7957f12b319fbb479ff"
+  },
+  {
+   "nuclide": "C12",
+   "endf_mat": 625,
+   "archive_path": "neutrons-version.VIII.1/n-006_C_012.endf",
+   "extracted_filename": "n-006_C_012.endf",
+   "size_bytes": 3805168,
+   "sha256": "249b431cec84be40b957f8499862ceb4380e7d6054492b6500f4d3d255a907fb"
+  },
+  {
+   "nuclide": "C13",
+   "endf_mat": 628,
+   "archive_path": "neutrons-version.VIII.1/n-006_C_013.endf",
+   "extracted_filename": "n-006_C_013.endf",
+   "size_bytes": 3476848,
+   "sha256": "bacd7d45da01f3be41ce1272718918f26a0d99fae7cdb3fd9ed398e413603244"
+  },
+  {
+   "nuclide": "H1",
+   "endf_mat": 125,
+   "archive_path": "neutrons-version.VIII.1/n-001_H_001.endf",
+   "extracted_filename": "n-001_H_001.endf",
+   "size_bytes": 671232,
+   "sha256": "3024d8f0db604b074e33ed8b05027eb9f5a738614041ba44c83f048e0d0bc1af"
+  },
+  {
+   "nuclide": "H2",
+   "endf_mat": 128,
+   "archive_path": "neutrons-version.VIII.1/n-001_H_002.endf",
+   "extracted_filename": "n-001_H_002.endf",
+   "size_bytes": 139156,
+   "sha256": "869fe4e84547d124feff6d8eafd1158ac4e121c7ea05f8b20c547a63f5a97a8c"
+  },
+  {
+   "nuclide": "N14",
+   "endf_mat": 725,
+   "archive_path": "neutrons-version.VIII.1/n-007_N_014.endf",
+   "extracted_filename": "n-007_N_014.endf",
+   "size_bytes": 1253924,
+   "sha256": "fd5c0c0beccefbcd0b57c49bcdf835449d2014e3740830377ce24760478c06d8"
+  },
+  {
+   "nuclide": "N15",
+   "endf_mat": 728,
+   "archive_path": "neutrons-version.VIII.1/n-007_N_015.endf",
+   "extracted_filename": "n-007_N_015.endf",
+   "size_bytes": 243428,
+   "sha256": "e3cba9a1d7b462d73fd328b7a290bb8f4e166ab68c7d982a10f90259fdb7fe26"
+  },
+  {
+   "nuclide": "O16",
+   "endf_mat": 825,
+   "archive_path": "neutrons-version.VIII.1/n-008_O_016.endf",
+   "extracted_filename": "n-008_O_016.endf",
+   "size_bytes": 42486584,
+   "sha256": "850acd8a1c1f103a63864437281605abc8d4d3c6b8f444041f24514ad45a71c9"
+  },
+  {
+   "nuclide": "O17",
+   "endf_mat": 828,
+   "archive_path": "neutrons-version.VIII.1/n-008_O_017.endf",
+   "extracted_filename": "n-008_O_017.endf",
+   "size_bytes": 81548,
+   "sha256": "92800e0dfe16f036d716af0a72c0e37b6b253f1836646f7319cbb26976498f84"
+  },
+  {
+   "nuclide": "O18",
+   "endf_mat": 831,
+   "archive_path": "neutrons-version.VIII.1/n-008_O_018.endf",
+   "extracted_filename": "n-008_O_018.endf",
+   "size_bytes": 126996,
+   "sha256": "1631b91d1f67aeb853d150d47b490a204105bf76821db405c2766d2c5167ece3"
+  }
+ ]
+}

@@ -817,6 +817,10 @@ review:
   machinery to facility measurements with explicit provenance, and record
   agreement results as evidence bundles — distinct from the synthetic
   self-consistency benchmark, which remains the correctness gate.
+  *(in progress — free-beam FiR 1 K63 record + comparison committed under
+  `measurements/`; in-phantom water-phantom case built under
+  `validation/fir1-k63-water-phantom/` with the response-set provenance
+  chain documented as the remaining work.)*
 - **R7-03 — cross-code comparison depth.** Extend the MCNP meshtal and PHITS
   xyz-mesh import adapters into documented cross-code comparison workflows
   against the OpenMC path on the synthetic benchmark, and evaluate import
