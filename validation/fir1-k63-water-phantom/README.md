@@ -65,16 +65,25 @@ Response-set chain (`provenance/`, evidence root under
   `provenance/neutron-response-set.json`
   (`independently_reviewed`, SHA-256 `c01b05107497…`).
 
-Remaining (in dependency order):
+In flight / staged:
 
-1. `openmc run` on the bound case (~20M histories, validation scale)
-   with `provenance/neutron-response-set.json`.
-2. `openmc collect` → dose bundle → `beam qa --dose` in-phantom metrics.
-3. `measurement-record` for the published in-phantom values (Au-197
-   normalization at the thermal maximum, gamma depth profile, thermal
-   peak position ~2.0 cm) + `measurement compare` evidence record.
+1. `openmc run` is executing (~20M histories, 20 batches, 4 threads) with
+   `provenance/neutron-response-set.json`; the dose bundle lands at
+   `dose-bundle.json` with the evidence root under `openmc-evidence/`.
+2. `measurements/fir1-k63-water-phantom.json` (repo `measurements/`) is
+   authored: published advantage depth ~8.1 cm, advantage ratio ~4.9,
+   peak therapeutic ratio ~5.7, and the thermal-fluence maximum depth
+   ~2.0-2.5 cm (documentation-only metric). Published figures carry the
+   TECDOC-1223 weighting convention (tumor:normal boron uptake ~3.5);
+   `beams/references/fir1-k63-phantom.json` encodes them with wide
+   tolerances because the computed side uses the documented CBE-weight
+   convention on the trace-loaded phantom.
+3. On run completion: `beam qa --dose` (CBE-only and T/N-folded weight
+   conventions) → `measurement compare` → `results/` evidence.
 
-The open literature question: several published in-phantom quantities
-are figure-only in accessible sources; the record will encode only
-values with citable provenance, with `absolute_uncertainty_1sigma: null`
-where the source's stated uncertainty was not transcribed.
+The literature limitation stands: absolute in-phantom depth profiles are
+figure-only in accessible sources, so the record encodes tabulated
+scalar figures of merit with `absolute_uncertainty_1sigma: null` where
+the source states none. Mn-55/Au-197 foil uncertainty is ~±3% and
+calculated-to-measured phantom agreement is reported at 3-5%
+(Koivunoro 2014; Seppala 2002; Seren 1999).
