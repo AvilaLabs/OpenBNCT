@@ -103,13 +103,13 @@ const QUICK_START_STEPS: [TourStep; 5] = [
         target: TourTarget::CaseLoader,
         workspace: None,
         title: "Load and verify a case",
-        instruction: "Enter an NF-BNCT-001 directory and press Load + verify. Artifact integrity and DICOM geometry must pass before images are shown.",
+        instruction: "Enter an NF-BNCT-001 directory and press Load & verify. Artifact integrity and DICOM geometry must pass before images are shown.",
     },
     TourStep {
         target: TourTarget::WorkspaceNavigation,
         workspace: None,
         title: "Move between workspaces",
-        instruction: "Use these five stable workspaces to inspect the same case from geometry through evidence. A workspace can exist even when its scientific result is not ready.",
+        instruction: "Use these six workspaces to inspect the same case from geometry through evidence. A workspace can exist even when its scientific result is not ready.",
     },
     TourStep {
         target: TourTarget::OverviewGates,
@@ -157,7 +157,7 @@ const READINESS_STEPS: [TourStep; 4] = [
         target: TourTarget::OverviewGates,
         workspace: Some(HelpWorkspace::Overview),
         title: "Begin at the readiness summary",
-        instruction: "These cards separate runtime verification from frozen project evidence and unresolved scientific work.",
+        instruction: "These rows separate runtime verification from frozen project evidence and unresolved scientific work.",
     },
     TourStep {
         target: TourTarget::TransportGates,
@@ -504,7 +504,7 @@ const FAQ: [FaqEntry; 8] = [
     FaqEntry {
         question: "How do I load a case?",
         keywords: &["load", "case", "directory", "dicom", "generate"],
-        answer: "Generate NF-BNCT-001 with the CLI, enter its directory in the CASE field, and press Load + verify. OpenBNCT rejects modified artifacts or ambiguous DICOM geometry before rendering.",
+        answer: "Generate NF-BNCT-001 with the CLI, enter its directory in the CASE field, and press Load & verify. OpenBNCT rejects modified artifacts or ambiguous DICOM geometry before rendering.",
     },
     FaqEntry {
         question: "Why are the transport buttons disabled?",
