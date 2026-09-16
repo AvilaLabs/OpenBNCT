@@ -1582,7 +1582,10 @@ fn show_workbench(
                 if ui
                     .add_sized(
                         [ui.available_width(), 38.0],
-                        egui::Button::new(label).selected(selected).frame(selected),
+                        egui::Button::new(label)
+                            .selected(selected)
+                            .frame(true)
+                            .frame_when_inactive(selected),
                     )
                     .clicked()
                 {
