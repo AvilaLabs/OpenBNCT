@@ -385,9 +385,7 @@ pub fn beam_quality_profile<'a>(
             in_phantom.boron_dose_profile.as_slice()
         }
         "tumor_dose_depth_profile" => in_phantom.tumor_dose_profile.as_slice(),
-        "normal_tissue_dose_depth_profile" => {
-            in_phantom.normal_tissue_dose_profile.as_slice()
-        }
+        "normal_tissue_dose_depth_profile" => in_phantom.normal_tissue_dose_profile.as_slice(),
         _ => return None,
     };
     if values.is_empty() {
@@ -452,8 +450,11 @@ fn compare_profile(
         bin_centers.push(center);
         measured_normalized.push(m);
         computed_normalized.push(c);
-        relative_differences
-            .push(if m == 0.0 { f64::INFINITY } else { (c - m).abs() / m });
+        relative_differences.push(if m == 0.0 {
+            f64::INFINITY
+        } else {
+            (c - m).abs() / m
+        });
         if let (Some(sigmas), Some(raw)) = (difference_sigma.as_mut(), uncertainties) {
             let sigma = raw[bin] / measured_peak;
             let d = (c - m).abs() / sigma.max(f64::MIN_POSITIVE);
@@ -675,7 +676,7 @@ mod tests {
     use crate::beam::{
         BeamDescription, BeamProvenance, NormalizationBasis, PortGeometry, PortShape,
     };
-    use crate::beam_quality::{evaluate_beam_quality, ComponentWeights, InPhantomMetrics};
+    use crate::beam_quality::{ComponentWeights, InPhantomMetrics, evaluate_beam_quality};
     use crate::model::{
         AngularDistribution, EnergyDistribution, FixedSourceDefinition, PlaneAxis,
         SourceSpatialDistribution,
@@ -936,10 +937,7 @@ mod tests {
         assert_eq!(profile.bin_centers, vec![1.0, 2.0, 3.0]);
         assert_eq!(profile.measured_normalized, vec![0.5, 1.0, 0.6]);
         assert_eq!(profile.computed_normalized, vec![0.5, 1.0, 0.6]);
-        assert!(profile
-            .relative_differences
-            .iter()
-            .all(|d| d.abs() < 1e-12));
+        assert!(profile.relative_differences.iter().all(|d| d.abs() < 1e-12));
         assert_eq!(profile.max_relative_difference, 0.0);
         assert_eq!(profile.chi_square, Some(0.0));
         assert_eq!(profile.passed, Some(true));

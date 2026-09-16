@@ -23,15 +23,12 @@ use help::{GuidedHelp, HelpWorkspace, TourTarget, TourTargets};
 
 // Vendored copies of the frozen NF-BNCT-001 benchmark artifacts so the crate
 // packages standalone; the canonical versions live in benchmarks/synthetic.
-const OPENMC_MANIFEST_EVIDENCE: &[u8] = include_bytes!(
-    "../assets/nf-bnct-001/provenance/openmc-endfb81-processed-data-manifest.json"
-);
-const NJOY_EXECUTION_EVIDENCE: &[u8] = include_bytes!(
-    "../assets/nf-bnct-001/provenance/njoy2016-78-execution-receipt.json"
-);
-const HEATING_COMPARISON_EVIDENCE: &[u8] = include_bytes!(
-    "../assets/nf-bnct-001/provenance/openmc-njoy-mt301-comparison.json"
-);
+const OPENMC_MANIFEST_EVIDENCE: &[u8] =
+    include_bytes!("../assets/nf-bnct-001/provenance/openmc-endfb81-processed-data-manifest.json");
+const NJOY_EXECUTION_EVIDENCE: &[u8] =
+    include_bytes!("../assets/nf-bnct-001/provenance/njoy2016-78-execution-receipt.json");
+const HEATING_COMPARISON_EVIDENCE: &[u8] =
+    include_bytes!("../assets/nf-bnct-001/provenance/openmc-njoy-mt301-comparison.json");
 
 // Debug-only native captures for visual review; no effect in normal launches.
 #[cfg(debug_assertions)]
@@ -1474,10 +1471,7 @@ fn show_app_header(
 /// their own case. The response set and acceptance contract are provenance
 /// artifacts and stay repo-side.
 const TEMPLATE_FILES: [(&str, &str); 4] = [
-    (
-        "case.json",
-        include_str!("../assets/nf-bnct-001/case.json"),
-    ),
+    ("case.json", include_str!("../assets/nf-bnct-001/case.json")),
     (
         "source.json",
         include_str!("../assets/nf-bnct-001/source.json"),
