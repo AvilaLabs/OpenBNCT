@@ -601,19 +601,20 @@ Implementation status:
   readers with canonical `to_json` serialization; the honest response-set
   folding gate and backend capability flags — with a 39-test cross-language
   parity suite run against a wheel installed into a clean environment in CI;
-- in progress: build and smoke-test the supported wheel matrix through
-  TestPyPI — the extension now targets the stable ABI (`abi3-py310`), so one
-  wheel per platform covers Python ≥ 3.10; the abi3 wheel builds and passes
-  the full 39-test parity suite in a clean venv on CPython 3.14. Remaining:
-  per-platform builds and the TestPyPI upload itself;
-- in progress: crates.io publication review — workspace `publish = false`
-  stays the deliberate gate. Reviewed findings: every crate already carries
-  description/license/repository; publication still needs `version` fields
-  on all ~20 internal path dependencies (bare `path` deps cannot publish),
-  a per-crate or shared `readme` field, and a decision on which crates are
-  public API (library crates plausibly; `openbnct`/`openbnct-gui` binaries
-  optionally via `cargo install`);
-- pending: produce signed native desktop release artifacts.
+- complete: build and smoke-test the supported wheel matrix — the abi3
+  (`py310`) wheel set builds for linux-x86_64/aarch64, macos-x86_64/arm64
+  and windows-x86_64 plus sdist via `.github/workflows/publish-pypi.yml`;
+  TestPyPI verified by clean-venv install, then PyPI `openbnct` 0.1.0
+  published under the `v0.1.0` tag through OIDC trusted publishing;
+- complete: crates.io publication review and execution — `publish = true`
+  lifted, all 15 workspace crates published at v0.1.0 in dependency order
+  (`openbnct-gui` vendors its frozen benchmark assets to package
+  standalone); `publish-crates.yml` wires tag-driven releases once
+  per-crate trusted publishers exist;
+- in progress: signed native desktop artifacts — `release-desktop.yml`
+  builds `openbnct` + `openbnct-gui` release binaries for five platforms
+  on `v*` tags and attaches them to the GitHub release with Sigstore
+  build-provenance attestation (`.github/workflows/release-desktop.yml`).
 
 ## R5 — External validation and adoption
 

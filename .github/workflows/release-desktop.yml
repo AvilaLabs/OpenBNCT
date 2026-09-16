@@ -1,0 +1,95 @@
+name: release desktop artifacts
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  id-token: write
+  attestations: write
+
+jobs:
+  build:
+    name: Native binaries / ${{ matrix.name }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: linux-x86_64
+            os: ubuntu-24.04
+            target: x86_64-unknown-linux-gnu
+          - name: linux-aarch64
+            os: ubuntu-24.04-arm
+            target: aarch64-unknown-linux-gnu
+          - name: macos-x86_64
+            os: macos-15-intel
+            target: x86_64-apple-darwin
+          - name: macos-aarch64
+            os: macos-15
+            target: aarch64-apple-darwin
+          - name: windows-x86_64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: ${{ matrix.target }}
+
+      - name: Install Linux GUI system dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
+            libxkbcommon-dev libwayland-dev libssl-dev pkg-config
+
+      - name: Build release binaries
+        run: cargo build --release --locked --target ${{ matrix.target }} -p openbnct-cli -p openbnct-gui
+
+      - name: Package artifacts (unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          stage="openbnct-${{ github.ref_name }}-${{ matrix.name }}"
+          mkdir -p "$stage"
+          cp "target/${{ matrix.target }}/release/openbnct" \
+             "target/${{ matrix.target }}/release/openbnct-gui" "$stage/"
+          cp README.md DISCLAIMER.md "$stage/"
+          tar -czf "$stage.tar.gz" "$stage"
+          mv "$stage.tar.gz" dist.tar.gz
+
+      - name: Package artifacts (windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $stage = "openbnct-${{ github.ref_name }}-${{ matrix.name }}"
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item "target/${{ matrix.target }}/release/openbnct.exe",
+                    "target/${{ matrix.target }}/release/openbnct-gui.exe" $stage
+          Copy-Item README.md, DISCLAIMER.md $stage
+          Compress-Archive -Path $stage -DestinationPath dist.zip
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist.*
+
+      - name: Upload to release
+        if: github.event_name == 'push'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh release upload ${{ github.ref_name }} dist.* --clobber
+        shell: bash
+
+      - name: Upload artifact (manual run)
+        if: github.event_name != 'push'
+        uses: actions/upload-artifact@v4
+        with:
+          name: openbnct-${{ matrix.name }}
+          path: dist.*
