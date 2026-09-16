@@ -796,8 +796,22 @@ prerequisites for starting external review.
   the 1.0% limit; per-voxel photon median 3.24% vs 3.0%): the deep
   photon heating tally is correlation-limited — weight windows give
   ~10× per-history variance reduction on deep neutron fluence but only
-  ~1.3× on the gated photon tally. A 196M-history run is in progress to
-  clear both gates at a ~3× reduction.
+  ~1.3× on the gated photon tally.
+
+  A 196M-history run (140 batches x 1.4M particles, seed 271828182)
+  cleared both photon-precision gates: `central_axis_2cm` photon
+  heating relative standard uncertainty 0.853% (limit 1.0%) and
+  per-voxel photon median 2.74% with p95 3.42% (limits 3.0%/5.0%),
+  remaining unbiased against the 600M analog reference (all 1134
+  comparisons within combined uncertainty, max z = 2.80) at a 3.06x
+  history reduction (`transport/openmc-vr-validation-196M.json`,
+  `transport/openmc-acceptance-report-196M-vr.json`; 97,688 s wall
+  clock). One contract gate remains open: the acceptance contract
+  requires runs at at least three registered seeds for the chi-square
+  replication-consistency test, and the campaign so far is single-seed.
+  Two further runs at seeds 20260831 and 314159265 (each needing
+  ~196M histories to pass their own per-run precision gates) are
+  required for full contract acceptance.
 
 Out of scope for R6 remains the deferred list below — in particular plan
 optimization stays behind the IP boundary and nothing in R6 is a clinical
