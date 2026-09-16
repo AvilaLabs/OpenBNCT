@@ -1,0 +1,26 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite it as below."
+type: software
+title: "OpenBNCT: a transport-neutral BNCT dosimetry and verification research workbench"
+authors:
+  - name: "Avila Labs"
+url: "https://github.com/AvilaLabs/OpenBNCT"
+repository-code: "https://github.com/AvilaLabs/OpenBNCT"
+license: Apache-2.0
+version: "0.1.0"
+date-released: "2026-09-16"
+keywords:
+  - boron neutron capture therapy
+  - BNCT
+  - dosimetry
+  - Monte Carlo
+  - radiation transport
+  - verification
+abstract: >-
+  OpenBNCT is an open research workbench for transport-neutral boron
+  neutron capture therapy (BNCT) dosimetry and independent verification.
+  It provides frozen input contracts, component-wise physical dose
+  bundles (boron, nitrogen, hydrogen, photon), biological effectiveness
+  application, measurement-record comparison against published beam
+  characterizations, and content-bound provenance throughout. Research
+  software — not for clinical use.

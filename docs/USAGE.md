@@ -43,6 +43,39 @@ cargo run --bin openbnct -- benchmark verify /tmp/nf-bnct-001
 cargo run --bin openbnct-gui -- /tmp/nf-bnct-001
 ```
 
+## End-to-end research workflow
+
+The canonical reproducible path — the same stages regardless of surface
+(CLI, workbench, Python):
+
+1. **Case** — generate the synthetic benchmark (`benchmark generate`) or
+   assemble a real case directory: `case.json` (grid geometry), frozen
+   `material.json` with declared nuclides, `source.json`, execution
+   profile, and a `beam bind` step that writes the declared beam onto the
+   case's entry face (`beams/fir1-k63.json` is the worked example).
+2. **Response data** — the NJOY chain (`njoy prepare` → execution →
+   suitability reports → `generate-response-tables` →
+   `verify-response-tables`) produces an independently reviewed,
+   material-bound response set. Deck generation refuses unreviewed sets.
+3. **Transport** — `openmc run` prepares the deterministic deck,
+   executes, and collects a `physical-dose-bundle` with per-component
+   absolute uncertainty; `--evidence-root` exports every input and the
+   run receipt, all content-bound by SHA-256.
+4. **Characterize** — `beam qa` emits in-air fluence metrics and, given
+   `--dose`, in-phantom advantage depth/ratio/peak therapeutic ratio plus
+   the boron-capture depth profile. `--reference` compares against
+   published scalars with declared tolerances.
+5. **Verify against measurement** — `measurement compare` checks a
+   `measurement-record` against the QA report: scalars by sigma and
+   relative difference, histogram depth profiles by peak-normalized
+   shape with per-bin chi-square.
+6. **Inspect** — the workbench loads the case, washes a matching dose
+   bundle over the geometry, and verifies an exported
+   `artifact-manifest.json` in place.
+
+Every artifact between steps is versioned and hash-bound, so any report
+can be traced back through the chain — that provenance is the point.
+
 Generation refuses to overwrite an existing destination. Generated DICOM files
 are ignored by default and contain visibly synthetic identity values only.
 
