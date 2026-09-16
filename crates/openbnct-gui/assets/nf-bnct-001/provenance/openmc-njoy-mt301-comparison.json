@@ -1,0 +1,524 @@
+{
+  "schema_version": "nctforge.openmc-njoy-heating-comparison/0.1.0",
+  "id": "nctforge.nf-bnct-001.openmc-endfb81-vs-njoy2016-78-mt301.v1",
+  "case_id": "nf-bnct-001",
+  "inspection": {
+    "method": "nctforge-openmc-njoy-heating-comparator/0.1.0",
+    "source_sha256": "f827b0f7d9a25bed05debb6ac680ab04c01cf4919359f47bb466b86e1ca877ff",
+    "python_version": "3.13.14",
+    "numpy_version": "2.5.2",
+    "h5py_version": "3.16.0",
+    "hdf5_library_version": "2.0.0"
+  },
+  "bindings": {
+    "openmc_nuclear_data_manifest": {
+      "id": "nctforge.nf-bnct-001.openmc-endfb81-official-library.b7ad59cb4a3d.v1",
+      "sha256": "3eaae09921172199c34f3fb236ae082ea5ace4567e0e04d2afcce357add73fb1"
+    },
+    "njoy_execution_receipt": {
+      "id": "nctforge.nf-bnct-001.endfb81-neutron-source-selection.v1.njoy2016-78-inputs.execution.1788177479.8a37cf70cf80",
+      "sha256": "65a21b57507e76a68b77349e92390ae03ebb8c38f6ed6cee66197aa5ee4adea7"
+    }
+  },
+  "comparison": {
+    "response_mt": 301,
+    "temperature_k": 293.6,
+    "energy_grid_requirement": "pointwise_corresponding_without_interpolation",
+    "energy_grid_relative_difference_tolerance": 1e-06,
+    "interpolation": "none",
+    "relative_difference_tolerance": 1e-06,
+    "relative_difference_floor_fraction": 1e-12
+  },
+  "results": [
+    {
+      "nuclide": "B10",
+      "openmc_hdf5": {
+        "relative_path": "neutron/B10.h5",
+        "size_bytes": 2449216,
+        "sha256": "dab256fa4794c8077ccca28a5f8e254d2ee99a1c0d95d11453cdc5b1cf01190e"
+      },
+      "njoy_production_pendf": {
+        "path": "B10/tape23",
+        "media_type": "application/x-endf",
+        "size_bytes": 557766,
+        "sha256": "36bb86d2150b5fc5bb871444dc5e0492d1f88af5c7bd2192048747bbab9d318a"
+      },
+      "point_count": 948,
+      "energy_range_ev": [
+        9.999999999999999e-06,
+        20000000.0
+      ],
+      "energy_grid_bitwise_identical": false,
+      "energy_grid_correspondence": {
+        "maximum_relative_difference": 2.8916100224360023e-07,
+        "maximum_relative_difference_at_reference_energy_ev": 3458280.0,
+        "maximum_absolute_difference_ev": 1.0,
+        "maximum_absolute_difference_at_reference_energy_ev": 3458280.0,
+        "within_relative_tolerance": true
+      },
+      "maximum_relative_difference": 4.556609394052636e-07,
+      "maximum_relative_difference_energy_ev": 2450000.0,
+      "maximum_absolute_difference_ev_barn": 92073.80004882812,
+      "maximum_absolute_difference_energy_ev": 1.0625e-05,
+      "within_relative_tolerance": true,
+      "openmc_local_heating_comparison": {
+        "response_mt": 901,
+        "maximum_relative_difference": 0.16080052934550326,
+        "maximum_relative_difference_energy_ev": 0.018125,
+        "maximum_absolute_difference_ev_barn": 86770004896.64197,
+        "maximum_absolute_difference_energy_ev": 9.999999999999999e-06,
+        "equivalent_within_relative_tolerance": false
+      },
+      "photon_production_mts": [
+        4,
+        102,
+        103,
+        801
+      ],
+      "effective_local_photon_fallback": false
+    },
+    {
+      "nuclide": "C12",
+      "openmc_hdf5": {
+        "relative_path": "neutron/C12.h5",
+        "size_bytes": 2552008,
+        "sha256": "476a0066de164dc19f15ff3748d1a538bd885a35b8a4194acf880dd84b2a4c0c"
+      },
+      "njoy_production_pendf": {
+        "path": "C12/tape23",
+        "media_type": "application/x-endf",
+        "size_bytes": 447768,
+        "sha256": "0c3d89f8739d575dcf7535377dd5534f073b7aaa548c8d62d1e319234bcf6c27"
+      },
+      "point_count": 1615,
+      "energy_range_ev": [
+        9.999999999999999e-06,
+        150000000.0
+      ],
+      "energy_grid_bitwise_identical": false,
+      "energy_grid_correspondence": {
+        "maximum_relative_difference": 2.1786508120715327e-16,
+        "maximum_relative_difference_at_reference_energy_ev": 0.015924749999999998,
+        "maximum_absolute_difference_ev": 1.862645149230957e-09,
+        "maximum_absolute_difference_at_reference_energy_ev": 16068000.000000002,
+        "within_relative_tolerance": true
+      },
+      "maximum_relative_difference": 4.6460049594241136e-07,
+      "maximum_relative_difference_energy_ev": 7500.0,
+      "maximum_absolute_difference_ev_barn": 3.1435829997062683,
+      "maximum_absolute_difference_energy_ev": 74000000.0,
+      "within_relative_tolerance": true,
+      "openmc_local_heating_comparison": {
+        "response_mt": 901,
+        "maximum_relative_difference": 0.9998206717976091,
+        "maximum_relative_difference_energy_ev": 1.25e-05,
+        "maximum_absolute_difference_ev_barn": 2043741.06719396,
+        "maximum_absolute_difference_energy_ev": 8138000.0,
+        "equivalent_within_relative_tolerance": false
+      },
+      "photon_production_mts": [
+        5,
+        51,
+        102
+      ],
+      "effective_local_photon_fallback": false
+    },
+    {
+      "nuclide": "C13",
+      "openmc_hdf5": {
+        "relative_path": "neutron/C13.h5",
+        "size_bytes": 2273672,
+        "sha256": "9040eaccf2cb8dc57b5649b9394becfda042cbbd6ff45feb3c686f37e7b144b9"
+      },
+      "njoy_production_pendf": {
+        "path": "C13/tape23",
+        "media_type": "application/x-endf",
+        "size_bytes": 266004,
+        "sha256": "9ffba2a145deba3a2f96b75912445deaa61f86035761e477f24e93ad216a1c8a"
+      },
+      "point_count": 1181,
+      "energy_range_ev": [
+        9.999999999999999e-06,
+        20000000.0
+      ],
+      "energy_grid_bitwise_identical": false,
+      "energy_grid_correspondence": {
+        "maximum_relative_difference": 2.1786508120715327e-16,
+        "maximum_relative_difference_at_reference_energy_ev": 0.015924749999999998,
+        "maximum_absolute_difference_ev": 1.862645149230957e-09,
+        "maximum_absolute_difference_at_reference_energy_ev": 16100000.000000002,
+        "within_relative_tolerance": true
+      },
+      "maximum_relative_difference": 4.6298987714256096e-07,
+      "maximum_relative_difference_energy_ev": 0.0065625,
+      "maximum_absolute_difference_ev_barn": 0.7470998498611152,
+      "maximum_absolute_difference_energy_ev": 12380000.0,
+      "within_relative_tolerance": true,
+      "openmc_local_heating_comparison": {
+        "response_mt": 901,
+        "maximum_relative_difference": 0.9997054394984614,
+        "maximum_relative_difference_energy_ev": 1.3749999999999999e-05,
+        "maximum_absolute_difference_ev_barn": 1044561.467243854,
+        "maximum_absolute_difference_energy_ev": 5155000.0,
+        "equivalent_within_relative_tolerance": false
+      },
+      "photon_production_mts": [
+        51,
+        52,
+        53,
+        102
+      ],
+      "effective_local_photon_fallback": false
+    },
+    {
+      "nuclide": "H1",
+      "openmc_hdf5": {
+        "relative_path": "neutron/H1.h5",
+        "size_bytes": 327696,
+        "sha256": "5252b5e931c7d5aa6bab34867e77b158b9d3dafbf99ecd5c6758379955eebe2b"
+      },
+      "njoy_production_pendf": {
+        "path": "H1/tape23",
+        "media_type": "application/x-endf",
+        "size_bytes": 89100,
+        "sha256": "4807be679a546221b787456afc7adeec2a976cf26f86ce6b6c607cce990d2d90"
+      },
+      "point_count": 631,
+      "energy_range_ev": [
+        9.999999999999999e-06,
+        20000000.0
+      ],
+      "energy_grid_bitwise_identical": false,
+      "energy_grid_correspondence": {
+        "maximum_relative_difference": 2.1958525012364645e-16,
+        "maximum_relative_difference_at_reference_energy_ev": 0.00024687499999999997,
+        "maximum_absolute_difference_ev": 5.551115123125783e-17,
+        "maximum_absolute_difference_at_reference_energy_ev": 0.30312500000000003,
+        "within_relative_tolerance": true
+      },
+      "maximum_relative_difference": 4.843417609481988e-07,
+      "maximum_relative_difference_energy_ev": 2000.0,
+      "maximum_absolute_difference_ev_barn": 1.554881320334971,
+      "maximum_absolute_difference_energy_ev": 20000000.0,
+      "within_relative_tolerance": true,
+      "openmc_local_heating_comparison": {
+        "response_mt": 901,
+        "maximum_relative_difference": 0.9994085270484299,
+        "maximum_relative_difference_energy_ev": 1.09375e-05,
+        "maximum_absolute_difference_ev_barn": 37195516.83181139,
+        "maximum_absolute_difference_energy_ev": 9.999999999999999e-06,
+        "equivalent_within_relative_tolerance": false
+      },
+      "photon_production_mts": [
+        102
+      ],
+      "effective_local_photon_fallback": false
+    },
+    {
+      "nuclide": "H2",
+      "openmc_hdf5": {
+        "relative_path": "neutron/H2.h5",
+        "size_bytes": 604752,
+        "sha256": "19f42e5e94ed5c4bf84cc90b78b8c34fc74f7cab86f80799cf93f430f1f44e8d"
+      },
+      "njoy_production_pendf": {
+        "path": "H2/tape23",
+        "media_type": "application/x-endf",
+        "size_bytes": 102060,
+        "sha256": "98c4799e58e7d47f4121bcfc3f801ce02e524e63118a3f93eca6ee142e5e42df"
+      },
+      "point_count": 542,
+      "energy_range_ev": [
+        9.999999999999999e-06,
+        150000000.0
+      ],
+      "energy_grid_bitwise_identical": false,
+      "energy_grid_correspondence": {
+        "maximum_relative_difference": 2.1958525012364645e-16,
+        "maximum_relative_difference_at_reference_energy_ev": 0.00024687499999999997,
+        "maximum_absolute_difference_ev": 2.7755575615628914e-17,
+        "maximum_absolute_difference_at_reference_energy_ev": 0.19999999999999998,
+        "within_relative_tolerance": true
+      },
+      "maximum_relative_difference": 4.4842770766987616e-07,
+      "maximum_relative_difference_energy_ev": 22500.0,
+      "maximum_absolute_difference_ev_barn": 1.1691883597522974,
+      "maximum_absolute_difference_energy_ev": 2500000.0,
+      "within_relative_tolerance": true,
+      "openmc_local_heating_comparison": {
+        "response_mt": 901,
+        "maximum_relative_difference": 0.9988911014037083,
+        "maximum_relative_difference_energy_ev": 1.125e-05,
+        "maximum_absolute_difference_ev_barn": 158949.74513957908,
+        "maximum_absolute_difference_energy_ev": 9.999999999999999e-06,
+        "equivalent_within_relative_tolerance": false
+      },
+      "photon_production_mts": [
+        102
+      ],
+      "effective_local_photon_fallback": false
+    },
+    {
+      "nuclide": "N14",
+      "openmc_hdf5": {
+        "relative_path": "neutron/N14.h5",
+        "size_bytes": 4764936,
+        "sha256": "d2684f2a0dff452273a9e57cb53cec6bf50ad111d4e226087deaa5763a468451"
+      },
+      "njoy_production_pendf": {
+        "path": "N14/tape23",
+        "media_type": "application/x-endf",
+        "size_bytes": 1142424,
+        "sha256": "006e1b00cab025586c2da4646f51ca0d858bea54c3bee855b2cd3a2323948616"
+      },
+      "point_count": 1826,
+      "energy_range_ev": [
+        9.999999999999999e-06,
+        150000000.0
+      ],
+      "energy_grid_bitwise_identical": false,
+      "energy_grid_correspondence": {
+        "maximum_relative_difference": 2.1958525012364645e-16,
+        "maximum_relative_difference_at_reference_energy_ev": 0.00024687499999999997,
+        "maximum_absolute_difference_ev": 1.862645149230957e-09,
+        "maximum_absolute_difference_at_reference_energy_ev": 16079999.999999998,
+        "within_relative_tolerance": true
+      },
+      "maximum_relative_difference": 4.80698398660805e-07,
+      "maximum_relative_difference_energy_ev": 350.0,
+      "maximum_absolute_difference_ev_barn": 10.180720001459122,
+      "maximum_absolute_difference_energy_ev": 1.34375e-05,
+      "within_relative_tolerance": true,
+      "openmc_local_heating_comparison": {
+        "response_mt": 901,
+        "maximum_relative_difference": 0.512927523959902,
+        "maximum_relative_difference_energy_ev": 7800002.0,
+        "maximum_absolute_difference_ev_barn": 40853694.062741004,
+        "maximum_absolute_difference_energy_ev": 9.999999999999999e-06,
+        "equivalent_within_relative_tolerance": false
+      },
+      "photon_production_mts": [
+        4,
+        5,
+        102,
+        103,
+        104,
+        105,
+        107
+      ],
+      "effective_local_photon_fallback": false
+    },
+    {
+      "nuclide": "N15",
+      "openmc_hdf5": {
+        "relative_path": "neutron/N15.h5",
+        "size_bytes": 1083432,
+        "sha256": "e0e64aacaf1a8e8ee3e140cf3c475d9ade635bd6497e432145387a0c730106ad"
+      },
+      "njoy_production_pendf": {
+        "path": "N15/tape23",
+        "media_type": "application/x-endf",
+        "size_bytes": 233523,
+        "sha256": "098054de58e3a5381bb3779bf5bc1a85d330d02d30660cbddf08a810c29d8a73"
+      },
+      "point_count": 979,
+      "energy_range_ev": [
+        9.999999999999999e-06,
+        20000000.0
+      ],
+      "energy_grid_bitwise_identical": false,
+      "energy_grid_correspondence": {
+        "maximum_relative_difference": 2.1958525012364645e-16,
+        "maximum_relative_difference_at_reference_energy_ev": 0.00024687499999999997,
+        "maximum_absolute_difference_ev": 9.313225746154785e-10,
+        "maximum_absolute_difference_at_reference_energy_ev": 8050000.000000001,
+        "within_relative_tolerance": true
+      },
+      "maximum_relative_difference": 4.790744947570394e-07,
+      "maximum_relative_difference_energy_ev": 12900000.0,
+      "maximum_absolute_difference_ev_barn": 0.807166850194335,
+      "maximum_absolute_difference_energy_ev": 18000000.0,
+      "within_relative_tolerance": true,
+      "openmc_local_heating_comparison": {
+        "response_mt": 901,
+        "maximum_relative_difference": 0.8245210055214519,
+        "maximum_relative_difference_energy_ev": 9100000.0,
+        "maximum_absolute_difference_ev_barn": 4658386.95012608,
+        "maximum_absolute_difference_energy_ev": 12000000.0,
+        "equivalent_within_relative_tolerance": false
+      },
+      "photon_production_mts": [
+        4,
+        16,
+        22,
+        28,
+        103,
+        104,
+        105,
+        107
+      ],
+      "effective_local_photon_fallback": false
+    },
+    {
+      "nuclide": "O16",
+      "openmc_hdf5": {
+        "relative_path": "neutron/O16.h5",
+        "size_bytes": 8748896,
+        "sha256": "6e321e89a0050722f45711b220a4d49f9fbb5ec91ba41e240c0492c7c45025a5"
+      },
+      "njoy_production_pendf": {
+        "path": "O16/tape23",
+        "media_type": "application/x-endf",
+        "size_bytes": 1420092,
+        "sha256": "2bc87c0bb81cd24e6d903687eaec35073de7f34ed2c3fccebbdea04c3474ded5"
+      },
+      "point_count": 3081,
+      "energy_range_ev": [
+        9.999999999999999e-06,
+        150000000.0
+      ],
+      "energy_grid_bitwise_identical": false,
+      "energy_grid_correspondence": {
+        "maximum_relative_difference": 2.1275659714568118e-16,
+        "maximum_relative_difference_at_reference_energy_ev": 1.5924920000000002e-05,
+        "maximum_absolute_difference_ev": 3.725290298461914e-09,
+        "maximum_absolute_difference_at_reference_energy_ev": 33262990.000000004,
+        "within_relative_tolerance": true
+      },
+      "maximum_relative_difference": 4.88717703846017e-07,
+      "maximum_relative_difference_energy_ev": 6350000.0,
+      "maximum_absolute_difference_ev_barn": 3.5093439985066652,
+      "maximum_absolute_difference_energy_ev": 83000000.0,
+      "within_relative_tolerance": true,
+      "openmc_local_heating_comparison": {
+        "response_mt": 901,
+        "maximum_relative_difference": 1.4009567592919248,
+        "maximum_relative_difference_energy_ev": 8500000.0,
+        "maximum_absolute_difference_ev_barn": 6615399.76285134,
+        "maximum_absolute_difference_energy_ev": 12750000.0,
+        "equivalent_within_relative_tolerance": false
+      },
+      "photon_production_mts": [
+        4,
+        5,
+        16,
+        22,
+        23,
+        28,
+        32,
+        41,
+        44,
+        45,
+        52,
+        53,
+        54,
+        55,
+        91,
+        102,
+        103,
+        104,
+        105,
+        107,
+        108,
+        112,
+        749
+      ],
+      "effective_local_photon_fallback": false
+    },
+    {
+      "nuclide": "O17",
+      "openmc_hdf5": {
+        "relative_path": "neutron/O17.h5",
+        "size_bytes": 738592,
+        "sha256": "5a00a43fbfe210f5be27a2ac0d0d3182fdddfe26c08c7044e6ad49d605970448"
+      },
+      "njoy_production_pendf": {
+        "path": "O17/tape23",
+        "media_type": "application/x-endf",
+        "size_bytes": 162972,
+        "sha256": "175ff4df540c2c65fede2ca7c856250f4503737543f0806e9d0893e38efbba96"
+      },
+      "point_count": 745,
+      "energy_range_ev": [
+        9.999999999999999e-06,
+        20000000.0
+      ],
+      "energy_grid_bitwise_identical": false,
+      "energy_grid_correspondence": {
+        "maximum_relative_difference": 3.249016435422485e-07,
+        "maximum_relative_difference_at_reference_energy_ev": 1354255.5599999998,
+        "maximum_absolute_difference_ev": 0.4400000001769513,
+        "maximum_absolute_difference_at_reference_energy_ev": 1354255.5599999998,
+        "within_relative_tolerance": true
+      },
+      "maximum_relative_difference": 4.892059192870681e-07,
+      "maximum_relative_difference_energy_ev": 0.032053910000000005,
+      "maximum_absolute_difference_ev_barn": 2.8911226987838745,
+      "maximum_absolute_difference_energy_ev": 1.03125e-05,
+      "within_relative_tolerance": true,
+      "openmc_local_heating_comparison": {
+        "response_mt": 901,
+        "maximum_relative_difference": 4.892059191441877e-07,
+        "maximum_relative_difference_energy_ev": 0.032053910000000005,
+        "maximum_absolute_difference_ev_barn": 2.8911226987838745,
+        "maximum_absolute_difference_energy_ev": 1.03125e-05,
+        "equivalent_within_relative_tolerance": true
+      },
+      "photon_production_mts": [],
+      "effective_local_photon_fallback": true
+    },
+    {
+      "nuclide": "O18",
+      "openmc_hdf5": {
+        "relative_path": "neutron/O18.h5",
+        "size_bytes": 873864,
+        "sha256": "8be087e7ba60aea2468785681da473814bf6f43a16516ab27958d3373aea7f86"
+      },
+      "njoy_production_pendf": {
+        "path": "O18/tape23",
+        "media_type": "application/x-endf",
+        "size_bytes": 279045,
+        "sha256": "2416ab06d4c59f69c0249eb47f5e9e0b75942e9c2c377e75ee5474968ab2b118"
+      },
+      "point_count": 1793,
+      "energy_range_ev": [
+        9.999999999999999e-06,
+        20000000.0
+      ],
+      "energy_grid_bitwise_identical": false,
+      "energy_grid_correspondence": {
+        "maximum_relative_difference": 2.216053936718326e-16,
+        "maximum_relative_difference_at_reference_energy_ev": 0.00024462450000000004,
+        "maximum_absolute_difference_ev": 1.862645149230957e-09,
+        "maximum_absolute_difference_at_reference_energy_ev": 16373550.000000002,
+        "within_relative_tolerance": true
+      },
+      "maximum_relative_difference": 4.868328184143971e-07,
+      "maximum_relative_difference_energy_ev": 1000000.0,
+      "maximum_absolute_difference_ev_barn": 0.7834883001632988,
+      "maximum_absolute_difference_energy_ev": 9000000.0,
+      "within_relative_tolerance": true,
+      "openmc_local_heating_comparison": {
+        "response_mt": 901,
+        "maximum_relative_difference": 4.868328184143971e-07,
+        "maximum_relative_difference_energy_ev": 1000000.0,
+        "maximum_absolute_difference_ev_barn": 0.7834883001632988,
+        "maximum_absolute_difference_energy_ev": 9000000.0,
+        "equivalent_within_relative_tolerance": true
+      },
+      "photon_production_mts": [],
+      "effective_local_photon_fallback": true
+    }
+  ],
+  "summary": {
+    "nuclide_count": 10,
+    "all_energy_grids_correspond": true,
+    "all_mt301_within_relative_tolerance": true,
+    "maximum_mt301_relative_difference": 4.892059192870681e-07,
+    "effective_local_photon_fallback_nuclides": [
+      "O17",
+      "O18"
+    ]
+  },
+  "qualification": "comparison_only_not_response_qualification"
+}

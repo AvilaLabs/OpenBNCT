@@ -1,0 +1,22 @@
+{
+  "schema_version": "nctforge.fixed-source-definition/0.1.0",
+  "id": "nctforge.nf-bnct-001.source.v1",
+  "particle": "neutron",
+  "source_sites_per_history": 1,
+  "statistical_weight_per_site": 1.0,
+  "space": {
+    "kind": "uniform_cartesian_plane",
+    "x_range_cm": [-5.0, 5.0],
+    "y_range_cm": [-5.0, 5.0],
+    "z_cm": -9.999999,
+    "interval_convention": "half_open"
+  },
+  "angle": {
+    "kind": "monodirectional",
+    "unit_vector": [0.0, 0.0, 1.0]
+  },
+  "energy": {
+    "kind": "monoenergetic",
+    "energy_ev": 1000.0
+  }
+}

@@ -21,14 +21,16 @@ use openbnct_view::{AnatomicalPlane, Crosshair, PatientAlignedGrid, SliceView};
 
 use help::{GuidedHelp, HelpWorkspace, TourTarget, TourTargets};
 
+// Vendored copies of the frozen NF-BNCT-001 benchmark artifacts so the crate
+// packages standalone; the canonical versions live in benchmarks/synthetic.
 const OPENMC_MANIFEST_EVIDENCE: &[u8] = include_bytes!(
-    "../../../benchmarks/synthetic/nf-bnct-001/transport/provenance/openmc-endfb81-processed-data-manifest.json"
+    "../assets/nf-bnct-001/provenance/openmc-endfb81-processed-data-manifest.json"
 );
 const NJOY_EXECUTION_EVIDENCE: &[u8] = include_bytes!(
-    "../../../benchmarks/synthetic/nf-bnct-001/transport/provenance/njoy2016-78-execution-receipt.json"
+    "../assets/nf-bnct-001/provenance/njoy2016-78-execution-receipt.json"
 );
 const HEATING_COMPARISON_EVIDENCE: &[u8] = include_bytes!(
-    "../../../benchmarks/synthetic/nf-bnct-001/transport/provenance/openmc-njoy-mt301-comparison.json"
+    "../assets/nf-bnct-001/provenance/openmc-njoy-mt301-comparison.json"
 );
 
 // Debug-only native captures for visual review; no effect in normal launches.
@@ -1474,19 +1476,19 @@ fn show_app_header(
 const TEMPLATE_FILES: [(&str, &str); 4] = [
     (
         "case.json",
-        include_str!("../../../benchmarks/synthetic/nf-bnct-001/transport/case.json"),
+        include_str!("../assets/nf-bnct-001/case.json"),
     ),
     (
         "source.json",
-        include_str!("../../../benchmarks/synthetic/nf-bnct-001/transport/source.json"),
+        include_str!("../assets/nf-bnct-001/source.json"),
     ),
     (
         "material.json",
-        include_str!("../../../benchmarks/synthetic/nf-bnct-001/transport/material.json"),
+        include_str!("../assets/nf-bnct-001/material.json"),
     ),
     (
         "component-profile.json",
-        include_str!("../../../benchmarks/synthetic/nf-bnct-001/transport/component-profile.json"),
+        include_str!("../assets/nf-bnct-001/component-profile.json"),
     ),
 ];
 

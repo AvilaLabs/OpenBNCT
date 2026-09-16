@@ -1,0 +1,49 @@
+{
+  "schema_version": "nctforge.material-definition/0.1.0",
+  "id": "nctforge.nf-bnct-001.material.v1",
+  "density_g_cm3": 1.0,
+  "temperature_k": 293.6,
+  "nuclides": [
+    {
+      "name": "H1",
+      "mass_fraction": 0.10113647042677168
+    },
+    {
+      "name": "H2",
+      "mass_fraction": 0.00003148269322832
+    },
+    {
+      "name": "C12",
+      "mass_fraction": 0.10966437305411902
+    },
+    {
+      "name": "C13",
+      "mass_fraction": 0.00133118694588098
+    },
+    {
+      "name": "N14",
+      "mass_fraction": 0.02589697162573985
+    },
+    {
+      "name": "N15",
+      "mass_fraction": 0.00010198837426015
+    },
+    {
+      "name": "O16",
+      "mass_fraction": 0.7597763811477276
+    },
+    {
+      "name": "O17",
+      "mass_fraction": 0.00030676400854396
+    },
+    {
+      "name": "O18",
+      "mass_fraction": 0.00171438172372844
+    },
+    {
+      "name": "B10",
+      "mass_fraction": 0.00004
+    }
+  ],
+  "neutron_thermal_treatment": "free_gas"
+}
