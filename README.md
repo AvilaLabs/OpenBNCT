@@ -99,12 +99,11 @@ bundling those systems.
 ## Quick start
 
 All 15 `openbnct-*` crates are published on crates.io, and the `openbnct`
-Python wheel is on TestPyPI:
+Python wheel is on PyPI:
 
 ```text
 cargo install openbnct-cli               # CLI from crates.io
-pip install --index-url https://test.pypi.org/simple/ \
-    --extra-index-url https://pypi.org/simple/ openbnct
+pip install openbnct                     # Python bindings from PyPI
 ```
 
 From source:

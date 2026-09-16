@@ -808,11 +808,13 @@ review:
 - **R7-01 — public distribution.** Publish the `openbnct-*` crates to
   crates.io in dependency order (`openbnct-core` first, `openbnct-cli` last),
   publish the `openbnct` wheel to TestPyPI then PyPI, and add a tagged release
-  workflow. *(in progress — all 15 workspace crates published to crates.io
-  v0.1.0 including `openbnct-gui`; `openbnct` wheel published to TestPyPI
-  via OIDC trusted publishing (`.github/workflows/publish-pypi.yml`,
-  all five platform wheels + sdist verified); crates.io tag workflow in
-  `publish-crates.yml`. Remaining: `v0.1.0` tag → real PyPI release.)*
+  workflow. *(COMPLETE — all 15 workspace crates on crates.io v0.1.0
+  including `openbnct-gui`; `openbnct` wheel on PyPI via OIDC trusted
+  publishing (`.github/workflows/publish-pypi.yml`, five platform wheels
+  + sdist verified by release-set check and smoke test); `v0.1.0` tag
+  and GitHub release created. crates.io tag workflow
+  `publish-crates.yml` is wired for future releases pending per-crate
+  trusted-publisher entries.)*
 - **R7-02 — measured-data validation.** Import published BNCT beam
   measurements through `openbnct.measurement-record` /
   `openbnct.measurement-comparison`, extend the candidate-data comparison
