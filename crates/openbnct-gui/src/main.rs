@@ -223,7 +223,7 @@ impl Theme {
                 panel_fill: egui::Color32::from_rgb(17, 21, 29),
                 card_fill: egui::Color32::from_rgb(22, 30, 41),
                 card_alt_fill: egui::Color32::from_rgb(36, 26, 46),
-                brand: egui::Color32::from_rgb(139, 229, 235),
+                brand: egui::Color32::from_rgb(172, 166, 255),
                 text_dim: egui::Color32::from_rgb(150, 160, 180),
                 error: egui::Color32::LIGHT_RED,
                 warn_text: egui::Color32::from_rgb(244, 188, 95),
@@ -235,7 +235,7 @@ impl Theme {
                 panel_fill: egui::Color32::from_rgb(244, 247, 246),
                 card_fill: egui::Color32::WHITE,
                 card_alt_fill: egui::Color32::from_rgb(245, 241, 248),
-                brand: egui::Color32::from_rgb(24, 103, 91),
+                brand: egui::Color32::from_rgb(24, 0, 173),
                 text_dim: egui::Color32::from_rgb(92, 101, 118),
                 error: egui::Color32::from_rgb(178, 34, 34),
                 warn_text: egui::Color32::from_rgb(146, 84, 6),
@@ -1395,16 +1395,16 @@ fn configure_style(context: &egui::Context) {
     light.window_fill = egui::Color32::WHITE;
     light.faint_bg_color = egui::Color32::from_rgb(248, 250, 249);
     light.extreme_bg_color = egui::Color32::WHITE;
-    light.hyperlink_color = egui::Color32::from_rgb(24, 103, 91);
+    light.hyperlink_color = egui::Color32::from_rgb(24, 0, 173);
     light.override_text_color = Some(egui::Color32::from_rgb(36, 49, 48));
     light.widgets.noninteractive.bg_stroke =
         egui::Stroke::new(1.0, egui::Color32::from_rgb(221, 229, 225));
     light.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(237, 242, 239);
     light.widgets.inactive.bg_stroke =
         egui::Stroke::new(1.0, egui::Color32::from_rgb(210, 221, 215));
-    light.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(225, 236, 230);
-    light.selection.bg_fill = egui::Color32::from_rgb(222, 239, 233);
-    light.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(24, 103, 91));
+    light.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(232, 230, 250);
+    light.selection.bg_fill = egui::Color32::from_rgb(232, 230, 250);
+    light.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(24, 0, 173));
     context.set_visuals_of(egui::Theme::Light, light);
     context.style_mut_of(egui::Theme::Light, apply_spacing);
 
@@ -1413,9 +1413,9 @@ fn configure_style(context: &egui::Context) {
     dark.window_fill = egui::Color32::from_rgb(21, 26, 36);
     dark.faint_bg_color = egui::Color32::from_rgb(27, 33, 44);
     dark.extreme_bg_color = egui::Color32::from_rgb(10, 13, 19);
-    dark.hyperlink_color = egui::Color32::from_rgb(139, 229, 235);
-    dark.selection.bg_fill = egui::Color32::from_rgb(30, 116, 138);
-    dark.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(144, 231, 239));
+    dark.hyperlink_color = egui::Color32::from_rgb(172, 166, 255);
+    dark.selection.bg_fill = egui::Color32::from_rgb(51, 43, 117);
+    dark.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(190, 184, 255));
     context.set_visuals_of(egui::Theme::Dark, dark);
     context.style_mut_of(egui::Theme::Dark, apply_spacing);
 
