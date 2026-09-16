@@ -10,13 +10,22 @@ import sys
 import tomllib
 
 
+# macOS wheel tags carry a deployment target (e.g. macosx_12_0_arm64), so those
+# entries are matched as (prefix, arch) rather than a literal substring.
 EXPECTED_PLATFORMS = (
-    "manylinux_2_17_x86_64",
-    "manylinux_2_17_aarch64",
-    "macosx_x86_64",
-    "macosx_arm64",
-    "win_amd64",
+    ("manylinux_2_17_x86_64", None),
+    ("manylinux_2_17_aarch64", None),
+    ("macosx", "x86_64"),
+    ("macosx", "arm64"),
+    ("win_amd64", None),
 )
+
+
+def platform_present(wheel: str, tag: str, arch: str | None) -> bool:
+    if arch is None:
+        return tag in wheel
+    # The platform tag is the final dotted component: e.g. `macosx_12_0_arm64.whl`.
+    return tag in wheel and wheel.rsplit(".", 1)[0].endswith(arch)
 
 
 def main() -> None:
@@ -38,9 +47,10 @@ def main() -> None:
 
     wheel_pattern = re.compile(rf"openbnct-{re.escape(version)}-.+\.whl$")
     wheels = [name for name in files if wheel_pattern.fullmatch(name)]
-    for platform in EXPECTED_PLATFORMS:
-        if not any(platform in wheel for wheel in wheels):
-            errors.append(f"missing wheel for platform tag containing {platform!r}")
+    for tag, arch in EXPECTED_PLATFORMS:
+        if not any(platform_present(wheel, tag, arch) for wheel in wheels):
+            expected = tag if arch is None else f"{tag}_…_{arch}"
+            errors.append(f"missing wheel for platform tag containing {expected!r}")
     foreign = [
         name
         for name in files
