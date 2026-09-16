@@ -984,6 +984,47 @@ enum ImportCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Lift per-component NIfTI dose volumes into a physical dose bundle.
+    ///
+    /// Each `--component NAME=FILE` selects one scalar `.nii`/`.nii.gz`
+    /// volume (value grid) for that dose component; all four components are
+    /// required and must share one grid geometry. `--component-sigma
+    /// NAME=FILE` optionally supplies a paired absolute one-sigma volume —
+    /// the convention used by pipelines such as OpenPINT's
+    /// `get_dose_component_sigmas` outputs.
+    Nifti {
+        /// `component=nifti-path`; repeatable, once per component
+        /// (boron/nitrogen/hydrogen/photon).
+        #[arg(long = "component")]
+        components: Vec<String>,
+        /// `component=sigma-nifti-path`; optional, repeatable.
+        #[arg(long = "component-sigma")]
+        component_sigmas: Vec<String>,
+        /// Accumulated case identifier.
+        #[arg(long)]
+        case_id: String,
+        /// `gray_per_source_particle` or `gray`.
+        #[arg(long)]
+        unit: String,
+        /// Declared dose semantics: normalization basis and any folding or
+        /// kerma-response treatment applied by the producer.
+        #[arg(long)]
+        normalization: String,
+        /// Producing system name — required; NIfTI files carry no producer
+        /// identity (for example `openpint`).
+        #[arg(long)]
+        producer_system: String,
+        /// Producer version label (optional; recorded as `undeclared` when
+        /// absent since the files cannot state one).
+        #[arg(long)]
+        producer_version: Option<String>,
+        /// Optional DICOM frame-of-reference UID carried into the bundle.
+        #[arg(long)]
+        frame_of_reference_uid: Option<String>,
+        /// New output path for the physical dose bundle.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Import a `openbnct.external-dose/0.1.0` document (single absolute-dose
     /// field with declared fractionation, e.g. a photon/hadron course).
     Dose {
@@ -5497,6 +5538,41 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     document.producer.normalization
                 );
             }
+            ImportCommand::Nifti {
+                components,
+                component_sigmas,
+                case_id,
+                unit,
+                normalization,
+                producer_system,
+                producer_version,
+                frame_of_reference_uid,
+                output,
+            } => {
+                let sources = parse_nifti_components(&components, &component_sigmas)?;
+                let document = openbnct_nifti::interchange_from_niftis(
+                    &sources,
+                    &case_id,
+                    parse_dose_unit(&unit)?,
+                    &normalization,
+                    &producer_system,
+                    producer_version,
+                    frame_of_reference_uid,
+                )
+                .map_err(|error| io::Error::other(format!("nifti import: {error}")))?;
+                let bytes = serde_json::to_vec_pretty(&document)?;
+                let sha256 = openbnct_evidence::sha256_hex(&bytes);
+                let bundle = openbnct_core::import_component_dose(&document, &sha256)
+                    .map_err(|error| io::Error::other(format!("interchange import: {error}")))?;
+                write_new_json(&output, &bundle)?;
+                println!("imported dose bundle at {}", output.display());
+                println!(
+                    "producer: {} {} ({})",
+                    document.producer.system,
+                    document.producer.version,
+                    document.producer.normalization
+                );
+            }
             ImportCommand::Dose { file, output } => {
                 let bytes = fs::read(&file)?;
                 let document: openbnct_core::ExternalDoseDocument = serde_json::from_slice(&bytes)?;
@@ -7224,6 +7300,38 @@ fn parse_phits_components(
             file,
             energy_bin,
         });
+    }
+    Ok(sources)
+}
+
+fn parse_nifti_components(
+    specs: &[String],
+    sigma_specs: &[String],
+) -> Result<Vec<openbnct_nifti::NiftiComponentSource>, Box<dyn Error>> {
+    let mut sigma_files = std::collections::BTreeMap::new();
+    for spec in sigma_specs {
+        let (name, path) = spec
+            .split_once('=')
+            .ok_or_else(|| io::Error::other(format!("component-sigma {spec:?} lacks `=`")))?;
+        sigma_files.insert(parse_component_name(name)?, PathBuf::from(path));
+    }
+    let mut sources = Vec::new();
+    for spec in specs {
+        let (name, path) = spec
+            .split_once('=')
+            .ok_or_else(|| io::Error::other(format!("component spec {spec:?} lacks `=`")))?;
+        let component = parse_component_name(name)?;
+        sources.push(openbnct_nifti::NiftiComponentSource {
+            component,
+            file: PathBuf::from(path),
+            sigma_file: sigma_files.remove(&component),
+        });
+    }
+    if let Some((component, _)) = sigma_files.into_iter().next() {
+        return Err(io::Error::other(format!(
+            "component-sigma for {component:?} has no matching --component"
+        ))
+        .into());
     }
     Ok(sources)
 }

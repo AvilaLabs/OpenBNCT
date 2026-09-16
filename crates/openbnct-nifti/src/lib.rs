@@ -21,7 +21,10 @@
 use std::io;
 use std::path::Path;
 
-use openbnct_core::{GridGeometry, RegionMask};
+use openbnct_core::{
+    ComponentDoseInterchange, DoseComponent, DoseUnit, DoseVolume, ExternalProducer, ExternalTotal,
+    GridGeometry, RegionMask, grid_geometry_equivalent,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -560,6 +563,129 @@ pub enum NiftiError {
     Header,
     #[error("invalid resample target: {0}")]
     InvalidTarget(String),
+    #[error("component-dose import requires exactly 4 sources, got {0}")]
+    ComponentCount(usize),
+    #[error("component {0:?} was supplied more than once")]
+    DuplicateComponent(DoseComponent),
+    #[error("component {0:?} geometry disagrees with the shared grid")]
+    GeometryDisagreement(DoseComponent),
+    #[error("component {0:?} contains non-finite voxels")]
+    NonFinite(DoseComponent),
+    #[error("component {0:?} uncertainty image geometry disagrees")]
+    SigmaGeometryDisagreement(DoseComponent),
+    #[error("producer system must be declared; NIfTI carries none")]
+    ProducerUndeclared,
+}
+
+/// One NIfTI file's role in a component-dose import.
+///
+/// `sigma_file`, when present, is a companion NIfTI carrying absolute
+/// one-sigma standard uncertainty in the same unit and on the same grid
+/// as `file` — the convention used by pipelines that emit paired
+/// value/uncertainty volumes (for example OpenPINT's
+/// `get_dose_component_sigmas` products).
+#[derive(Debug, Clone)]
+pub struct NiftiComponentSource {
+    pub component: DoseComponent,
+    pub file: std::path::PathBuf,
+    pub sigma_file: Option<std::path::PathBuf>,
+}
+
+/// Build a `component-dose-interchange` document from four scalar NIfTI
+/// volumes, one per required dose component.
+///
+/// NIfTI headers carry no producer identity, so `producer_system` is a
+/// required caller declaration (for example `openpint`); `producer_version`
+/// is recorded verbatim or as `undeclared`. What the files did state —
+/// per-file datatype and which transform supplied the affine — is appended
+/// to `normalization` as the honest provenance record.
+pub fn interchange_from_niftis(
+    sources: &[NiftiComponentSource],
+    case_id: &str,
+    unit: DoseUnit,
+    normalization: &str,
+    producer_system: &str,
+    producer_version: Option<String>,
+    frame_of_reference_uid: Option<String>,
+) -> Result<ComponentDoseInterchange, NiftiError> {
+    if sources.len() != 4 {
+        return Err(NiftiError::ComponentCount(sources.len()));
+    }
+    if producer_system.trim().is_empty() {
+        return Err(NiftiError::ProducerUndeclared);
+    }
+    let mut seen = Vec::with_capacity(4);
+    for source in sources {
+        if seen.contains(&source.component) {
+            return Err(NiftiError::DuplicateComponent(source.component));
+        }
+        seen.push(source.component);
+    }
+
+    let mut geometry = None;
+    let mut components = Vec::new();
+    let mut file_map = Vec::new();
+    for source in sources {
+        let image = read_nifti_file(&source.file)?;
+        if let Some(existing) = &geometry {
+            if !grid_geometry_equivalent(existing, &image.geometry) {
+                return Err(NiftiError::GeometryDisagreement(source.component));
+            }
+        } else {
+            geometry = Some(image.geometry.clone());
+        }
+        if !image.values.iter().all(|v| v.is_finite()) {
+            return Err(NiftiError::NonFinite(source.component));
+        }
+        let absolute_standard_uncertainty = match &source.sigma_file {
+            Some(sigma_path) => {
+                let sigma = read_nifti_file(sigma_path)?;
+                if !grid_geometry_equivalent(&image.geometry, &sigma.geometry) {
+                    return Err(NiftiError::SigmaGeometryDisagreement(source.component));
+                }
+                if !sigma.values.iter().all(|v| v.is_finite() && *v >= 0.0) {
+                    return Err(NiftiError::NonFinite(source.component));
+                }
+                Some(sigma.values)
+            }
+            None => None,
+        };
+        components.push(DoseVolume {
+            component: source.component,
+            unit,
+            values: image.values,
+            absolute_standard_uncertainty,
+        });
+        file_map.push(format!(
+            "{:?}={}(dt={},{}affine)",
+            source.component,
+            source
+                .file
+                .file_name()
+                .map(|n| n.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            image.datatype,
+            image.transform_source,
+        ));
+    }
+
+    let mut norm = normalization.trim().to_owned();
+    norm.push_str(&format!("; nifti [{}]", file_map.join(",")));
+    Ok(ComponentDoseInterchange {
+        schema_version: openbnct_core::COMPONENT_DOSE_INTERCHANGE_SCHEMA.into(),
+        case_id: case_id.to_owned(),
+        frame_of_reference_uid,
+        geometry: geometry.expect("four sources always produce a geometry"),
+        producer: ExternalProducer {
+            system: producer_system.trim().to_owned(),
+            version: producer_version.unwrap_or_else(|| "undeclared".into()),
+            normalization: norm,
+        },
+        components,
+        component_profile: None,
+        response_set: None,
+        total: ExternalTotal::ComponentSum,
+    })
 }
 
 #[cfg(test)]
@@ -589,6 +715,92 @@ mod tests {
             intent_name: String::new(),
             units_declared_mm: true,
         }
+    }
+
+    #[test]
+    fn interchange_from_niftis_builds_document() {
+        let dir = tempfile::tempdir().unwrap();
+        let geometry = grid([2, 2, 1], [1.0, 1.0, 1.0], [0.0, 0.0, 0.0]);
+        let components = [
+            DoseComponent::Boron,
+            DoseComponent::Nitrogen,
+            DoseComponent::Hydrogen,
+            DoseComponent::Photon,
+        ];
+        let mut sources = Vec::new();
+        for (i, component) in components.iter().enumerate() {
+            let file = dir.path().join(format!("dose_{i}.nii"));
+            write_nifti(&image(geometry.clone(), vec![i as f64 + 1.0; 4]), &file).unwrap();
+            let sigma_file = dir.path().join(format!("sigma_{i}.nii"));
+            write_nifti(&image(geometry.clone(), vec![0.1; 4]), &sigma_file).unwrap();
+            sources.push(NiftiComponentSource {
+                component: *component,
+                file,
+                sigma_file: Some(sigma_file),
+            });
+        }
+        let document = interchange_from_niftis(
+            &sources,
+            "case-1",
+            DoseUnit::GrayPerSourceParticle,
+            "per source neutron",
+            "openpint",
+            Some("test-sha".into()),
+            None,
+        )
+        .unwrap();
+        assert_eq!(document.case_id, "case-1");
+        assert_eq!(document.producer.system, "openpint");
+        assert_eq!(document.producer.version, "test-sha");
+        assert_eq!(document.components.len(), 4);
+        assert_eq!(
+            document.components[0].absolute_standard_uncertainty,
+            Some(vec![0.1; 4])
+        );
+        assert!(document.producer.normalization.contains("nifti ["));
+        document.validate().unwrap();
+    }
+
+    #[test]
+    fn interchange_from_niftis_rejects_mismatched_grids_and_undeclared_producer() {
+        let dir = tempfile::tempdir().unwrap();
+        let shared = grid([2, 2, 1], [1.0, 1.0, 1.0], [0.0, 0.0, 0.0]);
+        let other = grid([4, 2, 1], [1.0, 1.0, 1.0], [0.0, 0.0, 0.0]);
+        let make = |name: &str, g: &GridGeometry| {
+            let file = dir.path().join(name);
+            write_nifti(&image(g.clone(), vec![1.0; 8]), &file).unwrap();
+            file
+        };
+        let sources = vec![
+            NiftiComponentSource {
+                component: DoseComponent::Boron,
+                file: make("b.nii", &shared),
+                sigma_file: None,
+            },
+            NiftiComponentSource {
+                component: DoseComponent::Nitrogen,
+                file: make("n.nii", &other),
+                sigma_file: None,
+            },
+            NiftiComponentSource {
+                component: DoseComponent::Hydrogen,
+                file: make("h.nii", &shared),
+                sigma_file: None,
+            },
+            NiftiComponentSource {
+                component: DoseComponent::Photon,
+                file: make("g.nii", &shared),
+                sigma_file: None,
+            },
+        ];
+        assert!(matches!(
+            interchange_from_niftis(&sources, "c", DoseUnit::Gray, "n", "openpint", None, None),
+            Err(NiftiError::GeometryDisagreement(DoseComponent::Nitrogen))
+        ));
+        assert!(matches!(
+            interchange_from_niftis(&sources, "c", DoseUnit::Gray, "n", " ", None, None),
+            Err(NiftiError::ProducerUndeclared)
+        ));
     }
 
     #[test]

@@ -742,6 +742,34 @@ re-ingests the meshtal. A source plane outside the grid is rejected rather
 than silently scoring zeros. Python parity is `export_mcnp_deck`. Deck
 execution against real MCNP remains an open acceptance gate.
 
+`openbnct import nifti` lifts per-component NIfTI dose volumes — the
+shape OpenPINT writes (`{prefix}_{B10,N14,n,g}.nii.gz`), and the shape
+any pipeline that emits one scalar volume per component produces:
+
+```text
+openbnct import nifti \
+  --case-id my-case \
+  --unit gray_per_source_particle \
+  --normalization "OpenPINT B10/N14/n/g tallies resampled to CT grid" \
+  --producer-system openpint \
+  --producer-version 7d035fb \
+  --component boron=BNCT_B10.nii.gz \
+  --component nitrogen=BNCT_N14.nii.gz \
+  --component hydrogen=BNCT_n.nii.gz \
+  --component photon=BNCT_g.nii.gz \
+  --output openpint-dose.json
+```
+
+All four components are required and must share one grid geometry
+(world-frame disagreement is rejected, so a resample-to-CT OpenPINT set
+is internally consistent by construction). `--component-sigma
+NAME=FILE` optionally pairs each value volume with an absolute one-sigma
+NIfTI on the same grid — matching OpenPINT's `get_dose_component_sigmas`
+convention. NIfTI headers carry no producer identity, so
+`--producer-system` is mandatory and what the files did state (datatype,
+sform/qform choice) is recorded in the normalization string. Uncertainty
+is `null` when no sigma volume is supplied — never invented.
+
 ### External-dose and combined-treatment evaluation
 
 `openbnct import dose` ingests a `openbnct.external-dose/0.1.0` document —
