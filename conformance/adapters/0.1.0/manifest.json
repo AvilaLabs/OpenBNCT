@@ -1,49 +1,110 @@
 {
-  "suite": "nctforge.transport-adapter-conformance/0.1.0",
-  "interchange_schema": "nctforge.component-dose-interchange/0.1.0",
-  "bundle_schema": "nctforge.physical-dose-bundle/0.2.0",
-  "notes": [
-    "Each case replays one producing system's parser into an interchange",
-    "document, then imports it into a physical dose bundle.",
-    "document/bundle hold byte-fixed references; provenance embeds the",
-    "document SHA-256, so fixtures are byte-fixed end to end.",
-    "sources[].file is relative to this directory and is embedded verbatim",
-    "in the generated document's normalization trail.",
-    "Inputs are authored to the documented file formats; they are parser",
-    "fixtures, not real MCNP/PHITS executions."
-  ],
-  "cases": [
+ "suite": "nctforge.transport-adapter-conformance/0.1.0",
+ "interchange_schema": "nctforge.component-dose-interchange/0.1.0",
+ "bundle_schema": "nctforge.physical-dose-bundle/0.2.0",
+ "notes": [
+  "Each case replays one producing system's parser into an interchange",
+  "document, then imports it into a physical dose bundle.",
+  "document/bundle hold byte-fixed references; provenance embeds the",
+  "document SHA-256, so fixtures are byte-fixed end to end.",
+  "sources[].file is relative to this directory and is embedded verbatim",
+  "in the generated document's normalization trail.",
+  "Inputs are authored to the documented file formats; they are parser",
+  "fixtures, not real MCNP/PHITS executions."
+ ],
+ "cases": [
+  {
+   "system": "mcnp",
+   "description": "four tallies on one 1x2x3 mesh, energy column and rel-error columns",
+   "case_id": "adapter-conformance",
+   "unit": "gray_per_source_particle",
+   "normalization": "tally result taken as Gy per source neutron after producer folding",
+   "producer_version": null,
+   "sources": [
     {
-      "system": "mcnp",
-      "description": "four tallies on one 1x2x3 mesh, energy column and rel-error columns",
-      "case_id": "adapter-conformance",
-      "unit": "gray_per_source_particle",
-      "normalization": "tally result taken as Gy per source neutron after producer folding",
-      "producer_version": null,
-      "sources": [
-        {"component": "boron", "file": "mcnp/component-meshtal.meshtal", "tally": 4},
-        {"component": "nitrogen", "file": "mcnp/component-meshtal.meshtal", "tally": 14},
-        {"component": "hydrogen", "file": "mcnp/component-meshtal.meshtal", "tally": 24},
-        {"component": "photon", "file": "mcnp/component-meshtal.meshtal", "tally": 34}
-      ],
-      "document": "mcnp/expected.interchange.json",
-      "bundle": "mcnp/expected.bundle.json"
+     "component": "boron",
+     "file": "mcnp/component-meshtal.meshtal",
+     "tally": 4
     },
     {
-      "system": "phits",
-      "description": "per-component xyz t-deposit files with *_err siblings, axis=xy pages",
-      "case_id": "adapter-conformance",
-      "unit": "gray_per_source_particle",
-      "normalization": "t-deposit unit=0 taken as Gy per source particle",
-      "producer_version": "3.33",
-      "sources": [
-        {"component": "boron", "file": "phits/dep-boron.out"},
-        {"component": "nitrogen", "file": "phits/dep-nitrogen.out"},
-        {"component": "hydrogen", "file": "phits/dep-hydrogen.out"},
-        {"component": "photon", "file": "phits/dep-photon.out"}
-      ],
-      "document": "phits/expected.interchange.json",
-      "bundle": "phits/expected.bundle.json"
+     "component": "nitrogen",
+     "file": "mcnp/component-meshtal.meshtal",
+     "tally": 14
+    },
+    {
+     "component": "hydrogen",
+     "file": "mcnp/component-meshtal.meshtal",
+     "tally": 24
+    },
+    {
+     "component": "photon",
+     "file": "mcnp/component-meshtal.meshtal",
+     "tally": 34
     }
-  ]
+   ],
+   "document": "mcnp/expected.interchange.json",
+   "bundle": "mcnp/expected.bundle.json"
+  },
+  {
+   "system": "phits",
+   "description": "per-component xyz t-deposit files with *_err siblings, axis=xy pages",
+   "case_id": "adapter-conformance",
+   "unit": "gray_per_source_particle",
+   "normalization": "t-deposit unit=0 taken as Gy per source particle",
+   "producer_version": "3.33",
+   "sources": [
+    {
+     "component": "boron",
+     "file": "phits/dep-boron.out"
+    },
+    {
+     "component": "nitrogen",
+     "file": "phits/dep-nitrogen.out"
+    },
+    {
+     "component": "hydrogen",
+     "file": "phits/dep-hydrogen.out"
+    },
+    {
+     "component": "photon",
+     "file": "phits/dep-photon.out"
+    }
+   ],
+   "document": "phits/expected.interchange.json",
+   "bundle": "phits/expected.bundle.json"
+  },
+  {
+   "system": "nifti",
+   "description": "four scalar .nii volumes plus paired sigma volumes on one 2x2x1 grid",
+   "case_id": "adapter-conformance",
+   "unit": "gray_per_source_particle",
+   "normalization": "per source neutron; OpenPINT-style per-component nifti set",
+   "producer_system": "openpint",
+   "producer_version": "7d035fb",
+   "sources": [
+    {
+     "component": "boron",
+     "file": "nifti/dose-boron.nii",
+     "sigma_file": "nifti/dose-boron-sigma.nii"
+    },
+    {
+     "component": "nitrogen",
+     "file": "nifti/dose-nitrogen.nii",
+     "sigma_file": "nifti/dose-nitrogen-sigma.nii"
+    },
+    {
+     "component": "hydrogen",
+     "file": "nifti/dose-hydrogen.nii",
+     "sigma_file": "nifti/dose-hydrogen-sigma.nii"
+    },
+    {
+     "component": "photon",
+     "file": "nifti/dose-photon.nii",
+     "sigma_file": "nifti/dose-photon-sigma.nii"
+    }
+   ],
+   "document": "nifti/expected.interchange.json",
+   "bundle": "nifti/expected.bundle.json"
+  }
+ ]
 }

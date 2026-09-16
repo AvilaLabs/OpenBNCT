@@ -65,6 +65,10 @@ byte-fixed `document` and `bundle` references.
   column, `Rel Error` → absolute sigmas) on a shared mesh.
 - `phits/` — per-component `xyz`-mesh `t-deposit` `.out` files with
   `*_err.out` siblings; `axis=xy` z-slice pages; `unit = 0`.
+- `nifti/` — per-component scalar `.nii` volumes plus paired `sigma_file`
+  absolute-uncertainty volumes on a shared grid, the shape OpenPINT's
+  per-component NIfTI export produces. NIfTI carries no producer
+  identity, so the case declares `producer_system` explicitly.
 
 Input fixtures are authored to the documented file formats — they are
 parser fixtures, not real MCNP/PHITS executions. `sources[].file` is
@@ -75,6 +79,7 @@ test enters the suite directory itself.
 ```text
 cargo test -p openbnct-mcnp --test adapter_conformance
 cargo test -p openbnct-phits --test adapter_conformance
+cargo test -p openbnct-nifti --test adapter_conformance
 ```
 
 Regeneration uses the same `OPENBNCT_UPDATE_CONFORMANCE=1` convention.
