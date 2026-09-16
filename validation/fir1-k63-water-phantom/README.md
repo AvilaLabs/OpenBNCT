@@ -65,21 +65,33 @@ Response-set chain (`provenance/`, evidence root under
   `provenance/neutron-response-set.json`
   (`independently_reviewed`, SHA-256 `c01b05107497…`).
 
-In flight / staged:
+Completed — first in-phantom measured-data comparison (results/):
 
-1. `openmc run` is executing (~20M histories, 20 batches, 4 threads) with
-   `provenance/neutron-response-set.json`; the dose bundle lands at
-   `dose-bundle.json` with the evidence root under `openmc-evidence/`.
-2. `measurements/fir1-k63-water-phantom.json` (repo `measurements/`) is
-   authored: published advantage depth ~8.1 cm, advantage ratio ~4.9,
-   peak therapeutic ratio ~5.7, and the thermal-fluence maximum depth
-   ~2.0-2.5 cm (documentation-only metric). Published figures carry the
-   TECDOC-1223 weighting convention (tumor:normal boron uptake ~3.5);
-   `beams/references/fir1-k63-phantom.json` encodes them with wide
-   tolerances because the computed side uses the documented CBE-weight
-   convention on the trace-loaded phantom.
-3. On run completion: `beam qa --dose` (CBE-only and T/N-folded weight
-   conventions) → `measurement compare` → `results/` evidence.
+1. `openmc run` executed 20M histories / 20 batches with
+   `provenance/neutron-response-set.json`; evidence root exported under
+   `openmc-evidence/` (run receipt binds executable SHA-256
+   `fee5fb9d…`, input manifest `fc13f4c9…`), dose bundle at
+   `dose-bundle.json`.
+2. `beam qa --dose` run under two weight conventions
+   (`results/beam-quality-cbe-only.json`, `-tn-folded.json`). The
+   T/N-folded convention emulates the published TECDOC-1223 weighting —
+   tumor B weight = 3.8 CBE x (52.5 ppm / 0.1 ppm phantom loading) =
+   1995, normal = 1.0 x (15 ppm / 0.1 ppm) = 150, neutron components
+   RBE 3.2 — since the trace-loaded boron dose scales linearly with
+   concentration.
+3. `measurement compare` against
+   `measurements/fir1-k63-water-phantom.json`
+   (`results/measurement-comparison.json`):
+   - advantage depth: computed 9.75 cm vs published 8.1 cm (20%),
+     within the 25% convention tolerance;
+   - peak therapeutic ratio: 3.70 vs 5.7 (35%), within 40%;
+   - advantage ratio: 2.43 vs 4.9 (50%) — outside tolerance, the honest
+     signature of the simplified port geometry and convention gap;
+   - thermal-fluence maximum depth: computed 2.75 cm vs published
+     ~2.0-2.5 cm (22%) — resolved via the new `boron_dose_profile`
+     field, whose argmax marks the thermal peak because boron-capture
+     dose is proportional to thermal fluence under uniform dilute
+     loading.
 
 The literature limitation stands: absolute in-phantom depth profiles are
 figure-only in accessible sources, so the record encodes tabulated

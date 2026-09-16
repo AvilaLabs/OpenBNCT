@@ -313,6 +313,18 @@ pub fn beam_quality_metric(report: &BeamQualityReport, metric: &str) -> Option<f
         "advantage_depth_cm" => report.in_phantom.as_ref()?.advantage_depth_cm,
         "advantage_ratio" => report.in_phantom.as_ref()?.advantage_ratio,
         "peak_therapeutic_ratio" => report.in_phantom.as_ref()?.peak_therapeutic_ratio,
+        // Depth of the thermal-fluence maximum: under uniform dilute
+        // boron loading the boron-capture dose is proportional to the
+        // thermal fluence, so its argmax is the measured thermal peak.
+        "thermal_fluence_max_depth_cm" => {
+            let in_phantom = report.in_phantom.as_ref()?;
+            in_phantom
+                .boron_dose_profile
+                .iter()
+                .enumerate()
+                .max_by(|(_, a), (_, b)| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal))
+                .map(|(i, _)| in_phantom.depth_cm[i])?
+        }
         _ => return None,
     })
 }

@@ -112,6 +112,14 @@ pub struct InPhantomMetrics {
     pub advantage_ratio: f64,
     /// Maximum over depth of tumor dose / normal tissue dose.
     pub peak_therapeutic_ratio: f64,
+    /// Unweighted boron-capture dose per depth layer on the same
+    /// footprint average as the weighted profiles. Under uniform dilute
+    /// boron loading this profile is proportional to the thermal-neutron
+    /// fluence depth profile (constant capture cross-section), so its
+    /// maximum marks the measured thermal-fluence maximum depth.
+    /// Empty for reports produced before this field existed.
+    #[serde(default)]
+    pub boron_dose_profile: Vec<f64>,
     pub tumor_weights: ComponentWeights,
     pub normal_weights: ComponentWeights,
     /// Content binding of the dose bundle the profile was computed from.
@@ -257,8 +265,9 @@ pub fn in_air_metrics(beam: &BeamDescription) -> Result<InAirMetrics, BeamQualit
     })
 }
 
-/// (depth_cm, weighted_tumor, weighted_normal) per layer along the port axis.
-type DepthProfiles = (Vec<f64>, Vec<f64>, Vec<f64>);
+/// (depth_cm, weighted_tumor, weighted_normal, unweighted_boron) per
+/// layer along the port axis.
+type DepthProfiles = (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>);
 
 /// Depth profile of a dose bundle along the port axis, averaged over the
 /// aperture footprint.
@@ -344,23 +353,26 @@ fn depth_profiles(
     let mut depth_cm = Vec::with_capacity(layers);
     let mut tumor = Vec::with_capacity(layers);
     let mut normal = Vec::with_capacity(layers);
+    let mut boron_profile = Vec::with_capacity(layers);
     for layer in 0..layers {
         let center_mm =
             dose.geometry.origin_mm[axis] + layer as f64 * dose.geometry.spacing_mm[axis];
         depth_cm.push((center_mm - minimum[axis]) / 10.0);
-        let (mut tumor_sum, mut normal_sum) = (0.0, 0.0);
+        let (mut tumor_sum, mut normal_sum, mut boron_sum) = (0.0, 0.0, 0.0);
         for voxel in &footprint {
             let mut index_voxel = *voxel;
             index_voxel[axis] = layer;
             let index = index_voxel[0] + shape[0] * (index_voxel[1] + shape[1] * index_voxel[2]);
             tumor_sum += weight(tumor_weights, index);
             normal_sum += weight(normal_weights, index);
+            boron_sum += boron[index];
         }
         let n = footprint.len() as f64;
+        boron_profile.push(boron_sum / n);
         tumor.push(tumor_sum / n);
         normal.push(normal_sum / n);
     }
-    Ok((depth_cm, tumor, normal))
+    Ok((depth_cm, tumor, normal, boron_profile))
 }
 
 /// In-phantom metrics from a transported dose bundle and declared
@@ -373,7 +385,8 @@ pub fn in_phantom_metrics(
     normal_weights: &ComponentWeights,
 ) -> Result<InPhantomMetrics, BeamQualityError> {
     beam.validate()?;
-    let (depth_cm, tumor, normal) = depth_profiles(beam, dose, tumor_weights, normal_weights)?;
+    let (depth_cm, tumor, normal, boron_profile) =
+        depth_profiles(beam, dose, tumor_weights, normal_weights)?;
     let normal_max = normal.iter().copied().fold(f64::NEG_INFINITY, f64::max);
     if normal_max.partial_cmp(&0.0) != Some(std::cmp::Ordering::Greater) {
         return Err(BeamQualityError::DegenerateProfile(
@@ -417,6 +430,7 @@ pub fn in_phantom_metrics(
         advantage_depth_cm,
         advantage_ratio,
         peak_therapeutic_ratio,
+        boron_dose_profile: boron_profile,
         tumor_weights: tumor_weights.clone(),
         normal_weights: normal_weights.clone(),
         dose: dose_reference,
