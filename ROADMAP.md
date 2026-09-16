@@ -818,12 +818,15 @@ review:
   agreement results as evidence bundles — distinct from the synthetic
   self-consistency benchmark, which remains the correctness gate.
   *(in progress — free-beam FiR 1 K63 record + comparison committed under
-  `measurements/`; in-phantom water-phantom case built under
-  `validation/fir1-k63-water-phantom/` with the full NJOY response-set
-  provenance chain executed end-to-end (fresh 2016.78 execution receipt,
-  three-level suitability reports, independently reviewed water response
-  set). Remaining: the phantom transport run and the measured-data
-  comparison.)*
+  `measurements/`; in-phantom water-phantom chain COMPLETE under
+  `validation/fir1-k63-water-phantom/`: NJOY response-set provenance chain
+  (fresh 2016.78 execution receipt, three-level suitability reports,
+  independently reviewed water response set), 20M-history OpenMC phantom
+  run, and the first in-phantom measured-data comparison — computed
+  advantage depth 9.75 cm vs published 8.1 cm, thermal-fluence maximum at
+  2.75 cm vs published ~2.0–2.5 cm, with the advantage-ratio convention
+  gap honestly recorded. Remaining: richer figure-digitized depth
+  profiles if citable sources become accessible.)*
 - **R7-03 — cross-code comparison depth.** Extend the MCNP meshtal and PHITS
   xyz-mesh import adapters into documented cross-code comparison workflows
   against the OpenMC path on the synthetic benchmark, and evaluate import
