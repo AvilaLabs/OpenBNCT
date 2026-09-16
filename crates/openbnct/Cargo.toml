@@ -1,0 +1,28 @@
+[package]
+name = "openbnct"
+description = "Facade re-exporting the OpenBNCT library crates — transport-neutral BNCT dosimetry research workbench"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+openbnct-core = { path = "../openbnct-core", version = "0.1.0" }
+openbnct-transport = { path = "../openbnct-transport", version = "0.1.0" }
+openbnct-evidence = { path = "../openbnct-evidence", version = "0.1.0" }
+openbnct-bio = { path = "../openbnct-bio", version = "0.1.0" }
+openbnct-boron = { path = "../openbnct-boron", version = "0.1.0" }
+openbnct-dicom = { path = "../openbnct-dicom", version = "0.1.0" }
+openbnct-mcnp = { path = "../openbnct-mcnp", version = "0.1.0" }
+openbnct-nifti = { path = "../openbnct-nifti", version = "0.1.0" }
+openbnct-njoy = { path = "../openbnct-njoy", version = "0.1.0" }
+openbnct-openmc = { path = "../openbnct-openmc", version = "0.1.0" }
+openbnct-phits = { path = "../openbnct-phits", version = "0.1.0" }
+openbnct-plan = { path = "../openbnct-plan", version = "0.1.0" }
+openbnct-view = { path = "../openbnct-view", version = "0.1.0" }

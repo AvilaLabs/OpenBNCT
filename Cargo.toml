@@ -1,5 +1,6 @@
 [workspace]
 members = [
+  "crates/openbnct",
   "crates/openbnct-bio",
   "crates/openbnct-boron",
   "crates/openbnct-core",
