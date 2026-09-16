@@ -31,11 +31,48 @@ const HEATING_COMPARISON_EVIDENCE: &[u8] = include_bytes!(
     "../../../benchmarks/synthetic/nf-bnct-001/transport/provenance/openmc-njoy-mt301-comparison.json"
 );
 
+// Debug-only native captures for visual review; no effect in normal launches.
+#[cfg(debug_assertions)]
+fn capture_preview(context: &egui::Context) {
+    let Ok(path) = std::env::var("OPENBNCT_CAPTURE") else {
+        return;
+    };
+    let screenshot = context.input(|input| {
+        input.events.iter().find_map(|event| {
+            if let egui::Event::Screenshot { image, .. } = event {
+                Some(image.clone())
+            } else {
+                None
+            }
+        })
+    });
+    if let Some(image) = screenshot {
+        let bytes: Vec<u8> = image
+            .pixels
+            .iter()
+            .flat_map(|pixel| pixel.to_array())
+            .collect();
+        image::save_buffer(
+            &path,
+            &bytes,
+            image.size[0] as u32,
+            image.size[1] as u32,
+            image::ColorType::Rgba8,
+        )
+        .expect("save native preview");
+        context.send_viewport_cmd(egui::ViewportCommand::Close);
+    }
+    if context.cumulative_frame_nr() == 3 {
+        context.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+    }
+    context.request_repaint();
+}
+
 fn main() -> eframe::Result {
     let initial_case = std::env::args_os().nth(1).map(PathBuf::from);
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
-            .with_inner_size([1_300.0, 820.0])
+            .with_inner_size([1_440.0, 900.0])
             .with_min_inner_size([960.0, 640.0]),
         ..Default::default()
     };
@@ -142,7 +179,16 @@ impl GateState {
         }
     }
 
-    fn color(self) -> egui::Color32 {
+    fn color(self, dark: bool) -> egui::Color32 {
+        if !dark {
+            return match self {
+                Self::Verified => egui::Color32::from_rgb(24, 113, 83),
+                Self::Frozen => egui::Color32::from_rgb(44, 93, 156),
+                Self::Blocked => egui::Color32::from_rgb(151, 88, 20),
+                Self::Pending => egui::Color32::from_rgb(96, 107, 120),
+                Self::InputRequired => egui::Color32::from_rgb(166, 58, 58),
+            };
+        }
         match self {
             Self::Verified => egui::Color32::from_rgb(90, 210, 153),
             Self::Frozen => egui::Color32::from_rgb(91, 166, 255),
@@ -162,7 +208,6 @@ pub(crate) struct Theme {
     panel_fill: egui::Color32,
     card_fill: egui::Color32,
     card_alt_fill: egui::Color32,
-    warn_fill: egui::Color32,
     brand: egui::Color32,
     text_dim: egui::Color32,
     error: egui::Color32,
@@ -178,7 +223,6 @@ impl Theme {
                 panel_fill: egui::Color32::from_rgb(17, 21, 29),
                 card_fill: egui::Color32::from_rgb(22, 30, 41),
                 card_alt_fill: egui::Color32::from_rgb(36, 26, 46),
-                warn_fill: egui::Color32::from_rgb(41, 32, 22),
                 brand: egui::Color32::from_rgb(139, 229, 235),
                 text_dim: egui::Color32::from_rgb(150, 160, 180),
                 error: egui::Color32::LIGHT_RED,
@@ -186,13 +230,12 @@ impl Theme {
             }
         } else {
             Self {
-                banner_fill: egui::Color32::from_rgb(226, 236, 242),
-                nav_fill: egui::Color32::from_rgb(242, 244, 248),
-                panel_fill: egui::Color32::from_rgb(235, 237, 242),
+                banner_fill: egui::Color32::from_rgb(255, 255, 255),
+                nav_fill: egui::Color32::from_rgb(248, 250, 249),
+                panel_fill: egui::Color32::from_rgb(244, 247, 246),
                 card_fill: egui::Color32::WHITE,
-                card_alt_fill: egui::Color32::from_rgb(243, 236, 250),
-                warn_fill: egui::Color32::from_rgb(252, 241, 215),
-                brand: egui::Color32::from_rgb(8, 102, 112),
+                card_alt_fill: egui::Color32::from_rgb(245, 241, 248),
+                brand: egui::Color32::from_rgb(24, 103, 91),
                 text_dim: egui::Color32::from_rgb(92, 101, 118),
                 error: egui::Color32::from_rgb(178, 34, 34),
                 warn_text: egui::Color32::from_rgb(146, 84, 6),
@@ -1133,6 +1176,21 @@ impl OpenBnctApp {
         if has_initial_case {
             app.load_case();
         }
+        #[cfg(debug_assertions)]
+        if std::env::var_os("OPENBNCT_CAPTURE").is_some() {
+            if let Ok(selected) = std::env::var("OPENBNCT_CAPTURE_WORKSPACE") {
+                if let Some(workspace) = WorkspaceTab::ALL
+                    .into_iter()
+                    .find(|tab| tab.marker() == selected)
+                {
+                    app.workspace = workspace;
+                }
+            }
+            if std::env::var_os("OPENBNCT_CAPTURE_DARK").is_some() {
+                app.dark_mode = true;
+                context.set_theme(egui::ThemePreference::Dark);
+            }
+        }
         app
     }
 
@@ -1228,6 +1286,8 @@ impl OpenBnctApp {
 
 impl eframe::App for OpenBnctApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+        #[cfg(debug_assertions)]
+        capture_preview(ui.ctx());
         if ui.input(|input| input.key_pressed(egui::Key::F1)) {
             self.help.toggle_center();
         }
@@ -1260,33 +1320,55 @@ impl eframe::App for OpenBnctApp {
             });
         }
         let theme = Theme::resolve(ui.visuals().dark_mode);
-        egui::Panel::top("openbnct-header").show(ui, |ui| {
-            show_app_header(
-                ui,
-                self.case.as_ref(),
-                self.brand_logo.as_ref(),
-                theme,
-                &mut tour_targets,
-            );
-            ui.add_space(8.0);
-            let enter_pressed = ui.input(|input| input.key_pressed(egui::Key::Enter));
-            let load_requested = show_case_loader(
-                ui,
-                &mut self.case_path,
-                self.case.as_ref(),
-                enter_pressed,
-                &mut tour_targets,
-                &mut self.template_status,
-            );
-            if load_requested {
-                self.load_case();
-            }
-            if let Some(error) = &self.load_error {
-                ui.colored_label(theme.error, format!("Load rejected: {error}"));
-            }
-            if let Some(status) = &self.template_status {
-                ui.label(status);
-            }
+        egui::Panel::top("openbnct-header")
+            .frame(
+                egui::Frame::new()
+                    .fill(theme.banner_fill)
+                    .inner_margin(egui::Margin::symmetric(20, 10)),
+            )
+            .show(ui, |ui| {
+                show_app_header(
+                    ui,
+                    self.case.as_ref(),
+                    self.brand_logo.as_ref(),
+                    theme,
+                    &mut tour_targets,
+                );
+                ui.add_space(8.0);
+                let enter_pressed = ui.input(|input| input.key_pressed(egui::Key::Enter));
+                let load_requested = show_case_loader(
+                    ui,
+                    &mut self.case_path,
+                    self.case.as_ref(),
+                    enter_pressed,
+                    &mut tour_targets,
+                    &mut self.template_status,
+                );
+                if load_requested {
+                    self.load_case();
+                }
+                if let Some(error) = &self.load_error {
+                    ui.colored_label(theme.error, format!("Load rejected: {error}"));
+                }
+                if let Some(status) = &self.template_status {
+                    ui.label(status);
+                }
+            });
+        egui::Panel::bottom("workbench-status").show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(
+                    egui::RichText::new("Research use only · Not for clinical decision-making")
+                        .small()
+                        .color(theme.text_dim),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.label(
+                        egui::RichText::new("Avila Labs  /  OpenBNCT")
+                            .small()
+                            .color(theme.text_dim),
+                    );
+                });
+            });
         });
         show_workbench(
             ui,
@@ -1309,13 +1391,20 @@ impl eframe::App for OpenBnctApp {
 /// the View menu only flips `ThemePreference` afterward.
 fn configure_style(context: &egui::Context) {
     let mut light = egui::Visuals::light();
-    light.panel_fill = egui::Color32::from_rgb(235, 237, 242);
+    light.panel_fill = egui::Color32::from_rgb(244, 247, 246);
     light.window_fill = egui::Color32::WHITE;
-    light.faint_bg_color = egui::Color32::from_rgb(242, 244, 248);
+    light.faint_bg_color = egui::Color32::from_rgb(248, 250, 249);
     light.extreme_bg_color = egui::Color32::WHITE;
-    light.hyperlink_color = egui::Color32::from_rgb(8, 102, 112);
-    light.selection.bg_fill = egui::Color32::from_rgb(178, 224, 230);
-    light.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(8, 102, 112));
+    light.hyperlink_color = egui::Color32::from_rgb(24, 103, 91);
+    light.override_text_color = Some(egui::Color32::from_rgb(36, 49, 48));
+    light.widgets.noninteractive.bg_stroke =
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(221, 229, 225));
+    light.widgets.inactive.weak_bg_fill = egui::Color32::from_rgb(237, 242, 239);
+    light.widgets.inactive.bg_stroke =
+        egui::Stroke::new(1.0, egui::Color32::from_rgb(210, 221, 215));
+    light.widgets.hovered.weak_bg_fill = egui::Color32::from_rgb(225, 236, 230);
+    light.selection.bg_fill = egui::Color32::from_rgb(222, 239, 233);
+    light.selection.stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(24, 103, 91));
     context.set_visuals_of(egui::Theme::Light, light);
     context.style_mut_of(egui::Theme::Light, apply_spacing);
 
@@ -1334,7 +1423,17 @@ fn configure_style(context: &egui::Context) {
 }
 
 fn apply_spacing(style: &mut egui::Style) {
-    style.spacing.item_spacing = egui::vec2(10.0, 8.0);
+    style
+        .text_styles
+        .insert(egui::TextStyle::Body, egui::FontId::proportional(14.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Button, egui::FontId::proportional(14.0));
+    style
+        .text_styles
+        .insert(egui::TextStyle::Small, egui::FontId::proportional(12.0));
+    style.spacing.interact_size.y = 30.0;
+    style.spacing.item_spacing = egui::vec2(10.0, 10.0);
     style.spacing.button_padding = egui::vec2(12.0, 7.0);
 }
 
@@ -1345,62 +1444,27 @@ fn show_app_header(
     theme: Theme,
     tour_targets: &mut TourTargets,
 ) {
-    egui::Frame::new()
-        .fill(theme.banner_fill)
-        .corner_radius(8)
-        .inner_margin(egui::Margin::symmetric(14, 10))
-        .show(ui, |ui| {
-            ui.horizontal(|ui| {
-                if let Some(brand_logo) = brand_logo {
-                    let response = ui
-                        .add(
-                            egui::Image::from_texture(brand_logo)
-                                .fit_to_exact_size(egui::vec2(48.0, 48.0))
-                                .corner_radius(6.0),
-                        )
-                        .on_hover_text("Avila Labs");
-                    tour_targets.set(TourTarget::Brand, response.rect);
-                } else {
-                    let response = ui.label(
-                        egui::RichText::new("AVILA LABS")
-                            .small()
-                            .strong()
-                            .color(theme.brand),
-                    );
-                    tour_targets.set(TourTarget::Brand, response.rect);
-                }
-                ui.vertical(|ui| {
-                    ui.label(
-                        egui::RichText::new("OPENBNCT")
-                            .size(24.0)
-                            .strong()
-                            .color(theme.brand),
-                    );
-                    ui.label(
-                        egui::RichText::new("Open BNCT research and verification workbench")
-                            .color(theme.text_dim),
-                    );
-                    ui.label(
-                        egui::RichText::new("AN AVILA LABS OPEN-SOURCE PROJECT")
-                            .size(9.5)
-                            .strong()
-                            .color(theme.text_dim),
-                    );
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    status_badge(ui, GateState::Pending, "RESEARCH ONLY");
-                    if case.is_some() {
-                        status_badge(ui, GateState::Verified, "CASE VERIFIED");
-                    }
-                });
-            });
+    ui.horizontal(|ui| {
+        if let Some(logo) = brand_logo {
+            let response = ui.add(
+                egui::Image::from_texture(logo)
+                    .fit_to_exact_size(egui::vec2(30.0, 30.0))
+                    .corner_radius(5.0),
+            );
+            tour_targets.set(TourTarget::Brand, response.rect);
+        } else {
+            let response = ui.strong("Avila Labs");
+            tour_targets.set(TourTarget::Brand, response.rect);
+        }
+        ui.label(egui::RichText::new("OpenBNCT").size(21.0).strong());
+        ui.separator();
+        ui.label(egui::RichText::new("Research workbench").color(theme.text_dim));
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.label(
+                egui::RichText::new(case.map_or("No case open", |c| c.verified.report.case_id))
+                    .color(theme.text_dim),
+            );
         });
-    ui.horizontal_wrapped(|ui| {
-        ui.colored_label(
-            theme.warn_text,
-            egui::RichText::new("NOT FOR CLINICAL DECISION-MAKING").strong(),
-        );
-        ui.label("No dose, prescription, or treatment-delivery claim is available in this build.");
     });
 }
 
@@ -1457,48 +1521,22 @@ fn show_case_loader(
     template_status: &mut Option<String>,
 ) -> bool {
     let mut load_requested = false;
-    let response = egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("CASE").small().strong());
-            let path_response = ui.add(
-                egui::TextEdit::singleline(case_path)
-                    .desired_width(480.0)
-                    .hint_text("/tmp/nf-bnct-001 — or drop a case folder"),
-            );
-            load_requested = ui.button("Load + verify").clicked()
-                || (path_response.has_focus() && enter_pressed);
-            if ui.button("Browse…").clicked()
-                && let Some(dir) = rfd::FileDialog::new().pick_folder()
-            {
-                *case_path = dir.display().to_string();
-                load_requested = true;
-            }
-            if ui
-                .button("Export template…")
-                .on_hover_text(
-                    "Write the transport-case JSON contracts (the NF-BNCT-001 \
-                     values) into a directory you can edit into your own case",
-                )
-                .clicked()
-                && let Some(dir) = rfd::FileDialog::new().pick_folder()
-            {
-                *template_status = Some(match export_case_template(&dir) {
-                    Ok(count) => format!(
-                        "template written to {} ({count} files — edit before use)",
-                        dir.display()
-                    ),
-                    Err(error) => format!("template export failed: {error}"),
-                });
-            }
-            if let Some(case) = case {
-                ui.separator();
-                ui.strong(case.verified.report.case_id);
-                ui.label(format!(
-                    "{} artifacts",
-                    case.verified.report.verified_artifact_count
-                ));
-            }
-        });
+    let _ = (case, template_status);
+    let response = ui.horizontal(|ui| {
+        ui.label("Case folder");
+        let path_response = ui.add(
+            egui::TextEdit::singleline(case_path)
+                .desired_width((ui.available_width() - 220.0).max(180.0))
+                .hint_text("Open a verified case folder, or drop it here"),
+        );
+        load_requested =
+            ui.button("Load & verify").clicked() || (path_response.lost_focus() && enter_pressed);
+        if ui.button("Browse…").clicked()
+            && let Some(dir) = rfd::FileDialog::new().pick_folder()
+        {
+            *case_path = dir.display().to_string();
+            load_requested = true;
+        }
     });
     tour_targets.set(TourTarget::CaseLoader, response.response.rect);
     load_requested
@@ -1514,49 +1552,76 @@ fn show_workbench(
     theme: Theme,
 ) {
     let navigation = egui::Panel::left("openbnct-workspace-navigation")
-        .exact_size(180.0)
+        .exact_size(210.0)
         .resizable(false)
         .frame(
             egui::Frame::new()
                 .fill(theme.nav_fill)
-                .inner_margin(egui::Margin::symmetric(10, 12)),
+                .inner_margin(egui::Margin::symmetric(16, 24)),
         )
         .show(ui, |ui| {
             ui.label(
-                egui::RichText::new("WORKSPACES")
-                    .small()
+                egui::RichText::new("WORKBENCH")
+                    .size(11.0)
                     .strong()
                     .color(theme.text_dim),
             );
+            ui.add_space(12.0);
             for candidate in WorkspaceTab::ALL {
-                let label = format!("{}  {}", candidate.marker(), candidate.label());
+                if candidate == WorkspaceTab::Plan || candidate == WorkspaceTab::Evidence {
+                    ui.add_space(12.0);
+                    ui.separator();
+                    ui.add_space(6.0);
+                }
+                let selected = *workspace == candidate;
+                let label = egui::RichText::new(candidate.label()).color(if selected {
+                    theme.brand
+                } else {
+                    ui.visuals().text_color()
+                });
                 if ui
-                    .selectable_label(*workspace == candidate, label)
+                    .add_sized(
+                        [ui.available_width(), 38.0],
+                        egui::Button::new(label).selected(selected).frame(selected),
+                    )
                     .clicked()
                 {
                     *workspace = candidate;
                 }
             }
-            ui.add_space(16.0);
-            ui.separator();
-            ui.small("Milestone");
-            ui.strong("R2 · physical truth");
-            ui.small("Evidence-gated; no calendar-based completion claims.");
+            ui.add_space(30.0);
+            ui.label(
+                egui::RichText::new("ACTIVE CASE")
+                    .size(11.0)
+                    .strong()
+                    .color(theme.text_dim),
+            );
+            ui.add_space(6.0);
+            if let Some(case) = case.as_deref() {
+                ui.strong(case.verified.report.case_id);
+                ui.small(format!(
+                    "{} verified artifacts",
+                    case.verified.report.verified_artifact_count
+                ));
+            } else {
+                ui.label(egui::RichText::new("No case loaded").color(theme.text_dim));
+                ui.small("Open a case above to inspect its geometry.");
+            }
         });
     tour_targets.set(TourTarget::WorkspaceNavigation, navigation.response.rect);
     egui::CentralPanel::default()
         .frame(
             egui::Frame::new()
                 .fill(theme.panel_fill)
-                .inner_margin(egui::Margin::symmetric(12, 8)),
+                .inner_margin(egui::Margin::symmetric(28, 24)),
         )
         .show(ui, |ui| {
             egui::ScrollArea::vertical()
-                .id_salt("openbnct-workspace")
+                .id_salt(("openbnct-workspace", workspace.marker()))
                 .auto_shrink([false, false])
                 .show(ui, |ui| match *workspace {
                     WorkspaceTab::Overview => {
-                        show_overview(ui, case.as_deref(), tour_targets, theme);
+                        show_overview(ui, case.as_deref(), workspace, tour_targets, theme);
                     }
                     WorkspaceTab::Geometry => {
                         if let Some(case) = case {
@@ -1602,106 +1667,88 @@ fn show_workspace_heading(ui: &mut egui::Ui, theme: Theme, title: &str, subtitle
 fn show_overview(
     ui: &mut egui::Ui,
     case: Option<&ViewerCase>,
+    workspace: &mut WorkspaceTab,
     tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
     show_workspace_heading(
         ui,
         theme,
-        "Research overview",
-        "One place to see what is verified, what is frozen, and what still blocks a result.",
+        "Your research workspace",
+        "Inspect the case. Explore dose. Follow the evidence.",
     );
-
-    egui::Frame::new()
-        .fill(theme.card_fill)
-        .corner_radius(8)
-        .inner_margin(egui::Margin::same(14))
-        .show(ui, |ui| {
-            ui.horizontal_wrapped(|ui| {
-                ui.vertical(|ui| {
-                    ui.label(
-                        egui::RichText::new("NF-BNCT-001")
-                            .size(20.0)
-                            .strong()
-                            .color(theme.brand),
-                    );
-                    ui.label("Synthetic conformance case · macroscopic physical dose");
-                });
-                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    status_badge(ui, GateState::Blocked, "RESPONSE GATE");
-                    status_badge(
-                        ui,
-                        if case.is_some() {
-                            GateState::Verified
-                        } else {
-                            GateState::InputRequired
-                        },
-                        if case.is_some() {
-                            "GEOMETRY READY"
-                        } else {
-                            "LOAD GEOMETRY"
-                        },
-                    );
-                });
+    ui.add_space(12.0);
+    egui::Frame::new().fill(theme.card_fill).corner_radius(10)
+        .inner_margin(egui::Margin::same(24)).show(ui, |ui| {
+            ui.set_width(ui.available_width());
+            ui.label(egui::RichText::new("CASE STUDY  /  SYNTHETIC BENCHMARK").size(11.0).strong().color(theme.brand));
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new(case.map_or("Start with a verified case", |c| c.verified.report.case_id)).size(26.0).strong());
+            ui.label(egui::RichText::new(if case.is_some() {
+                "Patient-space geometry and artifact integrity verified. Ready to inspect."
+            } else {
+                "Open an NF-BNCT-001 case folder above. Geometry is verified before it is displayed."
+            }).color(theme.text_dim));
+            ui.add_space(12.0);
+            ui.horizontal(|ui| {
+                if ui.add_enabled(case.is_some(), egui::Button::new("Inspect geometry")).clicked() {
+                    *workspace = WorkspaceTab::Geometry;
+                }
+                if ui.button("Review evidence").clicked() { *workspace = WorkspaceTab::Evidence; }
             });
         });
-
-    ui.add_space(12.0);
+    ui.add_space(20.0);
+    ui.heading("Explore the workbench");
+    ui.add_space(6.0);
+    ui.columns(3, |columns| {
+        for (column, (tab, title, detail, action)) in columns.iter_mut().zip([
+            (WorkspaceTab::Transport, "01  Prepare", "Inspect material and source contracts, position the beam, and review transport readiness.", "Open transport"),
+            (WorkspaceTab::Plan, "02  Evaluate", "Load a plan, inspect fields and weights, and review its calculated result.", "Open planning"),
+            (WorkspaceTab::Dose, "03  Understand", "Explore physical and biological dose, region metrics, DVHs, and NIfTI volumes.", "Explore dose"),
+        ]) {
+            egui::Frame::new().fill(theme.card_fill).corner_radius(8)
+                .inner_margin(egui::Margin::same(18)).show(column, |ui| {
+                    ui.set_width(ui.available_width());
+                    ui.strong(title);
+                    ui.add_space(6.0);
+                    ui.allocate_ui(egui::vec2(ui.available_width(), 76.0), |ui| {
+                        ui.set_min_height(76.0);
+                        ui.add(egui::Label::new(egui::RichText::new(detail).color(theme.text_dim)).halign(egui::Align::Min));
+                    });
+                    if ui.button(action).clicked() { *workspace = tab; }
+                });
+        }
+    });
+    ui.add_space(24.0);
     let gates = ui.scope(|ui| {
-        ui.heading("Readiness gates");
-        ui.columns(2, |columns| {
-            for (index, gate) in readiness_gates(case.is_some()).into_iter().enumerate() {
-                show_gate_card(&mut columns[index % 2], gate);
-            }
-        });
+        ui.heading("Benchmark readiness");
+        ui.label(egui::RichText::new("Qualification of the frozen reference workflow; imported artifacts have their own validation.").color(theme.text_dim));
+        ui.add_space(8.0);
+        egui::Frame::new().fill(theme.card_fill).corner_radius(8)
+            .inner_margin(egui::Margin::same(18)).show(ui, |ui| {
+                ui.set_width(ui.available_width());
+                for (index, gate) in readiness_gates(case.is_some()).iter().enumerate() {
+                    if index > 0 { ui.separator(); }
+                    ui.horizontal(|ui| {
+                        ui.allocate_ui(egui::vec2(180.0, 28.0), |ui| { ui.strong(gate.title); });
+                        ui.allocate_ui(egui::vec2((ui.available_width() - 130.0).max(150.0), 28.0), |ui| {
+                            ui.label(egui::RichText::new(gate.detail).small().color(theme.text_dim));
+                        });
+                        status_badge(ui, gate.state, gate.state.label());
+                    });
+                }
+            });
     });
     tour_targets.set(TourTarget::OverviewGates, gates.response.rect);
-
-    ui.add_space(12.0);
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.label(egui::RichText::new("NEXT SCIENTIFIC DECISION").small().strong());
-        ui.heading("Resolve O-17/O-18 transported-photon response semantics");
-        ui.label(
-            "The official OpenMC tables reproduce the controlled NJOY MT 301 curves. "
-                .to_owned()
-                + "That confirms the data gap; it does not authorize a zero or a hidden local-deposition fallback.",
-        );
-    });
-}
-
-fn show_gate_card(ui: &mut egui::Ui, gate: ReadinessGate) {
-    egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.set_min_height(78.0);
-        ui.horizontal(|ui| {
-            ui.colored_label(gate.state.color(), "●");
-            ui.vertical(|ui| {
-                ui.strong(gate.title);
-                ui.small(gate.detail);
-                ui.label(
-                    egui::RichText::new(gate.state.label())
-                        .small()
-                        .strong()
-                        .color(gate.state.color()),
-                );
-            });
-        });
-    });
 }
 
 fn status_badge(ui: &mut egui::Ui, state: GateState, label: &str) {
-    egui::Frame::new()
-        .fill(state.color().gamma_multiply(0.14))
-        .stroke(egui::Stroke::new(1.0, state.color().gamma_multiply(0.75)))
-        .corner_radius(5)
-        .inner_margin(egui::Margin::symmetric(7, 3))
-        .show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(label)
-                    .small()
-                    .strong()
-                    .color(state.color()),
-            );
-        });
+    ui.label(
+        egui::RichText::new(label)
+            .size(11.0)
+            .strong()
+            .color(state.color(ui.visuals().dark_mode)),
+    );
 }
 
 struct DisplaySettings {
@@ -1798,49 +1845,64 @@ fn show_geometry_workspace(
         "Geometry",
         "Integrity-gated, linked patient-space views of the frozen synthetic case.",
     );
-    ui.horizontal_top(|ui| {
-        let controls = ui.vertical(|ui| {
-            ui.set_min_width(245.0);
-            ui.set_max_width(280.0);
-            show_case_summary(ui, case);
-            ui.separator();
-            if show_display_controls(ui, case, display, theme) {
-                case.textures_dirty = true;
-            }
-        });
-        tour_targets.set(TourTarget::GeometryControls, controls.response.rect);
-        ui.separator();
-        let views = ui.vertical(|ui| {
-            ui.heading("Linked anatomical views");
-            ui.label("Click or drag in any view to move the shared voxel crosshair.");
-            if let Err(error) = case.refresh_textures(ui.ctx(), display) {
-                ui.colored_label(theme.error, format!("Render rejected: {error}"));
-                return;
-            }
-
-            let mut selected_voxel = None;
-            ui.columns(3, |columns| {
-                for ((column, plane), texture) in columns
-                    .iter_mut()
-                    .zip(AnatomicalPlane::ALL)
-                    .zip(case.textures.iter())
-                {
-                    if let Some(texture) = texture
+    if let Err(error) = case.refresh_textures(ui.ctx(), display) {
+        ui.colored_label(theme.error, format!("Render rejected: {error}"));
+        return;
+    }
+    let image_height = ((ui.available_height() - 140.0) / 2.0).clamp(140.0, 320.0);
+    let mut selected_voxel = None;
+    ui.columns(2, |columns| {
+        for (index, plane) in AnatomicalPlane::ALL.into_iter().enumerate() {
+            let column = &mut columns[index % 2];
+            egui::Frame::new()
+                .fill(theme.card_fill)
+                .corner_radius(8)
+                .inner_margin(egui::Margin::same(14))
+                .show(column, |ui| {
+                    ui.set_width(ui.available_width());
+                    if let Some(texture) = &case.textures[index]
                         && let Ok(view) = case.grid.slice(plane, case.crosshair)
-                        && let Some(voxel) = show_slice_view(column, texture, view, case.crosshair)
+                        && let Some(voxel) =
+                            show_slice_view(ui, texture, view, case.crosshair, image_height)
                     {
                         selected_voxel = Some(voxel);
                     }
-                }
+                });
+            column.add_space(12.0);
+        }
+        let controls = egui::Frame::new()
+            .fill(theme.card_fill)
+            .corner_radius(8)
+            .inner_margin(egui::Margin::same(18))
+            .show(&mut columns[1], |ui| {
+                ui.set_width(ui.available_width());
+                egui::ScrollArea::vertical()
+                    .id_salt("geometry-inspector")
+                    .max_height(image_height + 30.0)
+                    .show(ui, |ui| {
+                        ui.heading("Image inspector");
+                        ui.label(
+                            egui::RichText::new(
+                                "Click or drag an image to move the linked crosshair.",
+                            )
+                            .color(theme.text_dim),
+                        );
+                        ui.collapsing("Case & voxel details", |ui| {
+                            show_case_summary(ui, case);
+                        });
+                        if show_display_controls(ui, case, display, theme) {
+                            case.textures_dirty = true;
+                        }
+                    });
             });
-            if let Some(voxel) = selected_voxel
-                && case.crosshair.set_voxel(&case.grid, voxel).is_ok()
-            {
-                case.textures_dirty = true;
-            }
-        });
-        tour_targets.set(TourTarget::GeometryViews, views.response.rect);
+        tour_targets.set(TourTarget::GeometryControls, controls.response.rect);
     });
+    tour_targets.set(TourTarget::GeometryViews, ui.min_rect());
+    if let Some(voxel) = selected_voxel
+        && case.crosshair.set_voxel(&case.grid, voxel).is_ok()
+    {
+        case.textures_dirty = true;
+    }
 }
 
 fn show_transport_workspace(
@@ -1889,7 +1951,7 @@ fn show_transport_workspace(
         for (index, gate) in readiness_gates(case.is_some()).into_iter().enumerate() {
             ui.horizontal(|ui| {
                 ui.monospace(format!("{:02}", index + 1));
-                ui.colored_label(gate.state.color(), "●");
+                ui.colored_label(gate.state.color(ui.visuals().dark_mode), "●");
                 ui.strong(gate.title);
                 ui.label("—");
                 ui.label(gate.detail);
@@ -1898,7 +1960,7 @@ fn show_transport_workspace(
                         egui::RichText::new(gate.state.label())
                             .small()
                             .strong()
-                            .color(gate.state.color()),
+                            .color(gate.state.color(ui.visuals().dark_mode)),
                     );
                 });
             });
@@ -2056,7 +2118,7 @@ fn show_transport_workspace(
         ui.colored_label(theme.error, format!("Positioning rejected: {error}"));
     }
     if let Some(status) = &panel.status {
-        ui.colored_label(egui::Color32::LIGHT_GREEN, status);
+        ui.colored_label(GateState::Verified.color(ui.visuals().dark_mode), status);
     }
 }
 
@@ -2084,7 +2146,7 @@ fn capability_label(ui: &mut egui::Ui, name: &str, enabled: bool) {
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.strong(name);
-            ui.colored_label(state.color(), value);
+            ui.colored_label(state.color(ui.visuals().dark_mode), value);
         });
     });
 }
@@ -2102,9 +2164,17 @@ fn show_plan_workspace(ui: &mut egui::Ui, panel: &mut PlanPanel, theme: Theme) {
             ui.label(egui::RichText::new("PLAN").small().strong());
             ui.add(
                 egui::TextEdit::singleline(&mut panel.plan_path)
-                    .desired_width(520.0)
+                    .desired_width((ui.available_width() - 275.0).max(160.0))
                     .hint_text("/path/to/exposure-plan.json"),
             );
+            if ui.button("Browse…").clicked()
+                && let Some(path) = rfd::FileDialog::new()
+                    .add_filter("Plan JSON", &["json"])
+                    .pick_file()
+            {
+                panel.plan_path = path.display().to_string();
+                panel.load();
+            }
             if ui.button("Load + diagnose").clicked() {
                 panel.load();
             }
@@ -2117,7 +2187,7 @@ fn show_plan_workspace(ui: &mut egui::Ui, panel: &mut PlanPanel, theme: Theme) {
     let Some(plan) = &panel.plan else {
         ui.add_space(12.0);
         egui::Frame::new()
-            .fill(theme.warn_fill)
+            .fill(theme.card_fill)
             .corner_radius(8)
             .inner_margin(egui::Margin::same(14))
             .show(ui, |ui| {
@@ -2253,7 +2323,7 @@ fn show_dose_workspace(
     let Some(bundle) = &panel.bundle else {
         ui.add_space(12.0);
         egui::Frame::new()
-            .fill(theme.warn_fill)
+            .fill(theme.card_fill)
             .corner_radius(8)
             .inner_margin(egui::Margin::same(14))
             .show(ui, |ui| {
@@ -2299,7 +2369,11 @@ fn show_dose_workspace(
             });
             if is_biological {
                 ui.colored_label(
-                    egui::Color32::from_rgb(206, 121, 226),
+                    if ui.visuals().dark_mode {
+                        egui::Color32::from_rgb(206, 121, 226)
+                    } else {
+                        egui::Color32::from_rgb(132, 69, 153)
+                    },
                     "Biologically weighted — never aliases physical dose. Not a clinical quantity.",
                 );
             }
@@ -2311,10 +2385,17 @@ fn show_dose_workspace(
     ui.columns(columns, |columns| {
         for (column, (name, values, sigma)) in columns.iter_mut().zip(rows.iter()) {
             let (symbol, color) = match name.as_str() {
-                "boron" => ("D_B", egui::Color32::from_rgb(92, 207, 171)),
-                "nitrogen" => ("D_N", egui::Color32::from_rgb(99, 165, 244)),
-                "hydrogen" => ("D_H", egui::Color32::from_rgb(228, 167, 91)),
-                "photon" => ("D_gamma", egui::Color32::from_rgb(206, 121, 226)),
+                "boron" => ("D_B", GateState::Verified.color(column.visuals().dark_mode)),
+                "nitrogen" => ("D_N", GateState::Frozen.color(column.visuals().dark_mode)),
+                "hydrogen" => ("D_H", GateState::Blocked.color(column.visuals().dark_mode)),
+                "photon" => (
+                    "D_gamma",
+                    if column.visuals().dark_mode {
+                        egui::Color32::from_rgb(206, 121, 226)
+                    } else {
+                        egui::Color32::from_rgb(132, 69, 153)
+                    },
+                ),
                 _ => ("Σ", egui::Color32::from_rgb(151, 158, 178)),
             };
             let max = values.iter().copied().fold(0.0_f64, f64::max);
@@ -2441,7 +2522,7 @@ fn show_dose_workspace(
                 }
             });
             if let Some(status) = &panel.metrics_status {
-                ui.colored_label(egui::Color32::LIGHT_GREEN, status);
+                ui.colored_label(GateState::Verified.color(ui.visuals().dark_mode), status);
             }
         }
     });
@@ -2551,7 +2632,7 @@ fn show_dose_workspace(
             ui.colored_label(theme.error, format!("NIfTI rejected: {error}"));
         }
         if let Some(status) = &nifti.status {
-            ui.colored_label(egui::Color32::LIGHT_GREEN, status);
+            ui.colored_label(GateState::Verified.color(ui.visuals().dark_mode), status);
         }
     });
 }
@@ -2743,7 +2824,7 @@ fn show_evidence_row(
 ) {
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.colored_label(state.color(), "●");
+            ui.colored_label(state.color(ui.visuals().dark_mode), "●");
             ui.vertical(|ui| {
                 ui.strong(title);
                 ui.label(detail);
@@ -2767,7 +2848,7 @@ fn show_case_summary(ui: &mut egui::Ui, case: &ViewerCase) {
         case.verified.report.shape, case.verified.report.spacing_mm
     ));
     ui.colored_label(
-        egui::Color32::LIGHT_GREEN,
+        GateState::Verified.color(ui.visuals().dark_mode),
         format!(
             "Integrity verified: {} DICOM files",
             case.verified.report.verified_artifact_count
@@ -2819,7 +2900,7 @@ fn show_display_controls(
     theme: Theme,
 ) -> bool {
     let mut changed = false;
-    ui.heading("Display");
+    ui.strong("Window & overlays");
     changed |= ui
         .add(egui::Slider::new(&mut display.window_center, -1_024.0..=3_071.0).text("level HU"))
         .changed();
@@ -2831,7 +2912,7 @@ fn show_display_controls(
         .changed();
 
     ui.separator();
-    ui.heading("Linked voxel");
+    ui.strong("Crosshair position");
     let mut voxel = case.crosshair.voxel();
     for (axis, label) in ["column / L", "row / P", "slice / S"]
         .into_iter()
@@ -2849,7 +2930,7 @@ fn show_display_controls(
     }
 
     ui.separator();
-    ui.heading("RT structures");
+    ui.strong("Structures");
     for ((visible, roi), color) in case
         .roi_visible
         .iter_mut()
@@ -2869,7 +2950,7 @@ fn show_display_controls(
     }
 
     ui.separator();
-    ui.heading("Dose overlay");
+    ui.strong("Dose overlay");
     ui.label("Load a dose bundle for this case to wash it over the image.");
     ui.horizontal(|ui| {
         ui.label("bundle");
@@ -2942,6 +3023,7 @@ fn show_slice_view(
     texture: &egui::TextureHandle,
     view: SliceView,
     crosshair: Crosshair,
+    max_height: f32,
 ) -> Option<[u32; 3]> {
     ui.strong(format!(
         "{} — index {}",
@@ -2951,32 +3033,27 @@ fn show_slice_view(
     let dimensions = view.dimensions();
     let spacing = view.pixel_spacing_mm();
     let physical_aspect = dimensions[0] as f64 * spacing[0] / (dimensions[1] as f64 * spacing[1]);
-    let max_width = ui.available_width().max(120.0);
-    let max_height = 420.0_f32;
-    let image_size = if physical_aspect >= 1.0 {
-        egui::vec2(
-            max_width,
-            (max_width / physical_aspect as f32).min(max_height),
-        )
-    } else {
-        egui::vec2(
-            (max_height * physical_aspect as f32).min(max_width),
-            max_height,
-        )
-    };
-    let response = ui.add(
-        egui::Image::from_texture(texture)
-            .fit_to_exact_size(image_size)
-            .sense(egui::Sense::click_and_drag()),
+    let max_width = ui.available_width().max(1.0);
+    let width = max_width.min(max_height * physical_aspect as f32);
+    let image_size = egui::vec2(width, width / physical_aspect as f32);
+    let (slot, _) =
+        ui.allocate_exact_size(egui::vec2(max_width, image_size.y), egui::Sense::hover());
+    let rect = egui::Rect::from_center_size(slot.center(), image_size);
+    let response = ui.interact(
+        rect,
+        ui.id().with(view.plane().name()),
+        egui::Sense::click_and_drag(),
     );
-    paint_orientation_and_crosshair(ui, response.rect, view, crosshair);
+    egui::Image::from_texture(texture).paint_at(ui, rect);
+    paint_orientation_and_crosshair(ui, rect, view, crosshair);
 
     if (response.clicked() || response.dragged())
         && let Some(position) = response.interact_pointer_pos()
+        && rect.contains(position)
     {
         let fraction = [
-            (position.x - response.rect.left()) / response.rect.width(),
-            (position.y - response.rect.top()) / response.rect.height(),
+            (position.x - rect.left()) / rect.width(),
+            (position.y - rect.top()) / rect.height(),
         ];
         return view.voxel_at_fraction(fraction).ok();
     }
