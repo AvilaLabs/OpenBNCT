@@ -607,7 +607,7 @@ Implementation status:
   TestPyPI verified by clean-venv install, then PyPI `openbnct` 0.1.0
   published under the `v0.1.0` tag through OIDC trusted publishing;
 - complete: crates.io publication review and execution — `publish = true`
-  lifted, all 15 workspace crates published at v0.1.0 in dependency order
+  lifted, all 16 workspace crates (including the `openbnct` facade) published at v0.1.0 in dependency order
   (`openbnct-gui` vendors its frozen benchmark assets to package
   standalone); `publish-crates.yml` wires tag-driven releases once
   per-crate trusted publishers exist;
@@ -811,7 +811,7 @@ review:
 - **R7-01 — public distribution.** Publish the `openbnct-*` crates to
   crates.io in dependency order (`openbnct-core` first, `openbnct-cli` last),
   publish the `openbnct` wheel to TestPyPI then PyPI, and add a tagged release
-  workflow. *(COMPLETE — all 15 workspace crates on crates.io v0.1.0
+  workflow. *(COMPLETE — all 16 workspace crates (including the `openbnct` facade) on crates.io v0.1.0
   including `openbnct-gui`; `openbnct` wheel on PyPI via OIDC trusted
   publishing (`.github/workflows/publish-pypi.yml`, five platform wheels
   + sdist verified by release-set check and smoke test); `v0.1.0` tag

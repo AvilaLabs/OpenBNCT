@@ -80,7 +80,7 @@ jobs:
           ORDER="openbnct-core openbnct-evidence openbnct-nifti openbnct-phits \
                  openbnct-plan openbnct-transport openbnct-view openbnct-bio \
                  openbnct-boron openbnct-dicom openbnct-mcnp openbnct-openmc \
-                 openbnct-gui openbnct-njoy openbnct-cli"
+                 openbnct-gui openbnct-njoy openbnct-cli openbnct"
           VERSION=$(python3 -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['workspace']['package']['version'])")
           for crate in $ORDER; do
             code=$(curl -s -o /dev/null -w "%{http_code}" \

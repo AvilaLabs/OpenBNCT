@@ -111,7 +111,7 @@ first bounded API is implemented under `bindings/python` and exercised by a
 cross-language parity suite. Release wheels (Linux x86_64/aarch64, macOS
 x86_64/arm64, Windows x86_64, plus sdist) publish through OIDC trusted
 publishing — TestPyPI on manual dispatch, PyPI on `v*` tags; all 15
-`openbnct-*` crates are on crates.io (`cargo install openbnct-cli`). Cargo
+`openbnct*` crates are on crates.io (`cargo install openbnct-cli`). Cargo
 remains the native source/developer path, while desktop releases will ship as
 native artifacts. See [ADR
 0015](../docs/adr/0015-python-and-native-distribution.md) and [ADR

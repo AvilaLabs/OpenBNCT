@@ -2956,6 +2956,25 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
+name = "openbnct"
+version = "0.1.0"
+dependencies = [
+ "openbnct-bio",
+ "openbnct-boron",
+ "openbnct-core",
+ "openbnct-dicom",
+ "openbnct-evidence",
+ "openbnct-mcnp",
+ "openbnct-nifti",
+ "openbnct-njoy",
+ "openbnct-openmc",
+ "openbnct-phits",
+ "openbnct-plan",
+ "openbnct-transport",
+ "openbnct-view",
+]
+
+[[package]]
 name = "openbnct-bio"
 version = "0.1.0"
 dependencies = [
@@ -3077,6 +3096,7 @@ dependencies = [
  "openbnct-core",
  "serde",
  "serde_json",
+ "sha2",
  "tempfile",
  "thiserror 2.0.20",
 ]

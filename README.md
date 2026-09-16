@@ -98,7 +98,7 @@ bundling those systems.
 
 ## Quick start
 
-All 15 `openbnct-*` crates are published on crates.io, and the `openbnct`
+All 16 `openbnct*` crates are published on crates.io, and the `openbnct`
 Python wheel is on PyPI:
 
 ```text
