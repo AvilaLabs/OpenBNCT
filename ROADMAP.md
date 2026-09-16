@@ -838,8 +838,11 @@ review:
   adapters for other BNCT research codes (e.g., OpenPINT outputs) where their
   formats are documented. *(in progress — both adapters verified
   import→compare at benchmark scale on a real 64k-voxel run; recipe in
-  `docs/research/CROSS_CODE_REPRODUCTION.md`. Licensed-engine execution
-  remains the open gate.)*
+  `docs/research/CROSS_CODE_REPRODUCTION.md`. OpenPINT output interop
+  evaluated and landed: its pipeline writes per-component NIfTI volumes,
+  now importable via `openbnct import nifti` with caller-declared
+  producer provenance and optional paired sigma volumes. Licensed-engine
+  execution remains the open gate.)*
 - **R7-04 — workbench usability.** Bring the egui desktop shell to a
   documented, reproducible workflow (case load → run → dose overlay →
   evidence inspection) with packaged artifacts once distribution exists.
