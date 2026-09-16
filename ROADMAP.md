@@ -611,10 +611,12 @@ Implementation status:
   (`openbnct-gui` vendors its frozen benchmark assets to package
   standalone); `publish-crates.yml` wires tag-driven releases once
   per-crate trusted publishers exist;
-- in progress: signed native desktop artifacts — `release-desktop.yml`
-  builds `openbnct` + `openbnct-gui` release binaries for five platforms
-  on `v*` tags and attaches them to the GitHub release with Sigstore
-  build-provenance attestation (`.github/workflows/release-desktop.yml`).
+- complete: native desktop artifacts — `release-desktop.yml` builds
+  `openbnct` + `openbnct-gui` release binaries for five platforms and
+  attaches them to GitHub releases with Sigstore build-provenance
+  attestation; v0.1.0 carries all five archives (built at 912224c,
+  repacked for naming — attested subjects are the run's artifacts;
+  future `v*` tags attest release assets directly).
 
 ## R5 — External validation and adoption
 
