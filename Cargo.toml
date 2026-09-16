@@ -28,7 +28,7 @@ repository = "https://github.com/AvilaLabs/OpenBNCT"
 license = "Apache-2.0"
 keywords = ["bnct", "dosimetry", "monte-carlo", "radiation-transport"]
 categories = ["science"]
-publish = false
+publish = true
 
 [workspace.dependencies]
 base64 = "0.22"
