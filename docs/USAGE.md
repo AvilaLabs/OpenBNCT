@@ -105,10 +105,13 @@ stay disabled until the upstream response gates are qualified, and the interface
 never shows placeholder dose values. See [ADR
 0014](../docs/adr/0014-evidence-aware-workbench-shell.md).
 
-`pip install openbnct` is the planned primary distribution path for scientific
+`pip install openbnct` is the primary distribution path for scientific
 users, backed by the same Rust implementation through PyO3 and maturin. The
 first bounded API is implemented under `bindings/python` and exercised by a
-cross-language parity suite, but no PyPI release is published yet. Cargo
+cross-language parity suite. Release wheels (Linux x86_64/aarch64, macOS
+x86_64/arm64, Windows x86_64, plus sdist) publish through OIDC trusted
+publishing — TestPyPI on manual dispatch, PyPI on `v*` tags; all 15
+`openbnct-*` crates are on crates.io (`cargo install openbnct-cli`). Cargo
 remains the native source/developer path, while desktop releases will ship as
 native artifacts. See [ADR
 0015](../docs/adr/0015-python-and-native-distribution.md) and [ADR
