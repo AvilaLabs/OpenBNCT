@@ -71,7 +71,17 @@ bundling those systems.
   (foil, ion chamber, TLD, TEPC spectra) compare against computed
   artifacts via `openbnct measurement compare`, emitting a
   hash-bound `openbnct.measurement-comparison/0.1.0` record with
-  sigma-normalized and relative differences.
+  sigma-normalized and relative differences. Scalar metrics plus
+  histogram-valued depth profiles are compared (peak-normalized shape
+  convention, per-bin chi-square when the record states uncertainties).
+- **Published-data validation** — the FiR 1 K63 epithermal beam
+  (Seppälä 2002, HU-P-D103) is encoded as a declared beam and checked
+  against published measurements: free-beam group fluence rates
+  reproduce to ~1e-4 (with an honestly recorded 29% J/Φ gap), and the
+  20M-history cubical water-phantom run reproduces the published
+  advantage depth within 20% (9.75 vs 8.1 cm) and the thermal-fluence
+  maximum at 2.75 cm vs ~2.0–2.5 cm. Records under `measurements/`;
+  in-phantom evidence under `validation/fir1-k63-water-phantom/`.
 - **RT Dose export** — `openbnct dicom export-rtdose` writes any dose
   volume as a multi-frame RTDOSE with full grid geometry and CT
   referencing, verified by independent-toolkit round-trip.
@@ -128,8 +138,14 @@ maturin build --manifest-path bindings/python/Cargo.toml
   precision gates — the deep photon heating tally is correlation-limited,
   so weight windows help it less than neutron fluence. See
   [`openmc-vr-validation-140M.json`](benchmarks/synthetic/nf-bnct-001/transport/openmc-vr-validation-140M.json).
-- The MCNP/PHITS adapters are verified against documented-format fixtures;
-  real-engine acceptance remains an open gate.
+- The MCNP/PHITS adapters are verified end-to-end at benchmark scale on
+  documented-format bundles; real-engine acceptance remains an open gate.
+- The FiR 1 in-phantom comparison uses wide tolerances: published
+  advantage figures fold a clinical tumor:normal boron uptake (~3.5)
+  into dose weighting while the phantom carries trace loading, and the
+  simplified cone source under-models penumbra scatter — the advantage
+  ratio misses (2.43 vs 4.9) and is kept in the record as evidence of
+  the fidelity-tier gap, not suppressed.
 - Nothing here claims clinical qualification, clinical equivalence,
   commissioning, or regulatory suitability.
 
