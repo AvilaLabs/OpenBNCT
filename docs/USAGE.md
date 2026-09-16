@@ -297,6 +297,22 @@ case: Seppälä's Table 4 values are digitized but their reported
 uncertainties were not transcribed, so all five points compare honestly
 without pass/fail — including the expected 29% J/Φ gap.
 
+Histogram-valued measurements additionally resolve against depth
+profiles in a beam-quality report when the metric names one:
+`thermal_fluence_depth_profile` or `boron_dose_depth_profile` resolve to
+the boron-capture profile (proportional to thermal fluence under uniform
+dilute loading), and `tumor_dose_depth_profile` /
+`normal_tissue_dose_depth_profile` resolve to the weighted profiles.
+Edges carry the measurement's `unit` (cm for depth profiles); each bin
+is compared at its center against the linearly interpolated computed
+profile, and both sides are peak-normalized — published activation
+profiles are relative, so this is a shape comparison, the standard
+foil-scan convention. Per-bin results (normalized values, relative
+differences, sigma-normalized differences when bin uncertainties are
+stated, chi-square) land in the comparison record's
+`profile_comparisons`; histograms that resolve to no profile are still
+reported unmatched, never silently dropped.
+
 ### RT Dose export
 
 `openbnct dicom export-rtdose` writes one volume of a physical dose

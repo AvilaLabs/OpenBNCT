@@ -161,6 +161,38 @@ pub struct MeasurementComparison {
     pub passed: Option<bool>,
 }
 
+/// Comparison of a histogram-valued depth-profile measurement against a
+/// computed depth profile from a beam-quality report. Both sides are
+/// peak-normalized before comparison: published activation profiles are
+/// reported in relative units, so this is a shape comparison, which is
+/// the convention for foil-scan-versus-calculation validation.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProfileComparison {
+    pub measurement_id: String,
+    pub metric: String,
+    /// Bin centers in the measurement's edge unit (e.g. cm). Only bins
+    /// whose center lies inside the computed profile's depth range are
+    /// carried — out-of-range bins are not comparable and are dropped.
+    pub bin_centers: Vec<f64>,
+    /// Measured bin contents, peak-normalized (max = 1).
+    pub measured_normalized: Vec<f64>,
+    /// Computed profile interpolated at the bin centers, peak-normalized.
+    pub computed_normalized: Vec<f64>,
+    /// Per-bin |computed − measured| / measured; inf where measured = 0.
+    pub relative_differences: Vec<f64>,
+    /// Per-bin |computed − measured| / σ on the normalized scale; `None`
+    /// when the record states no bin uncertainties.
+    pub difference_sigma: Option<Vec<f64>>,
+    /// Largest per-bin relative difference across carried bins.
+    pub max_relative_difference: f64,
+    /// Σ((measured − computed)/σ)² over bins with σ; `None` without σ.
+    pub chi_square: Option<f64>,
+    /// `Some(true)` when every σ-bearing bin satisfies the sigma
+    /// tolerance; `Some(false)` when any fails; `None` without σ.
+    pub passed: Option<bool>,
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ComparisonSummary {
@@ -178,6 +210,11 @@ pub struct ComparisonSummary {
     /// Degrees of freedom: the number of σ-bearing compared points (no
     /// parameters are fitted here).
     pub degrees_of_freedom: usize,
+    /// Histogram-valued measurements resolved to a computed depth
+    /// profile; details live in `profile_comparisons`. `0` in records
+    /// written before profile comparison existed.
+    #[serde(default)]
+    pub profiles_compared: usize,
 }
 
 /// A versioned comparison record binding a measurement record to the
@@ -196,6 +233,10 @@ pub struct MeasurementComparisonReport {
     /// The declared pass criterion: |difference_sigma| ≤ this value.
     pub sigma_tolerance: f64,
     pub comparisons: Vec<MeasurementComparison>,
+    /// Depth-profile comparisons for histogram-valued measurements.
+    /// Empty in records written before profile comparison existed.
+    #[serde(default)]
+    pub profile_comparisons: Vec<ProfileComparison>,
     pub summary: ComparisonSummary,
 }
 
@@ -329,10 +370,125 @@ pub fn beam_quality_metric(report: &BeamQualityReport, metric: &str) -> Option<f
     })
 }
 
+/// Resolve a depth-profile metric name to the computed (depth_cm,
+/// profile values) pair in a beam-quality report. The boron-capture
+/// dose profile serves as the thermal-fluence profile proxy: under
+/// uniform dilute boron loading it is proportional to the thermal
+/// neutron fluence.
+pub fn beam_quality_profile<'a>(
+    report: &'a BeamQualityReport,
+    metric: &str,
+) -> Option<(&'a [f64], &'a [f64])> {
+    let in_phantom = report.in_phantom.as_ref()?;
+    let values = match metric {
+        "thermal_fluence_depth_profile" | "boron_dose_depth_profile" => {
+            in_phantom.boron_dose_profile.as_slice()
+        }
+        "tumor_dose_depth_profile" => in_phantom.tumor_dose_profile.as_slice(),
+        "normal_tissue_dose_depth_profile" => {
+            in_phantom.normal_tissue_dose_profile.as_slice()
+        }
+        _ => return None,
+    };
+    if values.is_empty() {
+        return None;
+    }
+    Some((in_phantom.depth_cm.as_slice(), values))
+}
+
+/// Linear interpolation of `(xs, ys)` at `x`; `None` outside the range.
+fn interpolate(xs: &[f64], ys: &[f64], x: f64) -> Option<f64> {
+    if xs.len() != ys.len() || xs.is_empty() {
+        return None;
+    }
+    if x < xs[0] || x > *xs.last()? {
+        return None;
+    }
+    if x == xs[0] {
+        return Some(ys[0]);
+    }
+    let i = xs.partition_point(|&v| v < x);
+    let (x0, x1) = (xs[i - 1], xs[i]);
+    let (y0, y1) = (ys[i - 1], ys[i]);
+    if x1 == x0 {
+        return Some(y0);
+    }
+    Some(y0 + (y1 - y0) * (x - x0) / (x1 - x0))
+}
+
+/// Compare a histogram-valued depth-profile measurement against a
+/// computed profile. `None` when the metric resolves to no profile.
+/// Both sides are peak-normalized; bins outside the computed depth
+/// range are dropped.
+fn compare_profile(
+    measurement: &Measurement,
+    edges: &[f64],
+    values: &[f64],
+    uncertainties: Option<&[f64]>,
+    report: &BeamQualityReport,
+    sigma_tolerance: f64,
+) -> Option<ProfileComparison> {
+    let (depth_cm, computed) = beam_quality_profile(report, &measurement.metric)?;
+    let measured_peak = values.iter().copied().fold(0.0_f64, f64::max);
+    let computed_peak = computed.iter().copied().fold(0.0_f64, f64::max);
+    if measured_peak <= 0.0 || computed_peak <= 0.0 {
+        return None;
+    }
+    let mut bin_centers = Vec::new();
+    let mut measured_normalized = Vec::new();
+    let mut computed_normalized = Vec::new();
+    let mut relative_differences = Vec::new();
+    let mut difference_sigma = uncertainties.map(|_| Vec::new());
+    let mut chi_square = 0.0;
+    let mut any_sigma = false;
+    let mut all_pass = true;
+    for bin in 0..values.len() {
+        let center = (edges[bin] + edges[bin + 1]) / 2.0;
+        let Some(computed_at) = interpolate(depth_cm, computed, center) else {
+            continue;
+        };
+        let m = values[bin] / measured_peak;
+        let c = computed_at / computed_peak;
+        bin_centers.push(center);
+        measured_normalized.push(m);
+        computed_normalized.push(c);
+        relative_differences
+            .push(if m == 0.0 { f64::INFINITY } else { (c - m).abs() / m });
+        if let (Some(sigmas), Some(raw)) = (difference_sigma.as_mut(), uncertainties) {
+            let sigma = raw[bin] / measured_peak;
+            let d = (c - m).abs() / sigma.max(f64::MIN_POSITIVE);
+            sigmas.push(d);
+            chi_square += d * d;
+            any_sigma = true;
+            if d > sigma_tolerance {
+                all_pass = false;
+            }
+        }
+    }
+    if bin_centers.is_empty() {
+        return None;
+    }
+    Some(ProfileComparison {
+        measurement_id: measurement.id.clone(),
+        metric: measurement.metric.clone(),
+        bin_centers,
+        measured_normalized,
+        computed_normalized,
+        max_relative_difference: relative_differences
+            .iter()
+            .copied()
+            .fold(f64::NEG_INFINITY, f64::max),
+        relative_differences,
+        difference_sigma,
+        chi_square: any_sigma.then_some(chi_square),
+        passed: any_sigma.then_some(all_pass),
+    })
+}
+
 /// Compare each scalar measurement in `record` against the beam-quality
-/// report. Histogram-valued measurements are not yet comparable against
-/// beam-quality metrics and are skipped by the caller, which surfaces
-/// them as unmatched via `compare_measurement_record`.
+/// report. Histogram-valued measurements that resolve to a computed
+/// depth profile are compared in `profile_comparisons`; those that do
+/// not resolve stay here and surface as unmatched.
 pub fn compare_with_beam_quality(
     record: &MeasurementRecord,
     report: &BeamQualityReport,
@@ -341,7 +497,14 @@ pub fn compare_with_beam_quality(
     record
         .measurements
         .iter()
-        .map(|measurement| {
+        .filter_map(|measurement| {
+            if let MeasurementValue::Histogram { .. } = &measurement.value {
+                if beam_quality_profile(report, &measurement.metric).is_some() {
+                    // Resolvable depth profile — compared via
+                    // `compare_profile`, not here.
+                    return None;
+                }
+            }
             let (measured, sigma) = match &measurement.value {
                 MeasurementValue::Scalar {
                     value,
@@ -366,7 +529,7 @@ pub fn compare_with_beam_quality(
             let difference_sigma = computed
                 .zip(sigma)
                 .map(|(c, s)| (c - measured).abs() / s.max(f64::MIN_POSITIVE));
-            MeasurementComparison {
+            Some(MeasurementComparison {
                 measurement_id: measurement.id.clone(),
                 metric: measurement.metric.clone(),
                 measured,
@@ -375,7 +538,7 @@ pub fn compare_with_beam_quality(
                 relative_difference,
                 difference_sigma,
                 passed: difference_sigma.map(|d| d <= sigma_tolerance),
-            }
+            })
         })
         .collect()
 }
@@ -394,6 +557,25 @@ pub fn compare_measurement_record(
         return Err(MeasurementError::InvalidSigmaTolerance);
     }
     let comparisons = compare_with_beam_quality(record, report, sigma_tolerance);
+    let profile_comparisons: Vec<ProfileComparison> = record
+        .measurements
+        .iter()
+        .filter_map(|measurement| match &measurement.value {
+            MeasurementValue::Histogram {
+                bin_edges,
+                bin_values,
+                bin_uncertainties_1sigma,
+            } => compare_profile(
+                measurement,
+                bin_edges,
+                bin_values,
+                bin_uncertainties_1sigma.as_deref(),
+                report,
+                sigma_tolerance,
+            ),
+            MeasurementValue::Scalar { .. } => None,
+        })
+        .collect();
     let mut summary = ComparisonSummary {
         compared: 0,
         unmatched: 0,
@@ -402,6 +584,7 @@ pub fn compare_measurement_record(
         without_uncertainty: 0,
         chi_square: None,
         degrees_of_freedom: 0,
+        profiles_compared: profile_comparisons.len(),
     };
     let mut chi_square = 0.0;
     for comparison in &comparisons {
@@ -434,6 +617,7 @@ pub fn compare_measurement_record(
         computed: computed_reference,
         sigma_tolerance,
         comparisons,
+        profile_comparisons,
         summary,
     })
 }
@@ -491,7 +675,7 @@ mod tests {
     use crate::beam::{
         BeamDescription, BeamProvenance, NormalizationBasis, PortGeometry, PortShape,
     };
-    use crate::beam_quality::evaluate_beam_quality;
+    use crate::beam_quality::{evaluate_beam_quality, ComponentWeights, InPhantomMetrics};
     use crate::model::{
         AngularDistribution, EnergyDistribution, FixedSourceDefinition, PlaneAxis,
         SourceSpatialDistribution,
@@ -597,6 +781,31 @@ mod tests {
         evaluate_beam_quality("rep", &beam(), content("beam"), None, None).unwrap()
     }
 
+    /// Report with a synthetic in-phantom block: boron-capture profile
+    /// peaking at 2 cm depth, standing in for the thermal fluence shape.
+    fn phantom_report() -> BeamQualityReport {
+        let mut report = report();
+        let weights = ComponentWeights {
+            boron: 3.8,
+            nitrogen: 1.0,
+            hydrogen: 1.0,
+            photon: 1.0,
+        };
+        report.in_phantom = Some(InPhantomMetrics {
+            tumor_dose_profile: vec![1.0, 2.0, 4.0, 2.4, 1.2, 0.4],
+            normal_tissue_dose_profile: vec![2.0, 1.9, 1.6, 1.2, 0.8, 0.5],
+            depth_cm: vec![0.0, 1.0, 2.0, 3.0, 4.0, 5.0],
+            advantage_depth_cm: 3.0,
+            advantage_ratio: 1.5,
+            peak_therapeutic_ratio: 2.5,
+            boron_dose_profile: vec![0.1, 0.5, 1.0, 0.6, 0.3, 0.1],
+            tumor_weights: weights.clone(),
+            normal_weights: weights,
+            dose: content("dose"),
+        });
+        report
+    }
+
     #[test]
     fn comparison_reports_sigma_and_relative_differences() {
         // Epithermal computed = 0.9093 * 1.1769e9.
@@ -684,6 +893,96 @@ mod tests {
             bin_uncertainties_1sigma: None,
         };
         assert!(rec.validate().is_err());
+    }
+
+    #[test]
+    fn depth_profile_histogram_compares_against_boron_profile() {
+        // Measured activation profile digitized on 1 cm edges over
+        // 0.5..3.5 cm — centers at 1, 2, 3 cm. Values chosen to match
+        // the synthetic boron profile's normalized shape exactly.
+        let rec = record(vec![Measurement {
+            id: "mn-profile".into(),
+            metric: "thermal_fluence_depth_profile".into(),
+            method: MeasurementMethod::ActivationFoil {
+                material: Some("Mn-55".into()),
+            },
+            value: MeasurementValue::Histogram {
+                bin_edges: vec![0.5, 1.5, 2.5, 3.5],
+                bin_values: vec![0.5, 1.0, 0.6],
+                bin_uncertainties_1sigma: Some(vec![0.05, 0.1, 0.06]),
+            },
+            unit: "cm".into(),
+            position: Some(MeasurementPosition {
+                frame: "phantom_axis".into(),
+                point_cm: [0.0, 0.0, 0.0],
+                depth_cm: None,
+            }),
+            note: None,
+        }]);
+        let report = compare_measurement_record(
+            "cmp",
+            &rec,
+            content("m"),
+            &phantom_report(),
+            content("r"),
+            2.0,
+        )
+        .unwrap();
+        // Routed to profile_comparisons, not counted among scalars.
+        assert!(report.comparisons.is_empty());
+        assert_eq!(report.summary.profiles_compared, 1);
+        assert_eq!(report.summary.unmatched, 0);
+        let profile = &report.profile_comparisons[0];
+        assert_eq!(profile.bin_centers, vec![1.0, 2.0, 3.0]);
+        assert_eq!(profile.measured_normalized, vec![0.5, 1.0, 0.6]);
+        assert_eq!(profile.computed_normalized, vec![0.5, 1.0, 0.6]);
+        assert!(profile
+            .relative_differences
+            .iter()
+            .all(|d| d.abs() < 1e-12));
+        assert_eq!(profile.max_relative_difference, 0.0);
+        assert_eq!(profile.chi_square, Some(0.0));
+        assert_eq!(profile.passed, Some(true));
+    }
+
+    #[test]
+    fn depth_profile_reports_real_differences() {
+        // Same bins but measured values shifted low at depth → nonzero
+        // chi-square and a real max relative difference.
+        let rec = record(vec![Measurement {
+            id: "mn-profile".into(),
+            metric: "thermal_fluence_depth_profile".into(),
+            method: MeasurementMethod::ActivationFoil {
+                material: Some("Mn-55".into()),
+            },
+            value: MeasurementValue::Histogram {
+                bin_edges: vec![0.5, 1.5, 2.5, 3.5],
+                bin_values: vec![0.25, 1.0, 0.3],
+                bin_uncertainties_1sigma: Some(vec![0.025, 0.1, 0.03]),
+            },
+            unit: "cm".into(),
+            position: None,
+            note: None,
+        }]);
+        let report = compare_measurement_record(
+            "cmp",
+            &rec,
+            content("m"),
+            &phantom_report(),
+            content("r"),
+            2.0,
+        )
+        .unwrap();
+        let profile = &report.profile_comparisons[0];
+        // Peak-normalized measured: [0.25, 1.0, 0.3] vs computed
+        // [0.5, 1.0, 0.6] → per-bin rel diff [1.0, 0.0, 1.0].
+        assert!((profile.max_relative_difference - 1.0).abs() < 1e-12);
+        // σ = [0.025, 0.1, 0.03] (measured peak is 1.0); diffs
+        // [0.25, 0, 0.3] → sigma diffs [10, 0, 10] → chi-square 200,
+        // fails at 2σ.
+        let chi = profile.chi_square.unwrap();
+        assert!((chi - 200.0).abs() < 1e-9);
+        assert_eq!(profile.passed, Some(false));
     }
 
     #[test]

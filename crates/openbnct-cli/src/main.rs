@@ -2718,13 +2718,34 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     };
                     println!("  {status} {}: {detail}", entry.measurement_id);
                 }
+                for profile in &comparison.profile_comparisons {
+                    let status = match profile.passed {
+                        Some(true) => "PASS",
+                        Some(false) => "FAIL",
+                        None => "----",
+                    };
+                    let detail = match &profile.chi_square {
+                        Some(chi) => format!(
+                            "profile: {} bins, max rel diff {:.3}, chi-square {chi:.3}",
+                            profile.bin_centers.len(),
+                            profile.max_relative_difference
+                        ),
+                        None => format!(
+                            "profile: {} bins, max rel diff {:.3} (no σ)",
+                            profile.bin_centers.len(),
+                            profile.max_relative_difference
+                        ),
+                    };
+                    println!("  {status} {}: {detail}", profile.measurement_id);
+                }
                 println!(
-                    "  {} compared / {} passed / {} failed / {} unmatched / {} without σ",
+                    "  {} compared / {} passed / {} failed / {} unmatched / {} without σ / {} profiles",
                     comparison.summary.compared,
                     comparison.summary.passed,
                     comparison.summary.failed,
                     comparison.summary.unmatched,
-                    comparison.summary.without_uncertainty
+                    comparison.summary.without_uncertainty,
+                    comparison.summary.profiles_compared
                 );
                 if let Some(chi_square) = comparison.summary.chi_square {
                     println!(
