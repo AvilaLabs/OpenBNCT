@@ -16,8 +16,8 @@ categories.workspace = true
 dicom-core.workspace = true
 dicom-dictionary-std.workspace = true
 dicom-object.workspace = true
-openbnct-core = { path = "../openbnct-core", version = "0.1.0" }
-openbnct-evidence = { path = "../openbnct-evidence", version = "0.1.0" }
+openbnct-core = { path = "../openbnct-core", version = "0.1.1" }
+openbnct-evidence = { path = "../openbnct-evidence", version = "0.1.1" }
 serde_json.workspace = true
 thiserror.workspace = true
 uuid.workspace = true

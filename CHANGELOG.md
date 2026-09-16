@@ -4,6 +4,27 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
+## [0.1.1] — 2026-09-16
+
+### Added
+
+- `openbnct` umbrella crate re-exporting the public library crates under
+  namespaced modules (`contracts`, `transport`, `openmc`, `bio`, …) —
+  the natural `cargo add openbnct` entry point.
+- `openbnct import nifti` and Python `import_nifti`: per-component NIfTI
+  dose volumes (the layout OpenPINT writes) lift into validated
+  component-dose interchange bundles, with caller-declared producer
+  provenance and optional paired sigma volumes.
+- NIfTI adapter conformance case under `conformance/adapters/0.1.0/nifti/`
+  (four dose + four sigma fixtures, byte-pinned expected interchange and
+  bundle documents, `OPENBNCT_UPDATE_CONFORMANCE` regeneration).
+
+### Fixed
+
+- `.gitignore` generated-artifact rules (`*.nii`, `*.nii.gz`, `*.h5`,
+  `*.dcm`) no longer swallow conformance fixtures, which are deliberate
+  byte-fixed references.
+
 ## [0.1.0] — 2026-09-16
 
 First public release (formerly NCTForge; the `nctforge.*` schema family

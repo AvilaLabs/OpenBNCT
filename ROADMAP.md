@@ -816,8 +816,8 @@ review:
   publishing (`.github/workflows/publish-pypi.yml`, five platform wheels
   + sdist verified by release-set check and smoke test); `v0.1.0` tag
   and GitHub release created. crates.io tag workflow
-  `publish-crates.yml` is wired for future releases pending per-crate
-  trusted-publisher entries.)*
+  `publish-crates.yml` is armed for future releases — per-crate
+  trusted-publisher entries configured for all 16 crates.)*
 - **R7-02 — measured-data validation.** Import published BNCT beam
   measurements through `openbnct.measurement-record` /
   `openbnct.measurement-comparison`, extend the candidate-data comparison

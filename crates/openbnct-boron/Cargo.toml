@@ -1,13 +1,13 @@
 [package]
 name = "openbnct-boron"
-version = "0.1.0"
+version = "0.1.1"
 edition = "2024"
 license = "Apache-2.0"
 description = "PET-derived boron uptake models and field artifacts for OpenBNCT"
 
 [dependencies]
-openbnct-core = { path = "../openbnct-core", version = "0.1.0" }
-openbnct-transport = { path = "../openbnct-transport", version = "0.1.0" }
+openbnct-core = { path = "../openbnct-core", version = "0.1.1" }
+openbnct-transport = { path = "../openbnct-transport", version = "0.1.1" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
