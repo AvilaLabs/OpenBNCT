@@ -101,7 +101,17 @@ jobs:
         if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: gh release upload ${{ github.ref_name }} dist.* --clobber
+        # Restore the staged archive name before upload — attestation binds
+        # the digest, not the filename, so renaming after attest is safe.
+        run: |
+          for f in dist.*; do
+            case "$f" in
+              *.zip) mv "$f" "openbnct-${{ github.ref_name }}-${{ matrix.name }}.zip" ;;
+              *)     mv "$f" "openbnct-${{ github.ref_name }}-${{ matrix.name }}.tar.gz" ;;
+            esac
+          done
+          gh release upload "${{ github.ref_name }}" \
+            "openbnct-${{ github.ref_name }}-${{ matrix.name }}".* --clobber
         shell: bash
 
       - name: Upload artifact (manual run)
