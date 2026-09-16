@@ -25,3 +25,11 @@ __pycache__/
 *.h5
 statepoint.*.h5
 summary.h5
+
+# Conformance fixtures are deliberately byte-fixed references, not generated
+# outputs — they must remain tracked even when their extensions match the
+# generated-artifact rules above.
+!conformance/**/*.dcm
+!conformance/**/*.nii
+!conformance/**/*.nii.gz
+!conformance/**/*.h5
