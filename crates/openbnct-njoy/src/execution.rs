@@ -752,6 +752,10 @@ fn execute_run(
         path: run_root.clone(),
         source,
     })?;
+    let run_tmp = fs::canonicalize(&run_root).map_err(|source| NjoyExecutionError::Io {
+        path: run_root.clone(),
+        source,
+    })?;
 
     let generated_deck = bundle
         .files
@@ -795,7 +799,8 @@ fn execute_run(
         .env_clear()
         .env("LC_ALL", "C")
         .env("LANG", "C")
-        .env("TZ", "UTC");
+        .env("TZ", "UTC")
+        .env("TMPDIR", &run_tmp);
     let mut child = command.spawn().map_err(|source| NjoyExecutionError::Io {
         path: executable.to_path_buf(),
         source,

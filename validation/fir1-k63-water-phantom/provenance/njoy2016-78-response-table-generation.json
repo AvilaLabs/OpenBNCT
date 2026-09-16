@@ -1,0 +1,378 @@
+{
+  "schema_version": "openbnct.njoy-response-table-generation/0.1.0",
+  "id": "openbnct.fir1-k63-water-phantom.response-table-generation.v1",
+  "qualification": "tables_generated_unreviewed",
+  "material": {
+    "id": "openbnct.fir1-k63-water-phantom.material.v1",
+    "sha256": "ce913966f14ea4066b78bc8e6f1fc80650c234a620914a5d17481034bc5e0f93"
+  },
+  "component_profile": {
+    "id": "nctforge.macroscopic-absorbed-dose.v1",
+    "sha256": "a35b26c0134ae02d3b1b0ede5b8c6f38e86966e86c65e1727b4c7f38677ab41a"
+  },
+  "generation_method": {
+    "id": "openbnct.fir1-k63-water-phantom.response-generation.v1",
+    "sha256": "62bfac0c0790bd68cc29efea1df0474b353e75dd4b909e4992a87290db4aaa24"
+  },
+  "evaluated_source_selection": {
+    "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1",
+    "sha256": "20b1a4ce4a68409363992a439921086b8ec41fff1c08d53b0ec3a4ef88a0f131"
+  },
+  "nuclear_data_manifest": {
+    "id": "openbnct.fir1-k63-water-phantom.openmc-endfb81-official-library.b7ad59cb4a3d.v1",
+    "sha256": "e918f566a09b1c4f848842eb9097a2de5bf4faab0017893b954aa45ce12a7fbd"
+  },
+  "neutron_transport_domain": {
+    "id": "openbnct.fir1-k63-water-phantom.openmc-endfb81-official-library.b7ad59cb4a3d.v1.openbnct.fir1-k63-water-phantom.material.v1.neutron-transport-domain",
+    "sha256": "b546b5460c10a15d99d53a5bcdaa9f814f72520ac73cf0c6c69dbe352db6e873"
+  },
+  "domain_aware_suitability": {
+    "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1.njoy2016-78-inputs.execution.1789518487.54964d0c188f.transported-photon-kerma-suitability.source-aware-v2.domain-aware-v3",
+    "sha256": "adfb9d3bf5d9a751d7d29f0bbfd26fd12f56f983413776939b7feecab4fe0933"
+  },
+  "execution_receipt": {
+    "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1.njoy2016-78-inputs.execution.1789518487.54964d0c188f",
+    "sha256": "d8fe07d7d5cf20ccdc8b8fa1cff69cec7c28aa0d328a86d368b524fdc45db33d"
+  },
+  "response_set": {
+    "id": "openbnct.fir1-k63-water-phantom.neutron-response-set.v1",
+    "sha256": "7e5c92cf07298503174939f845326612901729945d298d61266ec7764dd43962"
+  },
+  "atom_density_basis": "open_mc_hdf5_atomic_weight_ratios",
+  "avogadro_constant_per_mol": 6.02214076e+23,
+  "neutron_mass_u": 1.00866491595,
+  "joule_per_ev": 1.602176634e-19,
+  "cm2_per_barn": 1e-24,
+  "transport_energy_range_ev": [
+    9.999999999999999e-6,
+    20000000.0
+  ],
+  "union_grid_knot_count": 6372,
+  "boundary_held_knot_count": 1109,
+  "nuclides": [
+    {
+      "nuclide": "H1",
+      "endf_mat": 125,
+      "mass_fraction": 0.1117591740049086,
+      "atomic_weight_ratio": 0.999167,
+      "atoms_per_kg": 6.678041115328947e+25,
+      "production_pendf_path": "H1/tape23",
+      "production_pendf_sha256": "4807be679a546221b787456afc7adeec2a976cf26f86ce6b6c607cce990d2d90",
+      "tables": [
+        {
+          "response_mt": 301,
+          "role": "total_kerma",
+          "point_count": 631,
+          "energy_bounds_ev": [
+            0.00001,
+            20000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 221
+        },
+        {
+          "response_mt": 443,
+          "role": "kinematic_total",
+          "point_count": 631,
+          "energy_bounds_ev": [
+            0.00001,
+            20000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 0
+        }
+      ]
+    },
+    {
+      "nuclide": "H2",
+      "endf_mat": 128,
+      "mass_fraction": 0.00014070290522680425,
+      "atomic_weight_ratio": 1.9968,
+      "atoms_per_kg": 4.206999728876076e+22,
+      "production_pendf_path": "H2/tape23",
+      "production_pendf_sha256": "98c4799e58e7d47f4121bcfc3f801ce02e524e63118a3f93eca6ee142e5e42df",
+      "tables": [
+        {
+          "response_mt": 301,
+          "role": "total_kerma",
+          "point_count": 542,
+          "energy_bounds_ev": [
+            0.00001,
+            150000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 1
+        },
+        {
+          "response_mt": 443,
+          "role": "kinematic_total",
+          "point_count": 542,
+          "energy_bounds_ev": [
+            0.00001,
+            150000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 0
+        }
+      ]
+    },
+    {
+      "nuclide": "O16",
+      "endf_mat": 825,
+      "mass_fraction": 0.8859389886471125,
+      "atomic_weight_ratio": 15.85751,
+      "atoms_per_kg": 3.3355911118360184e+25,
+      "production_pendf_path": "O16/tape23",
+      "production_pendf_sha256": "2bc87c0bb81cd24e6d903687eaec35073de7f34ed2c3fccebbdea04c3474ded5",
+      "tables": [
+        {
+          "response_mt": 301,
+          "role": "total_kerma",
+          "point_count": 3081,
+          "energy_bounds_ev": [
+            0.00001,
+            150000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 1
+        },
+        {
+          "response_mt": 443,
+          "role": "kinematic_total",
+          "point_count": 3081,
+          "energy_bounds_ev": [
+            0.00001,
+            150000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 0
+        }
+      ]
+    },
+    {
+      "nuclide": "O17",
+      "endf_mat": 828,
+      "mass_fraction": 0.00033872096740693585,
+      "atomic_weight_ratio": 16.8531,
+      "atoms_per_kg": 1.1999586218184003e+22,
+      "production_pendf_path": "O17/tape23",
+      "production_pendf_sha256": "175ff4df540c2c65fede2ca7c856250f4503737543f0806e9d0893e38efbba96",
+      "tables": [
+        {
+          "response_mt": 301,
+          "role": "total_kerma",
+          "point_count": 745,
+          "energy_bounds_ev": [
+            0.00001,
+            20000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 221
+        },
+        {
+          "response_mt": 443,
+          "role": "kinematic_total",
+          "point_count": 745,
+          "energy_bounds_ev": [
+            0.00001,
+            20000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 0
+        }
+      ]
+    },
+    {
+      "nuclide": "O18",
+      "endf_mat": 831,
+      "mass_fraction": 0.0018213134765551761,
+      "atomic_weight_ratio": 17.8445,
+      "atoms_per_kg": 6.093745393138715e+22,
+      "production_pendf_path": "O18/tape23",
+      "production_pendf_sha256": "2416ab06d4c59f69c0249eb47f5e9e0b75942e9c2c377e75ee5474968ab2b118",
+      "tables": [
+        {
+          "response_mt": 301,
+          "role": "total_kerma",
+          "point_count": 1793,
+          "energy_bounds_ev": [
+            0.00001,
+            20000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 221
+        },
+        {
+          "response_mt": 443,
+          "role": "kinematic_total",
+          "point_count": 1793,
+          "energy_bounds_ev": [
+            0.00001,
+            20000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 0
+        }
+      ]
+    },
+    {
+      "nuclide": "B10",
+      "endf_mat": 525,
+      "mass_fraction": 9.9999890000121e-8,
+      "atomic_weight_ratio": 9.926921,
+      "atoms_per_kg": 6.014353405079632e+18,
+      "production_pendf_path": "B10/tape23",
+      "production_pendf_sha256": "36bb86d2150b5fc5bb871444dc5e0492d1f88af5c7bd2192048747bbab9d318a",
+      "tables": [
+        {
+          "response_mt": 301,
+          "role": "total_kerma",
+          "point_count": 948,
+          "energy_bounds_ev": [
+            0.00001,
+            20000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 221
+        },
+        {
+          "response_mt": 443,
+          "role": "kinematic_total",
+          "point_count": 948,
+          "energy_bounds_ev": [
+            0.00001,
+            20000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 0
+        },
+        {
+          "response_mt": 407,
+          "role": "partial_kerma",
+          "point_count": 948,
+          "energy_bounds_ev": [
+            0.00001,
+            20000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 221
+        }
+      ]
+    },
+    {
+      "nuclide": "N14",
+      "endf_mat": 725,
+      "mass_fraction": 9.9999890000121e-7,
+      "atomic_weight_ratio": 13.88278,
+      "atoms_per_kg": 4.300580367787036e+19,
+      "production_pendf_path": "N14/tape23",
+      "production_pendf_sha256": "006e1b00cab025586c2da4646f51ca0d858bea54c3bee855b2cd3a2323948616",
+      "tables": [
+        {
+          "response_mt": 301,
+          "role": "total_kerma",
+          "point_count": 1826,
+          "energy_bounds_ev": [
+            0.00001,
+            150000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 1
+        },
+        {
+          "response_mt": 443,
+          "role": "kinematic_total",
+          "point_count": 1826,
+          "energy_bounds_ev": [
+            0.00001,
+            150000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 0
+        },
+        {
+          "response_mt": 403,
+          "role": "partial_kerma",
+          "point_count": 1826,
+          "energy_bounds_ev": [
+            0.00001,
+            150000000.0
+          ],
+          "interpolation_laws": [
+            2
+          ],
+          "boundary_held_knots": 1
+        }
+      ]
+    }
+  ],
+  "partial_channels": [
+    {
+      "component": "boron",
+      "nuclide": "B10",
+      "reaction_mt": 107,
+      "heatr_partial_kerma_mt": 407
+    },
+    {
+      "component": "nitrogen",
+      "nuclide": "N14",
+      "reaction_mt": 103,
+      "heatr_partial_kerma_mt": 403
+    }
+  ],
+  "residual": {
+    "component": "hydrogen",
+    "subtracted_components": [
+      "boron",
+      "nitrogen"
+    ],
+    "minimum_residual_gy_cm2": 8.413636176587115e-16,
+    "maximum_residual_fraction_of_total": 0.9999999952425492
+  },
+  "carried_findings": {
+    "in_domain_kinematic_violation_count": 62,
+    "rejecting_processor_finding_count": 3,
+    "informational_processor_finding_count": 0,
+    "source_format_finding_count": 0,
+    "nuclides_with_findings": [
+      "O16",
+      "O17",
+      "O18"
+    ]
+  },
+  "finding_disposition": "carried_in_provenance_findings_retained",
+  "caveats": [
+    "response curves carry every transported-photon suitability finding bound in domain_aware_suitability; none are waived",
+    "nuclides without transported photon-production data deposit photon energy locally in the total-KERMA table; this is a documented data-coverage property of the evaluation, not a processor artifact"
+  ]
+}

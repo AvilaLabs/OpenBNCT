@@ -6,7 +6,7 @@
  "evaluated_data_release": "ENDF/B-VIII.1",
  "material": {
   "id": "openbnct.fir1-k63-water-phantom.material.v1",
-  "sha256": "sha256:ce913966f14ea4066b78bc8e6f1fc80650c234a620914a5d17481034bc5e0f93"
+  "sha256": "ce913966f14ea4066b78bc8e6f1fc80650c234a620914a5d17481034bc5e0f93"
  },
  "acquisition": {
   "profile_id": "endfb81-neutron-evaluations-nndc-observed-2026-08-31",
@@ -24,22 +24,6 @@
    "extracted_filename": "n-005_B_010.endf",
    "size_bytes": 869364,
    "sha256": "18a245e506f6b7d84f50d08f7b54f7ea0122aac5ad4dd7957f12b319fbb479ff"
-  },
-  {
-   "nuclide": "C12",
-   "endf_mat": 625,
-   "archive_path": "neutrons-version.VIII.1/n-006_C_012.endf",
-   "extracted_filename": "n-006_C_012.endf",
-   "size_bytes": 3805168,
-   "sha256": "249b431cec84be40b957f8499862ceb4380e7d6054492b6500f4d3d255a907fb"
-  },
-  {
-   "nuclide": "C13",
-   "endf_mat": 628,
-   "archive_path": "neutrons-version.VIII.1/n-006_C_013.endf",
-   "extracted_filename": "n-006_C_013.endf",
-   "size_bytes": 3476848,
-   "sha256": "bacd7d45da01f3be41ce1272718918f26a0d99fae7cdb3fd9ed398e413603244"
   },
   {
    "nuclide": "H1",
@@ -64,14 +48,6 @@
    "extracted_filename": "n-007_N_014.endf",
    "size_bytes": 1253924,
    "sha256": "fd5c0c0beccefbcd0b57c49bcdf835449d2014e3740830377ce24760478c06d8"
-  },
-  {
-   "nuclide": "N15",
-   "endf_mat": 728,
-   "archive_path": "neutrons-version.VIII.1/n-007_N_015.endf",
-   "extracted_filename": "n-007_N_015.endf",
-   "size_bytes": 243428,
-   "sha256": "e3cba9a1d7b462d73fd328b7a290bb8f4e166ab68c7d982a10f90259fdb7fe26"
   },
   {
    "nuclide": "O16",

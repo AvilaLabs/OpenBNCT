@@ -1,0 +1,212 @@
+{
+  "schema_version": "openbnct.njoy-transported-photon-suitability/0.3.0",
+  "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1.njoy2016-78-inputs.execution.1789518487.54964d0c188f.transported-photon-kerma-suitability.source-aware-v2.domain-aware-v3",
+  "case_id": "fir1-k63-water-phantom",
+  "requirement": "transported_photon_kerma_with_coupled_photon_transport",
+  "qualification": "transported_photon_kerma_rejected",
+  "source_aware_suitability_report": {
+    "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1.njoy2016-78-inputs.execution.1789518487.54964d0c188f.transported-photon-kerma-suitability.source-aware-v2",
+    "sha256": "c91acf2099891c20ed428239231c290d9349ad4c6b44ccd2475419240fcdd394"
+  },
+  "legacy_suitability_report": {
+    "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1.njoy2016-78-inputs.execution.1789518487.54964d0c188f.transported-photon-kerma-suitability",
+    "sha256": "071669b2d68f52670600920ba88351f5c0771ee7943e9410dd2682bdbbe8e978"
+  },
+  "execution_receipt": {
+    "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1.njoy2016-78-inputs.execution.1789518487.54964d0c188f",
+    "sha256": "d8fe07d7d5cf20ccdc8b8fa1cff69cec7c28aa0d328a86d368b524fdc45db33d"
+  },
+  "input_manifest": {
+    "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1.njoy2016-78-inputs",
+    "sha256": "5107a695f67aeec23e2c1b23144a5782446f59d4ac6965fffa6beb4fde2118cd"
+  },
+  "neutron_transport_domain": {
+    "id": "openbnct.fir1-k63-water-phantom.openmc-endfb81-official-library.b7ad59cb4a3d.v1.openbnct.fir1-k63-water-phantom.material.v1.neutron-transport-domain",
+    "sha256": "b546b5460c10a15d99d53a5bcdaa9f814f72520ac73cf0c6c69dbe352db6e873"
+  },
+  "assessment_energy_range_ev": [
+    9.999999999999999e-6,
+    20000000.0
+  ],
+  "diagnostic_boundary_policy": "closed_conservative",
+  "runs": [
+    {
+      "nuclide": "B10",
+      "processor_report": {
+        "path": "B10/output",
+        "media_type": "text/plain",
+        "size_bytes": 182147,
+        "sha256": "a186448878b361ea9e5d388e4784b2e1159944b7ed4fa5e153108c2d3077ff8b"
+      },
+      "full_evaluation_diagnostic_status": "within_kinematic_limits",
+      "full_evaluation_diagnostic_violation_count": 0,
+      "in_domain_diagnostic_status": "within_kinematic_limits",
+      "in_domain_diagnostic_violation_count": 0,
+      "out_of_domain_diagnostic_violations": [],
+      "heatr_photon_source": "mixed_file6_and_file12_or13",
+      "file13_without_file12_reaction_count": 2,
+      "source_format_findings": [],
+      "processor_findings": [],
+      "source_aware_suitability": "candidate_unreviewed",
+      "suitability": "candidate_unreviewed"
+    },
+    {
+      "nuclide": "H1",
+      "processor_report": {
+        "path": "H1/output",
+        "media_type": "text/plain",
+        "size_bytes": 24319,
+        "sha256": "05368fe168e5a5efe4d62dd1fd8277fc29eb7350dd4d00cfc30eb8499fc54b4e"
+      },
+      "full_evaluation_diagnostic_status": "within_kinematic_limits",
+      "full_evaluation_diagnostic_violation_count": 0,
+      "in_domain_diagnostic_status": "within_kinematic_limits",
+      "in_domain_diagnostic_violation_count": 0,
+      "out_of_domain_diagnostic_violations": [],
+      "heatr_photon_source": "file6_only",
+      "file13_without_file12_reaction_count": 0,
+      "source_format_findings": [],
+      "processor_findings": [],
+      "source_aware_suitability": "candidate_unreviewed",
+      "suitability": "candidate_unreviewed"
+    },
+    {
+      "nuclide": "H2",
+      "processor_report": {
+        "path": "H2/output",
+        "media_type": "text/plain",
+        "size_bytes": 46434,
+        "sha256": "9d9e38d864e95baa5fc746bbb4a01f8993fe6047042ed66d65c35c870172bb69"
+      },
+      "full_evaluation_diagnostic_status": "within_kinematic_limits",
+      "full_evaluation_diagnostic_violation_count": 0,
+      "in_domain_diagnostic_status": "within_kinematic_limits",
+      "in_domain_diagnostic_violation_count": 0,
+      "out_of_domain_diagnostic_violations": [],
+      "heatr_photon_source": "file12_or13_only",
+      "file13_without_file12_reaction_count": 0,
+      "source_format_findings": [],
+      "processor_findings": [],
+      "source_aware_suitability": "candidate_unreviewed",
+      "suitability": "candidate_unreviewed"
+    },
+    {
+      "nuclide": "N14",
+      "processor_report": {
+        "path": "N14/output",
+        "media_type": "text/plain",
+        "size_bytes": 331763,
+        "sha256": "46d84ac5003a0d4149ef88cec6134a0d5aa20c2d5cfd453d52b4d255788c370c"
+      },
+      "full_evaluation_diagnostic_status": "within_kinematic_limits",
+      "full_evaluation_diagnostic_violation_count": 0,
+      "in_domain_diagnostic_status": "within_kinematic_limits",
+      "in_domain_diagnostic_violation_count": 0,
+      "out_of_domain_diagnostic_violations": [],
+      "heatr_photon_source": "mixed_file6_and_file12_or13",
+      "file13_without_file12_reaction_count": 7,
+      "source_format_findings": [],
+      "processor_findings": [],
+      "source_aware_suitability": "candidate_unreviewed",
+      "suitability": "candidate_unreviewed"
+    },
+    {
+      "nuclide": "O16",
+      "processor_report": {
+        "path": "O16/output",
+        "media_type": "text/plain",
+        "size_bytes": 248349,
+        "sha256": "0d1aab811d458020e66841a1e8dff96e09ff4357d1b6be280c2e6ceddc267d99"
+      },
+      "full_evaluation_diagnostic_status": "kinematic_limits_exceeded",
+      "full_evaluation_diagnostic_violation_count": 15,
+      "in_domain_diagnostic_status": "kinematic_limits_exceeded",
+      "in_domain_diagnostic_violation_count": 15,
+      "out_of_domain_diagnostic_violations": [],
+      "heatr_photon_source": "mixed_file6_and_file12_or13",
+      "file13_without_file12_reaction_count": 7,
+      "source_format_findings": [],
+      "processor_findings": [
+        {
+          "finding": {
+            "kind": "incomplete_discrete_photon_data",
+            "file_number": 12,
+            "reaction_mt": 51,
+            "occurrence_count": 2
+          },
+          "disposition": "rejecting"
+        }
+      ],
+      "source_aware_suitability": "rejected",
+      "suitability": "rejected"
+    },
+    {
+      "nuclide": "O17",
+      "processor_report": {
+        "path": "O17/output",
+        "media_type": "text/plain",
+        "size_bytes": 47122,
+        "sha256": "be8270595e948f5ad4798df1756cb2a4d7cd29515964e6eb69151d7f096beb39"
+      },
+      "full_evaluation_diagnostic_status": "kinematic_limits_exceeded",
+      "full_evaluation_diagnostic_violation_count": 20,
+      "in_domain_diagnostic_status": "kinematic_limits_exceeded",
+      "in_domain_diagnostic_violation_count": 20,
+      "out_of_domain_diagnostic_violations": [],
+      "heatr_photon_source": "local_deposition_fallback",
+      "file13_without_file12_reaction_count": 0,
+      "source_format_findings": [],
+      "processor_findings": [
+        {
+          "finding": {
+            "kind": "no_photon_production_local_fallback",
+            "file_number": null,
+            "reaction_mt": null,
+            "occurrence_count": 2
+          },
+          "disposition": "rejecting"
+        }
+      ],
+      "source_aware_suitability": "rejected",
+      "suitability": "rejected"
+    },
+    {
+      "nuclide": "O18",
+      "processor_report": {
+        "path": "O18/output",
+        "media_type": "text/plain",
+        "size_bytes": 29294,
+        "sha256": "b988346a578076546b49ee84a8d4d5137c73f318a4cb2cc32c8cafe8f4678866"
+      },
+      "full_evaluation_diagnostic_status": "kinematic_limits_exceeded",
+      "full_evaluation_diagnostic_violation_count": 27,
+      "in_domain_diagnostic_status": "kinematic_limits_exceeded",
+      "in_domain_diagnostic_violation_count": 27,
+      "out_of_domain_diagnostic_violations": [],
+      "heatr_photon_source": "local_deposition_fallback",
+      "file13_without_file12_reaction_count": 0,
+      "source_format_findings": [],
+      "processor_findings": [
+        {
+          "finding": {
+            "kind": "no_photon_production_local_fallback",
+            "file_number": null,
+            "reaction_mt": null,
+            "occurrence_count": 2
+          },
+          "disposition": "rejecting"
+        }
+      ],
+      "source_aware_suitability": "rejected",
+      "suitability": "rejected"
+    }
+  ],
+  "rejected_run_count": 3,
+  "reclassified_run_count": 0,
+  "full_evaluation_kinematic_violation_count": 62,
+  "in_domain_kinematic_violation_count": 62,
+  "out_of_domain_kinematic_violation_count": 0,
+  "rejecting_processor_finding_count": 3,
+  "informational_processor_finding_count": 0,
+  "source_format_finding_count": 0
+}

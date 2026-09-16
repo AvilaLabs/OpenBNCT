@@ -40,19 +40,37 @@ Built and verified:
   rebound to this case + material
 - `openmc-validation-profile.json` — 20-batch smoke-purpose profile
 
+Response-set chain (`provenance/`, evidence root under
+`.nctforge-data/nctforge/fir1-k63-water-phantom/`):
+
+- `njoy prepare` → 7-nuclide input bundle + manifest (selection is
+  material-exact; the ENDF/B-VIII.1 subset lives at
+  `.nctforge-data/nctforge/endfb81-sources/fir1-k63-water-phantom/`).
+- `njoy execute` → fresh NJOY2016.78 execution + receipt
+  (`provenance/njoy2016-78-execution-receipt.json`). The benchmark
+  receipt's binary (`8a37cf70…`) is not on disk; this run used a binary
+  rebuilt from the exact bound commit `71a76bc` (executable
+  `54964d0c…`, banner `njoy 2016.78`), honestly recorded by the new
+  receipt rather than rebound to the old one.
+- `inventory-photon-data` → source-bound photon inventory.
+- `assess-execution` → `assess-source-aware` → `assess-domain-aware`
+  (v0.1/v0.2/v0.3 reports). Qualification
+  `transported_photon_kerma_rejected` at all three levels with
+  62 in-domain kinematic violations on O16/O17/O18 — the same isotope
+  findings and posture as the benchmark chain (which rejected N15 too;
+  N15 is not in this material).
+- `generate-response-tables` → 6,372-knot union grid, violations carried
+  through as evidence; `verify-response-tables` regenerated
+  deterministically and emitted the independent review +
+  `provenance/neutron-response-set.json`
+  (`independently_reviewed`, SHA-256 `c01b05107497…`).
+
 Remaining (in dependency order):
 
-1. `njoy prepare` with this selection → water NJOY input manifest, then
-   NJOY2016.78 execution for that manifest (the existing execution
-   receipt binds the benchmark input manifest and cannot be rebound).
-2. Suitability chain for the water execution (v0.1 → source-aware →
-   domain-aware) via `njoy assess-*`/`verify-*`.
-3. `njoy generate-response-tables` + `verify-response-tables` →
-   independently reviewed water response set (required — deck generation
-   refuses unreviewed sets).
-4. `openmc run` on the bound case (~20M histories, validation scale).
-5. `openmc collect` → dose bundle → `beam qa --dose` in-phantom metrics.
-6. `measurement-record` for the published in-phantom values (Au-197
+1. `openmc run` on the bound case (~20M histories, validation scale)
+   with `provenance/neutron-response-set.json`.
+2. `openmc collect` → dose bundle → `beam qa --dose` in-phantom metrics.
+3. `measurement-record` for the published in-phantom values (Au-197
    normalization at the thermal maximum, gamma depth profile, thermal
    peak position ~2.0 cm) + `measurement compare` evidence record.
 

@@ -1,0 +1,1083 @@
+{
+  "schema_version": "openbnct.njoy-execution-receipt/0.1.0",
+  "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1.njoy2016-78-inputs.execution.1789518487.54964d0c188f",
+  "case_id": "fir1-k63-water-phantom",
+  "qualification": "execution_observed_diagnostics_failed",
+  "input_manifest": {
+    "id": "openbnct.fir1-k63-water-phantom.endfb81-neutron-source-selection.v1.njoy2016-78-inputs",
+    "sha256": "5107a695f67aeec23e2c1b23144a5782446f59d4ac6965fffa6beb4fde2118cd"
+  },
+  "processor": {
+    "tool": {
+      "name": "NJOY2016",
+      "version": "2016.78",
+      "source_commit": "71a76bc6345fa15f36bacc816ae7900714345d97"
+    },
+    "executable": {
+      "filename": "njoy",
+      "size_bytes": 22512,
+      "sha256": "54964d0c188f16bf39444412afdd547e45bdf5273b8050b9dccc222a179b3d48"
+    },
+    "declared_support_artifacts": [
+      {
+        "filename": "ld-linux-x86-64.so.2",
+        "size_bytes": 254864,
+        "sha256": "bda779ea9e9ad234f60315477d7cfd0bdde861cd8ddd9df8cdaf62f18c4cec14"
+      },
+      {
+        "filename": "libc.so.6",
+        "size_bytes": 2190608,
+        "sha256": "85e64f97e348786a8fb4d9f3d52fec289e2fb86bba20f0731dfe61990525e0f7"
+      },
+      {
+        "filename": "libgcc_s.so.1",
+        "size_bytes": 187120,
+        "sha256": "9d339ecb409578d6a5d587e6c537a8f9589b8a13fefba30d167433a4b5758bee"
+      },
+      {
+        "filename": "libgfortran.so.5.0.0",
+        "size_bytes": 3669992,
+        "sha256": "67faab0feef3cc4b20d98daffda4de59f6816ab565b044da096487f4075fccdf"
+      },
+      {
+        "filename": "libm.so.6",
+        "size_bytes": 1198376,
+        "sha256": "1c488db6f4fe8cecb72456bc018de000b7a9b539c2994864b0416b5e8371b3d8"
+      },
+      {
+        "filename": "libmvec.so.1",
+        "size_bytes": 1022240,
+        "sha256": "2f2e7f4ad88e1b13f2f8345c826b25f85ba61c93527d91e59dd0d2943eac6e80"
+      },
+      {
+        "filename": "libnjoy.so",
+        "size_bytes": 3414984,
+        "sha256": "396b50d25539a52f8cffb1f0ab99e87709b4704700f2600f4d66bbf0156e3500"
+      }
+    ],
+    "recognized_banner": "njoy 2016.78"
+  },
+  "environment": {
+    "operating_system": "linux",
+    "architecture": "x86_64",
+    "target_family": "unix",
+    "inherited_environment": false,
+    "locale": "C",
+    "timezone": "UTC",
+    "timeout_seconds_per_nuclide": 600
+  },
+  "runs": [
+    {
+      "nuclide": "B10",
+      "endf_mat": 525,
+      "exit_code": 0,
+      "input_deck": {
+        "path": "B10/input.njoy",
+        "media_type": "text/plain",
+        "size_bytes": 335,
+        "sha256": "2649ef7d71a3fef583cb8ecab9d8b5bd4710abeed850e8e8e0a2834ef2ba5cb1"
+      },
+      "evaluated_source": {
+        "path": "B10/tape20",
+        "media_type": "application/x-endf",
+        "size_bytes": 869364,
+        "sha256": "18a245e506f6b7d84f50d08f7b54f7ea0122aac5ad4dd7957f12b319fbb479ff"
+      },
+      "standard_output": {
+        "path": "B10/stdout.log",
+        "media_type": "text/plain",
+        "size_bytes": 1769,
+        "sha256": "003291046c2f572f40efd0434880fd120221f4e1ce63357b4fdc51c0a779aab1"
+      },
+      "standard_error": {
+        "path": "B10/stderr.log",
+        "media_type": "text/plain",
+        "size_bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "processor_report": {
+        "path": "B10/output",
+        "media_type": "text/plain",
+        "size_bytes": 182147,
+        "sha256": "a186448878b361ea9e5d388e4784b2e1159944b7ed4fa5e153108c2d3077ff8b"
+      },
+      "output_tapes": [
+        {
+          "unit": 21,
+          "purpose": "reconstructed_pendf",
+          "artifact": {
+            "path": "B10/tape21",
+            "media_type": "application/x-endf",
+            "size_bytes": 499203,
+            "sha256": "b4eead80ca8865a94019ed85919313db78c7e76dbd12d6f56fd498b8a8d45f5c"
+          }
+        },
+        {
+          "unit": 22,
+          "purpose": "broadened_pendf",
+          "artifact": {
+            "path": "B10/tape22",
+            "media_type": "application/x-endf",
+            "size_bytes": 479763,
+            "sha256": "68758802f1ec6c280e41315931af0ddf9aadac1ee099a0c8db73af3f59ca1f40"
+          }
+        },
+        {
+          "unit": 23,
+          "purpose": "production_heatr_pendf",
+          "artifact": {
+            "path": "B10/tape23",
+            "media_type": "application/x-endf",
+            "size_bytes": 557766,
+            "sha256": "36bb86d2150b5fc5bb871444dc5e0492d1f88af5c7bd2192048747bbab9d318a"
+          }
+        },
+        {
+          "unit": 24,
+          "purpose": "diagnostic_heatr_pendf",
+          "artifact": {
+            "path": "B10/tape24",
+            "media_type": "application/x-endf",
+            "size_bytes": 557766,
+            "sha256": "36bb86d2150b5fc5bb871444dc5e0492d1f88af5c7bd2192048747bbab9d318a"
+          }
+        },
+        {
+          "unit": 25,
+          "purpose": "diagnostic_plot",
+          "artifact": {
+            "path": "B10/tape25",
+            "media_type": "text/plain",
+            "size_bytes": 92965,
+            "sha256": "7c22aafa9be7d99b0667b5222a4e4f3434a6eeb0e5eeba943cd53916d3b0a9c6"
+          }
+        }
+      ],
+      "required_special_mf3_mts": [
+        301,
+        407,
+        443
+      ],
+      "observed_special_mf3_mts": [
+        301,
+        407,
+        443
+      ],
+      "diagnostic_status": "within_kinematic_limits",
+      "diagnostic_violation_count": 0,
+      "diagnostic_violations": [],
+      "production_diagnostic_pendf_identical": true
+    },
+    {
+      "nuclide": "H1",
+      "endf_mat": 125,
+      "exit_code": 0,
+      "input_deck": {
+        "path": "H1/input.njoy",
+        "media_type": "text/plain",
+        "size_bytes": 326,
+        "sha256": "cd54e913d7e1b4f7b3cad9db3b1de97cd73850dd665df62de84582d471fd7ba2"
+      },
+      "evaluated_source": {
+        "path": "H1/tape20",
+        "media_type": "application/x-endf",
+        "size_bytes": 671232,
+        "sha256": "3024d8f0db604b074e33ed8b05027eb9f5a738614041ba44c83f048e0d0bc1af"
+      },
+      "standard_output": {
+        "path": "H1/stdout.log",
+        "media_type": "text/plain",
+        "size_bytes": 877,
+        "sha256": "e551a520b1c6928f96d56bb71896302706db74aa5dad0eb54cd84269e8dacdd9"
+      },
+      "standard_error": {
+        "path": "H1/stderr.log",
+        "media_type": "text/plain",
+        "size_bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "processor_report": {
+        "path": "H1/output",
+        "media_type": "text/plain",
+        "size_bytes": 24319,
+        "sha256": "05368fe168e5a5efe4d62dd1fd8277fc29eb7350dd4d00cfc30eb8499fc54b4e"
+      },
+      "output_tapes": [
+        {
+          "unit": 21,
+          "purpose": "reconstructed_pendf",
+          "artifact": {
+            "path": "H1/tape21",
+            "media_type": "application/x-endf",
+            "size_bytes": 59211,
+            "sha256": "3994a3be502a9a5d5b088cca32c984bc639194c6bcec4a5901c78debffb90222"
+          }
+        },
+        {
+          "unit": 22,
+          "purpose": "broadened_pendf",
+          "artifact": {
+            "path": "H1/tape22",
+            "media_type": "application/x-endf",
+            "size_bytes": 54108,
+            "sha256": "6ee1f28ea04cf9868d0052c2161e98664380a720bbfd57b4c6379e18d8b42bca"
+          }
+        },
+        {
+          "unit": 23,
+          "purpose": "production_heatr_pendf",
+          "artifact": {
+            "path": "H1/tape23",
+            "media_type": "application/x-endf",
+            "size_bytes": 89100,
+            "sha256": "4807be679a546221b787456afc7adeec2a976cf26f86ce6b6c607cce990d2d90"
+          }
+        },
+        {
+          "unit": 24,
+          "purpose": "diagnostic_heatr_pendf",
+          "artifact": {
+            "path": "H1/tape24",
+            "media_type": "application/x-endf",
+            "size_bytes": 89100,
+            "sha256": "4807be679a546221b787456afc7adeec2a976cf26f86ce6b6c607cce990d2d90"
+          }
+        },
+        {
+          "unit": 25,
+          "purpose": "diagnostic_plot",
+          "artifact": {
+            "path": "H1/tape25",
+            "media_type": "text/plain",
+            "size_bytes": 54625,
+            "sha256": "12879b3271c0d1c28557edadc58ba0a594fd7571fff572b881da9af69ec7e9d2"
+          }
+        }
+      ],
+      "required_special_mf3_mts": [
+        301,
+        443
+      ],
+      "observed_special_mf3_mts": [
+        301,
+        443
+      ],
+      "diagnostic_status": "within_kinematic_limits",
+      "diagnostic_violation_count": 0,
+      "diagnostic_violations": [],
+      "production_diagnostic_pendf_identical": true
+    },
+    {
+      "nuclide": "H2",
+      "endf_mat": 128,
+      "exit_code": 0,
+      "input_deck": {
+        "path": "H2/input.njoy",
+        "media_type": "text/plain",
+        "size_bytes": 326,
+        "sha256": "a4a98d90b3218e0d1448fac8c4e220098720cdfe0311885494e6c2daa555885a"
+      },
+      "evaluated_source": {
+        "path": "H2/tape20",
+        "media_type": "application/x-endf",
+        "size_bytes": 139156,
+        "sha256": "869fe4e84547d124feff6d8eafd1158ac4e121c7ea05f8b20c547a63f5a97a8c"
+      },
+      "standard_output": {
+        "path": "H2/stdout.log",
+        "media_type": "text/plain",
+        "size_bytes": 637,
+        "sha256": "dfb1cc3bbc9a0fe889db33b67c5a08f1780660944ca8d5a580ccb87d478e0090"
+      },
+      "standard_error": {
+        "path": "H2/stderr.log",
+        "media_type": "text/plain",
+        "size_bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "processor_report": {
+        "path": "H2/output",
+        "media_type": "text/plain",
+        "size_bytes": 46434,
+        "sha256": "9d9e38d864e95baa5fc746bbb4a01f8993fe6047042ed66d65c35c870172bb69"
+      },
+      "output_tapes": [
+        {
+          "unit": 21,
+          "purpose": "reconstructed_pendf",
+          "artifact": {
+            "path": "H2/tape21",
+            "media_type": "application/x-endf",
+            "size_bytes": 90396,
+            "sha256": "f306957d55f945cde5ddcfed953364b050b4e2c6aa6f1ad8f0dbbf3672b5e6ca"
+          }
+        },
+        {
+          "unit": 22,
+          "purpose": "broadened_pendf",
+          "artifact": {
+            "path": "H2/tape22",
+            "media_type": "application/x-endf",
+            "size_bytes": 71928,
+            "sha256": "bafca689b8e79217158afb1dbbe5ed22d7022268642cbe86128a3d1b631eeb53"
+          }
+        },
+        {
+          "unit": 23,
+          "purpose": "production_heatr_pendf",
+          "artifact": {
+            "path": "H2/tape23",
+            "media_type": "application/x-endf",
+            "size_bytes": 102060,
+            "sha256": "98c4799e58e7d47f4121bcfc3f801ce02e524e63118a3f93eca6ee142e5e42df"
+          }
+        },
+        {
+          "unit": 24,
+          "purpose": "diagnostic_heatr_pendf",
+          "artifact": {
+            "path": "H2/tape24",
+            "media_type": "application/x-endf",
+            "size_bytes": 102060,
+            "sha256": "98c4799e58e7d47f4121bcfc3f801ce02e524e63118a3f93eca6ee142e5e42df"
+          }
+        },
+        {
+          "unit": 25,
+          "purpose": "diagnostic_plot",
+          "artifact": {
+            "path": "H2/tape25",
+            "media_type": "text/plain",
+            "size_bytes": 52375,
+            "sha256": "1ece686c7a87037cb8a76f34981749dadb2cecfe9e23ad02ac05864b751b2e54"
+          }
+        }
+      ],
+      "required_special_mf3_mts": [
+        301,
+        443
+      ],
+      "observed_special_mf3_mts": [
+        301,
+        443
+      ],
+      "diagnostic_status": "within_kinematic_limits",
+      "diagnostic_violation_count": 0,
+      "diagnostic_violations": [],
+      "production_diagnostic_pendf_identical": true
+    },
+    {
+      "nuclide": "N14",
+      "endf_mat": 725,
+      "exit_code": 0,
+      "input_deck": {
+        "path": "N14/input.njoy",
+        "media_type": "text/plain",
+        "size_bytes": 335,
+        "sha256": "bfe678f7eadd6b5043e99232e1c89c084da4a01f35551d7dfca60924edad68fc"
+      },
+      "evaluated_source": {
+        "path": "N14/tape20",
+        "media_type": "application/x-endf",
+        "size_bytes": 1253924,
+        "sha256": "fd5c0c0beccefbcd0b57c49bcdf835449d2014e3740830377ce24760478c06d8"
+      },
+      "standard_output": {
+        "path": "N14/stdout.log",
+        "media_type": "text/plain",
+        "size_bytes": 4397,
+        "sha256": "c44eb26991d77942bdd0834bc3e9b7e49fae1f170f4a04ee8330f9faa09cb4f0"
+      },
+      "standard_error": {
+        "path": "N14/stderr.log",
+        "media_type": "text/plain",
+        "size_bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "processor_report": {
+        "path": "N14/output",
+        "media_type": "text/plain",
+        "size_bytes": 331763,
+        "sha256": "46d84ac5003a0d4149ef88cec6134a0d5aa20c2d5cfd453d52b4d255788c370c"
+      },
+      "output_tapes": [
+        {
+          "unit": 21,
+          "purpose": "reconstructed_pendf",
+          "artifact": {
+            "path": "N14/tape21",
+            "media_type": "application/x-endf",
+            "size_bytes": 1002537,
+            "sha256": "723810d54469ad1512b30cda33999b06bc2e46816ddb07e42d91867e3954ca1f"
+          }
+        },
+        {
+          "unit": 22,
+          "purpose": "broadened_pendf",
+          "artifact": {
+            "path": "N14/tape22",
+            "media_type": "application/x-endf",
+            "size_bytes": 993222,
+            "sha256": "9687a4a559d0600be038f0e073350b6c89b2a56bb85bfa5ad7e97ce6884071cb"
+          }
+        },
+        {
+          "unit": 23,
+          "purpose": "production_heatr_pendf",
+          "artifact": {
+            "path": "N14/tape23",
+            "media_type": "application/x-endf",
+            "size_bytes": 1142424,
+            "sha256": "006e1b00cab025586c2da4646f51ca0d858bea54c3bee855b2cd3a2323948616"
+          }
+        },
+        {
+          "unit": 24,
+          "purpose": "diagnostic_heatr_pendf",
+          "artifact": {
+            "path": "N14/tape24",
+            "media_type": "application/x-endf",
+            "size_bytes": 1142424,
+            "sha256": "006e1b00cab025586c2da4646f51ca0d858bea54c3bee855b2cd3a2323948616"
+          }
+        },
+        {
+          "unit": 25,
+          "purpose": "diagnostic_plot",
+          "artifact": {
+            "path": "N14/tape25",
+            "media_type": "text/plain",
+            "size_bytes": 151015,
+            "sha256": "056be96203ecc1f9b90968aa94c8faac4915468f8927eace84efa9f21e4183d6"
+          }
+        }
+      ],
+      "required_special_mf3_mts": [
+        301,
+        403,
+        443
+      ],
+      "observed_special_mf3_mts": [
+        301,
+        403,
+        443
+      ],
+      "diagnostic_status": "within_kinematic_limits",
+      "diagnostic_violation_count": 0,
+      "diagnostic_violations": [],
+      "production_diagnostic_pendf_identical": true
+    },
+    {
+      "nuclide": "O16",
+      "endf_mat": 825,
+      "exit_code": 0,
+      "input_deck": {
+        "path": "O16/input.njoy",
+        "media_type": "text/plain",
+        "size_bytes": 327,
+        "sha256": "8570c8cf8ef910087a86e978d88527346e1868533df936164209573a38f74e70"
+      },
+      "evaluated_source": {
+        "path": "O16/tape20",
+        "media_type": "application/x-endf",
+        "size_bytes": 42486584,
+        "sha256": "850acd8a1c1f103a63864437281605abc8d4d3c6b8f444041f24514ad45a71c9"
+      },
+      "standard_output": {
+        "path": "O16/stdout.log",
+        "media_type": "text/plain",
+        "size_bytes": 991,
+        "sha256": "236c310edc22a50b0c087d2151fabe0593d16e21c505f1163ad3aa43e1ba3bff"
+      },
+      "standard_error": {
+        "path": "O16/stderr.log",
+        "media_type": "text/plain",
+        "size_bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "processor_report": {
+        "path": "O16/output",
+        "media_type": "text/plain",
+        "size_bytes": 248349,
+        "sha256": "0d1aab811d458020e66841a1e8dff96e09ff4357d1b6be280c2e6ceddc267d99"
+      },
+      "output_tapes": [
+        {
+          "unit": 21,
+          "purpose": "reconstructed_pendf",
+          "artifact": {
+            "path": "O16/tape21",
+            "media_type": "application/x-endf",
+            "size_bytes": 1270647,
+            "sha256": "ce143170be0b7b715a23af2a77a97133961706c9ef2025797bd2651406c10550"
+          }
+        },
+        {
+          "unit": 22,
+          "purpose": "broadened_pendf",
+          "artifact": {
+            "path": "O16/tape22",
+            "media_type": "application/x-endf",
+            "size_bytes": 1252908,
+            "sha256": "bd7816f3e58246b3f814d1af91454416a8d95ce7cd5d61f35b85301dc36372a1"
+          }
+        },
+        {
+          "unit": 23,
+          "purpose": "production_heatr_pendf",
+          "artifact": {
+            "path": "O16/tape23",
+            "media_type": "application/x-endf",
+            "size_bytes": 1420092,
+            "sha256": "2bc87c0bb81cd24e6d903687eaec35073de7f34ed2c3fccebbdea04c3474ded5"
+          }
+        },
+        {
+          "unit": 24,
+          "purpose": "diagnostic_heatr_pendf",
+          "artifact": {
+            "path": "O16/tape24",
+            "media_type": "application/x-endf",
+            "size_bytes": 1420092,
+            "sha256": "2bc87c0bb81cd24e6d903687eaec35073de7f34ed2c3fccebbdea04c3474ded5"
+          }
+        },
+        {
+          "unit": 25,
+          "purpose": "diagnostic_plot",
+          "artifact": {
+            "path": "O16/tape25",
+            "media_type": "text/plain",
+            "size_bytes": 186655,
+            "sha256": "47ce9e323d9ca3627e67164537ba2a8bc6300f50ce5da055cea185132304938c"
+          }
+        }
+      ],
+      "required_special_mf3_mts": [
+        301,
+        443
+      ],
+      "observed_special_mf3_mts": [
+        301,
+        443
+      ],
+      "diagnostic_status": "kinematic_limits_exceeded",
+      "diagnostic_violation_count": 15,
+      "diagnostic_violations": [
+        {
+          "energy_ev": 6000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 7000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 8000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 9000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 10000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 11000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 12000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 13000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 14000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 15000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 16000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 17000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 18000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 19000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        },
+        {
+          "energy_ev": 20000000.0,
+          "response_mt": 301,
+          "direction": "low"
+        }
+      ],
+      "production_diagnostic_pendf_identical": true
+    },
+    {
+      "nuclide": "O17",
+      "endf_mat": 828,
+      "exit_code": 0,
+      "input_deck": {
+        "path": "O17/input.njoy",
+        "media_type": "text/plain",
+        "size_bytes": 327,
+        "sha256": "090df8a434abfff685c9d4ff12126e0742010082244aed8d270adb6debf5b793"
+      },
+      "evaluated_source": {
+        "path": "O17/tape20",
+        "media_type": "application/x-endf",
+        "size_bytes": 81548,
+        "sha256": "92800e0dfe16f036d716af0a72c0e37b6b253f1836646f7319cbb26976498f84"
+      },
+      "standard_output": {
+        "path": "O17/stdout.log",
+        "media_type": "text/plain",
+        "size_bytes": 637,
+        "sha256": "9931cc221464f6d2ba3226aca76f3326bb5856fd5d1548704050e6658d48d571"
+      },
+      "standard_error": {
+        "path": "O17/stderr.log",
+        "media_type": "text/plain",
+        "size_bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "processor_report": {
+        "path": "O17/output",
+        "media_type": "text/plain",
+        "size_bytes": 47122,
+        "sha256": "be8270595e948f5ad4798df1756cb2a4d7cd29515964e6eb69151d7f096beb39"
+      },
+      "output_tapes": [
+        {
+          "unit": 21,
+          "purpose": "reconstructed_pendf",
+          "artifact": {
+            "path": "O17/tape21",
+            "media_type": "application/x-endf",
+            "size_bytes": 147096,
+            "sha256": "e26681fcdf32ce651f245fc7aac2417370f601fa36c2d5765af5566e24d686df"
+          }
+        },
+        {
+          "unit": 22,
+          "purpose": "broadened_pendf",
+          "artifact": {
+            "path": "O17/tape22",
+            "media_type": "application/x-endf",
+            "size_bytes": 121824,
+            "sha256": "d5ee09fb6fb70d5528a5316fd1ad50524bca4f61542ad1c2f420d5de97f6e3ca"
+          }
+        },
+        {
+          "unit": 23,
+          "purpose": "production_heatr_pendf",
+          "artifact": {
+            "path": "O17/tape23",
+            "media_type": "application/x-endf",
+            "size_bytes": 162972,
+            "sha256": "175ff4df540c2c65fede2ca7c856250f4503737543f0806e9d0893e38efbba96"
+          }
+        },
+        {
+          "unit": 24,
+          "purpose": "diagnostic_heatr_pendf",
+          "artifact": {
+            "path": "O17/tape24",
+            "media_type": "application/x-endf",
+            "size_bytes": 162972,
+            "sha256": "175ff4df540c2c65fede2ca7c856250f4503737543f0806e9d0893e38efbba96"
+          }
+        },
+        {
+          "unit": 25,
+          "purpose": "diagnostic_plot",
+          "artifact": {
+            "path": "O17/tape25",
+            "media_type": "text/plain",
+            "size_bytes": 60565,
+            "sha256": "fca219eed9ec6f30f257e2b7821bd1cae6658c05c98d82679e8277f46257c5c8"
+          }
+        }
+      ],
+      "required_special_mf3_mts": [
+        301,
+        443
+      ],
+      "observed_special_mf3_mts": [
+        301,
+        443
+      ],
+      "diagnostic_status": "kinematic_limits_exceeded",
+      "diagnostic_violation_count": 20,
+      "diagnostic_violations": [
+        {
+          "energy_ev": 3600000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 4000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 4600000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 5000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 5500000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 6000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 7000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 8000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 9000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 10000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 11000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 12000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 13000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 14000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 15000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 16000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 17000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 18000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 19000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 20000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        }
+      ],
+      "production_diagnostic_pendf_identical": true
+    },
+    {
+      "nuclide": "O18",
+      "endf_mat": 831,
+      "exit_code": 0,
+      "input_deck": {
+        "path": "O18/input.njoy",
+        "media_type": "text/plain",
+        "size_bytes": 327,
+        "sha256": "7656f357963abd92738e550f0da76ebd038beedc158a56edcdce993c8f7ad111"
+      },
+      "evaluated_source": {
+        "path": "O18/tape20",
+        "media_type": "application/x-endf",
+        "size_bytes": 126996,
+        "sha256": "1631b91d1f67aeb853d150d47b490a204105bf76821db405c2766d2c5167ece3"
+      },
+      "standard_output": {
+        "path": "O18/stdout.log",
+        "media_type": "text/plain",
+        "size_bytes": 637,
+        "sha256": "f5415fdff1b21f03003b29e8bbe79d33160d645b7f8f72ef4851f493105a0659"
+      },
+      "standard_error": {
+        "path": "O18/stderr.log",
+        "media_type": "text/plain",
+        "size_bytes": 0,
+        "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      },
+      "processor_report": {
+        "path": "O18/output",
+        "media_type": "text/plain",
+        "size_bytes": 29294,
+        "sha256": "b988346a578076546b49ee84a8d4d5137c73f318a4cb2cc32c8cafe8f4678866"
+      },
+      "output_tapes": [
+        {
+          "unit": 21,
+          "purpose": "reconstructed_pendf",
+          "artifact": {
+            "path": "O18/tape21",
+            "media_type": "application/x-endf",
+            "size_bytes": 234576,
+            "sha256": "f80646cc93e9d9611aac31294077b6dd8cdd63061b6314f0c9f86b175c80cca1"
+          }
+        },
+        {
+          "unit": 22,
+          "purpose": "broadened_pendf",
+          "artifact": {
+            "path": "O18/tape22",
+            "media_type": "application/x-endf",
+            "size_bytes": 181359,
+            "sha256": "2e91c0b3d8cdf5037ce252ae0ff8c9d2ab5baa591755808c7ebbab140bdcab21"
+          }
+        },
+        {
+          "unit": 23,
+          "purpose": "production_heatr_pendf",
+          "artifact": {
+            "path": "O18/tape23",
+            "media_type": "application/x-endf",
+            "size_bytes": 279045,
+            "sha256": "2416ab06d4c59f69c0249eb47f5e9e0b75942e9c2c377e75ee5474968ab2b118"
+          }
+        },
+        {
+          "unit": 24,
+          "purpose": "diagnostic_heatr_pendf",
+          "artifact": {
+            "path": "O18/tape24",
+            "media_type": "application/x-endf",
+            "size_bytes": 279045,
+            "sha256": "2416ab06d4c59f69c0249eb47f5e9e0b75942e9c2c377e75ee5474968ab2b118"
+          }
+        },
+        {
+          "unit": 25,
+          "purpose": "diagnostic_plot",
+          "artifact": {
+            "path": "O18/tape25",
+            "media_type": "text/plain",
+            "size_bytes": 87115,
+            "sha256": "5d38d112e75b1e66827b49f858dd786252c32b8f99199b117700e5ab7094672a"
+          }
+        }
+      ],
+      "required_special_mf3_mts": [
+        301,
+        443
+      ],
+      "observed_special_mf3_mts": [
+        301,
+        443
+      ],
+      "diagnostic_status": "kinematic_limits_exceeded",
+      "diagnostic_violation_count": 27,
+      "diagnostic_violations": [
+        {
+          "energy_ev": 0.00001,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 0.0001,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 0.001,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 0.01,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 0.1,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 1.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 2.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 5.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 10.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 20.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 50.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 100.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 200.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 7000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 8000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 9000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 10000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 11000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 12000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 13000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 14000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 15000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 16000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 17000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 18000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 19000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        },
+        {
+          "energy_ev": 20000000.0,
+          "response_mt": 301,
+          "direction": "high"
+        }
+      ],
+      "production_diagnostic_pendf_identical": true
+    }
+  ],
+  "rejected_run_count": 3,
+  "completed_unix_seconds": 1789518487
+}
