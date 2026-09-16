@@ -1178,13 +1178,12 @@ impl OpenBnctApp {
         }
         #[cfg(debug_assertions)]
         if std::env::var_os("OPENBNCT_CAPTURE").is_some() {
-            if let Ok(selected) = std::env::var("OPENBNCT_CAPTURE_WORKSPACE") {
-                if let Some(workspace) = WorkspaceTab::ALL
+            if let Ok(selected) = std::env::var("OPENBNCT_CAPTURE_WORKSPACE")
+                && let Some(workspace) = WorkspaceTab::ALL
                     .into_iter()
                     .find(|tab| tab.marker() == selected)
-                {
-                    app.workspace = workspace;
-                }
+            {
+                app.workspace = workspace;
             }
             if std::env::var_os("OPENBNCT_CAPTURE_DARK").is_some() {
                 app.dark_mode = true;
