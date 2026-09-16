@@ -1133,5 +1133,73 @@ def _write(directory: str, name: str, content: str) -> Path:
     return path
 
 
+def _nifti_volume(directory: str, name: str, values: list[float]) -> Path:
+    """Write a minimal NIfTI-1 single file: 2x2x1 float64 on an
+    axis-aligned 1 mm grid at the LPS origin (RAS affine diag(-1,-1,1))."""
+    import struct
+
+    header = bytearray(352)
+    struct.pack_into("<i", header, 0, 348)          # sizeof_hdr
+    struct.pack_into("<4h", header, 40, 3, 2, 2, 1)  # dim[0..3]
+    struct.pack_into("<h", header, 70, 64)           # float64
+    struct.pack_into("<h", header, 72, 64)           # bitpix
+    struct.pack_into("<4f", header, 76, 1.0, 1.0, 1.0, 1.0)  # pixdim
+    struct.pack_into("<f", header, 108, 352.0)       # vox_offset
+    struct.pack_into("<f", header, 112, 1.0)         # scl_slope
+    struct.pack_into("<h", header, 254, 1)           # sform_code
+    for row, (vals, off) in enumerate(
+        zip(((-1.0, 0.0, 0.0, 0.0), (0.0, -1.0, 0.0, 0.0), (0.0, 0.0, 1.0, 0.0)),
+            (280, 296, 312))
+    ):
+        struct.pack_into("<4f", header, off, *vals)
+    header[123] = 0b010                              # xyzt: mm
+    header[344:348] = b"n+1\0"
+    path = Path(directory) / name
+    path.write_bytes(bytes(header) + struct.pack(f"<{len(values)}d", *values))
+    return path
+
+
+class NiftiImportTest(unittest.TestCase):
+    def test_nifti_component_import(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            comps = {}
+            for i, name in enumerate(("boron", "nitrogen", "hydrogen", "photon")):
+                value = _nifti_volume(tmp, f"{name}.nii", [i + 1.0] * 4)
+                sigma = _nifti_volume(tmp, f"{name}_s.nii", [0.1] * 4)
+                comps[name] = (value, sigma)
+            bundle = openbnct.import_nifti(
+                comps,
+                case_id="py-nifti",
+                unit="gray_per_source_particle",
+                normalization="per source neutron; fixture",
+                producer_system="openpint",
+                producer_version="test",
+            )
+            self.assertEqual(bundle.case_id, "py-nifti")
+            self.assertIn("interchange:openpint:sha256:", bundle.provenance_id)
+            # components 1+2+3+4 per voxel (component order is not stable)
+            self.assertAlmostEqual(bundle.physical_total.values[0], 10.0)
+            self.assertEqual(len(bundle.components), 4)
+            self.assertTrue(
+                all(
+                    c.absolute_standard_uncertainty[0] == 0.1
+                    for c in bundle.components
+                )
+            )
+
+    def test_nifti_import_requires_producer_and_four_components(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            f = _nifti_volume(tmp, "a.nii", [1.0] * 4)
+            comps = {"boron": f, "nitrogen": f, "hydrogen": f, "photon": f}
+            with self.assertRaises(NctForgeError):
+                openbnct.import_nifti(
+                    comps, "c", "gray_per_source_particle", "x", " "
+                )
+            with self.assertRaises(NctForgeError):
+                openbnct.import_nifti(
+                    {"boron": f}, "c", "gray_per_source_particle", "x", "openpint"
+                )
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -658,6 +658,24 @@ def import_phits(
     as ``openbnct import phits``). ``components`` maps each component to a
     file path or ``(path, energy_index)``; ``FILE_err.ext`` siblings supply
     relative errors when present. ``producer_version`` is required."""
+def import_nifti(
+    components: dict[
+        str,
+        str | PathLike[str] | tuple[str | PathLike[str], str | PathLike[str]],
+    ],
+    case_id: str,
+    unit: str,
+    normalization: str,
+    producer_system: str,
+    producer_version: str | None = None,
+    frame_of_reference_uid: str | None = None,
+) -> PhysicalDoseBundle:
+    """Lift per-component NIfTI dose volumes into a physical dose bundle
+    (same path as ``openbnct import nifti``). ``components`` maps each of
+    ``boron``/``nitrogen``/``hydrogen``/``photon`` to a ``.nii``/``.nii.gz``
+    path or a ``(path, sigma_path)`` tuple pairing the value volume with an
+    absolute one-sigma volume on the same grid. ``producer_system`` is
+    required because NIfTI headers carry no producer identity."""
 def export_mcnp_deck(
     case: str | PathLike[str],
     output: str | PathLike[str],

@@ -25,4 +25,5 @@ serde = "1"
 serde_json = { version = "1", features = ["float_roundtrip"] }
 sha2 = "0.10"
 openbnct-mcnp = { path = "../../crates/openbnct-mcnp" }
+openbnct-nifti = { path = "../../crates/openbnct-nifti" }
 openbnct-phits = { path = "../../crates/openbnct-phits" }

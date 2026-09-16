@@ -1150,6 +1150,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "openbnct-nifti"
+version = "0.1.0"
+dependencies = [
+ "flate2",
+ "openbnct-core",
+ "serde",
+ "serde_json",
+ "thiserror",
+]
+
+[[package]]
 name = "openbnct-openmc"
 version = "0.1.0"
 dependencies = [
@@ -1198,6 +1209,7 @@ dependencies = [
  "openbnct-dicom",
  "openbnct-evidence",
  "openbnct-mcnp",
+ "openbnct-nifti",
  "openbnct-openmc",
  "openbnct-phits",
  "openbnct-plan",

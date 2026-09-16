@@ -13,8 +13,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use openbnct_bio::{
-    AppliedFractionation, BiologicalDoseBundle, BiologicalModel, RegionMask,
-    apply_biological_model,
+    AppliedFractionation, BiologicalDoseBundle, BiologicalModel, RegionMask, apply_biological_model,
 };
 use openbnct_core::{ContentReference, PhysicalDoseBundle, ResampleMethod};
 use openbnct_dicom::{
@@ -946,11 +945,7 @@ fn load_response_set(path: PathBuf) -> PyResult<PyResponseSet> {
     })
 }
 
-contract_check!(
-    PhysicalDoseBundle,
-    validate,
-    openbnct_core::ValidationError
-);
+contract_check!(PhysicalDoseBundle, validate, openbnct_core::ValidationError);
 contract_check!(BiologicalModel, validate, openbnct_bio::BioError);
 contract_check!(BiologicalDoseBundle, validate, openbnct_bio::BioError);
 
@@ -1051,9 +1046,7 @@ impl PyPhysicalDoseBundle {
                     .unwrap_or_else(|_| "unknown".into()),
                 unit: dose_unit_name(volume.unit),
                 values: volume.values.clone(),
-                absolute_standard_uncertainty: volume
-                    .absolute_standard_uncertainty
-                    .clone(),
+                absolute_standard_uncertainty: volume.absolute_standard_uncertainty.clone(),
             })
             .collect()
     }
@@ -1223,8 +1216,7 @@ fn load_exposure_plan(path: PathBuf) -> PyResult<PyExposurePlan> {
 #[pyfunction]
 fn exposure_plan_diagnostics(path: PathBuf) -> PyResult<Vec<String>> {
     let bytes = fs::read(&path).map_err(reject)?;
-    let plan: openbnct_core::ExposurePlan =
-        serde_json::from_slice(&bytes).map_err(reject)?;
+    let plan: openbnct_core::ExposurePlan = serde_json::from_slice(&bytes).map_err(reject)?;
     Ok(plan
         .validate_diagnostics()
         .iter()
@@ -1298,7 +1290,9 @@ fn dose_unit(unit: &str) -> PyResult<openbnct_core::DoseUnit> {
     match unit {
         "gray" => Ok(openbnct_core::DoseUnit::Gray),
         "gray_per_source_particle" => Ok(openbnct_core::DoseUnit::GrayPerSourceParticle),
-        other => Err(PyValueError::new_err(format!("unknown dose unit {other:?}"))),
+        other => Err(PyValueError::new_err(format!(
+            "unknown dose unit {other:?}"
+        ))),
     }
 }
 
@@ -1417,6 +1411,61 @@ fn import_phits(
     })
 }
 
+/// Import per-component NIfTI dose volumes into a physical dose bundle
+/// (same path as `openbnct import nifti`). `components` maps a component
+/// name (`boron`, `nitrogen`, `hydrogen`, `photon`) to either a `.nii`/
+/// `.nii.gz` path or a `(path, sigma_path)` tuple pairing the value volume
+/// with an absolute one-sigma volume on the same grid. `producer_system`
+/// is required because NIfTI headers carry no producer identity.
+#[pyfunction]
+#[pyo3(signature = (components, case_id, unit, normalization, producer_system, producer_version=None, frame_of_reference_uid=None))]
+fn import_nifti(
+    components: HashMap<String, Bound<'_, PyAny>>,
+    case_id: &str,
+    unit: &str,
+    normalization: &str,
+    producer_system: &str,
+    producer_version: Option<String>,
+    frame_of_reference_uid: Option<String>,
+) -> PyResult<PyPhysicalDoseBundle> {
+    let mut sources = Vec::new();
+    for (name, spec) in components {
+        let bad = || {
+            PyValueError::new_err(format!(
+                "component {name:?}: expected file path or (path, sigma_path)"
+            ))
+        };
+        let (file, sigma_file) = if let Ok(path) = spec.extract::<PathBuf>() {
+            (path, None)
+        } else if let Ok((path, sigma)) = spec.extract::<(PathBuf, PathBuf)>() {
+            (path, Some(sigma))
+        } else {
+            return Err(bad());
+        };
+        sources.push(openbnct_nifti::NiftiComponentSource {
+            component: dose_component(&name)?,
+            file,
+            sigma_file,
+        });
+    }
+    let document = openbnct_nifti::interchange_from_niftis(
+        &sources,
+        case_id,
+        dose_unit(unit)?,
+        normalization,
+        producer_system,
+        producer_version,
+        frame_of_reference_uid,
+    )
+    .map_err(reject)?;
+    let bytes = serde_json::to_vec_pretty(&document).map_err(reject)?;
+    use sha2::Digest;
+    let sha256 = format!("{:x}", sha2::Sha256::digest(&bytes));
+    Ok(PyPhysicalDoseBundle {
+        inner: openbnct_core::import_component_dose(&document, &sha256).map_err(reject)?,
+    })
+}
+
 /// Emit an MCNP input deck for a transport case (same path as
 /// `openbnct export mcnp`). The deck scores flux on the case mesh; component
 /// folding is the external pipeline's declared step before `import_mcnp_meshtal`
@@ -1434,9 +1483,9 @@ fn export_mcnp_deck(
     let case_doc: TransportCase = serde_json::from_slice(&case_bytes).map_err(reject)?;
     let assignment_doc = assignment
         .map(|path| {
-            std::fs::read(&path)
-                .map_err(reject)
-                .and_then(|bytes| serde_json::from_slice::<MaterialAssignment>(&bytes).map_err(reject))
+            std::fs::read(&path).map_err(reject).and_then(|bytes| {
+                serde_json::from_slice::<MaterialAssignment>(&bytes).map_err(reject)
+            })
         })
         .transpose()?;
     use sha2::Digest;
@@ -2038,9 +2087,7 @@ impl PyBiologicalDoseBundle {
                     .unwrap_or_else(|_| "unknown".into()),
                 unit: volume.unit.clone(),
                 values: volume.values.clone(),
-                absolute_standard_uncertainty: volume
-                    .absolute_standard_uncertainty
-                    .clone(),
+                absolute_standard_uncertainty: volume.absolute_standard_uncertainty.clone(),
             })
             .collect()
     }
@@ -2052,11 +2099,7 @@ impl PyBiologicalDoseBundle {
             component: "biological_total".into(),
             unit: self.inner.total.unit.clone(),
             values: self.inner.total.values.clone(),
-            absolute_standard_uncertainty: self
-                .inner
-                .total
-                .absolute_standard_uncertainty
-                .clone(),
+            absolute_standard_uncertainty: self.inner.total.absolute_standard_uncertainty.clone(),
         }
     }
 
@@ -2116,9 +2159,8 @@ fn apply_model(
         }
         masks.push(mask);
     }
-    let bundle =
-        apply_biological_model(&model.inner, &model.bytes, &physical.inner, &masks)
-            .map_err(reject)?;
+    let bundle = apply_biological_model(&model.inner, &model.bytes, &physical.inner, &masks)
+        .map_err(reject)?;
     Ok(PyBiologicalDoseBundle { inner: bundle })
 }
 
@@ -2298,10 +2340,7 @@ fn physical_selection<'a>(
                     .unwrap_or(false)
             })
             .ok_or_else(|| reject(format!("bundle lacks component {name}")))?;
-        return Ok((
-            component.values.as_slice(),
-            dose_unit_name(component.unit),
-        ));
+        return Ok((component.values.as_slice(), dose_unit_name(component.unit)));
     }
     if quantity == "physical_total" {
         return Ok((
@@ -2330,14 +2369,9 @@ fn biological_selection<'a>(
         return Ok((component.values.as_slice(), component.unit.clone()));
     }
     if quantity == "biological_total" {
-        return Ok((
-            bundle.total.values.as_slice(),
-            bundle.total.unit.clone(),
-        ));
+        return Ok((bundle.total.values.as_slice(), bundle.total.unit.clone()));
     }
-    Err(reject(format!(
-        "unknown biological quantity {quantity:?}"
-    )))
+    Err(reject(format!("unknown biological quantity {quantity:?}")))
 }
 
 /// Exact dose-volume metrics over a named voxel mask.
@@ -2548,10 +2582,12 @@ impl PyEndpointModel {
 #[pyfunction]
 fn load_endpoint_model(path: PathBuf) -> PyResult<PyEndpointModel> {
     let bytes = fs::read(&path).map_err(reject)?;
-    let model: openbnct_bio::EndpointModel =
-        serde_json::from_slice(&bytes).map_err(reject)?;
+    let model: openbnct_bio::EndpointModel = serde_json::from_slice(&bytes).map_err(reject)?;
     model.validate().map_err(reject)?;
-    Ok(PyEndpointModel { inner: model, bytes })
+    Ok(PyEndpointModel {
+        inner: model,
+        bytes,
+    })
 }
 
 /// The scalar dose statistic a volume-collapsed endpoint consumed.
@@ -2992,6 +3028,7 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(plan_table_write, m)?)?;
     m.add_function(wrap_pyfunction!(import_component_dose, m)?)?;
     m.add_function(wrap_pyfunction!(import_mcnp_meshtal, m)?)?;
+    m.add_function(wrap_pyfunction!(import_nifti, m)?)?;
     m.add_function(wrap_pyfunction!(import_phits, m)?)?;
     m.add_function(wrap_pyfunction!(export_mcnp_deck, m)?)?;
     m.add_function(wrap_pyfunction!(import_external_dose, m)?)?;
