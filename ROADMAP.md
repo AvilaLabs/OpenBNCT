@@ -848,6 +848,10 @@ review:
 - **R7-04 — workbench usability.** Bring the egui desktop shell to a
   documented, reproducible workflow (case load → run → dose overlay →
   evidence inspection) with packaged artifacts once distribution exists.
+  *(COMPLETE — end-to-end research workflow documented in
+  `docs/USAGE.md` (case → response data → transport → characterize →
+  verify → inspect); packaged five-platform binaries ship with v0.1.0
+  via `release-desktop.yml`; crates.io/PyPI install paths live.)*
 - **R7-05 — transport throughput.** Profile the OpenMC run path (the
   140M-history R6-09 run is the current baseline) and evaluate
   parallel-seed orchestration across machines without changing the contract

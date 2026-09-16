@@ -712,7 +712,8 @@ openbnct import phits \
 Both adapters emit the same interchange document and pass it through the
 shared validator, so the resulting bundle is identical in kind to the
 interchange path above — the Python `import_mcnp_meshtal` and
-`import_phits` functions are parity surfaces. The parsers are built
+`import_phits` functions are parity surfaces (as is `import_nifti` for
+the NIfTI path below). The parsers are built
 against documented formats; acceptance against real MCNP/PHITS-produced
 files is an open R4 gate.
 
