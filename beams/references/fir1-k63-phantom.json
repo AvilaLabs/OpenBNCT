@@ -1,0 +1,20 @@
+{
+ "values": [
+  {
+   "metric": "advantage_depth_cm",
+   "value": 8.1,
+   "relative_tolerance": 0.25
+  },
+  {
+   "metric": "advantage_ratio",
+   "value": 4.9,
+   "relative_tolerance": 0.4
+  },
+  {
+   "metric": "peak_therapeutic_ratio",
+   "value": 5.7,
+   "relative_tolerance": 0.4
+  }
+ ],
+ "note": "Published FiR 1 K63 in-phantom beam-quality figures (Seppala 2002 HU-P-D103; TECDOC-1223; inter-facility standard-model comparison tables). Tolerances are deliberately wide: the published values fold a clinical tumor:normal boron concentration ratio (~3.5) into the dose weighting, while the computed convention applies CBE factors only on a trace-loaded (~0.1 ppm B-10) phantom. The comparison verifies order-of-magnitude beam quality, not the published weighting convention itself. Statistical uncertainty of the 20M-history dose fold is negligible relative to the convention gap."
+}

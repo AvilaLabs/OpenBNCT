@@ -1,0 +1,136 @@
+{
+ "schema_version": "nctforge.measurement-record/0.1.0",
+ "id": "nctforge.measurement.fir1-k63-water-phantom.v1",
+ "subject": {
+  "id": "nctforge.beam.fir1-k63.v1",
+  "sha256": "sha256:a7266c040a7863ee685f0e67397fc68425dd248a648335d5cc853addee2c72a7"
+ },
+ "measurements": [
+  {
+   "id": "advantage-depth",
+   "metric": "advantage_depth_cm",
+   "method": {
+    "kind": "other",
+    "description": "cubical water phantom ~51x51x47 cm at the K63 14 cm aperture"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 8.1,
+    "absolute_uncertainty_1sigma": null
+   },
+   "unit": "cm",
+   "position": {
+    "frame": "phantom_axis",
+    "point_cm": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "depth_cm": null
+   },
+   "note": "Published FiR 1 K63 in-phantom advantage depth on the TECDOC-1223 convention (tumor:normal boron uptake ~3.5, tumor CBE 3.8). The value is a scalar figure tabulated in the FiR 1 beam-characterization literature and reproduced in inter-facility comparison tables (BMRR/HFR/FiR 1 standard-model comparison, Nigg et al.). No uncertainty is stated in the source; null is honest."
+  },
+  {
+   "id": "advantage-ratio",
+   "metric": "advantage_ratio",
+   "method": {
+    "kind": "other",
+    "description": "cubical water phantom ~51x51x47 cm at the K63 14 cm aperture"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 4.9,
+    "absolute_uncertainty_1sigma": null
+   },
+   "unit": "dimensionless",
+   "position": {
+    "frame": "phantom_axis",
+    "point_cm": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "depth_cm": null
+   },
+   "note": "Published FiR 1 K63 advantage ratio under the TECDOC-1223 convention with clinical boron uptake. The published value folds a tumor-to-normal boron concentration ratio into the dose weighting; the computed comparison value uses the documented CBE-only convention, so agreement is expected only at the ~20% level."
+  },
+  {
+   "id": "peak-therapeutic-ratio",
+   "metric": "peak_therapeutic_ratio",
+   "method": {
+    "kind": "other",
+    "description": "cubical water phantom ~51x51x47 cm at the K63 14 cm aperture"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 5.7,
+    "absolute_uncertainty_1sigma": null
+   },
+   "unit": "dimensionless",
+   "position": {
+    "frame": "phantom_axis",
+    "point_cm": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "depth_cm": null
+   },
+   "note": "Published FiR 1 K63 peak therapeutic ratio under the same convention caveat as the advantage ratio."
+  },
+  {
+   "id": "thermal-fluence-max-depth",
+   "metric": "thermal_fluence_max_depth_cm",
+   "method": {
+    "kind": "activation_foil",
+    "material": "Mn-55 and Au-197 activation detectors scanned along the phantom axis"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 2.25,
+    "absolute_uncertainty_1sigma": null
+   },
+   "unit": "cm",
+   "position": {
+    "frame": "phantom_axis",
+    "point_cm": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "depth_cm": null
+   },
+   "note": "Depth of the in-phantom thermal-neutron fluence maximum. Seppala 2002 and Seren 1999 place the maximum at approximately 2-2.5 cm depth in the FiR 1 reference phantom; the midpoint is encoded with null uncertainty because the figure-derived value is not tabulated. This metric is documentation-only: it is not resolved by beam_quality_metric and will be reported as unmatched."
+  }
+ ],
+ "provenance": {
+  "kind": "digitized_literature",
+  "citations": [
+   {
+    "authors": "Sepp\u00e4l\u00e4, T.",
+    "title": "FiR 1 epithermal neutron beam model and dose calculation for treatment planning in BNCT",
+    "venue": "University of Helsinki, Report Series in Physics HU-P-D103",
+    "year": 2002,
+    "doi": null,
+    "url": "http://hdl.handle.net/10138/23247"
+   },
+   {
+    "authors": "Ser\u00e9n, T.; Auterinen, I.; Kotiluoto, P.; Sepp\u00e4l\u00e4, T.",
+    "title": "Spectrum measurements and calculations in the epithermal neutron beam at the FiR 1 BNCT facility",
+    "venue": "Proc. 8th Int. Symp. on Neutron Capture Therapy for Cancer",
+    "year": 1999,
+    "doi": null,
+    "url": null
+   },
+   {
+    "authors": "International Atomic Energy Agency",
+    "title": "Current status of neutron capture therapy",
+    "venue": "IAEA-TECDOC-1223",
+    "year": 2001,
+    "doi": null,
+    "url": "https://www.iaea.org/publications/6131/current-status-of-neutron-capture-therapy"
+   }
+  ],
+  "derivation_note": "In-phantom beam-quality scalars for the FiR 1 K63 epithermal beam at the 14 cm aperture, 250 kW, in the cubical water reference phantom (~51x51x47 cm). Absolute depth-profile tables are figure-only in the accessible literature, so this record encodes the tabulated scalar figures of merit (advantage depth, advantage ratio, peak therapeutic ratio) plus the documented thermal-maximum depth as a documentation-only entry. All uncertainties are null where the source does not state them; Mn-55/Au-197 foil activation uncertainty is approximately +/-3% per Koivunoro 2014, and calculated-to-measured phantom agreement is reported at 3-5%. The published advantage figures assume clinical boron uptake (tumor:normal ~3.5) folded into the dose weighting; the computed side uses the documented CBE-weight convention, which the comparison note must carry."
+ }
+}
