@@ -499,12 +499,12 @@ pub fn compare_with_beam_quality(
         .measurements
         .iter()
         .filter_map(|measurement| {
-            if let MeasurementValue::Histogram { .. } = &measurement.value {
-                if beam_quality_profile(report, &measurement.metric).is_some() {
-                    // Resolvable depth profile — compared via
-                    // `compare_profile`, not here.
-                    return None;
-                }
+            if let MeasurementValue::Histogram { .. } = &measurement.value
+                && beam_quality_profile(report, &measurement.metric).is_some()
+            {
+                // Resolvable depth profile — compared via
+                // `compare_profile`, not here.
+                return None;
             }
             let (measured, sigma) = match &measurement.value {
                 MeasurementValue::Scalar {
