@@ -159,6 +159,37 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Evaluate the Low gamma index between two physical dose bundles on
+    /// the same frozen case (agreement record; no equivalence claim).
+    Gamma {
+        /// Reference physical dose bundle JSON.
+        #[arg(long)]
+        reference: PathBuf,
+        /// Candidate physical dose bundle JSON.
+        #[arg(long)]
+        candidate: PathBuf,
+        /// Dose-difference criterion in percent.
+        #[arg(long, default_value_t = 3.0)]
+        dose_difference_percent: f64,
+        /// Distance-to-agreement criterion in millimetres.
+        #[arg(long, default_value_t = 3.0)]
+        distance_to_agreement_mm: f64,
+        /// Dose criterion normalization: `global` (percent of the
+        /// reference maximum) or `local` (percent of the evaluated
+        /// reference voxel).
+        #[arg(long, default_value = "global")]
+        normalization: String,
+        /// Exclude reference voxels below this percent of the reference
+        /// maximum (the standard low-dose cutoff).
+        #[arg(long)]
+        dose_threshold_percent: Option<f64>,
+        /// Emit the per-voxel gamma field inside the record.
+        #[arg(long)]
+        gamma_volume: bool,
+        /// New output path for the gamma-evaluation JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Compute exact dose-volume metrics (D_x, V_x, min/mean/max, EUD)
     /// over a named voxel mask.
     Metrics {
@@ -5672,6 +5703,78 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 );
             }
             println!("qualification: {}", comparison.qualification);
+        }
+        Some(Command::Gamma {
+            reference,
+            candidate,
+            dose_difference_percent,
+            distance_to_agreement_mm,
+            normalization,
+            dose_threshold_percent,
+            gamma_volume,
+            output,
+        }) => {
+            let normalization = match normalization.as_str() {
+                "global" => openbnct_evidence::GammaNormalization::Global,
+                "local" => openbnct_evidence::GammaNormalization::Local,
+                other => {
+                    return Err(format!(
+                        "--normalization must be `global` or `local`, got {other:?}"
+                    )
+                    .into());
+                }
+            };
+            let reference_bytes = fs::read(&reference)?;
+            let reference_bundle: PhysicalDoseBundle = serde_json::from_slice(&reference_bytes)?;
+            let candidate_bytes = fs::read(&candidate)?;
+            let candidate_bundle: PhysicalDoseBundle = serde_json::from_slice(&candidate_bytes)?;
+            let evaluation = openbnct_evidence::evaluate_gamma(
+                &reference_bundle,
+                &candidate_bundle,
+                openbnct_core::ContentReference {
+                    id: reference.display().to_string(),
+                    sha256: openbnct_evidence::sha256_hex(&reference_bytes),
+                },
+                openbnct_core::ContentReference {
+                    id: candidate.display().to_string(),
+                    sha256: openbnct_evidence::sha256_hex(&candidate_bytes),
+                },
+                openbnct_evidence::GammaCriteria {
+                    dose_difference_percent,
+                    distance_to_agreement_mm,
+                    normalization,
+                    dose_threshold_percent,
+                },
+                gamma_volume,
+            )
+            .map_err(|error| io::Error::other(format!("gamma: {error}")))?;
+            write_new_json(&output, &evaluation)?;
+            println!("gamma evaluation at {}", output.display());
+            println!(
+                "case {}: {:.1}%/{:.1}mm, {} normalization",
+                evaluation.case_id,
+                evaluation.criteria.dose_difference_percent,
+                evaluation.criteria.distance_to_agreement_mm,
+                match evaluation.criteria.normalization {
+                    openbnct_evidence::GammaNormalization::Global => "global",
+                    openbnct_evidence::GammaNormalization::Local => "local",
+                }
+            );
+            for result in &evaluation.results {
+                let stats = match (result.mean_gamma, result.max_gamma) {
+                    (Some(mean), Some(max)) => format!("  mean γ = {mean:.3}  max γ = {max:.3}"),
+                    _ => String::new(),
+                };
+                println!(
+                    "  {}: pass {:.2}%  ({} evaluated, {} excluded){}",
+                    result.quantity,
+                    result.pass_rate * 100.0,
+                    result.voxels_evaluated,
+                    result.voxels_excluded,
+                    stats
+                );
+            }
+            println!("qualification: {}", evaluation.qualification);
         }
         Some(Command::Plan(args)) => match args.command {
             PlanCommand::Import {

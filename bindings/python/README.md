@@ -31,7 +31,8 @@ deck export (`export_mcnp_deck`); and external-dose/BED combined analysis
 (`import_external_dose`, `bed_from_external_dose`,
 `combine_biological_doses`); source positioning (`aim_source`,
 `rotate_source`, `PositionReport`); and cross-code dose comparison
-(`compare_dose_bundles`, `DoseComparison`); and biological-model
+(`compare_dose_bundles`, `DoseComparison`); and gamma-index evaluation
+(`evaluate_gamma`, `GammaEvaluation`); and biological-model
 sensitivity sweeps (`sweep_biological_model`, `SensitivitySweep`). Every load
 runs the same Rust `validate()` as the CLI, every rejection raises
 `NctForgeError`, and adapter provenance binds the generated interchange

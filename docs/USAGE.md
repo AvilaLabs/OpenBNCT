@@ -840,6 +840,37 @@ chains are bound into the record. It reports measured agreement only: no
 equivalence, clinical, or commissioning verdict is implied. Python parity
 is `compare_dose_bundles`.
 
+### Gamma-index evaluation
+
+`openbnct gamma` evaluates the Low et al. (1998) gamma index — the field's
+standard dose-comparison metric — between two physical dose bundles on the
+same frozen case, and writes an `openbnct.gamma-evaluation/0.1.0` record:
+
+```text
+openbnct gamma \
+  --reference openmc-dose.json --candidate mcnp-dose.json \
+  --dose-difference-percent 3 --distance-to-agreement-mm 3 \
+  --dose-threshold-percent 10 --gamma-volume \
+  --output gamma.json
+```
+
+For each evaluated reference voxel, gamma is the minimum over candidate
+positions of `sqrt(Δr²/dta² + ΔD²/Δd²)`; a voxel passes when γ ≤ 1.
+Pass/fail is computed exactly — only candidate voxels within `dta` can
+pass, so the search is the dta-radius ball — while reported γ values above
+1.0 are minima over that ball (an upper bound that can only make failing
+voxels look worse, never better). `--normalization global` (default)
+scales Δd by the reference maximum; `local` scales it by each reference
+voxel's own value. `--dose-threshold-percent` applies the standard
+low-dose cutoff, excluding reference voxels below that percent of the
+reference maximum. `--gamma-volume` embeds the per-voxel γ field (grid
+order, `null` for excluded voxels) for overlay and inspection. Per
+component and `physical_total` the record reports evaluated/excluded
+counts, pass rate, and mean/p95/max γ over finite values, with the same
+frozen-case guards and hash-bound inputs as `openbnct compare`. It
+reports measured agreement only: no equivalence, clinical, or
+commissioning claim. Python parity is `evaluate_gamma`.
+
 ### Exposure-plan tables and diagnostics
 
 The `openbnct plan` family bridges spreadsheet workflows and the JSON

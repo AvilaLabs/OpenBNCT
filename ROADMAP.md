@@ -934,6 +934,16 @@ other and of R8 ordering unless noted.
   distance-to-agreement) evaluator with configurable criteria and pass
   rates, plus the field's standard comparison quantities, emitted as an
   `openbnct.gamma-evaluation` record bound into the comparison chain.
+  Complete: `openbnct gamma`, Rust `evaluate_gamma`, and Python
+  `evaluate_gamma` implement Low et al. (1998) gamma over the frozen-case
+  guards — configurable dose-difference percent, distance-to-agreement,
+  global/local normalization, and a low-dose threshold cutoff; per
+  component plus physical total they report evaluated/excluded counts,
+  pass rate, and mean/p95/max γ, with an optional embedded per-voxel γ
+  field. Pass/fail is exact (the search neighborhood is the dta-radius
+  ball); γ values above 1.0 are ball-restricted upper bounds, stated
+  honestly in the record. Emitted as `openbnct.gamma-evaluation/0.1.0`
+  with both input content hashes and provenance chains bound in.
 
 - **R9-02 — accelerator-source and beam-shaping layer.** Parametric
   ⁷Li(p,n)/⁹Be(p,n) thick-target source terms and moderator/filter

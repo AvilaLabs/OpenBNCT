@@ -15,6 +15,7 @@ use thiserror::Error;
 mod bundle;
 mod compare;
 mod dvh;
+mod gamma;
 mod limits;
 mod metrics;
 
@@ -27,6 +28,10 @@ pub use compare::{
     compare_dose_bundles,
 };
 pub use dvh::{DVH_SCHEMA, DoseVolumeHistogram};
+pub use gamma::{
+    GAMMA_EVALUATION_SCHEMA, GammaCriteria, GammaEvaluation, GammaNormalization,
+    GammaQuantityResult, evaluate_gamma,
+};
 pub use limits::{
     IRRADIATION_TIME_SCHEMA, IrradiationTimeReport, LimitMetric, LimitingStructure, OrganLimit,
     RegionLimitResult,

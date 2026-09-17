@@ -822,3 +822,43 @@ def compare_dose_bundles(
 ) -> DoseComparison:
     """Compare two physical dose bundles on the same frozen case (same path
     as ``openbnct compare``)."""
+
+class GammaEvaluation:
+    """A gamma-index evaluation record."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def case_id(self) -> str: ...
+    @property
+    def criteria(self) -> tuple[float, float, str, float | None]:
+        """``(dose_difference_percent, distance_to_agreement_mm,
+        normalization, dose_threshold_percent)``."""
+    @property
+    def inputs(self) -> list[tuple[str, str, str, str]]:
+        """``(role, id, sha256, provenance_id)`` for each compared input."""
+    @property
+    def results(
+        self,
+    ) -> list[tuple[str, str, int, int, float, float | None, float | None, float | None]]:
+        """``(quantity, unit, voxels_evaluated, voxels_excluded, pass_rate,
+        mean_gamma, p95_gamma, max_gamma)`` per component plus
+        ``physical_total``."""
+    def gamma_volume(self, quantity: str) -> list[float | None] | None:
+        """Per-voxel gamma for one quantity (grid order), when emitted;
+        ``None`` entries mark threshold-excluded voxels."""
+    @property
+    def qualification(self) -> str: ...
+    def to_json(self) -> str: ...
+    def write(self, output: str | PathLike[str]) -> None: ...
+
+def evaluate_gamma(
+    reference: PhysicalDoseBundle,
+    candidate: PhysicalDoseBundle,
+    dose_difference_percent: float = 3.0,
+    distance_to_agreement_mm: float = 3.0,
+    normalization: str = "global",
+    dose_threshold_percent: float | None = None,
+    emit_gamma_volume: bool = False,
+) -> GammaEvaluation:
+    """Evaluate the Low gamma index between two physical dose bundles on
+    the same frozen case (same path as ``openbnct gamma``)."""

@@ -1943,6 +1943,157 @@ fn compare_dose_bundles(
     })
 }
 
+/// A gamma-index evaluation record.
+#[pyclass(frozen, name = "GammaEvaluation")]
+struct PyGammaEvaluation {
+    inner: openbnct_evidence::GammaEvaluation,
+}
+
+/// `(quantity, unit, voxels_evaluated, voxels_excluded, pass_rate,
+/// mean_gamma, p95_gamma, max_gamma)` per component plus `physical_total`.
+type GammaRow = (
+    String,
+    String,
+    u64,
+    u64,
+    f64,
+    Option<f64>,
+    Option<f64>,
+    Option<f64>,
+);
+
+#[pymethods]
+impl PyGammaEvaluation {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn case_id(&self) -> &str {
+        &self.inner.case_id
+    }
+
+    /// `(dose_difference_percent, distance_to_agreement_mm, normalization,
+    /// dose_threshold_percent)`.
+    #[getter]
+    fn criteria(&self) -> (f64, f64, String, Option<f64>) {
+        (
+            self.inner.criteria.dose_difference_percent,
+            self.inner.criteria.distance_to_agreement_mm,
+            match self.inner.criteria.normalization {
+                openbnct_evidence::GammaNormalization::Global => "global".to_string(),
+                openbnct_evidence::GammaNormalization::Local => "local".to_string(),
+            },
+            self.inner.criteria.dose_threshold_percent,
+        )
+    }
+
+    /// `(role, id, sha256, provenance_id)` for each compared input.
+    #[getter]
+    fn inputs(&self) -> Vec<(String, String, String, String)> {
+        self.inner
+            .inputs
+            .iter()
+            .map(|input| {
+                (
+                    input.role.clone(),
+                    input.content.id.clone(),
+                    input.content.sha256.clone(),
+                    input.provenance_id.clone(),
+                )
+            })
+            .collect()
+    }
+
+    #[getter]
+    fn results(&self) -> Vec<GammaRow> {
+        self.inner
+            .results
+            .iter()
+            .map(|r| {
+                (
+                    r.quantity.clone(),
+                    r.unit.clone(),
+                    r.voxels_evaluated,
+                    r.voxels_excluded,
+                    r.pass_rate,
+                    r.mean_gamma,
+                    r.p95_gamma,
+                    r.max_gamma,
+                )
+            })
+            .collect()
+    }
+
+    /// Per-voxel γ for one quantity (aligned to grid order), when the
+    /// volume was emitted; `None` entries mark threshold-excluded voxels.
+    fn gamma_volume(&self, quantity: &str) -> Option<Vec<Option<f64>>> {
+        self.inner
+            .results
+            .iter()
+            .find(|r| r.quantity == quantity)
+            .and_then(|r| r.gamma_volume.clone())
+    }
+
+    #[getter]
+    fn qualification(&self) -> &str {
+        &self.inner.qualification
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+
+    fn write(&self, output: PathBuf) -> PyResult<()> {
+        write_json_new(&output, &self.inner)
+    }
+}
+
+/// Evaluate the Low gamma index between two physical dose bundles on the
+/// same frozen case (same path as `openbnct gamma`). `normalization` is
+/// `"global"` (percent of the reference maximum) or `"local"` (percent of
+/// the evaluated reference voxel); `dose_threshold_percent` excludes
+/// low-dose reference voxels. A research record, never an equivalence
+/// claim.
+#[pyfunction]
+#[pyo3(signature = (reference, candidate, dose_difference_percent=3.0, distance_to_agreement_mm=3.0, normalization="global", dose_threshold_percent=None, emit_gamma_volume=false))]
+fn evaluate_gamma(
+    reference: &PyPhysicalDoseBundle,
+    candidate: &PyPhysicalDoseBundle,
+    dose_difference_percent: f64,
+    distance_to_agreement_mm: f64,
+    normalization: &str,
+    dose_threshold_percent: Option<f64>,
+    emit_gamma_volume: bool,
+) -> PyResult<PyGammaEvaluation> {
+    let normalization = match normalization {
+        "global" => openbnct_evidence::GammaNormalization::Global,
+        "local" => openbnct_evidence::GammaNormalization::Local,
+        other => {
+            return Err(reject(openbnct_evidence::ManifestError::Invalid(format!(
+                "normalization must be \"global\" or \"local\", got {other:?}"
+            ))));
+        }
+    };
+    Ok(PyGammaEvaluation {
+        inner: openbnct_evidence::evaluate_gamma(
+            &reference.inner,
+            &candidate.inner,
+            content_reference("reference", &reference.inner)?,
+            content_reference("candidate", &candidate.inner)?,
+            openbnct_evidence::GammaCriteria {
+                dose_difference_percent,
+                distance_to_agreement_mm,
+                normalization,
+                dose_threshold_percent,
+            },
+            emit_gamma_volume,
+        )
+        .map_err(reject)?,
+    })
+}
+
 /// A validated biological model contract.
 #[pyclass(frozen, name = "BiologicalModel")]
 struct PyBiologicalModel {
@@ -2992,6 +3143,7 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBedBundle>()?;
     m.add_class::<PyCombinedDoseBundle>()?;
     m.add_class::<PyDoseComparison>()?;
+    m.add_class::<PyGammaEvaluation>()?;
     m.add_class::<PyPositionReport>()?;
     m.add_function(wrap_pyfunction!(backends, m)?)?;
     m.add_function(wrap_pyfunction!(file_sha256, m)?)?;
@@ -3037,6 +3189,7 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load_bed_bundle, m)?)?;
     m.add_function(wrap_pyfunction!(combine_biological_doses, m)?)?;
     m.add_function(wrap_pyfunction!(compare_dose_bundles, m)?)?;
+    m.add_function(wrap_pyfunction!(evaluate_gamma, m)?)?;
     m.add_function(wrap_pyfunction!(sweep_biological_model, m)?)?;
     Ok(())
 }

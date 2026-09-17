@@ -1020,6 +1020,40 @@ class DoseComparisonTest(unittest.TestCase):
                 openbnct.compare_dose_bundles(bundle, other)
 
 
+class GammaEvaluationTest(unittest.TestCase):
+    def test_gamma_identical_and_reject_mismatched_case(self) -> None:
+        bundle = openbnct.import_component_dose(
+            REPO_ROOT / "examples" / "interchange" / "phits-synthetic-dose.json"
+        )
+        evaluation = openbnct.evaluate_gamma(
+            bundle, bundle, dose_difference_percent=3.0,
+            distance_to_agreement_mm=3.0, dose_threshold_percent=10.0,
+        )
+        self.assertEqual(evaluation.schema_version, "openbnct.gamma-evaluation/0.1.0")
+        self.assertEqual(evaluation.case_id, bundle.case_id)
+        self.assertEqual(len(evaluation.results), 5)
+        for (_, _, _, _, pass_rate, mean_gamma, _, _) in evaluation.results:
+            self.assertEqual(pass_rate, 1.0)
+            self.assertEqual(mean_gamma, 0.0)
+        roles = {role for role, _, _, _ in evaluation.inputs}
+        self.assertEqual(roles, {"reference", "candidate"})
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = json.loads(
+                (
+                    REPO_ROOT
+                    / "examples"
+                    / "interchange"
+                    / "phits-synthetic-dose.json"
+                ).read_text()
+            )
+            doc["case_id"] = "other-case"
+            other = openbnct.import_component_dose(
+                _write(tmp, "other.json", json.dumps(doc))
+            )
+            with self.assertRaises(NctForgeError):
+                openbnct.evaluate_gamma(bundle, other)
+
+
 class ExternalAdapterTest(unittest.TestCase):
     def test_mcnp_meshtal_import(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
