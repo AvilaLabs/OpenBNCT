@@ -880,6 +880,94 @@ review:
 
 Nothing in R7 changes the deferred list below or adds any clinical claim.
 
+## R8 — Frontier transport and uncertainty (draft)
+
+Draft scope, accepted for scheduling. Items are ordered by dependency;
+R8-01 gates R8-02 and enables parts of R8-03 and R9-02. No item in R8/R9
+requires licensed software, external approval, or any clinical claim.
+
+- **R8-01 — in-house deterministic transport path.** A multigroup
+  discrete-ordinates (S_N) solver over the regular scoring mesh inside
+  `openbnct-transport`, fed by group-collapsed nuclear data produced by
+  the existing NJOY/HDF5 pipeline as a versioned `openbnct.multigroup-*
+  ` artifact. Purpose: (a) a separately implemented transport path —
+  satisfying the specification's reference-promotion gate without any
+  licensed code; (b) seconds-scale research-preview dose estimates; (c)
+  the forward solve needed by R8-02. Verified against the NF-BNCT-001
+  contract machinery and manufactured-solution solver tests, with honest
+  characterization of where multigroup S_N departs from
+  continuous-energy Monte Carlo.
+
+- **R8-02 — adjoint-driven variance reduction.** An open CADIS/FW-CADIS
+  implementation: adjoint solve from R8-01 produces an importance map,
+  from which optimal space/energy weight-window bounds and a consistent
+  biased source are derived as a new `openbnct.variance-reduction`
+  derivation method. Upgrades the validated forward-flux-derived
+  windows; the correlation-limited photon tally observed at 140M/196M is
+  the motivating case. No open CADIS-equivalent exists for BNCT today.
+
+- **R8-03 — nuclear-data uncertainty propagation.** ENDF/B-VIII.1
+  covariance data processed through the NJOY chain, propagated to dose
+  either by Total-Monte-Carlo resampling (using the demonstrated
+  parallel-seed orchestration) or by adjoint-weighted sensitivities from
+  R8-01. Output: an `openbnct.dose-uncertainty-budget` artifact
+  decomposing total uncertainty into statistical, nuclear-data, and
+  declared-model contributions. No BNCT tool does this today.
+
+- **R8-04 — declared-input sensitivity screening.** Morris/Sobol
+  screening over declared uncertain inputs (boron concentration,
+  material assignment, beam model parameters, geometry tolerances),
+  extending the R6-08 systematic-propagation machinery into a complete
+  input-to-dose uncertainty budget.
+
+- **R8-05 — site lineal-energy tallies.** Microdosimetric y·f(y)/y·d(y)
+  spectra tallied directly in the generated deck, feeding the MKM family
+  with computed spectra in place of published constants and closing the
+  transport→biology loop end to end.
+
+## R9 — Breadth and credibility (draft)
+
+Draft scope, accepted for scheduling. Items are independent of each
+other and of R8 ordering unless noted.
+
+- **R9-01 — gamma-index and BNCT QA metrics.** A γ(dose-difference,
+  distance-to-agreement) evaluator with configurable criteria and pass
+  rates, plus the field's standard comparison quantities, emitted as an
+  `openbnct.gamma-evaluation` record bound into the comparison chain.
+
+- **R9-02 — accelerator-source and beam-shaping layer.** Parametric
+  ⁷Li(p,n)/⁹Be(p,n) thick-target source terms and moderator/filter
+  assembly sweeps feeding the existing TECDOC-1223 beam-quality figures
+  of merit — lets users model and compare candidate beam designs, the
+  field's modern direction. Uses the R8-01 fast solver for sweeps where
+  available.
+
+- **R9-03 — boron microdistribution artifacts.** Subcellular
+  localization fractions and intercellular heterogeneity variance as a
+  versioned research artifact feeding photon-isoeffective evaluation;
+  published work shows intercellular ¹⁰B heterogeneity materially
+  changes IsoE dose.
+
+- **R9-04 — metamorphic transport oracles.** Property-based invariants
+  for Monte Carlo decks — rotation invariance of isotropic problems,
+  source/detector reciprocity, energy-conservation closure — as an
+  additional automated correctness layer beyond fixed-answer
+  conformance.
+
+- **R9-05 — benchmark library expansion.** NF-BNCT-002/003: a
+  deeper-penetration case, a heterogeneous-material case, and an
+  analytically solvable slab case; adopt the published OpenPINT 1 mm
+  analytic reference as a cross-code conformance fixture.
+
+- **R9-06 — bidirectional interop.** Export OpenBNCT component bundles
+  in the OpenPINT per-component NIfTI convention (complementing the
+  existing import), and DICOM RT Plan object read/write alongside the
+  existing RTDOSE/RTSTRUCT support.
+
+Nothing in R8/R9 changes the deferred list below or adds any clinical
+claim; plan optimization involving Avify Dose patent subject matter
+remains behind the IP boundary.
+
 ## Deferred beyond the research platform
 
 - patient-specific clinical decisions;
