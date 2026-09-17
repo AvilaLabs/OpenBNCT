@@ -1,0 +1,99 @@
+{
+ "schema_version": "openbnct.multigroup-data/0.1.0",
+ "id": "openbnct.fir1-k63-cylindrical-phantom.multigroup-data.v1",
+ "energy_boundaries_ev": [
+  16900000.0,
+  10000.0,
+  0.5,
+  1e-05
+ ],
+ "collapse_declaration": "Three-group water data declared for the FiR 1 cylindrical-phantom depth-profile check: groups match the declared beam histogram bins (fast 1e4-1.69e7 eV, epithermal 0.5-1e4 eV, thermal 1e-5-0.5 eV). H1/O16 pointwise sigma_s and sigma_a evaluated from the processed ENDF/B-VIII.1 294K library (the same library the OpenMC validation run consumed) at representative group energies; thermal values at 0.0253 eV. Within-group self-scatter carries the elastic component; downscatter removal g0->g1 and g1->g2 follows the Fermi slowing-down estimate xi_bar*Sigma_s/Delta_u (xi_H=1, xi_O=0.12). Upscatter is neglected by declaration. The boron dose response is the 10B(n,a) kerma coefficient at a notional dilute 10 ug/g loading basis (Q=2.34 MeV capture energy); 1/v-weighted per group. This is a declared research fixture, not an evaluation-derived library.",
+ "component_profile": {
+  "id": "nctforge.macroscopic-absorbed-dose.v1",
+  "sha256": "a35b26c0134ae02d3b1b0ede5b8c6f38e86966e86c65e1727b4c7f38677ab41a"
+ },
+ "materials": [
+  {
+   "material_id": "openbnct.fir1-k63-water-phantom.material.v1",
+   "sigma_total_per_cm": [
+    0.384,
+    1.491,
+    2.165
+   ],
+   "scatter_matrix_per_cm": [
+    0.346,
+    0.038,
+    0.0,
+    0.0,
+    1.351,
+    0.139,
+    0.0,
+    0.0,
+    2.142
+   ],
+   "dose_response_gy_cm2": {
+    "boron": [
+     4.35e-16,
+     3.92e-14,
+     8.67e-13
+    ],
+    "nitrogen": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "hydrogen": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "photon": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   }
+  },
+  {
+   "material_id": "openbnct.fir1-k63-cylindrical-phantom.void.v1",
+   "sigma_total_per_cm": [
+    1e-06,
+    1e-06,
+    1e-06
+   ],
+   "scatter_matrix_per_cm": [
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0,
+    0.0
+   ],
+   "dose_response_gy_cm2": {
+    "boron": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "nitrogen": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "hydrogen": [
+     0.0,
+     0.0,
+     0.0
+    ],
+    "photon": [
+     0.0,
+     0.0,
+     0.0
+    ]
+   }
+  }
+ ]
+}

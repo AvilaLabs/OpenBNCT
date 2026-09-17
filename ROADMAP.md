@@ -853,8 +853,12 @@ review:
   interpolation convention; the peak-normalized comparison
   (`results/measurement-comparison-depth.json`) agrees through the
   buildup region and records the expected tail divergence of the Ø20 cm
-  cylinder vs the cubical reference phantom. Remaining: a like-for-like
-  cylindrical-phantom computed profile for a quantitative depth gate.)*
+  cylinder vs the cubical reference phantom. The like-for-like check
+  then landed under `validation/fir1-k63-cylindrical-phantom/`: a
+  deterministic S₈ three-group solve on a voxel-set Ø20 × 24 cm water
+  cylinder with declared ENDF/B-VIII.1-collapsed data reproduces the
+  digitized measured profile within ~1.3σ at all 12 bins (χ² = 6.7),
+  confirming the earlier divergence was phantom geometry.)*
 - **R7-03 — cross-code comparison depth.** Extend the MCNP meshtal and PHITS
   xyz-mesh import adapters into documented cross-code comparison workflows
   against the OpenMC path on the synthetic benchmark, and evaluate import

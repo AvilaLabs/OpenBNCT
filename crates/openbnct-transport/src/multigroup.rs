@@ -483,11 +483,34 @@ fn map_boundary_source(
                         >= cos_limit
                 })
                 .collect();
-            if in_cone.is_empty() {
-                return Err(invalid(
-                    "cone admits no inward ordinate — raise the quadrature order".into(),
-                ));
-            }
+            let in_cone = if in_cone.is_empty() {
+                // A cone narrower than the quadrature's finest angular
+                // resolution admits no ordinate at any order — collapse to
+                // the nearest inward ordinate, the monodirectional
+                // treatment.
+                let nearest = inward
+                    .iter()
+                    .copied()
+                    .max_by(|a, b| {
+                        let da: f64 = quadrature[*a]
+                            .0
+                            .iter()
+                            .zip(axis_unit_vector)
+                            .map(|(x, y)| x * y)
+                            .sum();
+                        let db: f64 = quadrature[*b]
+                            .0
+                            .iter()
+                            .zip(axis_unit_vector)
+                            .map(|(x, y)| x * y)
+                            .sum();
+                        da.partial_cmp(&db).unwrap_or(std::cmp::Ordering::Equal)
+                    })
+                    .ok_or_else(|| invalid("no inward ordinate".into()))?;
+                vec![nearest]
+            } else {
+                in_cone
+            };
             // Uniform-in-solid-angle cone: each in-cone ordinate's share
             // of the partial current is proportional to w·|Ω·n̂|.
             let denom: f64 = in_cone
@@ -1672,5 +1695,40 @@ mod artifact_tests {
         spec.validate().unwrap();
         assert_eq!(spec.case.sha256, hex(&case_bytes));
         assert_eq!(spec.multigroup_data.sha256, hex(&data_bytes));
+    }
+
+    /// The committed FiR 1 cylindrical-phantom deterministic-validation
+    /// fixtures must deserialize and validate: the transport case, its
+    /// voxel-set material assignment, the declared three-group data, and
+    /// the measurement-comparison report.
+    #[test]
+    fn committed_fir1_cylindrical_fixtures_validate() {
+        let base = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../validation/fir1-k63-cylindrical-phantom/"
+        );
+        let case: crate::model::TransportCase =
+            serde_json::from_slice(&std::fs::read(format!("{base}case.json")).unwrap()).unwrap();
+        case.validate().unwrap();
+        let assignment: crate::model::MaterialAssignment =
+            serde_json::from_slice(&std::fs::read(format!("{base}assignment.json")).unwrap())
+                .unwrap();
+        assignment.validate(&case.geometry).unwrap();
+        let data: MultigroupData =
+            serde_json::from_slice(&std::fs::read(format!("{base}multigroup-data.json")).unwrap())
+                .unwrap();
+        data.validate().unwrap();
+        assert_eq!(data.group_count(), 3);
+        let comparison: crate::measurement::MeasurementComparisonReport = serde_json::from_slice(
+            &std::fs::read(format!("{base}measurement-comparison-cylindrical.json")).unwrap(),
+        )
+        .unwrap();
+        comparison.validate().unwrap();
+        assert!(
+            comparison
+                .profile_comparisons
+                .iter()
+                .all(|p| p.passed == Some(true))
+        );
     }
 }

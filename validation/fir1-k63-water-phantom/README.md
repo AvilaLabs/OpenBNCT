@@ -109,8 +109,11 @@ Completed — first in-phantom measured-data comparison (results/):
    physically consistent; the PMMA and Liquid B series from the same
    figure are recorded in the record under phantom-qualified metric
    names and intentionally not compared against this water-phantom
-   profile. A like-for-like cylindrical-phantom computed profile is
-   the open follow-on for a quantitative gate.
+   profile. The like-for-like check landed in
+   `../fir1-k63-cylindrical-phantom/`: a deterministic S₈ three-group
+   solve on a voxel-set Ø20 × 24 cm water cylinder reproduces the
+   measured profile within ~1.3σ at all 12 bins (χ² = 6.7) —
+   confirming the divergence above was phantom geometry.
 
 The figure-only limitation is resolved for the depth-profile series by
 direct figure digitization (documented interpolation convention in the
