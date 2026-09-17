@@ -3506,11 +3506,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     let detail = match (entry.computed, entry.difference_sigma) {
                         (Some(computed), Some(sigma)) => format!(
                             "computed {computed:.4} vs measured {:.4} ({:.2}σ)",
-                            entry.measured, sigma
+                            entry.measured.unwrap_or(f64::NAN),
+                            sigma
                         ),
                         (Some(computed), None) => format!(
                             "computed {computed:.4} vs measured {:.4} (rel diff {:.3}, no σ)",
-                            entry.measured,
+                            entry.measured.unwrap_or(f64::NAN),
                             entry.relative_difference.unwrap_or(f64::NAN)
                         ),
                         (None, _) => "unmatched metric".to_string(),

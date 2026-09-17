@@ -862,3 +862,316 @@ def evaluate_gamma(
 ) -> GammaEvaluation:
     """Evaluate the Low gamma index between two physical dose bundles on
     the same frozen case (same path as ``openbnct gamma``)."""
+
+class MultigroupData:
+    """A validated multigroup cross-section artifact for the deterministic
+    S_N solver."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class MultigroupFlux:
+    """A multigroup scalar-flux artifact produced by ``sn solve``."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def case_id(self) -> str: ...
+    @property
+    def beam_model(self) -> str:
+        """``uncollided_split`` or ``boundary_flux``."""
+    @property
+    def quadrature_order(self) -> int: ...
+    @property
+    def outer_iterations(self) -> int: ...
+    @property
+    def residual(self) -> float: ...
+    @property
+    def converged(self) -> bool: ...
+    @property
+    def group_count(self) -> int: ...
+    @property
+    def voxel_count(self) -> int: ...
+    def flux(self) -> list[list[float]]:
+        """``[voxel][group]`` scalar flux, cm⁻²s⁻¹ per unit source rate."""
+    def to_json(self) -> str: ...
+
+class MultigroupCovariance:
+    """A validated declared-uncertainty artifact over multigroup parameters."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class DoseUncertaintyBudget:
+    """A nuclear-data propagated dose-uncertainty budget artifact."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class SensitivitySpec:
+    """A validated declared-input sensitivity-screening specification."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class SensitivityScreening:
+    """A Morris/Sobol screening report artifact."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class ResolvedWeightWindows:
+    """A validated mesh weight-window artifact (CADIS, FW-CADIS, or manual)."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class MeasurementRecord:
+    """A validated published-measurement record with provenance."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class MeasurementComparisonReport:
+    """A computed-versus-measured comparison report artifact."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class BeamDescription:
+    """A validated beam-description contract (spectrum, angular, port)."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class BeamQualityReport:
+    """A beam-quality metrics report artifact."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class AcceleratorSource:
+    """A validated accelerator neutron-source contract."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class BeamShapingAssembly:
+    """A validated beam-shaping-assembly contract."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class BsaSweepRecord:
+    """A BSA parameter-sweep result record."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class LinealSpectrum:
+    """A validated lineal-energy spectrum artifact (MKM input)."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class LinealTallySpec:
+    """A validated lineal-tally specification for transport-derived spectra."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class MetamorphicEvaluation:
+    """A metamorphic-relation oracle evaluation report."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class AnalyticOracle:
+    """A validated analytic-transport oracle specification."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class AnalyticOracleEvaluation:
+    """An analytic-oracle evaluation report artifact."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class BoronMicrodistribution:
+    """A validated subcellular 10B microdistribution model."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class MicrodistributionCorrection:
+    """An evaluated microdistribution correction record."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class RtPlanSummary:
+    """An RTPLAN summary record produced by ``dicom rtplan-info`` or read
+    back from an ``export-rtplan`` output."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def sop_instance_uid(self) -> str: ...
+    @property
+    def rt_plan_label(self) -> str: ...
+    @property
+    def rt_plan_name(self) -> str | None: ...
+    @property
+    def beam_count(self) -> int: ...
+    def beams(self) -> list[tuple[int, str | None, float | None, list[float]]]:
+        """``(beam_number, name, gantry_angle_deg, metersets)`` per beam;
+        gantry angle comes from the first control point."""
+    def to_json(self) -> str: ...
+
+class ComponentNiftiManifest:
+    """Manifest binding an exported per-component NIfTI set to its dose
+    bundle."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def case_id(self) -> str: ...
+    @property
+    def unit(self) -> str: ...
+    def files(
+        self,
+    ) -> list[tuple[str, str, str, str | None, str | None]]:
+        """``(component, file, sha256, sigma_file, sigma_sha256)`` per
+        exported NIfTI volume."""
+    def to_json(self) -> str: ...
+
+def load_multigroup_data(path: str | PathLike[str]) -> MultigroupData:
+    """Read and validate a multigroup-data artifact."""
+
+def load_multigroup_flux(path: str | PathLike[str]) -> MultigroupFlux:
+    """Read a multigroup scalar-flux artifact produced by ``sn solve``."""
+
+def load_multigroup_covariance(path: str | PathLike[str]) -> MultigroupCovariance:
+    """Read and validate a multigroup-covariance artifact."""
+
+def load_dose_uncertainty_budget(
+    path: str | PathLike[str],
+) -> DoseUncertaintyBudget:
+    """Read and validate a dose-uncertainty-budget artifact."""
+
+def load_sensitivity_spec(path: str | PathLike[str]) -> SensitivitySpec:
+    """Read and validate a sensitivity-screening specification."""
+
+def load_sensitivity_screening(
+    path: str | PathLike[str],
+) -> SensitivityScreening:
+    """Read and validate a sensitivity-screening report."""
+
+def load_weight_windows(path: str | PathLike[str]) -> ResolvedWeightWindows:
+    """Read and validate a resolved weight-window artifact."""
+
+def load_measurement_record(path: str | PathLike[str]) -> MeasurementRecord:
+    """Read and validate a published-measurement record."""
+
+def load_measurement_comparison(
+    path: str | PathLike[str],
+) -> MeasurementComparisonReport:
+    """Read and validate a computed-versus-measured comparison report."""
+
+def load_beam_description(path: str | PathLike[str]) -> BeamDescription:
+    """Read and validate a beam-description contract."""
+
+def load_beam_quality_report(path: str | PathLike[str]) -> BeamQualityReport:
+    """Read and validate a beam-quality report."""
+
+def load_accelerator_source(path: str | PathLike[str]) -> AcceleratorSource:
+    """Read and validate an accelerator-source contract."""
+
+def load_beam_shaping_assembly(
+    path: str | PathLike[str],
+) -> BeamShapingAssembly:
+    """Read and validate a beam-shaping-assembly contract."""
+
+def load_bsa_sweep(path: str | PathLike[str]) -> BsaSweepRecord:
+    """Read and validate a BSA sweep record."""
+
+def load_lineal_spectrum(path: str | PathLike[str]) -> LinealSpectrum:
+    """Read and validate a lineal-energy spectrum artifact."""
+
+def load_lineal_tally_spec(path: str | PathLike[str]) -> LinealTallySpec:
+    """Read and validate a lineal-tally specification."""
+
+def load_metamorphic_evaluation(
+    path: str | PathLike[str],
+) -> MetamorphicEvaluation:
+    """Read and validate a metamorphic-evaluation report."""
+
+def load_analytic_oracle(path: str | PathLike[str]) -> AnalyticOracle:
+    """Read and validate an analytic-oracle specification."""
+
+def load_analytic_oracle_evaluation(
+    path: str | PathLike[str],
+) -> AnalyticOracleEvaluation:
+    """Read an analytic-oracle evaluation report."""
+
+def load_gamma_evaluation(path: str | PathLike[str]) -> GammaEvaluation:
+    """Read and validate a gamma-index evaluation report."""
+
+def load_boron_microdistribution(
+    path: str | PathLike[str],
+) -> BoronMicrodistribution:
+    """Read and validate a boron-microdistribution model."""
+
+def load_microdistribution_correction(
+    path: str | PathLike[str],
+) -> MicrodistributionCorrection:
+    """Read and validate a microdistribution-correction record."""
+
+def load_rtplan_summary(path: str | PathLike[str]) -> RtPlanSummary:
+    """Read an RTPLAN summary record."""
+
+def summarize_rtplan(path: str | PathLike[str]) -> RtPlanSummary:
+    """Summarize a DICOM RTPLAN file — the ``dicom rtplan-info`` surface."""
+
+def load_component_nifti_manifest(
+    path: str | PathLike[str],
+) -> ComponentNiftiManifest:
+    """Read a per-component NIfTI export manifest."""

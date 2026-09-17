@@ -1235,5 +1235,111 @@ class NiftiImportTest(unittest.TestCase):
                 )
 
 
+class R8R9ArtifactTest(unittest.TestCase):
+    """Loaders for the deterministic-transport and measurement artifact
+    family committed under ``benchmarks/`` and ``validation/``."""
+
+    TRANSPORT_003 = (
+        REPO_ROOT / "benchmarks" / "synthetic" / "nf-bnct-003" / "transport"
+    )
+    FIR1_RESULTS = (
+        REPO_ROOT
+        / "validation"
+        / "fir1-k63-water-phantom"
+        / "results"
+    )
+
+    def test_multigroup_artifacts_load(self) -> None:
+        data = openbnct.load_multigroup_data(
+            self.TRANSPORT_003 / "multigroup-data.json"
+        )
+        self.assertEqual(
+            data.schema_version, "openbnct.multigroup-data/0.1.0"
+        )
+
+        flux = openbnct.load_multigroup_flux(
+            self.TRANSPORT_003 / "multigroup-flux.json"
+        )
+        self.assertEqual(flux.case_id, "nf-bnct-003")
+        self.assertTrue(flux.converged)
+        self.assertEqual(flux.quadrature_order, 4)
+        self.assertEqual(flux.group_count, 1)
+        self.assertEqual(flux.voxel_count, len(flux.flux()))
+
+        covariance = openbnct.load_multigroup_covariance(
+            self.TRANSPORT_003 / "multigroup-covariance.json"
+        )
+        self.assertEqual(
+            covariance.schema_version, "openbnct.multigroup-covariance/0.1.0"
+        )
+
+    def test_screening_and_bio_specs_load(self) -> None:
+        spec = openbnct.load_sensitivity_spec(
+            self.TRANSPORT_003 / "sensitivity-spec.json"
+        )
+        self.assertEqual(
+            spec.schema_version, "openbnct.sensitivity-spec/0.1.0"
+        )
+
+        tally = openbnct.load_lineal_tally_spec(
+            self.TRANSPORT_003 / "lineal-tally-spec.json"
+        )
+        self.assertEqual(
+            tally.schema_version, "openbnct.lineal-tally-spec/0.1.0"
+        )
+
+        oracle = openbnct.load_analytic_oracle(
+            self.TRANSPORT_003 / "analytic-oracle.json"
+        )
+        self.assertEqual(
+            oracle.schema_version, "openbnct.analytic-oracle/0.1.0"
+        )
+
+    def test_measurement_artifacts_load(self) -> None:
+        record = openbnct.load_measurement_record(
+            REPO_ROOT / "measurements" / "fir1-k63-free-beam.json"
+        )
+        self.assertEqual(
+            record.id, "nctforge.measurement.fir1-k63-free-beam.v1"
+        )
+
+        comparison = openbnct.load_measurement_comparison(
+            self.FIR1_RESULTS / "measurement-comparison-depth.json"
+        )
+        self.assertEqual(
+            comparison.id,
+            "nctforge.measurement-comparison.fir1-k63-cylindrical-depth.v1",
+        )
+
+        quality = openbnct.load_beam_quality_report(
+            self.FIR1_RESULTS / "beam-quality-tn-folded.json"
+        )
+        self.assertEqual(
+            quality.id,
+            "nctforge.beam-quality.fir1-k63-water-phantom.tn-folded.v2",
+        )
+
+    def test_wrong_schema_rejected(self) -> None:
+        with self.assertRaises(NctForgeError):
+            openbnct.load_multigroup_data(TRANSPORT_DIR / "material.json")
+        with self.assertRaises(NctForgeError):
+            openbnct.load_multigroup_flux(TRANSPORT_DIR / "material.json")
+        with self.assertRaises(NctForgeError):
+            openbnct.load_measurement_record(
+                self.TRANSPORT_003 / "multigroup-data.json"
+            )
+
+    def test_round_trip_serialization(self) -> None:
+        data = openbnct.load_multigroup_data(
+            self.TRANSPORT_003 / "multigroup-data.json"
+        )
+        first = data.to_json()
+        with tempfile.TemporaryDirectory() as tmp:
+            again = openbnct.load_multigroup_data(
+                _write(tmp, "mg.json", first)
+            )
+            self.assertEqual(again.to_json(), first)
+
+
 if __name__ == "__main__":
     unittest.main()

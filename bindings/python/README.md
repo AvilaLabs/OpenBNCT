@@ -33,7 +33,16 @@ deck export (`export_mcnp_deck`); and external-dose/BED combined analysis
 `rotate_source`, `PositionReport`); and cross-code dose comparison
 (`compare_dose_bundles`, `DoseComparison`); and gamma-index evaluation
 (`evaluate_gamma`, `GammaEvaluation`); and biological-model
-sensitivity sweeps (`sweep_biological_model`, `SensitivitySweep`). Every load
+sensitivity sweeps (`sweep_biological_model`, `SensitivitySweep`); and
+validated readers for the deterministic-transport and evidence artifact
+family — multigroup data/flux/covariance, dose-uncertainty budgets,
+sensitivity specs and screening reports, resolved weight windows,
+measurement records and comparison reports, beam descriptions and
+beam-quality reports, accelerator sources, beam-shaping assemblies and
+sweeps, lineal-energy spectra and tally specs, metamorphic and analytic
+oracle evaluations, boron microdistribution models and corrections,
+RTPLAN summaries (`load_rtplan_summary`, `summarize_rtplan`), and
+component-NIfTI export manifests. Every load
 runs the same Rust `validate()` as the CLI, every rejection raises
 `NctForgeError`, and adapter provenance binds the generated interchange
 document's SHA-256 exactly as the CLI does. Transport actions stay

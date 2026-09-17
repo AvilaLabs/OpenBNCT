@@ -1099,9 +1099,21 @@ name = "openbnct-bio"
 version = "0.1.1"
 dependencies = [
  "openbnct-core",
+ "openbnct-transport",
  "serde",
  "serde_json",
  "sha2",
+ "thiserror",
+]
+
+[[package]]
+name = "openbnct-boron"
+version = "0.1.1"
+dependencies = [
+ "openbnct-core",
+ "openbnct-transport",
+ "serde",
+ "serde_json",
  "thiserror",
 ]
 
@@ -1122,6 +1134,7 @@ dependencies = [
  "dicom-object",
  "openbnct-core",
  "openbnct-evidence",
+ "serde",
  "serde_json",
  "thiserror",
  "uuid",
@@ -1157,6 +1170,7 @@ dependencies = [
  "openbnct-core",
  "serde",
  "serde_json",
+ "sha2",
  "thiserror",
 ]
 
@@ -1205,6 +1219,7 @@ name = "openbnct-python"
 version = "0.1.1"
 dependencies = [
  "openbnct-bio",
+ "openbnct-boron",
  "openbnct-core",
  "openbnct-dicom",
  "openbnct-evidence",

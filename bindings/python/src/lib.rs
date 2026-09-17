@@ -13,18 +13,27 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use openbnct_bio::{
-    AppliedFractionation, BiologicalDoseBundle, BiologicalModel, RegionMask, apply_biological_model,
+    AppliedFractionation, BiologicalDoseBundle, BiologicalModel, LinealSpectrum, LinealTallySpec,
+    RegionMask, apply_biological_model,
 };
+use openbnct_boron::{BoronMicrodistribution, MicrodistributionCorrection};
 use openbnct_core::{ContentReference, PhysicalDoseBundle, ResampleMethod};
 use openbnct_dicom::{
-    BenchmarkReport, VerifiedBenchmarkCase, load_nf_bnct_001, synthetic::generate_nf_bnct_001,
-    verify_nf_bnct_001,
+    BenchmarkReport, RtPlanSummary, VerifiedBenchmarkCase, load_nf_bnct_001,
+    synthetic::generate_nf_bnct_001, verify_nf_bnct_001,
 };
-use openbnct_evidence::{CaseManifest, EvidenceBundleManifest, sha256_file};
+use openbnct_evidence::{
+    AnalyticOracle, AnalyticOracleEvaluation, CaseManifest, EvidenceBundleManifest,
+    GammaEvaluation, MetamorphicEvaluation, sha256_file,
+};
+use openbnct_nifti::ComponentNiftiManifest;
 use openbnct_openmc::OpenMcBackend;
 use openbnct_transport::{
-    BackendDescriptor, CompletedRun, ComponentDefinitionProfile, FixedSourceDefinition,
-    MaterialAssignment, MaterialDefinition, NeutronResponseSet, ResponseGenerationMethod,
+    AcceleratorSource, BackendDescriptor, BeamDescription, BeamQualityReport, BeamShapingAssembly,
+    BsaSweepRecord, CompletedRun, ComponentDefinitionProfile, DoseUncertaintyBudget,
+    FixedSourceDefinition, MaterialAssignment, MaterialDefinition, MeasurementComparisonReport,
+    MeasurementRecord, MultigroupCovariance, MultigroupData, MultigroupFlux, NeutronResponseSet,
+    ResolvedWeightWindows, ResponseGenerationMethod, SensitivityScreening, SensitivitySpec,
     TransportBackend, TransportCase,
 };
 use pyo3::create_exception;
@@ -145,6 +154,113 @@ contract_check!(
     validate,
     openbnct_core::ExposurePlanError
 );
+contract_check!(
+    MultigroupData,
+    validate,
+    openbnct_transport::MultigroupError
+);
+contract_check!(MultigroupCovariance, validate, openbnct_transport::UqError);
+contract_check!(DoseUncertaintyBudget, validate, openbnct_transport::UqError);
+contract_check!(
+    SensitivitySpec,
+    validate,
+    openbnct_transport::ScreeningError
+);
+contract_check!(
+    SensitivityScreening,
+    validate,
+    openbnct_transport::ScreeningError
+);
+contract_check!(
+    ResolvedWeightWindows,
+    validate,
+    openbnct_transport::VarianceReductionError
+);
+contract_check!(
+    MeasurementRecord,
+    validate,
+    openbnct_transport::MeasurementError
+);
+contract_check!(
+    MeasurementComparisonReport,
+    validate,
+    openbnct_transport::MeasurementError
+);
+contract_check!(BeamDescription, validate, openbnct_transport::BeamError);
+contract_check!(
+    BeamQualityReport,
+    validate,
+    openbnct_transport::BeamQualityError
+);
+contract_check!(
+    AcceleratorSource,
+    validate,
+    openbnct_transport::AcceleratorError
+);
+contract_check!(BeamShapingAssembly, validate, openbnct_transport::BsaError);
+contract_check!(BsaSweepRecord, validate, openbnct_transport::BsaError);
+contract_check!(LinealSpectrum, validate, openbnct_bio::BioError);
+contract_check!(LinealTallySpec, validate, openbnct_bio::LinealTallyError);
+contract_check!(
+    MetamorphicEvaluation,
+    validate,
+    openbnct_evidence::ManifestError
+);
+contract_check!(AnalyticOracle, validate, openbnct_evidence::ManifestError);
+contract_check!(GammaEvaluation, validate, openbnct_evidence::ManifestError);
+contract_check!(
+    BoronMicrodistribution,
+    validate,
+    openbnct_boron::MicrodistributionError
+);
+contract_check!(
+    MicrodistributionCorrection,
+    validate,
+    openbnct_boron::MicrodistributionError
+);
+
+/// Schema-token check for report types produced by the CLI — they are
+/// validated by their producer, so the boundary only pins the schema.
+impl ContractCheck for MultigroupFlux {
+    fn check(&self) -> Result<(), String> {
+        openbnct_core::schema_matches(
+            &self.schema_version,
+            openbnct_transport::MULTIGROUP_FLUX_SCHEMA,
+        )
+        .then_some(())
+        .ok_or_else(|| format!("unsupported schema_version {:?}", self.schema_version))
+    }
+}
+
+impl ContractCheck for AnalyticOracleEvaluation {
+    fn check(&self) -> Result<(), String> {
+        openbnct_core::schema_matches(
+            &self.schema_version,
+            openbnct_evidence::ANALYTIC_EVALUATION_SCHEMA,
+        )
+        .then_some(())
+        .ok_or_else(|| format!("unsupported schema_version {:?}", self.schema_version))
+    }
+}
+
+impl ContractCheck for RtPlanSummary {
+    fn check(&self) -> Result<(), String> {
+        openbnct_core::schema_matches(&self.schema_version, openbnct_dicom::RTPLAN_SUMMARY_SCHEMA)
+            .then_some(())
+            .ok_or_else(|| format!("unsupported schema_version {:?}", self.schema_version))
+    }
+}
+
+impl ContractCheck for ComponentNiftiManifest {
+    fn check(&self) -> Result<(), String> {
+        openbnct_core::schema_matches(
+            &self.schema_version,
+            openbnct_nifti::COMPONENT_NIFTI_MANIFEST_SCHEMA,
+        )
+        .then_some(())
+        .ok_or_else(|| format!("unsupported schema_version {:?}", self.schema_version))
+    }
+}
 
 /// Schema-token check for artifact types whose validation ran at import.
 impl ContractCheck for openbnct_core::ExternalDoseBundle {
@@ -3104,6 +3220,509 @@ fn verify_evidence_bundle(root: PathBuf) -> PyResult<(String, usize)> {
     Ok((manifest.case_id.clone(), manifest.artifacts.len()))
 }
 
+contract_wrapper!(
+    "MultigroupData",
+    PyMultigroupData,
+    MultigroupData,
+    "A validated multigroup cross-section artifact for the deterministic S_N solver."
+);
+contract_wrapper!(
+    "MultigroupCovariance",
+    PyMultigroupCovariance,
+    MultigroupCovariance,
+    "A validated declared-uncertainty artifact over multigroup parameters."
+);
+contract_wrapper!(
+    "DoseUncertaintyBudget",
+    PyDoseUncertaintyBudget,
+    DoseUncertaintyBudget,
+    "A nuclear-data propagated dose-uncertainty budget artifact."
+);
+contract_wrapper!(
+    "SensitivitySpec",
+    PySensitivitySpec,
+    SensitivitySpec,
+    "A validated declared-input sensitivity-screening specification."
+);
+contract_wrapper!(
+    "SensitivityScreening",
+    PySensitivityScreening,
+    SensitivityScreening,
+    "A Morris/Sobol screening report artifact."
+);
+contract_wrapper!(
+    "ResolvedWeightWindows",
+    PyResolvedWeightWindows,
+    ResolvedWeightWindows,
+    "A validated mesh weight-window artifact (CADIS, FW-CADIS, or manual)."
+);
+contract_wrapper!(
+    "MeasurementRecord",
+    PyMeasurementRecord,
+    MeasurementRecord,
+    "A validated published-measurement record with provenance."
+);
+contract_wrapper!(
+    "MeasurementComparisonReport",
+    PyMeasurementComparisonReport,
+    MeasurementComparisonReport,
+    "A computed-versus-measured comparison report artifact."
+);
+contract_wrapper!(
+    "BeamDescription",
+    PyBeamDescription,
+    BeamDescription,
+    "A validated beam-description contract (spectrum, angular, port)."
+);
+contract_wrapper!(
+    "BeamQualityReport",
+    PyBeamQualityReport,
+    BeamQualityReport,
+    "A beam-quality metrics report artifact."
+);
+contract_wrapper!(
+    "AcceleratorSource",
+    PyAcceleratorSource,
+    AcceleratorSource,
+    "A validated accelerator neutron-source contract."
+);
+contract_wrapper!(
+    "BeamShapingAssembly",
+    PyBeamShapingAssembly,
+    BeamShapingAssembly,
+    "A validated beam-shaping-assembly contract."
+);
+contract_wrapper!(
+    "BsaSweepRecord",
+    PyBsaSweepRecord,
+    BsaSweepRecord,
+    "A BSA parameter-sweep result record."
+);
+contract_wrapper!(
+    "LinealSpectrum",
+    PyLinealSpectrum,
+    LinealSpectrum,
+    "A validated lineal-energy spectrum artifact (MKM input)."
+);
+contract_wrapper!(
+    "LinealTallySpec",
+    PyLinealTallySpec,
+    LinealTallySpec,
+    "A validated lineal-tally specification for transport-derived spectra."
+);
+contract_wrapper!(
+    "MetamorphicEvaluation",
+    PyMetamorphicEvaluation,
+    MetamorphicEvaluation,
+    "A metamorphic-relation oracle evaluation report."
+);
+contract_wrapper!(
+    "AnalyticOracle",
+    PyAnalyticOracle,
+    AnalyticOracle,
+    "A validated analytic-transport oracle specification."
+);
+contract_wrapper!(
+    "AnalyticOracleEvaluation",
+    PyAnalyticOracleEvaluation,
+    AnalyticOracleEvaluation,
+    "An analytic-oracle evaluation report artifact."
+);
+contract_wrapper!(
+    "BoronMicrodistribution",
+    PyBoronMicrodistribution,
+    BoronMicrodistribution,
+    "A validated subcellular 10B microdistribution model."
+);
+contract_wrapper!(
+    "MicrodistributionCorrection",
+    PyMicrodistributionCorrection,
+    MicrodistributionCorrection,
+    "An evaluated microdistribution correction record."
+);
+
+/// A multigroup scalar-flux artifact produced by `sn solve`.
+#[pyclass(frozen, name = "MultigroupFlux")]
+struct PyMultigroupFlux {
+    inner: MultigroupFlux,
+}
+
+#[pymethods]
+impl PyMultigroupFlux {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn case_id(&self) -> &str {
+        &self.inner.case_id
+    }
+
+    /// `uncollided_split` or `boundary_flux`.
+    #[getter]
+    fn beam_model(&self) -> &str {
+        &self.inner.beam_model
+    }
+
+    #[getter]
+    fn quadrature_order(&self) -> u32 {
+        self.inner.quadrature_order
+    }
+
+    #[getter]
+    fn outer_iterations(&self) -> u32 {
+        self.inner.outer_iterations
+    }
+
+    /// Final relative scalar-flux change.
+    #[getter]
+    fn residual(&self) -> f64 {
+        self.inner.residual
+    }
+
+    #[getter]
+    fn converged(&self) -> bool {
+        self.inner.converged
+    }
+
+    /// Number of energy groups.
+    #[getter]
+    fn group_count(&self) -> usize {
+        self.inner.energy_boundaries_ev.len().saturating_sub(1)
+    }
+
+    /// Number of spatial voxels in the `[voxel][group]` flux layout.
+    #[getter]
+    fn voxel_count(&self) -> usize {
+        self.inner.flux.len()
+    }
+
+    /// Flattened `[voxel][group]` scalar flux, cm⁻²s⁻¹ per unit source rate.
+    fn flux(&self) -> Vec<Vec<f64>> {
+        self.inner.flux.clone()
+    }
+
+    /// Canonical JSON bytes as produced by the Rust contract, as text.
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+}
+
+/// `(beam_number, name, gantry_angle_deg, metersets)` per beam.
+type RtPlanBeamRow = (i32, Option<String>, Option<f64>, Vec<f64>);
+
+/// An RTPLAN summary record produced by `dicom rtplan-info` or written by
+/// `dicom export-rtplan` and read back.
+#[pyclass(frozen, name = "RtPlanSummary")]
+struct PyRtPlanSummary {
+    inner: RtPlanSummary,
+}
+
+#[pymethods]
+impl PyRtPlanSummary {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn sop_instance_uid(&self) -> &str {
+        &self.inner.sop_instance_uid
+    }
+
+    #[getter]
+    fn rt_plan_label(&self) -> &str {
+        &self.inner.rt_plan_label
+    }
+
+    #[getter]
+    fn rt_plan_name(&self) -> Option<String> {
+        self.inner.rt_plan_name.clone()
+    }
+
+    #[getter]
+    fn beam_count(&self) -> usize {
+        self.inner.beams.len()
+    }
+
+    /// `(beam_number, name, gantry_angle_deg, metersets)` per beam.
+    /// `gantry_angle_deg` comes from the first control point; `metersets`
+    /// follows fraction-group order.
+    fn beams(&self) -> Vec<RtPlanBeamRow> {
+        self.inner
+            .beams
+            .iter()
+            .map(|beam| {
+                (
+                    beam.beam_number,
+                    beam.beam_name.clone(),
+                    beam.control_point
+                        .as_ref()
+                        .and_then(|point| point.gantry_angle_deg),
+                    beam.metersets.clone(),
+                )
+            })
+            .collect()
+    }
+
+    /// Canonical JSON bytes as produced by the Rust contract, as text.
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+}
+
+/// `(component, file, sha256, sigma_file, sigma_sha256)` per exported NIfTI.
+type ComponentNiftiFileRow = (String, String, String, Option<String>, Option<String>);
+
+/// Manifest binding an exported per-component NIfTI set to its dose bundle.
+#[pyclass(frozen, name = "ComponentNiftiManifest")]
+struct PyComponentNiftiManifest {
+    inner: ComponentNiftiManifest,
+}
+
+#[pymethods]
+impl PyComponentNiftiManifest {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn case_id(&self) -> &str {
+        &self.inner.case_id
+    }
+
+    /// Serialized `DoseUnit` token shared by every component volume.
+    #[getter]
+    fn unit(&self) -> &str {
+        &self.inner.unit
+    }
+
+    /// `(component, file, sha256, sigma_file, sigma_sha256)` per exported
+    /// NIfTI volume.
+    fn files(&self) -> Vec<ComponentNiftiFileRow> {
+        self.inner
+            .files
+            .iter()
+            .map(|file| {
+                (
+                    file.component.clone(),
+                    file.file.clone(),
+                    file.sha256.clone(),
+                    file.sigma_file.clone(),
+                    file.sigma_sha256.clone(),
+                )
+            })
+            .collect()
+    }
+
+    /// Canonical JSON bytes as produced by the Rust contract, as text.
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+}
+
+/// Read and validate a multigroup-data artifact.
+#[pyfunction]
+fn load_multigroup_data(path: PathBuf) -> PyResult<PyMultigroupData> {
+    Ok(PyMultigroupData {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read a multigroup scalar-flux artifact produced by `sn solve`.
+#[pyfunction]
+fn load_multigroup_flux(path: PathBuf) -> PyResult<PyMultigroupFlux> {
+    Ok(PyMultigroupFlux {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a multigroup-covariance artifact.
+#[pyfunction]
+fn load_multigroup_covariance(path: PathBuf) -> PyResult<PyMultigroupCovariance> {
+    Ok(PyMultigroupCovariance {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a dose-uncertainty-budget artifact.
+#[pyfunction]
+fn load_dose_uncertainty_budget(path: PathBuf) -> PyResult<PyDoseUncertaintyBudget> {
+    Ok(PyDoseUncertaintyBudget {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a sensitivity-screening specification.
+#[pyfunction]
+fn load_sensitivity_spec(path: PathBuf) -> PyResult<PySensitivitySpec> {
+    Ok(PySensitivitySpec {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a sensitivity-screening report.
+#[pyfunction]
+fn load_sensitivity_screening(path: PathBuf) -> PyResult<PySensitivityScreening> {
+    Ok(PySensitivityScreening {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a resolved weight-window artifact.
+#[pyfunction]
+fn load_weight_windows(path: PathBuf) -> PyResult<PyResolvedWeightWindows> {
+    Ok(PyResolvedWeightWindows {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a published-measurement record.
+#[pyfunction]
+fn load_measurement_record(path: PathBuf) -> PyResult<PyMeasurementRecord> {
+    Ok(PyMeasurementRecord {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a computed-versus-measured comparison report.
+#[pyfunction]
+fn load_measurement_comparison(path: PathBuf) -> PyResult<PyMeasurementComparisonReport> {
+    Ok(PyMeasurementComparisonReport {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a beam-description contract.
+#[pyfunction]
+fn load_beam_description(path: PathBuf) -> PyResult<PyBeamDescription> {
+    Ok(PyBeamDescription {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a beam-quality report.
+#[pyfunction]
+fn load_beam_quality_report(path: PathBuf) -> PyResult<PyBeamQualityReport> {
+    Ok(PyBeamQualityReport {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate an accelerator-source contract.
+#[pyfunction]
+fn load_accelerator_source(path: PathBuf) -> PyResult<PyAcceleratorSource> {
+    Ok(PyAcceleratorSource {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a beam-shaping-assembly contract.
+#[pyfunction]
+fn load_beam_shaping_assembly(path: PathBuf) -> PyResult<PyBeamShapingAssembly> {
+    Ok(PyBeamShapingAssembly {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a BSA sweep record.
+#[pyfunction]
+fn load_bsa_sweep(path: PathBuf) -> PyResult<PyBsaSweepRecord> {
+    Ok(PyBsaSweepRecord {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a lineal-energy spectrum artifact.
+#[pyfunction]
+fn load_lineal_spectrum(path: PathBuf) -> PyResult<PyLinealSpectrum> {
+    Ok(PyLinealSpectrum {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a lineal-tally specification.
+#[pyfunction]
+fn load_lineal_tally_spec(path: PathBuf) -> PyResult<PyLinealTallySpec> {
+    Ok(PyLinealTallySpec {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a metamorphic-evaluation report.
+#[pyfunction]
+fn load_metamorphic_evaluation(path: PathBuf) -> PyResult<PyMetamorphicEvaluation> {
+    Ok(PyMetamorphicEvaluation {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate an analytic-oracle specification.
+#[pyfunction]
+fn load_analytic_oracle(path: PathBuf) -> PyResult<PyAnalyticOracle> {
+    Ok(PyAnalyticOracle {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read an analytic-oracle evaluation report.
+#[pyfunction]
+fn load_analytic_oracle_evaluation(path: PathBuf) -> PyResult<PyAnalyticOracleEvaluation> {
+    Ok(PyAnalyticOracleEvaluation {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a gamma-index evaluation report.
+#[pyfunction]
+fn load_gamma_evaluation(path: PathBuf) -> PyResult<PyGammaEvaluation> {
+    Ok(PyGammaEvaluation {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a boron-microdistribution model.
+#[pyfunction]
+fn load_boron_microdistribution(path: PathBuf) -> PyResult<PyBoronMicrodistribution> {
+    Ok(PyBoronMicrodistribution {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read and validate a microdistribution-correction record.
+#[pyfunction]
+fn load_microdistribution_correction(path: PathBuf) -> PyResult<PyMicrodistributionCorrection> {
+    Ok(PyMicrodistributionCorrection {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Read an RTPLAN summary record.
+#[pyfunction]
+fn load_rtplan_summary(path: PathBuf) -> PyResult<PyRtPlanSummary> {
+    Ok(PyRtPlanSummary {
+        inner: load_contract(path)?,
+    })
+}
+
+/// Summarize a DICOM RTPLAN file — the `dicom rtplan-info` surface.
+#[pyfunction]
+fn summarize_rtplan(path: PathBuf) -> PyResult<PyRtPlanSummary> {
+    Ok(PyRtPlanSummary {
+        inner: openbnct_dicom::summarize_rt_plan(&path).map_err(reject)?,
+    })
+}
+
+/// Read a per-component NIfTI export manifest.
+#[pyfunction]
+fn load_component_nifti_manifest(path: PathBuf) -> PyResult<PyComponentNiftiManifest> {
+    Ok(PyComponentNiftiManifest {
+        inner: load_contract(path)?,
+    })
+}
+
 /// NCTForge Python boundary over the authoritative Rust implementation.
 ///
 /// Research software only: not a medical device, not commissioned, and not a
@@ -3145,6 +3764,29 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyDoseComparison>()?;
     m.add_class::<PyGammaEvaluation>()?;
     m.add_class::<PyPositionReport>()?;
+    m.add_class::<PyMultigroupData>()?;
+    m.add_class::<PyMultigroupFlux>()?;
+    m.add_class::<PyMultigroupCovariance>()?;
+    m.add_class::<PyDoseUncertaintyBudget>()?;
+    m.add_class::<PySensitivitySpec>()?;
+    m.add_class::<PySensitivityScreening>()?;
+    m.add_class::<PyResolvedWeightWindows>()?;
+    m.add_class::<PyMeasurementRecord>()?;
+    m.add_class::<PyMeasurementComparisonReport>()?;
+    m.add_class::<PyBeamDescription>()?;
+    m.add_class::<PyBeamQualityReport>()?;
+    m.add_class::<PyAcceleratorSource>()?;
+    m.add_class::<PyBeamShapingAssembly>()?;
+    m.add_class::<PyBsaSweepRecord>()?;
+    m.add_class::<PyLinealSpectrum>()?;
+    m.add_class::<PyLinealTallySpec>()?;
+    m.add_class::<PyMetamorphicEvaluation>()?;
+    m.add_class::<PyAnalyticOracle>()?;
+    m.add_class::<PyAnalyticOracleEvaluation>()?;
+    m.add_class::<PyBoronMicrodistribution>()?;
+    m.add_class::<PyMicrodistributionCorrection>()?;
+    m.add_class::<PyRtPlanSummary>()?;
+    m.add_class::<PyComponentNiftiManifest>()?;
     m.add_function(wrap_pyfunction!(backends, m)?)?;
     m.add_function(wrap_pyfunction!(file_sha256, m)?)?;
     m.add_function(wrap_pyfunction!(generate_case, m)?)?;
@@ -3191,5 +3833,30 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(compare_dose_bundles, m)?)?;
     m.add_function(wrap_pyfunction!(evaluate_gamma, m)?)?;
     m.add_function(wrap_pyfunction!(sweep_biological_model, m)?)?;
+    m.add_function(wrap_pyfunction!(load_multigroup_data, m)?)?;
+    m.add_function(wrap_pyfunction!(load_multigroup_flux, m)?)?;
+    m.add_function(wrap_pyfunction!(load_multigroup_covariance, m)?)?;
+    m.add_function(wrap_pyfunction!(load_dose_uncertainty_budget, m)?)?;
+    m.add_function(wrap_pyfunction!(load_sensitivity_spec, m)?)?;
+    m.add_function(wrap_pyfunction!(load_sensitivity_screening, m)?)?;
+    m.add_function(wrap_pyfunction!(load_weight_windows, m)?)?;
+    m.add_function(wrap_pyfunction!(load_measurement_record, m)?)?;
+    m.add_function(wrap_pyfunction!(load_measurement_comparison, m)?)?;
+    m.add_function(wrap_pyfunction!(load_beam_description, m)?)?;
+    m.add_function(wrap_pyfunction!(load_beam_quality_report, m)?)?;
+    m.add_function(wrap_pyfunction!(load_accelerator_source, m)?)?;
+    m.add_function(wrap_pyfunction!(load_beam_shaping_assembly, m)?)?;
+    m.add_function(wrap_pyfunction!(load_bsa_sweep, m)?)?;
+    m.add_function(wrap_pyfunction!(load_lineal_spectrum, m)?)?;
+    m.add_function(wrap_pyfunction!(load_lineal_tally_spec, m)?)?;
+    m.add_function(wrap_pyfunction!(load_metamorphic_evaluation, m)?)?;
+    m.add_function(wrap_pyfunction!(load_analytic_oracle, m)?)?;
+    m.add_function(wrap_pyfunction!(load_analytic_oracle_evaluation, m)?)?;
+    m.add_function(wrap_pyfunction!(load_gamma_evaluation, m)?)?;
+    m.add_function(wrap_pyfunction!(load_boron_microdistribution, m)?)?;
+    m.add_function(wrap_pyfunction!(load_microdistribution_correction, m)?)?;
+    m.add_function(wrap_pyfunction!(load_rtplan_summary, m)?)?;
+    m.add_function(wrap_pyfunction!(summarize_rtplan, m)?)?;
+    m.add_function(wrap_pyfunction!(load_component_nifti_manifest, m)?)?;
     Ok(())
 }

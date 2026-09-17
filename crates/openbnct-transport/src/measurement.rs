@@ -146,7 +146,9 @@ pub enum MeasurementProvenance {
 pub struct MeasurementComparison {
     pub measurement_id: String,
     pub metric: String,
-    pub measured: f64,
+    /// `None` for non-scalar measurements that resolve to no metric —
+    /// serialized `null`, never dropped.
+    pub measured: Option<f64>,
     /// One-sigma absolute uncertainty when the record states one.
     pub uncertainty_1sigma: Option<f64>,
     /// `None` when the computed artifact has no such metric — the
@@ -510,26 +512,30 @@ pub fn compare_with_beam_quality(
                 MeasurementValue::Scalar {
                     value,
                     absolute_uncertainty_1sigma,
-                } => (*value, *absolute_uncertainty_1sigma),
+                } => (Some(*value), *absolute_uncertainty_1sigma),
                 // Spectral measurements have no beam-quality metric to
                 // resolve against — reported as unmatched (computed: None).
-                MeasurementValue::Histogram { .. } => (f64::NAN, None),
+                MeasurementValue::Histogram { .. } => (None, None),
             };
-            let computed = if measured.is_nan() {
+            let computed = if measured.is_none() {
                 None
             } else {
                 beam_quality_metric(report, &measurement.metric)
             };
-            let relative_difference = computed.map(|c| {
-                if measured == 0.0 {
-                    if c == 0.0 { 0.0 } else { f64::INFINITY }
-                } else {
-                    (c - measured).abs() / measured.abs()
-                }
+            let relative_difference = measured.and_then(|measured| {
+                computed.map(|c| {
+                    if measured == 0.0 {
+                        if c == 0.0 { 0.0 } else { f64::INFINITY }
+                    } else {
+                        (c - measured).abs() / measured.abs()
+                    }
+                })
             });
-            let difference_sigma = computed
-                .zip(sigma)
-                .map(|(c, s)| (c - measured).abs() / s.max(f64::MIN_POSITIVE));
+            let difference_sigma = measured.and_then(|measured| {
+                computed
+                    .zip(sigma)
+                    .map(|(c, s)| (c - measured).abs() / s.max(f64::MIN_POSITIVE))
+            });
             Some(MeasurementComparison {
                 measurement_id: measurement.id.clone(),
                 metric: measurement.metric.clone(),
@@ -887,6 +893,12 @@ mod tests {
             compare_measurement_record("cmp", &rec, content("m"), &report(), content("r"), 2.0)
                 .unwrap();
         assert_eq!(report.summary.unmatched, 1);
+        assert_eq!(report.comparisons[0].measured, None);
+        // The unmatched row must round-trip through JSON: NaN serializes
+        // as `null`, which only an Option field can read back.
+        let json = serde_json::to_string(&report).unwrap();
+        let back: MeasurementComparisonReport = serde_json::from_str(&json).unwrap();
+        assert_eq!(back, report);
         // Malformed bins rejected:
         rec.measurements[0].value = MeasurementValue::Histogram {
             bin_edges: vec![0.1, 1.0, 0.5],
