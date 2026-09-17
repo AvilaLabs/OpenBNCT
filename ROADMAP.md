@@ -867,9 +867,16 @@ review:
   verify → inspect); packaged five-platform binaries ship with v0.1.0
   via `release-desktop.yml`; crates.io/PyPI install paths live.)*
 - **R7-05 — transport throughput.** Profile the OpenMC run path (the
-  140M-history R6-09 run is the current baseline) and evaluate
+  196M-history R6-09 run is the current baseline: 97,688 s wall clock,
+  ~2,006 histories/s active on six i3-N305 threads) and evaluate
   parallel-seed orchestration across machines without changing the contract
-  surface.
+  surface. *(orchestration slice demonstrated — deterministic per-seed decks
+  verified byte-identical by regeneration, a ~130 MB self-contained worker
+  bundle (OpenMC binary + bundled glibc + case-scoped cross sections + deck)
+  executed under WSL2 on a second machine, and ping-based completion
+  notification across a NAT boundary; runbook in
+  `docs/research/PARALLEL_SEED_ORCHESTRATION.md`. Remaining: actual
+  throughput profiling once the workstation has free CPU.)*
 
 Nothing in R7 changes the deferred list below or adds any clinical claim.
 
