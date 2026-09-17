@@ -2998,6 +2998,26 @@ pub(crate) mod tests {
         assert!(bad_seed.validate().is_err());
     }
 
+    #[test]
+    fn expanded_benchmark_acceptance_contracts_validate() {
+        // Every frozen benchmark's predeclared contract must parse and
+        // validate — schema drift in a committed artifact is a defect.
+        for case in ["nf-bnct-001", "nf-bnct-002", "nf-bnct-003"] {
+            let bytes = std::fs::read(format!(
+                "{}/../../benchmarks/synthetic/{}/transport/openmc-acceptance-contract.json",
+                env!("CARGO_MANIFEST_DIR"),
+                case
+            ))
+            .unwrap();
+            let contract: OpenMcAcceptanceContract = serde_json::from_slice(&bytes)
+                .unwrap_or_else(|e| panic!("{case} contract parse: {e}"));
+            contract
+                .validate()
+                .unwrap_or_else(|e| panic!("{case} contract validate: {e}"));
+            assert_eq!(contract.case_id, case);
+        }
+    }
+
     /// A material-assignment fixture: CORE is boron-free with the mass moved
     /// to N14 — both nuclides are covered by folded-response estimators.
     fn assignment_json() -> Vec<u8> {

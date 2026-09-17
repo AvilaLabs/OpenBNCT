@@ -12,6 +12,7 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+mod analytic_oracle;
 mod bundle;
 mod compare;
 mod dvh;
@@ -20,6 +21,10 @@ mod limits;
 mod metamorphic;
 mod metrics;
 
+pub use analytic_oracle::{
+    ANALYTIC_EVALUATION_SCHEMA, ANALYTIC_ORACLE_SCHEMA, AnalyticLaw, AnalyticOracle,
+    AnalyticOracleEvaluation, evaluate_analytic_oracle,
+};
 pub use bundle::{
     BundleInput, EVIDENCE_BUNDLE_MANIFEST_NAME, EVIDENCE_BUNDLE_MANIFEST_SCHEMA,
     EvidenceBundleManifest, export_evidence_bundle,

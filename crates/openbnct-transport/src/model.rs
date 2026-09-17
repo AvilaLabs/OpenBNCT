@@ -939,4 +939,48 @@ mod tests {
         assert!(!is_nuclide_name("H01"));
         assert!(!is_nuclide_name("h1"));
     }
+
+    #[test]
+    fn expanded_benchmark_cases_validate() {
+        // NF-BNCT-002: heterogeneous deep-penetration case — frozen case,
+        // three materials, and the declared assignment must all load and
+        // validate against the case grid.
+        let root = concat!(env!("CARGO_MANIFEST_DIR"), "/../../benchmarks/synthetic");
+        let case2: TransportCase = serde_json::from_str(
+            &std::fs::read_to_string(format!("{root}/nf-bnct-002/transport/case.json")).unwrap(),
+        )
+        .unwrap();
+        case2.validate().unwrap();
+        assert_eq!(case2.case_id, "nf-bnct-002");
+        assert_eq!(case2.geometry.voxel_count().unwrap(), 216_000);
+        let assignment2: MaterialAssignment = serde_json::from_str(
+            &std::fs::read_to_string(format!("{root}/nf-bnct-002/transport/assignment.json"))
+                .unwrap(),
+        )
+        .unwrap();
+        assignment2.validate(&case2.geometry).unwrap();
+        for name in [
+            "material-tissue-b10-10ugg",
+            "material-tissue-b10-40ugg",
+            "material-skull-equivalent",
+        ] {
+            let material: MaterialDefinition = serde_json::from_str(
+                &std::fs::read_to_string(format!("{root}/nf-bnct-002/transport/{name}.json"))
+                    .unwrap(),
+            )
+            .unwrap();
+            material.validate().unwrap();
+        }
+
+        // NF-BNCT-003: idealized pure-absorber slab.
+        let case3: TransportCase = serde_json::from_str(
+            &std::fs::read_to_string(format!("{root}/nf-bnct-003/transport/case.json")).unwrap(),
+        )
+        .unwrap();
+        case3.validate().unwrap();
+        assert_eq!(case3.case_id, "nf-bnct-003");
+        assert_eq!(case3.geometry.voxel_count().unwrap(), 640);
+        assert_eq!(case3.material.nuclides.len(), 1);
+        assert_eq!(case3.material.nuclides[0].name, "B10");
+    }
 }

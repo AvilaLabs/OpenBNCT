@@ -239,6 +239,23 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Evaluate a declared analytic oracle — a closed-form expectation
+    /// such as exponential attenuation — against a dose bundle and emit
+    /// an `openbnct.analytic-oracle-evaluation/0.1.0` record.
+    Analytic {
+        /// `openbnct.analytic-oracle/0.1.0` declaration JSON.
+        #[arg(long)]
+        oracle: PathBuf,
+        /// Physical dose bundle JSON to evaluate.
+        #[arg(long)]
+        dose: PathBuf,
+        /// Record id.
+        #[arg(long)]
+        id: String,
+        /// New output path for the evaluation JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Compute exact dose-volume metrics (D_x, V_x, min/mean/max, EUD)
     /// over a named voxel mask.
     Metrics {
@@ -6279,6 +6296,51 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     quantity.quantity, fraction, quantity.evaluated_pairs, max_z
                 );
             }
+            println!("qualification: {}", evaluation.qualification);
+        }
+        Some(Command::Analytic {
+            oracle,
+            dose,
+            id,
+            output,
+        }) => {
+            let oracle_bytes = fs::read(&oracle)?;
+            let oracle_decl: openbnct_evidence::AnalyticOracle =
+                serde_json::from_slice(&oracle_bytes)?;
+            let oracle_ref = openbnct_core::ContentReference {
+                id: oracle_decl.id.clone(),
+                sha256: openbnct_evidence::sha256_hex(&oracle_bytes),
+            };
+            let dose_bytes = fs::read(&dose)?;
+            let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+            let dose_ref = openbnct_core::ContentReference {
+                id: dose.display().to_string(),
+                sha256: openbnct_evidence::sha256_hex(&dose_bytes),
+            };
+            let evaluation = openbnct_evidence::evaluate_analytic_oracle(
+                &id,
+                &oracle_decl,
+                oracle_ref,
+                &bundle,
+                dose_ref,
+            )
+            .map_err(|error| io::Error::other(format!("analytic: {error}")))?;
+            write_new_json(&output, &evaluation)?;
+            println!("analytic oracle evaluation at {}", output.display());
+            println!(
+                "{} on case {}: fitted slope {:.5} cm^-1 vs expected {:.5} cm^-1 ({} bins)",
+                evaluation.quantity,
+                evaluation.case_id,
+                evaluation.fitted_slope_per_cm,
+                evaluation.expected_slope_per_cm,
+                evaluation.bins_evaluated
+            );
+            println!(
+                "relative deviation {:.3}% (tolerance {:.1}%) — {}",
+                evaluation.relative_deviation * 100.0,
+                evaluation.relative_tolerance * 100.0,
+                if evaluation.passed { "PASS" } else { "FAIL" }
+            );
             println!("qualification: {}", evaluation.qualification);
         }
         Some(Command::Plan(args)) => match args.command {

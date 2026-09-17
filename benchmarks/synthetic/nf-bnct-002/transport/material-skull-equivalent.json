@@ -1,0 +1,33 @@
+{
+ "schema_version": "openbnct.material-definition/0.1.0",
+ "id": "openbnct.nf-bnct-002.material.skull-equivalent.v1",
+ "density_g_cm3": 1.85,
+ "temperature_k": 293.6,
+ "nuclides": [
+  {
+   "name": "H1",
+   "mass_fraction": 0.034
+  },
+  {
+   "name": "C12",
+   "mass_fraction": 0.155
+  },
+  {
+   "name": "N14",
+   "mass_fraction": 0.042
+  },
+  {
+   "name": "O16",
+   "mass_fraction": 0.435
+  },
+  {
+   "name": "P31",
+   "mass_fraction": 0.103
+  },
+  {
+   "name": "Ca40",
+   "mass_fraction": 0.231
+  }
+ ],
+ "neutron_thermal_treatment": "free_gas"
+}

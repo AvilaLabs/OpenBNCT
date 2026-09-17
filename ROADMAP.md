@@ -1000,10 +1000,23 @@ other and of R8 ordering unless noted.
   capture reactions are exoenergetic, so a naive budget is not a valid
   invariant.
 
-- **R9-05 — benchmark library expansion.** NF-BNCT-002/003: a
-  deeper-penetration case, a heterogeneous-material case, and an
-  analytically solvable slab case; adopt the published OpenPINT 1 mm
-  analytic reference as a cross-code conformance fixture.
+- **R9-05 — benchmark library expansion.** Complete (specification +
+  contract layer): `NF-BNCT-002` adds the deeper-penetration
+  heterogeneous case — a 30 cm phantom with a skull-equivalent slab on
+  the incident face and a high-boron tumor insert on axis under a
+  declared 1/E epithermal disk source, with frozen case/materials/
+  assignment/contract committed. `NF-BNCT-003` adds the analytically
+  solvable case — a 0.0253 eV monodirectional beam into a near-pure ¹⁰B
+  slab where the boron component follows `exp(−Σ_t·z)` — backed by the
+  new transport-neutral `openbnct.analytic-oracle/0.1.0` declaration and
+  `openbnct analytic` evaluator (weighted log-slope regression over the
+  declared fit window, `openbnct.analytic-oracle-evaluation/0.1.0`
+  output). The published OpenPINT "analytic" reference was investigated
+  and declined: its reference is itself a 1 mm-mesh MCNP CSG run, not a
+  closed-form solution, so NF-BNCT-003 supplies the genuinely analytic
+  oracle instead; a cross-code OpenPINT-format fixture remains under
+  R9-06's export path. Execution of both new cases is pending their
+  material-bound response sets, same phased pattern as NF-BNCT-001.
 
 - **R9-06 — bidirectional interop.** Export OpenBNCT component bundles
   in the OpenPINT per-component NIfTI convention (complementing the

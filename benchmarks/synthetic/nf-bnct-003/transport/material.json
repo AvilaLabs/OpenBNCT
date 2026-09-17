@@ -1,0 +1,13 @@
+{
+ "schema_version": "openbnct.material-definition/0.1.0",
+ "id": "openbnct.nf-bnct-003.material.ideal-b10-absorber.v1",
+ "density_g_cm3": 0.001,
+ "temperature_k": 293.6,
+ "nuclides": [
+  {
+   "name": "B10",
+   "mass_fraction": 1.0
+  }
+ ],
+ "neutron_thermal_treatment": "free_gas"
+}

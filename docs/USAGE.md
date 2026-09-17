@@ -965,6 +965,33 @@ deliberately absent: BNCT capture reactions are exoenergetic, so total
 deposited energy is not a valid invariant. Passing oracles are
 consistency evidence, not a correctness proof.
 
+### Analytic oracles
+
+`openbnct analytic` checks a dose bundle against a *closed-form*
+expectation declared in an `openbnct.analytic-oracle/0.1.0` artifact —
+the complement to metamorphic oracles when a genuine analytic ground
+truth exists. The only law defined today is `exponential_attenuation`,
+used by the `NF-BNCT-003` pure-absorber slab benchmark:
+
+```text
+openbnct analytic \
+  --oracle benchmarks/synthetic/nf-bnct-003/transport/analytic-oracle.json \
+  --dose dose.json --id EVAL-005 --output analytic.json
+```
+
+The oracle declares the quantity (e.g. `component:boron`), the profile
+axis, the expected attenuation coefficient Σ_t in cm⁻¹, a relative
+tolerance that must cover the law's stated approximation bound, a
+world-coordinate fit window, and the content-bound material/source the
+expectation assumes. The evaluation pools each perpendicular plane into
+an axis profile, fits `ln D(z)` by weighted least squares over the
+window (voxel uncertainties, when present, weight the fit and yield a
+slope σ), and reports the fitted slope, its deviation from the declared
+Σ_t, a log-residual RMS measuring how exponential the profile actually
+is, and a pass/fail against the tolerance — emitted as
+`openbnct.analytic-oracle-evaluation/0.1.0`. Axis-aligned grids only;
+the oracle is consistency evidence, not a correctness proof.
+
 ### Exposure-plan tables and diagnostics
 
 The `openbnct plan` family bridges spreadsheet workflows and the JSON

@@ -1,0 +1,74 @@
+{
+ "schema_version": "openbnct.acceptance-contract/0.1.0",
+ "id": "openbnct.nf-bnct-003.acceptance.v1",
+ "case_id": "nf-bnct-003",
+ "regions": [
+  {
+   "name": "axis_profile",
+   "bounds_cm": {
+    "x_cm": [
+     -0.5,
+     0.5
+    ],
+    "y_cm": [
+     -0.5,
+     0.5
+    ],
+    "z_cm": [
+     -10.0,
+     10.0
+    ]
+   },
+   "dimensions": [
+    1,
+    1,
+    40
+   ],
+   "precision_gated": false
+  },
+  {
+   "name": "slope_window_integral",
+   "bounds_cm": {
+    "x_cm": [
+     -0.5,
+     0.5
+    ],
+    "y_cm": [
+     -0.5,
+     0.5
+    ],
+    "z_cm": [
+     -8.0,
+     8.0
+    ]
+   },
+   "dimensions": [
+    1,
+    1,
+    1
+   ],
+   "precision_gated": true
+  }
+ ],
+ "evaluated_mean_deposited_energy_ev": {
+  "b10_mt107_ev": 2341900.4411541675,
+  "evidence_sha256": "724b73f60a237833fe58a71c1ddc97a33bb9c3aea6114ea807e86bad434e0c86",
+  "n14_mt103_ev": 625976.8493398946
+ },
+ "gates": {
+  "roi_relative_standard_uncertainty_max": 0.02,
+  "voxel_max_fraction": 0.2,
+  "voxel_median_relative_uncertainty_max": 0.05,
+  "voxel_p95_relative_uncertainty_max": 0.1,
+  "reaction_rate_agreement": 0.02,
+  "neutron_heating_agreement": 0.05,
+  "coupled_heating_agreement": 0.05,
+  "chi_square_p_min": 0.001
+ },
+ "seeds": [
+  20260831,
+  314159265,
+  271828182
+ ],
+ "min_batches": 50
+}

@@ -1,0 +1,26 @@
+{
+ "schema_version": "openbnct.analytic-oracle/0.1.0",
+ "id": "openbnct.nf-bnct-003.analytic-oracle.v1",
+ "case_id": "nf-bnct-003",
+ "law": "exponential_attenuation",
+ "quantity": "component:boron",
+ "axis": "z",
+ "attenuation_per_cm": 0.2308,
+ "relative_tolerance": 0.02,
+ "fit_window_cm": [
+  -8.0,
+  8.0
+ ],
+ "min_bins": 8,
+ "assumptions": [
+  {
+   "id": "openbnct.nf-bnct-003.material.ideal-b10-absorber.v1",
+   "sha256": "b8780a440d8b5e15a13ebbe994ae0f55d77f961b11820b779dde87cbb037963d"
+  },
+  {
+   "id": "openbnct.nf-bnct-003.source.v1",
+   "sha256": "ac048426b2c1771b5da5bf42d3b877b0a3a91937778d4cab807ac65ef330ab30"
+  }
+ ],
+ "note": "Pure-absorber bound at 0.0253 eV: B10 sigma_s/sigma_a ~ 6e-4, so uncollided transport dominates and the boron component follows exp(-Sigma_t z) with Sigma_t = N_B10*(sigma_a+sigma_s) = 0.2308 cm^-1 at rho=1e-3 g/cm3. The 2% tolerance covers residual single-scatter buildup and mesh discretization; the photon component (0.478 MeV capture gamma) is excluded from the law."
+}

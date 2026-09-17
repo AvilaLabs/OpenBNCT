@@ -26,8 +26,29 @@ are source-controlled.
   evidence, and its transported-photon suitability report rejects four source
   evaluations; KERMA response tables and reference outputs remain intentionally
   unqualified.
+- [`NF-BNCT-002`](nf-bnct-002/SPECIFICATION.md) extends the library into
+  deep-penetration heterogeneous transport: a 30 cm cube with a
+  skull-equivalent slab on the incident face and a high-boron tumor insert
+  on axis, driven by a declared 1/E epithermal disk source. Machine inputs
+  (frozen case, three materials, voxel assignment, epithermal source,
+  acceptance contract) are committed; execution is pending its
+  material-bound response set.
+- [`NF-BNCT-003`](nf-bnct-003/SPECIFICATION.md) is the library's analytic
+  oracle: a 0.0253 eV monodirectional beam into a near-pure ¹⁰B absorber,
+  where the boron component follows `exp(−Σ_t·z)` to a documented bound.
+  The declared expectation lives in `transport/analytic-oracle.json` and is
+  checked by `openbnct analytic` — a closed-form ground truth rather than
+  another code's output.
 
-Generate and verify its DICOM geometry inputs with:
+Evaluate an analytic oracle against a dose bundle with:
+
+```text
+cargo run --bin openbnct -- analytic \
+  --oracle benchmarks/synthetic/nf-bnct-003/transport/analytic-oracle.json \
+  --dose DOSE.json --id EVAL-ID --output evaluation.json
+```
+
+Generate and verify NF-BNCT-001's DICOM geometry inputs with:
 
 ```text
 cargo run --bin openbnct -- benchmark generate /tmp/nf-bnct-001

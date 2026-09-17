@@ -1,0 +1,29 @@
+{
+ "schema_version": "openbnct.fixed-source-definition/0.1.0",
+ "id": "openbnct.nf-bnct-003.source.v1",
+ "particle": "neutron",
+ "source_sites_per_history": 1,
+ "statistical_weight_per_site": 1.0,
+ "space": {
+  "kind": "uniform_disk",
+  "axis": "z",
+  "offset_cm": -9.999999,
+  "center_uv_cm": [
+   0.0,
+   0.0
+  ],
+  "radius_cm": 0.9
+ },
+ "angle": {
+  "kind": "monodirectional",
+  "unit_vector": [
+   0.0,
+   0.0,
+   1.0
+  ]
+ },
+ "energy": {
+  "kind": "monoenergetic",
+  "energy_ev": 0.0253
+ }
+}
