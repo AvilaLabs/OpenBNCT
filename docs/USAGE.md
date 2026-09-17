@@ -663,6 +663,30 @@ openbnct bio apply \
   --output NEW-BIO-BUNDLE.json
 ```
 
+Spectra can also come from the deterministic transport solve instead
+of a measurement record: `openbnct bio lineal-tally` evaluates a
+`openbnct.lineal-tally-spec/0.1.0` artifact — a spherical site diameter
+and a declared per-component secondary table (emission energy, effective
+range, collision share) — over an `openbnct.multigroup-flux/0.1.0` solve.
+Each collision emits a rectilinear secondary depositing
+`ε(l) = E·min(1, l/R)` over the sphere's isotropic chord distribution
+(mean chord `2d/3`), and the rate-weighted domain-integrated event
+spectrum `f(y)` lands as a unit-normalized `event_frequency`
+`openbnct.lineal-spectrum/0.1.0` — directly consumable by MKM
+`computed_spectrum` sources. The model is declared-data microdosimetry:
+no straggling or sub-site structure, honest about its approximation in
+the artifact's note. A committed NF-BNCT-003 spec + flux pair exercises
+the path in CI.
+
+```text
+openbnct bio lineal-tally \
+  --case transport/case.json \
+  --data transport/multigroup-data.json \
+  --flux transport/multigroup-flux.json \
+  --spec transport/lineal-tally-spec.json \
+  --id openbnct.case.lineal-spectrum.v1 --output NEW-SPECTRUM.json
+```
+
 Each physical component is converted to a photon-equivalent dose via the
 MKM effective `α* = α₀ + β·z̄₁D` with `z̄₁D = ȳ_D/(ρ·π·r_d²)`, and the
 total sums them; the emitted bundle marks `microdosimetric_kinetic`

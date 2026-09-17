@@ -19,6 +19,7 @@
 
 mod bed;
 mod endpoint;
+mod lineal_tally;
 mod mkm;
 mod sweep;
 
@@ -37,6 +38,10 @@ pub use endpoint::{
     AppliedDoseStatistic, DoseStatistic, ENDPOINT_EVALUATION_SCHEMA, ENDPOINT_MODEL_SCHEMA,
     EndpointEvaluation, EndpointFunction, EndpointKind, EndpointModel, EvaluatedEndpoint,
     UtcpCombination, UtcpComponents, combine_utcp, evaluate_endpoint,
+};
+pub use lineal_tally::{
+    LINEAL_TALLY_SPEC_SCHEMA, LinealComponent, LinealTallyError, LinealTallySpec,
+    compute_lineal_spectrum,
 };
 pub use mkm::{
     LINEAL_SPECTRUM_SCHEMA, LinealEnergySource, LinealSpectrum, LinealWeighting,

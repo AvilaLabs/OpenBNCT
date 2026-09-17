@@ -2979,6 +2979,7 @@ name = "openbnct-bio"
 version = "0.1.1"
 dependencies = [
  "openbnct-core",
+ "openbnct-transport",
  "serde",
  "serde_json",
  "sha2",

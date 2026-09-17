@@ -951,7 +951,9 @@ pub fn solve_multigroup_adjoint(
 }
 
 /// Per-voxel material index: base material, then assignment regions.
-pub(crate) fn cell_materials(
+/// Public so downstream evaluators (UQ, screening, lineal tallies) can
+/// resolve the same material map the solver used.
+pub fn cell_materials(
     case: &TransportCase,
     data: &MultigroupData,
     assignment: Option<&MaterialAssignment>,

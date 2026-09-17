@@ -1884,6 +1884,34 @@ enum BioCommand {
         #[arg(long)]
         spectrum: PathBuf,
     },
+    /// Tally a transport-derived lineal-energy spectrum: a
+    /// `openbnct.lineal-tally-spec/0.1.0` artifact (declared spherical
+    /// site + per-component charged-secondary table) evaluated over a
+    /// deterministic multigroup flux into `openbnct.lineal-spectrum/0.1.0`,
+    /// consumable by `bio apply` MKM `computed_spectrum` sources.
+    LinealTally {
+        /// `openbnct.transport-case/0.1.0` JSON.
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-data/0.1.0` JSON.
+        #[arg(long)]
+        data: PathBuf,
+        /// `openbnct.multigroup-flux/0.1.0` JSON from `sn solve`.
+        #[arg(long)]
+        flux: PathBuf,
+        /// `openbnct.lineal-tally-spec/0.1.0` JSON.
+        #[arg(long)]
+        spec: PathBuf,
+        /// `openbnct.material-assignment/0.2.0` JSON used in the solve.
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// Spectrum id for the emitted artifact.
+        #[arg(long)]
+        id: String,
+        /// New output path for the lineal spectrum JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Convert an imported external dose bundle to a BED or EQD2 field.
     Bed {
         /// External dose bundle produced by `import dose`.
@@ -5956,6 +5984,58 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 println!(
                     "ȳ_D (dose mean): {:.6} keV/µm",
                     spectrum.dose_mean_kev_um()?
+                );
+            }
+            BioCommand::LinealTally {
+                case,
+                data,
+                flux,
+                spec,
+                assignment,
+                id,
+                output,
+            } => {
+                let case_bytes = fs::read(&case)?;
+                let transport_case: TransportCase = serde_json::from_slice(&case_bytes)?;
+                let data_bytes = fs::read(&data)?;
+                let mg_data: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&data_bytes)?;
+                let flux_bytes = fs::read(&flux)?;
+                let mg_flux: openbnct_transport::MultigroupFlux =
+                    serde_json::from_slice(&flux_bytes)?;
+                let spec_bytes = fs::read(&spec)?;
+                let tally_spec: openbnct_bio::LinealTallySpec =
+                    serde_json::from_slice(&spec_bytes)?;
+                tally_spec
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let assignment_model = match &assignment {
+                    Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
+                        path,
+                    )?)?),
+                    None => None,
+                };
+                let spectrum = openbnct_bio::compute_lineal_spectrum(
+                    &transport_case,
+                    &mg_data,
+                    &mg_flux,
+                    assignment_model.as_ref(),
+                    &tally_spec,
+                    &id,
+                    openbnct_core::ContentReference {
+                        id: tally_spec.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&spec_bytes),
+                    },
+                )
+                .map_err(|error| io::Error::other(format!("lineal tally: {error}")))?;
+                write_new_json(&output, &spectrum)?;
+                println!("lineal spectrum at {}", output.display());
+                println!("id: {} weighting: EventFrequency", spectrum.id);
+                println!(
+                    "ȳ_D (dose mean): {:.6} keV/µm",
+                    spectrum
+                        .dose_mean_kev_um()
+                        .map_err(|e| io::Error::other(e.to_string()))?
                 );
             }
             BioCommand::Bed {

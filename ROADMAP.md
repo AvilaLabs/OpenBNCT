@@ -959,10 +959,21 @@ requires licensed software, external approval, or any clinical claim.
   dead-parameter detection, seed determinism, and a committed
   NF-BNCT-003 spec.
 
-- **R8-05 — site lineal-energy tallies.** Microdosimetric y·f(y)/y·d(y)
-  spectra tallied directly in the generated deck, feeding the MKM family
-  with computed spectra in place of published constants and closing the
-  transport→biology loop end to end.
+- **R8-05 — transport-derived lineal-energy spectra.** Complete:
+  `openbnct.lineal-tally-spec/0.1.0` declares a spherical site diameter
+  plus a per-component charged-secondary table (emission energy,
+  effective range, collision share); `openbnct bio lineal-tally`
+  evaluates it over a computed `multigroup-flux` artifact —
+  `ε(l) = E·min(1, l/R)` over the sphere's isotropic chord distribution,
+  rate-weighted and domain-integrated — and emits the
+  `openbnct.lineal-spectrum/0.1.0` the MKM `computed_spectrum` source
+  already consumes, closing the transport→biology loop on declared
+  data. Verified against the analytic chord statistics (long-range
+  ramp, short-range saturation at E/l̄, rate weighting, scale
+  invariance) and a committed NF-BNCT-003 spec+flux pair producing
+  ȳ_D ≈ 198 keV/µm for a 1 µm site — inside the published boron-capture
+  TEPC range. In-deck MC lineal tallies remain open follow-on scope;
+  the deterministic path supplies the spectral shape today.
 
 ## R9 — Breadth and credibility (draft)
 

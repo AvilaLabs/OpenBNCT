@@ -58,7 +58,7 @@ pub use model::{
 };
 pub use multigroup::{
     MULTIGROUP_DATA_SCHEMA, MULTIGROUP_FLUX_SCHEMA, MultigroupData, MultigroupError,
-    MultigroupFlux, MultigroupMaterial, SnOptions, fold_multigroup_dose,
+    MultigroupFlux, MultigroupMaterial, SnOptions, cell_materials, fold_multigroup_dose,
     level_symmetric_quadrature, solve_multigroup, solve_multigroup_adjoint,
 };
 pub use openbnct_core::ContentReference;
