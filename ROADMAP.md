@@ -987,7 +987,18 @@ other and of R8 ordering unless noted.
   for Monte Carlo decks — rotation invariance of isotropic problems,
   source/detector reciprocity, energy-conservation closure — as an
   additional automated correctness layer beyond fixed-answer
-  conformance.
+  conformance. Complete: `openbnct metamorphic` evaluates four oracles
+  over dose bundles — `reflection` (a bundle vs its own grid-axis
+  mirror under an operator-declared symmetry premise), `rotation`
+  (reference vs a source-rotated run, the candidate volume permuted
+  back by the `rotate_quarter`-consistent index map), `superposition`
+  (combined-source run vs the sum of two component runs), and
+  `reciprocity` (source↔detector voxel-pair interchange) — emitting
+  `openbnct.metamorphic-evaluation/0.1.0` with per-quantity z-score
+  statistics under combined MC σ, all inputs content-bound, and no
+  equivalence claim. Energy conservation is deliberately absent: BNCT
+  capture reactions are exoenergetic, so a naive budget is not a valid
+  invariant.
 
 - **R9-05 — benchmark library expansion.** NF-BNCT-002/003: a
   deeper-penetration case, a heterogeneous-material case, and an

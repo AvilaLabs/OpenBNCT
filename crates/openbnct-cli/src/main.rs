@@ -196,6 +196,49 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Evaluate a metamorphic transport oracle — a symmetry relation a
+    /// correct run must satisfy — and emit an
+    /// `openbnct.metamorphic-evaluation/0.1.0` record.
+    Metamorphic {
+        /// Oracle kind: `reflection` (bundle vs its own axis mirror),
+        /// `rotation` (reference vs a source-rotated run),
+        /// `superposition` (combined run vs the sum of two runs), or
+        /// `reciprocity` (source↔detector voxel-pair interchange).
+        #[arg(long)]
+        oracle: String,
+        /// Axis for `reflection`/`rotation`: `x`, `y`, or `z`.
+        #[arg(long)]
+        axis: Option<String>,
+        /// Quarter-turns for `rotation` (1–3).
+        #[arg(long)]
+        turns: Option<u8>,
+        /// Required justification of the symmetry premise for
+        /// `reflection` — why this problem is symmetric about the axis.
+        #[arg(long)]
+        declared_symmetry: Option<String>,
+        /// Reciprocity voxel index in the candidate run.
+        #[arg(long)]
+        voxel_a: Option<u64>,
+        /// Reciprocity voxel index in the reference run.
+        #[arg(long)]
+        voxel_b: Option<u64>,
+        /// Reference physical dose bundle JSON.
+        #[arg(long)]
+        reference: PathBuf,
+        /// Candidate bundle(s): one for `rotation`/`reciprocity`, two
+        /// for `superposition`, none for `reflection`; repeatable.
+        #[arg(long)]
+        candidate: Vec<PathBuf>,
+        /// Record id.
+        #[arg(long)]
+        id: String,
+        /// Combined-uncertainty multiplier for the within-sigma fraction.
+        #[arg(long, default_value_t = 2.0)]
+        sigma_level: f64,
+        /// New output path for the metamorphic-evaluation JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Compute exact dose-volume metrics (D_x, V_x, min/mean/max, EUD)
     /// over a named voxel mask.
     Metrics {
@@ -6128,6 +6171,112 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     result.voxels_evaluated,
                     result.voxels_excluded,
                     stats
+                );
+            }
+            println!("qualification: {}", evaluation.qualification);
+        }
+        Some(Command::Metamorphic {
+            oracle,
+            axis,
+            turns,
+            declared_symmetry,
+            voxel_a,
+            voxel_b,
+            reference,
+            candidate,
+            id,
+            sigma_level,
+            output,
+        }) => {
+            let spec: openbnct_evidence::MetamorphicOracle = match oracle.as_str() {
+                "reflection" => openbnct_evidence::MetamorphicOracle::ReflectionSymmetry {
+                    axis: axis.clone().ok_or_else(|| {
+                        io::Error::other("--axis is required for the reflection oracle")
+                    })?,
+                    declared_symmetry: declared_symmetry.ok_or_else(|| {
+                        io::Error::other(
+                            "--declared-symmetry is required for the reflection oracle",
+                        )
+                    })?,
+                },
+                "rotation" => openbnct_evidence::MetamorphicOracle::RotationInvariance {
+                    axis: axis.clone().ok_or_else(|| {
+                        io::Error::other("--axis is required for the rotation oracle")
+                    })?,
+                    turns: turns.ok_or_else(|| {
+                        io::Error::other("--turns is required for the rotation oracle")
+                    })?,
+                },
+                "superposition" => openbnct_evidence::MetamorphicOracle::Superposition,
+                "reciprocity" => openbnct_evidence::MetamorphicOracle::PointReciprocity {
+                    voxel_a: voxel_a.ok_or_else(|| {
+                        io::Error::other("--voxel-a is required for the reciprocity oracle")
+                    })?,
+                    voxel_b: voxel_b.ok_or_else(|| {
+                        io::Error::other("--voxel-b is required for the reciprocity oracle")
+                    })?,
+                },
+                other => {
+                    return Err(format!(
+                        "--oracle must be reflection|rotation|superposition|reciprocity, got {other:?}"
+                    )
+                    .into());
+                }
+            };
+            let reference_bytes = fs::read(&reference)?;
+            let reference_bundle: PhysicalDoseBundle = serde_json::from_slice(&reference_bytes)?;
+            let mut inputs = vec![openbnct_core::ContentReference {
+                id: reference.display().to_string(),
+                sha256: openbnct_evidence::sha256_hex(&reference_bytes),
+            }];
+            let mut candidates = Vec::with_capacity(candidate.len());
+            for path in &candidate {
+                let bytes = fs::read(path)?;
+                inputs.push(openbnct_core::ContentReference {
+                    id: path.display().to_string(),
+                    sha256: openbnct_evidence::sha256_hex(&bytes),
+                });
+                candidates.push(serde_json::from_slice::<PhysicalDoseBundle>(&bytes)?);
+            }
+            let candidate_refs: Vec<&PhysicalDoseBundle> = candidates.iter().collect();
+            let evaluation = openbnct_evidence::evaluate_metamorphic(
+                &id,
+                &spec,
+                &reference_bundle,
+                &candidate_refs,
+                inputs,
+                sigma_level,
+                "cli:metamorphic",
+            )
+            .map_err(|error| io::Error::other(format!("metamorphic: {error}")))?;
+            write_new_json(&output, &evaluation)?;
+            println!("metamorphic evaluation at {}", output.display());
+            println!(
+                "oracle {:?} on case {} at {:.1}σ",
+                match &evaluation.oracle {
+                    openbnct_evidence::MetamorphicOracle::ReflectionSymmetry { .. } =>
+                        "reflection_symmetry",
+                    openbnct_evidence::MetamorphicOracle::RotationInvariance { .. } =>
+                        "rotation_invariance",
+                    openbnct_evidence::MetamorphicOracle::Superposition => "superposition",
+                    openbnct_evidence::MetamorphicOracle::PointReciprocity { .. } =>
+                        "point_reciprocity",
+                },
+                evaluation.case_id,
+                evaluation.sigma_level
+            );
+            for quantity in &evaluation.quantities {
+                let fraction = quantity
+                    .within_sigma_fraction
+                    .map(|f| format!("{:.2}%", f * 100.0))
+                    .unwrap_or_else(|| "n/a (no σ)".into());
+                let max_z = quantity
+                    .max_z
+                    .map(|z| format!("  max z = {z:.2}"))
+                    .unwrap_or_default();
+                println!(
+                    "  {}: within σ {}  ({} pairs){}",
+                    quantity.quantity, fraction, quantity.evaluated_pairs, max_z
                 );
             }
             println!("qualification: {}", evaluation.qualification);

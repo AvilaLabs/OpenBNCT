@@ -925,6 +925,46 @@ frozen-case guards and hash-bound inputs as `openbnct compare`. It
 reports measured agreement only: no equivalence, clinical, or
 commissioning claim. Python parity is `evaluate_gamma`.
 
+### Metamorphic transport oracles
+
+`openbnct metamorphic` verifies a run against a symmetry *relation*
+rather than a fixed reference — the complement to conformance fixtures
+when no independent ground truth exists — and emits
+`openbnct.metamorphic-evaluation/0.1.0` with all inputs content-bound:
+
+```text
+openbnct metamorphic --oracle reflection \
+  --axis y --declared-symmetry "homogeneous slab, isotropic plane" \
+  --reference dose.json --id EVAL-001 --output metamorphic.json
+
+openbnct metamorphic --oracle rotation --axis z --turns 1 \
+  --reference dose.json --candidate dose-rotated.json \
+  --id EVAL-002 --output rotation.json
+
+openbnct metamorphic --oracle superposition \
+  --reference dose-ab.json --candidate dose-a.json \
+  --candidate dose-b.json --id EVAL-003 --output superposition.json
+
+openbnct metamorphic --oracle reciprocity \
+  --voxel-a 1234 --voxel-b 5678 \
+  --reference dose-detector-a.json --candidate dose-detector-b.json \
+  --id EVAL-004 --output reciprocity.json
+```
+
+Each oracle reports per-quantity z-score statistics (fraction of voxel
+pairs within `--sigma-level` combined σ, mean/max z, excluded counts):
+`reflection` mirrors a bundle about a grid axis under an
+operator-declared symmetry premise (recorded for review, not proven);
+`rotation` permutes a source-rotated run back into the reference frame
+by the same quarter-turn convention `rotate_source` applies, requiring
+equal in-plane extents and spacings; `superposition` checks voxelwise
+additivity of component-source runs with three-input combined σ; and
+`reciprocity` pairs the dose at a declared voxel in each of two
+source↔detector-interchanged runs. A naive energy-budget oracle is
+deliberately absent: BNCT capture reactions are exoenergetic, so total
+deposited energy is not a valid invariant. Passing oracles are
+consistency evidence, not a correctness proof.
+
 ### Exposure-plan tables and diagnostics
 
 The `openbnct plan` family bridges spreadsheet workflows and the JSON

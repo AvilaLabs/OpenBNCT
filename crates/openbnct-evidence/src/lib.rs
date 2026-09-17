@@ -17,6 +17,7 @@ mod compare;
 mod dvh;
 mod gamma;
 mod limits;
+mod metamorphic;
 mod metrics;
 
 pub use bundle::{
@@ -35,6 +36,10 @@ pub use gamma::{
 pub use limits::{
     IRRADIATION_TIME_SCHEMA, IrradiationTimeReport, LimitMetric, LimitingStructure, OrganLimit,
     RegionLimitResult,
+};
+pub use metamorphic::{
+    METAMORPHIC_SCHEMA, MetamorphicEvaluation, MetamorphicOracle, OracleQuantity,
+    evaluate_metamorphic,
 };
 pub use metrics::{
     CoverageMetric, DOSE_METRICS_SCHEMA, EudMetric, RegionDoseMetrics, VolumeMetric,
