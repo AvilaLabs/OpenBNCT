@@ -465,6 +465,21 @@ enum BoronCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Evaluate a ¹⁰B subcellular microdistribution model: per-compartment
+    /// α/⁷Li energy-deposition fractions to the nucleus and the
+    /// nucleus-dose factor relative to uniform concentration.
+    Microdistribution {
+        /// `openbnct.boron-microdistribution/0.1.0` JSON document.
+        #[arg(long)]
+        model: PathBuf,
+        /// Correction record id.
+        #[arg(long)]
+        id: String,
+        /// New output path for the
+        /// `openbnct.microdistribution-correction/0.1.0` JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -6831,6 +6846,44 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 write_new_json(&output, &assignment)?;
                 println!("material assignment at {}", output.display());
                 println!("tiers populated: {}", assignment.regions.len());
+            }
+            BoronCommand::Microdistribution { model, id, output } => {
+                let model_bytes = fs::read(&model)?;
+                let model: openbnct_boron::BoronMicrodistribution =
+                    serde_json::from_slice(&model_bytes)?;
+                model
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let reference = openbnct_core::ContentReference {
+                    id: model.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&model_bytes),
+                };
+                let correction = openbnct_boron::evaluate_microdistribution(
+                    &model,
+                    &id,
+                    &format!("microdistribution:{}", model.id),
+                    reference,
+                )
+                .map_err(|error| io::Error::other(error.to_string()))?;
+                write_new_json(&output, &correction)?;
+                println!("correction: {}", output.display());
+                println!(
+                    "nucleus dose factor: {:.3} ± {:.3} (vs uniform)",
+                    correction.nucleus_dose_factor, correction.nucleus_dose_factor_1sigma
+                );
+                let d = &correction.deposition;
+                println!(
+                    "deposition to nucleus — nucleus {:.3} / cytoplasm {:.3} / membrane {:.3} / extracellular {:.3}",
+                    d.nucleus.combined_to_nucleus,
+                    d.cytoplasm.combined_to_nucleus,
+                    d.membrane.combined_to_nucleus,
+                    d.extracellular.combined_to_nucleus
+                );
+                println!(
+                    "uniform reference: {:.3}; intercellular dose CV {:.2}",
+                    correction.uniform_reference.combined_to_nucleus,
+                    correction.intercellular_dose_cv
+                );
             }
         },
         Some(Command::Uq(args)) => match args.command {

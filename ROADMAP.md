@@ -970,7 +970,18 @@ other and of R8 ordering unless noted.
   localization fractions and intercellular heterogeneity variance as a
   versioned research artifact feeding photon-isoeffective evaluation;
   published work shows intercellular ¹⁰B heterogeneity materially
-  changes IsoE dose.
+  changes IsoE dose. Complete: `openbnct.boron-microdistribution/0.1.0`
+  declares compartment fractions (nucleus/cytoplasm/membrane/
+  extracellular, with 1σ), concentric-sphere cell geometry, adopted
+  α/⁷Li energies and CSDA ranges, and intercellular uptake CV;
+  `openbnct boron microdistribution` evaluates per-compartment
+  energy-deposition fractions to the nucleus by deterministic
+  quadrature (straight-line constant-LET tracks, exact ray–sphere
+  chords, no RNG) and emits `openbnct.microdistribution-correction/
+  0.1.0` — the nucleus-dose factor vs uniform concentration with
+  propagated 1σ, the uniform reference, and the cell-to-cell dose CV,
+  with the heterogeneity nonlinearity explicitly deferred to downstream
+  survival evaluation.
 
 - **R9-04 — metamorphic transport oracles.** Property-based invariants
   for Monte Carlo decks — rotation invariance of isotropic problems,

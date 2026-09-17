@@ -1118,6 +1118,34 @@ distinct material in the deck. The emitted field asserts
 `pet_derived_boron_research_only_not_clinical`: it is a modeled estimate
 with propagated parameter uncertainty, not an assayed measurement.
 
+`openbnct boron microdistribution` evaluates a ¹⁰B subcellular
+microdistribution model (`openbnct.boron-microdistribution/0.1.0`) into
+a correction record (`openbnct.microdistribution-correction/0.1.0`):
+
+```text
+openbnct boron microdistribution \
+  --model microdistribution.json \
+  --id openbnct.microcorr.bpa.v1 --output correction.json
+```
+
+The model declares how ¹⁰B partitions across nucleus, cytoplasm, cell
+membrane, and extracellular space (fractions with 1σ, summing to 1), the
+concentric-sphere cell geometry (cell/nucleus radii, extracellular
+extent), the adopted α/⁷Li energies and CSDA ranges, and the
+cell-to-cell uptake coefficient of variation. Evaluation integrates —
+by deterministic quadrature, no RNG — the fraction of capture-reaction
+charged-particle energy reaching the nucleus from each compartment
+under straight-line constant-LET tracks, and reports the *nucleus-dose
+factor*: the multiplier on the boron dose component under the declared
+microdistribution relative to the conventional uniform-concentration
+assumption. That factor is the quantity photon-isoeffective
+evaluations (compound-effectiveness weights) may condition on; the
+record also carries the absolute per-compartment fractions, the uniform
+reference, a linearly-propagated factor 1σ, and the cell-to-cell dose
+CV. It states explicitly that the heterogeneity nonlinearity
+materializes in downstream survival evaluation, and asserts
+`first_order_geometric_microdosimetry_research_only_not_clinical`.
+
 ### Systematic uncertainty
 
 `openbnct uq` propagates *declared* systematic uncertainties over a

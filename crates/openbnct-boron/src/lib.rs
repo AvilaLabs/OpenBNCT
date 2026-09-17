@@ -614,6 +614,15 @@ pub fn materialize_field(
     })
 }
 
+pub mod microdistribution;
+
+pub use microdistribution::{
+    BORON_MICRODISTRIBUTION_SCHEMA, BoronMicrodistribution, CompartmentDeposition,
+    CompartmentFractions, CorrectionDeposition, MICRODISTRIBUTION_CORRECTION_QUALIFICATION,
+    MICRODISTRIBUTION_CORRECTION_SCHEMA, MicrodistributionCorrection, MicrodistributionError,
+    evaluate_microdistribution,
+};
+
 #[cfg(test)]
 mod tests {
     use super::*;
