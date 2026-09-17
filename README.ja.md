@@ -47,6 +47,16 @@ OpenBNCT は、ホウ素中性子捕捉療法（BNCT）の研究および独立�
 - さらに、施設ビーム記述と `beam qa` 品質評価、測定記録の比較インポート、
   DICOM RT Dose エクスポート、および OpenMC ウェイトウィンドウによる
   分散低減（`vr resolve`／`vr validate`）が実装されています。
+- 内製の3次元マルチグループ S_N ソルバー（`sn solve`）が第二の輸送パスとして
+  実装され、NF-BNCT-003 の解析オラクルに対して完全一致を確認済みです。
+  随伴ソルバーによる CADIS/FW-CADIS ウェイトウィンドウ（`vr cadis`）、
+  核データ共分散の伝播と Morris/Sobol 感度スクリーニング（`uq propagate`／
+  `uq screen`）、輸送由来の線エネルギースペクトルの MKM 連携
+  （`bio lineal-tally`）、ガンマ指数・変形オラクル・解析オラクル
+  （`gamma`／`metamorphic`／`analytic`）、加速器由来ビームと BSA 層
+  （`accelerator`／`bsa`）、ホウ素細胞内分布モデル
+  （`boron microdistribution`）、OpenPINT 形式エクスポートと RTPLAN
+  読み書きまで含みます。
 
 開発段階と合格条件については [ロードマップ（英語）](ROADMAP.md) を参照してください。
 

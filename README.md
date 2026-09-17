@@ -91,6 +91,54 @@ bundling those systems.
   `openbnct.weight-windows/0.1.0` artifact; `openmc generate --vr`
   binds it into the deck and `openbnct vr validate` certifies the
   reduced-history run against an analog acceptance report.
+- **Deterministic transport path** — an in-house 3-D Cartesian
+  diamond-difference S_N solver behind `openbnct.multigroup-data/0.1.0`
+  declared data (level-symmetric quadrature, vacuum/incident/reflective/
+  periodic boundaries, analytic uncollided-flux beam split, material
+  assignment overrides); `openbnct sn solve` emits a versioned flux
+  artifact foldable to a physical-dose bundle. On NF-BNCT-003 it
+  reproduces the analytic attenuation oracle exactly (fitted slope
+  −0.23080 cm⁻¹, 0.000% deviation over 32 bins).
+- **Adjoint-driven weight windows** — `openbnct vr cadis` runs the
+  transposed adjoint solve for a declared response volume and derives
+  CADIS bounds; a forward-flux-derived adjoint source gives the
+  FW-CADIS global-flattening variant — both emitted as resolved
+  weight-window artifacts bound to their derivation.
+- **Uncertainty quantification** — `openbnct uq propagate` folds a
+  declared `openbnct.multigroup-covariance/0.1.0` (diagonal plus dense
+  group-correlation blocks) through central-difference sensitivities of
+  the actual discrete operator into a `openbnct.dose-uncertainty-budget`
+  per source; `uq screen` runs Morris elementary-effects and
+  Saltelli/Sobol screening over declared input dimensions.
+- **Microdosimetric tallies** — `openbnct bio lineal-tally` evaluates a
+  declared site/reaction-product table over a computed multigroup flux
+  into the `openbnct.lineal-spectrum/0.1.0` that MKM's computed-spectrum
+  source consumes (collision-rate-weighted chord statistics over the
+  component's voxels).
+- **QA and oracles** — `openbnct gamma` (dose-difference/DTA
+  with interpolation and σ-aware modes), `metamorphic`
+  (reflection, quarter-turn, superposition, point-reciprocity z-score
+  oracles), and `analytic` for closed-form references like the
+  NF-BNCT-003 absorber slab.
+- **Accelerator beam shaping** — `openbnct accelerator source` evaluates
+  a parametric ⁷Li(p,n)⁷Be thick-target source (Liskien–Paulsen 0° cross
+  sections over the proton slowing path) and `accelerator beam` binds it
+  into a `openbnct.beam-description`; `bsa rasterize|sweep` realizes
+  layered beam-shaping assemblies onto a case grid as material
+  assignments.
+- **Subcellular boron microdistribution** — `openbnct boron
+  microdistribution` computes deterministic chord-weighted partition
+  corrections (nucleus/cytoplasm/membrane/extracellular) that bound onto
+  dose-component interpretation.
+- **Benchmark library** — NF-BNCT-002 adds a heterogeneous bone/air
+  insert acceptance case; NF-BNCT-003 is a pure-absorber slab with a
+  closed-form oracle — both with machine inputs, acceptance contracts,
+  and conformance tests alongside NF-BNCT-001.
+- **Bidirectional interop** — `openbnct nifti export-components` writes
+  the four-component OpenPINT-convention NIfTI set with a hash-bound
+  manifest (re-importable through `openbnct import nifti`); `openbnct
+  dicom rtplan-info`/`export-rtplan` read and write minimal RTPLAN
+  beam sequences.
 - **Three surfaces, one implementation** — CLI (`openbnct`), a native egui
   workbench (integrity-gated tri-planar viewer, dose wash, DVH/metrics,
   plan workspace, source positioning), and a bounded Python package —
@@ -143,11 +191,14 @@ maturin build --manifest-path bindings/python/Cargo.toml
   the case specification it is not promoted to a *reference output* until a
   separately implemented transport path (Geant4, or licensed MCNP/PHITS
   produced by a licensed user) reproduces the frozen case.
-- Variance reduction is verified **unbiased** at a 4.3× history reduction
-  (1134 comparisons, max z = 2.97) and is pending the frozen photon
-  precision gates — the deep photon heating tally is correlation-limited,
-  so weight windows help it less than neutron fluence. See
-  [`openmc-vr-validation-140M.json`](benchmarks/synthetic/nf-bnct-001/transport/openmc-vr-validation-140M.json).
+- Variance reduction is verified **unbiased** against the 600M analog
+  reference at up to a 4.3× history reduction (1134 comparisons, max
+  z = 2.97), and a 196M-history run cleared both frozen photon-precision
+  gates (central-axis photon heating σ 0.853% vs 1.0%; per-voxel median
+  2.74% vs 3.0%) at a 3.06× reduction. The one open contract gate is the
+  three-seed replication-consistency requirement — two further ~196M
+  runs are in progress. See
+  [`openmc-vr-validation-196M.json`](benchmarks/synthetic/nf-bnct-001/transport/openmc-vr-validation-196M.json).
 - The MCNP/PHITS adapters are verified end-to-end at benchmark scale on
   documented-format bundles; real-engine acceptance remains an open gate.
 - The FiR 1 in-phantom comparison uses wide tolerances: published
