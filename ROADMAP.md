@@ -882,8 +882,11 @@ review:
   bundle (OpenMC binary + bundled glibc + case-scoped cross sections + deck)
   executed under WSL2 on a second machine, and ping-based completion
   notification across a NAT boundary; runbook in
-  `docs/research/PARALLEL_SEED_ORCHESTRATION.md`. Remaining: actual
-  throughput profiling once the workstation has free CPU.)*
+  `docs/research/PARALLEL_SEED_ORCHESTRATION.md`. The deterministic S_N run
+  path is now characterized — 5×3 cells×order matrix, 91k cell-direction
+  sweeps/s serial at the 64k-cell end, direction-count-linear scaling —
+  `docs/research/SN_SOLVER_THROUGHPUT.md`. Remaining: actual OpenMC
+  run-path profiling once the workstation has free CPU.)*
 
 Nothing in R7 changes the deferred list below or adds any clinical claim.
 
