@@ -1700,35 +1700,43 @@ mod artifact_tests {
     /// The committed FiR 1 cylindrical-phantom deterministic-validation
     /// fixtures must deserialize and validate: the transport case, its
     /// voxel-set material assignment, the declared three-group data, and
-    /// the measurement-comparison report.
+    /// the measurement-comparison report — for both the water and PMMA
+    /// phantom compositions.
     #[test]
     fn committed_fir1_cylindrical_fixtures_validate() {
-        let base = concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../validation/fir1-k63-cylindrical-phantom/"
-        );
-        let case: crate::model::TransportCase =
-            serde_json::from_slice(&std::fs::read(format!("{base}case.json")).unwrap()).unwrap();
-        case.validate().unwrap();
-        let assignment: crate::model::MaterialAssignment =
-            serde_json::from_slice(&std::fs::read(format!("{base}assignment.json")).unwrap())
-                .unwrap();
-        assignment.validate(&case.geometry).unwrap();
-        let data: MultigroupData =
-            serde_json::from_slice(&std::fs::read(format!("{base}multigroup-data.json")).unwrap())
-                .unwrap();
-        data.validate().unwrap();
-        assert_eq!(data.group_count(), 3);
-        let comparison: crate::measurement::MeasurementComparisonReport = serde_json::from_slice(
-            &std::fs::read(format!("{base}measurement-comparison-cylindrical.json")).unwrap(),
-        )
-        .unwrap();
-        comparison.validate().unwrap();
-        assert!(
-            comparison
-                .profile_comparisons
-                .iter()
-                .all(|p| p.passed == Some(true))
-        );
+        for (dir, comparison_file) in [
+            (
+                "fir1-k63-cylindrical-phantom",
+                "measurement-comparison-cylindrical.json",
+            ),
+            ("fir1-k63-pmma-phantom", "measurement-comparison-pmma.json"),
+        ] {
+            let base = format!("{}/../../validation/{dir}/", env!("CARGO_MANIFEST_DIR"));
+            let case: crate::model::TransportCase =
+                serde_json::from_slice(&std::fs::read(format!("{base}case.json")).unwrap())
+                    .unwrap();
+            case.validate().unwrap();
+            let assignment: crate::model::MaterialAssignment =
+                serde_json::from_slice(&std::fs::read(format!("{base}assignment.json")).unwrap())
+                    .unwrap();
+            assignment.validate(&case.geometry).unwrap();
+            let data: MultigroupData = serde_json::from_slice(
+                &std::fs::read(format!("{base}multigroup-data.json")).unwrap(),
+            )
+            .unwrap();
+            data.validate().unwrap();
+            assert_eq!(data.group_count(), 3);
+            let comparison: crate::measurement::MeasurementComparisonReport =
+                serde_json::from_slice(&std::fs::read(format!("{base}{comparison_file}")).unwrap())
+                    .unwrap();
+            comparison.validate().unwrap();
+            assert!(
+                comparison
+                    .profile_comparisons
+                    .iter()
+                    .all(|p| p.passed == Some(true)),
+                "{dir} profile comparison must pass"
+            );
+        }
     }
 }

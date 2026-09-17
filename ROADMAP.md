@@ -838,8 +838,8 @@ review:
   machinery to facility measurements with explicit provenance, and record
   agreement results as evidence bundles — distinct from the synthetic
   self-consistency benchmark, which remains the correctness gate.
-  *(in progress — free-beam FiR 1 K63 record + comparison committed under
-  `measurements/`; in-phantom water-phantom chain COMPLETE under
+  *(COMPLETE — free-beam FiR 1 K63 record + comparison committed under
+  `measurements/`; in-phantom water-phantom chain under
   `validation/fir1-k63-water-phantom/`: NJOY response-set provenance chain
   (fresh 2016.78 execution receipt, three-level suitability reports,
   independently reviewed water response set), 20M-history OpenMC phantom
@@ -858,18 +858,22 @@ review:
   deterministic S₈ three-group solve on a voxel-set Ø20 × 24 cm water
   cylinder with declared ENDF/B-VIII.1-collapsed data reproduces the
   digitized measured profile within ~1.3σ at all 12 bins (χ² = 6.7),
-  confirming the earlier divergence was phantom geometry.)*
+  confirming the earlier divergence was phantom geometry; the PMMA
+  phantom series additionally reproduces under
+  `validation/fir1-k63-pmma-phantom/` (χ² = 6.0, all 15 bins within
+  ~1.15σ) — two measured compositions on the same beam.)*
 - **R7-03 — cross-code comparison depth.** Extend the MCNP meshtal and PHITS
   xyz-mesh import adapters into documented cross-code comparison workflows
   against the OpenMC path on the synthetic benchmark, and evaluate import
   adapters for other BNCT research codes (e.g., OpenPINT outputs) where their
-  formats are documented. *(in progress — both adapters verified
-  import→compare at benchmark scale on a real 64k-voxel run; recipe in
-  `docs/research/CROSS_CODE_REPRODUCTION.md`. OpenPINT output interop
-  evaluated and landed: its pipeline writes per-component NIfTI volumes,
-  now importable via `openbnct import nifti` with caller-declared
-  producer provenance and optional paired sigma volumes. Licensed-engine
-  execution remains the open gate.)*
+  formats are documented. *(technical scope COMPLETE — both adapters
+  verified import→compare at benchmark scale on a real 64k-voxel run;
+  recipe in `docs/research/CROSS_CODE_REPRODUCTION.md`. OpenPINT output
+  interop evaluated and landed: its pipeline writes per-component NIfTI
+  volumes, now importable via `openbnct import nifti` with
+  caller-declared producer provenance and optional paired sigma
+  volumes. Licensed-engine execution is an external gate outside the
+  technical scope.)*
 - **R7-04 — workbench usability.** Bring the egui desktop shell to a
   documented, reproducible workflow (case load → run → dose overlay →
   evidence inspection) with packaged artifacts once distribution exists.
