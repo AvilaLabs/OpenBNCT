@@ -423,6 +423,35 @@ openbnct dicom export-rtdose --bundle dose.json --component total \
   --ct-series /path/to/ct --output dose.dcm
 ```
 
+### RT Plan read and export
+
+`openbnct dicom rtplan-info` summarizes an RT Plan file — label, plan
+intent, patient identity, fraction groups with their referenced-beam
+metersets, and each beam's static delivery geometry (gantry, collimator,
+and couch angles, isocenter, SSD, machine) — as an
+`openbnct.rtplan-summary/0.1.0` record:
+
+```text
+openbnct dicom rtplan-info --input plan.dcm --output plan-summary.json
+```
+
+`openbnct dicom export-rtplan` writes a minimal static-beam RT Plan:
+one fraction group referencing each `--beam` declaration
+(`name,gantry_deg,collimator_deg,couch_deg,iso_x,iso_y,iso_z,sad_mm,ssd_mm,radiation_type,meterset[,energy_mev]`).
+The writer covers BNCT's fixed-field regime only — single control point
+per beam, no MLC or dynamic delivery:
+
+```text
+openbnct dicom export-rtplan --plan-label RESEARCH-1 --fractions 2 \
+  --frame-of-reference-uid 2.25.123 \
+  --beam "AP,90,0,0,0,0,25,1800,1775,NEUTRON,120" \
+  --beam "PA,270,0,0,0,0,25,1800,1775,NEUTRON,100" \
+  --output plan.dcm
+```
+
+Both directions are research interop, not commissioned treatment
+planning.
+
 ### OpenMC input generation
 
 With the sealed response set in place, generate the deterministic OpenMC deck
@@ -1077,6 +1106,8 @@ openbnct nifti to-mask --input seg.nii.gz --name ROI --output NEW-MASK.json
 openbnct nifti export-dose \
   --dose DOSE-BUNDLE.json --quantity component:boron \
   --output NEW-BORON-DOSE.nii.gz
+openbnct nifti export-components \
+  --dose DOSE-BUNDLE.json --output-dir NEW-DIR [--gzip]
 openbnct nifti resample \
   --input map.nii.gz --target DOSE-BUNDLE.json \
   --interpolation nearest --output NEW-RESAMPLED.nii.gz
@@ -1086,9 +1117,14 @@ openbnct nifti resample \
 ```
 
 `export-dose` writes any component or the physical total as a NIfTI image on
-the bundle's grid; `resample` interpolates an external image onto a dose
-bundle's grid or a transport case's CT-aligned grid (nearest-neighbor or
-trilinear). The affine handling is
+the bundle's grid; `export-components` writes all four components at once —
+`<case>.<component>.nii` plus `.<component>.sigma.nii` companions when the
+bundle carries per-voxel uncertainties — alongside an
+`openbnct.component-nifti-manifest/0.1.0` record hash-binding every written
+file, so the set re-imports through `import nifti` with component, value,
+sigma, and grid fidelity. `resample` interpolates an external image onto a
+dose bundle's grid or a transport case's CT-aligned grid (nearest-neighbor
+or trilinear). The affine handling is
 regression-tested against independent `nibabel` output including oblique
 sforms, and `.nii.gz` round-trips are verified in both directions.
 

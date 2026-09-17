@@ -26,6 +26,7 @@ use openbnct_core::{
     GridGeometry, RegionMask, grid_geometry_equivalent,
 };
 use serde::{Deserialize, Serialize};
+use sha2::Digest;
 use thiserror::Error;
 
 const HEADER_LEN: usize = 348;
@@ -688,6 +689,131 @@ pub fn interchange_from_niftis(
     })
 }
 
+/// Versioned export-manifest schema for component NIfTI sets.
+pub const COMPONENT_NIFTI_MANIFEST_SCHEMA: &str = "openbnct.component-nifti-manifest/0.1.0";
+
+/// One written component volume and, when emitted, its sigma companion.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComponentNiftiFile {
+    /// `component:boron`, … — the serialized `DoseComponent` token.
+    pub component: String,
+    /// File name within the output directory.
+    pub file: String,
+    /// SHA-256 of the written bytes.
+    pub sha256: String,
+    /// Sigma companion file name, when the component carried
+    /// per-voxel uncertainties.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sigma_file: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub sigma_sha256: Option<String>,
+}
+
+/// Manifest written alongside a component NIfTI export so a downstream
+/// consumer maps files to components by declaration, not filename
+/// convention (`openbnct.component-nifti-manifest/0.1.0`).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ComponentNiftiManifest {
+    #[serde(deserialize_with = "openbnct_core::deserialize_contract_id")]
+    pub schema_version: String,
+    pub case_id: String,
+    /// Serialized `DoseUnit` token of every component volume.
+    pub unit: String,
+    /// Grid provenance: shape, spacing, and origin restated for consumers
+    /// that skip the NIfTI headers.
+    pub geometry: GridGeometry,
+    pub files: Vec<ComponentNiftiFile>,
+    /// Provenance id of the exported bundle.
+    pub provenance_id: String,
+}
+
+/// Export every component of a physical dose bundle as float64 NIfTI
+/// volumes — the per-component plus sigma-companion convention
+/// `interchange_from_niftis` consumes, so the pair round-trips.
+///
+/// Files are named `<case_id>.<component>.nii` (`.nii.gz` when
+/// `gzip` is set) with `…<component>.sigma.nii` companions for
+/// components carrying per-voxel uncertainties. The manifest records
+/// each written file's SHA-256.
+pub fn export_component_niftis(
+    bundle: &openbnct_core::PhysicalDoseBundle,
+    output_dir: &Path,
+    gzip: bool,
+) -> io::Result<ComponentNiftiManifest> {
+    std::fs::create_dir_all(output_dir)?;
+    let ext = if gzip { ".nii.gz" } else { ".nii" };
+    // Hash the exact bytes on disk (post-gzip when compressed).
+    let write_hashed = |image: &NiftiImage, path: &Path| -> io::Result<String> {
+        let encoded = encode_nifti(image);
+        let stored = if gzip {
+            use std::io::Write;
+            let mut encoder =
+                flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast());
+            encoder.write_all(&encoded)?;
+            encoder.finish()?
+        } else {
+            encoded
+        };
+        std::fs::write(path, &stored)?;
+        let mut h = sha2::Sha256::new();
+        h.update(&stored);
+        Ok(format!("{:x}", h.finalize()))
+    };
+    let mut files = Vec::with_capacity(bundle.components.len());
+    for component in &bundle.components {
+        let name = serde_json::to_value(component.component)
+            .and_then(serde_json::from_value::<String>)
+            .unwrap_or_else(|_| "unknown".into());
+        let file = format!("{}.{}{}", bundle.case_id, name, ext);
+        let image = NiftiImage {
+            geometry: bundle.geometry.clone(),
+            values: component.values.clone(),
+            datatype: DT_FLOAT64,
+            transform_source: "sform",
+            description: format!("openbnct {} component:{name}", bundle.case_id),
+            intent_name: String::new(),
+            units_declared_mm: true,
+        };
+        let mut entry = ComponentNiftiFile {
+            component: format!("component:{name}"),
+            sha256: write_hashed(&image, &output_dir.join(&file))?,
+            file,
+            sigma_file: None,
+            sigma_sha256: None,
+        };
+        if let Some(sigma) = &component.absolute_standard_uncertainty {
+            let sigma_file = format!("{}.{name}.sigma{}", bundle.case_id, ext);
+            let sigma_image = NiftiImage {
+                description: format!("openbnct {} component:{name} sigma", bundle.case_id),
+                values: sigma.clone(),
+                ..image
+            };
+            entry.sigma_sha256 = Some(write_hashed(&sigma_image, &output_dir.join(&sigma_file))?);
+            entry.sigma_file = Some(sigma_file);
+        }
+        files.push(entry);
+    }
+    let unit = serde_json::to_value(
+        bundle
+            .components
+            .first()
+            .map(|c| c.unit)
+            .unwrap_or(DoseUnit::Gray),
+    )
+    .and_then(serde_json::from_value::<String>)
+    .unwrap_or_else(|_| "gray".into());
+    Ok(ComponentNiftiManifest {
+        schema_version: COMPONENT_NIFTI_MANIFEST_SCHEMA.into(),
+        case_id: bundle.case_id.clone(),
+        unit,
+        geometry: bundle.geometry.clone(),
+        files,
+        provenance_id: bundle.provenance_id.clone(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1027,5 +1153,98 @@ mod tests {
                  second-order bound (errors: {errors:?})"
             );
         }
+    }
+
+    #[test]
+    fn component_export_round_trips_through_import() {
+        use openbnct_core::{
+            ContentReference, PHYSICAL_DOSE_BUNDLE_SCHEMA, PhysicalDoseBundle,
+            PhysicalTotalDoseVolume, TotalUncertaintyMethod,
+        };
+        let geometry = grid([2, 2, 2], [2.0, 2.0, 2.0], [-1.0, -1.0, -1.0]);
+        let n = 8usize;
+        let component = |c: DoseComponent, base: f64| DoseVolume {
+            component: c,
+            unit: DoseUnit::GrayPerSourceParticle,
+            values: (0..n).map(|i| base + i as f64).collect(),
+            absolute_standard_uncertainty: Some(vec![0.05; n]),
+        };
+        let bundle = PhysicalDoseBundle {
+            schema_version: PHYSICAL_DOSE_BUNDLE_SCHEMA.into(),
+            case_id: "rt-case".into(),
+            frame_of_reference_uid: None,
+            geometry: geometry.clone(),
+            component_profile: ContentReference {
+                id: "profile".into(),
+                sha256: "0".repeat(64),
+            },
+            response_set: ContentReference {
+                id: "responses".into(),
+                sha256: "0".repeat(64),
+            },
+            provenance_id: "rt-test".into(),
+            components: vec![
+                component(DoseComponent::Boron, 10.0),
+                component(DoseComponent::Nitrogen, 20.0),
+                component(DoseComponent::Hydrogen, 30.0),
+                component(DoseComponent::Photon, 40.0),
+            ],
+            physical_total: PhysicalTotalDoseVolume {
+                unit: DoseUnit::GrayPerSourceParticle,
+                values: vec![100.0; n],
+                absolute_standard_uncertainty: Some(vec![0.1; n]),
+                uncertainty_method: TotalUncertaintyMethod::DedicatedEstimator,
+            },
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let manifest = export_component_niftis(&bundle, dir.path(), false).unwrap();
+        assert_eq!(manifest.files.len(), 4);
+        for entry in &manifest.files {
+            assert!(entry.sigma_file.is_some());
+            // Manifest hashes match the bytes on disk.
+            let bytes = std::fs::read(dir.path().join(&entry.file)).unwrap();
+            let mut h = sha2::Sha256::new();
+            h.update(&bytes);
+            assert_eq!(entry.sha256, format!("{:x}", h.finalize()));
+        }
+
+        // Re-import through the component-interchange path.
+        let sources: Vec<NiftiComponentSource> = [
+            DoseComponent::Boron,
+            DoseComponent::Nitrogen,
+            DoseComponent::Hydrogen,
+            DoseComponent::Photon,
+        ]
+        .iter()
+        .map(|c| {
+            let name = serde_json::to_value(*c)
+                .and_then(serde_json::from_value::<String>)
+                .unwrap();
+            NiftiComponentSource {
+                component: *c,
+                file: dir.path().join(format!("rt-case.{name}.nii")),
+                sigma_file: Some(dir.path().join(format!("rt-case.{name}.sigma.nii"))),
+            }
+        })
+        .collect();
+        let doc = interchange_from_niftis(
+            &sources,
+            "rt-case",
+            DoseUnit::GrayPerSourceParticle,
+            "round trip",
+            "openbnct",
+            None,
+            None,
+        )
+        .unwrap();
+        for (written, imported) in bundle.components.iter().zip(doc.components.iter()) {
+            assert_eq!(written.component, imported.component);
+            assert_eq!(written.values, imported.values);
+            assert_eq!(
+                written.absolute_standard_uncertainty,
+                imported.absolute_standard_uncertainty
+            );
+        }
+        assert!(grid_geometry_equivalent(&bundle.geometry, &doc.geometry));
     }
 }

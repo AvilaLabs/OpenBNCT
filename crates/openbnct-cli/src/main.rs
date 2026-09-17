@@ -917,6 +917,52 @@ enum DicomCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Summarize a DICOM RT Plan file — plan identity, fraction groups,
+    /// and per-beam delivery geometry — as an
+    /// `openbnct.rtplan-summary/0.1.0` record.
+    RtplanInfo {
+        /// RT Plan `.dcm` file.
+        #[arg(long)]
+        input: PathBuf,
+        /// Optional output path for the summary JSON; the summary is
+        /// always printed either way.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Write a minimal static-beam DICOM RT Plan (one fraction group,
+    /// declared beams with IEC angles and metersets). Research export —
+    /// not a commissioned treatment-planning product.
+    ExportRtplan {
+        /// RT Plan label (also seeds deterministic `2.25.*` UIDs when the
+        /// UID options are left empty).
+        #[arg(long)]
+        plan_label: String,
+        #[arg(long, default_value = "")]
+        plan_name: String,
+        /// Planned fraction count for the single fraction group.
+        #[arg(long, default_value_t = 1)]
+        fractions: i32,
+        /// Beam declaration:
+        /// `name,gantry_deg,collimator_deg,couch_deg,iso_x,iso_y,iso_z,sad_mm,ssd_mm,radiation_type,meterset[,energy_mev]`.
+        /// Repeatable; at least one required.
+        #[arg(long)]
+        beam: Vec<String>,
+        /// Frame of Reference UID the isocenters live in.
+        #[arg(long)]
+        frame_of_reference_uid: String,
+        /// DICOM PlanIntent (e.g. `VERIFICATION`, `CURATIVE`).
+        #[arg(long, default_value = "VERIFICATION")]
+        plan_intent: String,
+        #[arg(long, default_value = "OPENBNCT")]
+        machine: String,
+        #[arg(long, default_value = "OPENBNCT^RESEARCH")]
+        patient_name: String,
+        #[arg(long)]
+        patient_id: Option<String>,
+        /// Output `.dcm` path.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -956,6 +1002,21 @@ enum NiftiCommand {
         /// New output path (`.nii`, or `.nii.gz` for gzip).
         #[arg(long)]
         output: PathBuf,
+    },
+    /// Export every component of a dose bundle as float64 NIfTI volumes —
+    /// the per-component plus sigma-companion convention `import nifti`
+    /// consumes — with a content-hashed
+    /// `openbnct.component-nifti-manifest/0.1.0` manifest.
+    ExportComponents {
+        /// Physical dose bundle JSON.
+        #[arg(long)]
+        dose: PathBuf,
+        /// Directory to write the component volumes and manifest into.
+        #[arg(long)]
+        output_dir: PathBuf,
+        /// Write gzip-compressed `.nii.gz` files.
+        #[arg(long)]
+        gzip: bool,
     },
     /// Resample a NIfTI volume onto a transport-case or dose-bundle grid.
     Resample {
@@ -3305,6 +3366,93 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     "  units {} · dose grid scaling {:.6e}",
                     result.dose_units, result.dose_grid_scaling
                 );
+            }
+            DicomCommand::RtplanInfo { input, output } => {
+                let summary = openbnct_dicom::summarize_rt_plan(&input)
+                    .map_err(|error| io::Error::other(format!("rtplan: {error}")))?;
+                println!(
+                    "rtplan {} — {} beam(s), {} fraction group(s)",
+                    summary.rt_plan_label,
+                    summary.beams.len(),
+                    summary.fraction_groups.len()
+                );
+                for beam in &summary.beams {
+                    let cp = beam.control_point.as_ref();
+                    println!(
+                        "  beam {} {:?}: {:?} gantry={:?}° metersets={:?}",
+                        beam.beam_number,
+                        beam.beam_name.as_deref().unwrap_or("?"),
+                        beam.radiation_type.as_deref().unwrap_or("?"),
+                        cp.and_then(|c| c.gantry_angle_deg),
+                        beam.metersets
+                    );
+                }
+                if let Some(path) = output {
+                    write_new_json(&path, &summary)?;
+                    println!("summary at {}", path.display());
+                }
+            }
+            DicomCommand::ExportRtplan {
+                plan_label,
+                plan_name,
+                fractions,
+                beam,
+                frame_of_reference_uid,
+                plan_intent,
+                machine,
+                patient_name,
+                patient_id,
+                output,
+            } => {
+                let mut beams = Vec::with_capacity(beam.len());
+                for spec in &beam {
+                    let fields: Vec<&str> = spec.split(',').collect();
+                    if !(11..=12).contains(&fields.len()) {
+                        return Err(io::Error::other(format!(
+                            "--beam expects 11 or 12 comma-separated fields \
+                             (name,gantry,collimator,couch,iso_x,iso_y,iso_z,sad,ssd,radiation,meterset[,energy]); \
+                             got {} in {spec:?}",
+                            fields.len()
+                        ))
+                        .into());
+                    }
+                    let parse = |i: usize| -> Result<f64, Box<dyn std::error::Error>> {
+                        fields[i].trim().parse::<f64>().map_err(|e| {
+                            io::Error::other(format!("--beam field {i} in {spec:?}: {e}")).into()
+                        })
+                    };
+                    beams.push(openbnct_dicom::RtPlanBeamSpec {
+                        name: fields[0].trim().to_owned(),
+                        gantry_angle_deg: parse(1)?,
+                        collimator_angle_deg: parse(2)?,
+                        patient_support_angle_deg: parse(3)?,
+                        isocenter_position_mm: [parse(4)?, parse(5)?, parse(6)?],
+                        source_axis_distance_mm: parse(7)?,
+                        source_to_surface_distance_mm: parse(8)?,
+                        radiation_type: fields[9].trim().to_owned(),
+                        meterset: parse(10)?,
+                        nominal_beam_energy_mev: (fields.len() == 12)
+                            .then(|| parse(11))
+                            .transpose()?,
+                    });
+                }
+                let options = openbnct_dicom::RtPlanExportOptions {
+                    patient_name,
+                    patient_id: patient_id.unwrap_or_default(),
+                    study_instance_uid: String::new(),
+                    series_instance_uid: String::new(),
+                    sop_instance_uid: String::new(),
+                    frame_of_reference_uid,
+                    plan_label,
+                    plan_name,
+                    plan_intent,
+                    number_of_fractions: fractions,
+                    treatment_machine_name: machine,
+                    beams,
+                };
+                openbnct_dicom::export_rt_plan(&output, &options)
+                    .map_err(|error| io::Error::other(format!("rtplan export: {error}")))?;
+                println!("rtplan: {}", output.display());
             }
         },
         Some(Command::Openmc(args)) => match args.command {
@@ -5853,6 +6001,29 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 };
                 openbnct_nifti::write_nifti(&image, &output)?;
                 println!("wrote {}", output.display());
+            }
+            NiftiCommand::ExportComponents {
+                dose,
+                output_dir,
+                gzip,
+            } => {
+                let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(&dose)?)?;
+                let manifest = openbnct_nifti::export_component_niftis(&bundle, &output_dir, gzip)?;
+                let manifest_path = output_dir.join(format!("{}.components.json", bundle.case_id));
+                fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
+                for entry in &manifest.files {
+                    println!(
+                        "  {} -> {}{}",
+                        entry.component,
+                        entry.file,
+                        entry
+                            .sigma_file
+                            .as_ref()
+                            .map(|s| format!(" (+{s})"))
+                            .unwrap_or_default()
+                    );
+                }
+                println!("manifest at {}", manifest_path.display());
             }
             NiftiCommand::Resample {
                 input,

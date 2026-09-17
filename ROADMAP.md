@@ -1018,10 +1018,19 @@ other and of R8 ordering unless noted.
   R9-06's export path. Execution of both new cases is pending their
   material-bound response sets, same phased pattern as NF-BNCT-001.
 
-- **R9-06 — bidirectional interop.** Export OpenBNCT component bundles
-  in the OpenPINT per-component NIfTI convention (complementing the
-  existing import), and DICOM RT Plan object read/write alongside the
-  existing RTDOSE/RTSTRUCT support.
+- **R9-06 — bidirectional interop.** Complete: `openbnct nifti
+  export-components` writes all four components as float64 NIfTI volumes
+  with sigma companions — the per-component convention `import nifti`
+  consumes — plus a content-hashed
+  `openbnct.component-nifti-manifest/0.1.0` (export→import round-trip is
+  value-, sigma-, and grid-exact in tests). DICOM RT Plan is now
+  bidirectional: `dicom rtplan-info` parses a plan into
+  `openbnct.rtplan-summary/0.1.0` (fraction groups, referenced-beam
+  metersets, per-beam static delivery geometry), and
+  `dicom export-rtplan` writes a minimal static-beam RTPLAN — one
+  fraction group, one control point per beam — covering BNCT's
+  fixed-field regime. Both directions are research interop, not
+  commissioned planning.
 
 Nothing in R8/R9 changes the deferred list below or adds any clinical
 claim; plan optimization involving Avify Dose patent subject matter

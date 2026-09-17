@@ -8,6 +8,7 @@ mod benchmark;
 mod ct;
 mod error;
 mod rtdose;
+mod rtplan;
 mod rtstruct;
 pub mod synthetic;
 
@@ -17,4 +18,8 @@ pub use benchmark::{
 pub use ct::{CtVolume, import_ct_series};
 pub use error::{DicomError, Result};
 pub use rtdose::{DoseSelection, RtDoseExportOptions, RtDoseExportResult, export_rt_dose};
+pub use rtplan::{
+    RTPLAN_SUMMARY_SCHEMA, RtPlanBeamSpec, RtPlanBeamSummary, RtPlanControlPoint,
+    RtPlanExportOptions, RtPlanFractionGroup, RtPlanSummary, export_rt_plan, summarize_rt_plan,
+};
 pub use rtstruct::{RoiMask, StructureSet, import_rtstruct};
