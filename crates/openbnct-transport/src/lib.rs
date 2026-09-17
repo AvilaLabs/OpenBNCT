@@ -7,14 +7,21 @@ use std::{error::Error, path::Path};
 use openbnct_core::PhysicalDoseBundle;
 use serde::{Deserialize, Serialize};
 
+mod accelerator;
 mod beam;
 mod beam_quality;
+mod bsa;
 mod measurement;
 mod model;
 mod positioning;
 mod response;
 mod variance_reduction;
 
+pub use accelerator::{
+    ACCELERATOR_SOURCE_SCHEMA, AcceleratorDerived, AcceleratorError, AcceleratorProvenance,
+    AcceleratorReaction, AcceleratorSource, AcceleratorSourceSpec, HistogramSpectrum,
+    evaluate_accelerator_source,
+};
 pub use beam::{
     BEAM_DESCRIPTION_SCHEMA, BeamDescription, BeamError, BeamProvenance, Citation,
     NormalizationBasis, PortGeometry, PortShape,
@@ -23,6 +30,11 @@ pub use beam_quality::{
     BEAM_QUALITY_SCHEMA, BeamQualityError, BeamQualityReference, BeamQualityReport,
     ComponentWeights, InAirMetrics, InPhantomMetrics, MetricComparison, ReferenceMetric,
     evaluate_beam_quality, in_air_metrics, in_phantom_metrics,
+};
+pub use bsa::{
+    BSA_SCHEMA, BSA_SWEEP_SCHEMA, BeamShapingAssembly, BsaError, BsaLayer, BsaLayerKind,
+    BsaRadialExtent, BsaSweep, BsaSweepParameter, BsaSweepRecord, BsaSweepVariant,
+    enumerate_bsa_sweep, sweep_variant_assignment,
 };
 pub use measurement::{
     ComparisonSummary, MEASUREMENT_COMPARISON_SCHEMA, MEASUREMENT_RECORD_SCHEMA, Measurement,

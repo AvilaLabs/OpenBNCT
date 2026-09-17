@@ -306,6 +306,60 @@ vs measured 0.77): the fixture's conservative collimator-bound cone
 cannot reproduce measured penumbra divergence — the report records
 exactly that fidelity gap.
 
+### Accelerator sources and beam-shaping assemblies
+
+`openbnct accelerator` evaluates a parametric `⁷Li(p,n)⁷Be` thick-target
+neutron source and writes an `openbnct.accelerator-source/0.1.0` record:
+
+```text
+openbnct accelerator source \
+  --id openbnct.accelerator-source.example.v1 \
+  --proton-energy-mev 2.5 --proton-current-ma 1.0 \
+  --target-thickness-um 100 --port-radius-cm 5 \
+  --output source.json \
+  --beam-output beam.json --beam-id beam.example
+```
+
+The model integrates the Liskien–Paulsen recommended 0° differential
+cross sections over the proton slowing path through the lithium target
+(Bethe stopping, ICRU mean excitation for Li) and applies exact
+nonrelativistic two-body kinematics — the forward neutron energy is
+≈29.7 keV at reaction threshold and ≈0.79 MeV at a 2.5 MeV proton.
+Omit `--target-thickness-um` for a fully thick target (protons stop
+below threshold inside the Li); the record reports the required
+thickness either way. The emitted spectrum is a normalized
+`tabulated_histogram` and the optional `--beam-output` writes a
+ready-to-bind `openbnct.beam-description` whose `computed_model`
+provenance binds the source artifact by SHA-256 — it feeds
+`beam bind`, `beam qa`, and `openmc generate` directly. `accelerator
+beam` regenerates the beam description from an existing source record.
+The raw target spectrum is fast-neutron dominated (≈30–800 keV);
+epithermal content requires downstream moderation — which is what the
+BSA layer is for.
+
+`openbnct bsa` declares a `openbnct.beam-shaping-assembly/0.1.0`
+document: an ordered stack of moderator/filter/reflector/collimator/
+delimiting-aperture layers along a beam axis, each with a thickness, a
+material definition, and a radial footprint (`full`, `disk`, or
+`annulus` — annuli leave their bores empty, which is how collimator
+walls and aperture rings are expressed).
+
+```text
+openbnct bsa info --assembly bsa.json
+openbnct bsa rasterize --assembly bsa.json --case case.json \
+  --output assignment.json
+openbnct bsa sweep --spec sweep.json --base bsa.json \
+  --output-dir variants/ --record sweep-record.json
+```
+
+`rasterize` overlays the stack onto a transport case's scoring grid and
+emits a `MaterialAssignment` (the same artifact the DICOM pipeline
+emits), so a swept assembly slots into deck generation without a CSG
+modeler. `sweep` takes a `openbnct.bsa-sweep/0.1.0` spec listing
+candidate thicknesses per named layer, writes every Cartesian variant
+as its own assembly document, and emits a sweep record binding the
+spec, base, and variants by content hash.
+
 ### Measurement import and comparison
 
 Verification against measurements uses two more versioned documents.

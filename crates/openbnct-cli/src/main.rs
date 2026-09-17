@@ -84,6 +84,12 @@ enum Command {
     /// Inspect and bind versioned facility beam descriptions
     /// (`openbnct.beam-description/0.1.0`).
     Beam(BeamArgs),
+    /// Evaluate parametric accelerator-target neutron sources
+    /// (`openbnct.accelerator-source/0.1.0`).
+    Accelerator(AcceleratorArgs),
+    /// Rasterize and sweep beam-shaping assemblies
+    /// (`openbnct.beam-shaping-assembly/0.1.0`).
+    Bsa(BsaArgs),
     /// Inspect measurement records and compare them against computed
     /// artifacts (`openbnct.measurement-record/0.1.0`).
     Measurement(MeasurementArgs),
@@ -575,6 +581,132 @@ enum VrCommand {
 struct BeamArgs {
     #[command(subcommand)]
     command: BeamCommand,
+}
+
+#[derive(Debug, Args)]
+struct AcceleratorArgs {
+    #[command(subcommand)]
+    command: AcceleratorCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum AcceleratorCommand {
+    /// Evaluate a parametric ⁷Li(p,n)⁷Be thick-target source: forward
+    /// neutron spectrum and yield from the Liskien–Paulsen 0° cross
+    /// sections integrated over the proton slowing path.
+    Source {
+        /// Document identifier, e.g. `openbnct.accelerator-source.x.v1`.
+        #[arg(long)]
+        id: String,
+        /// Proton energy incident on the target, MeV.
+        #[arg(long)]
+        proton_energy_mev: f64,
+        /// Proton current on target, mA.
+        #[arg(long)]
+        proton_current_ma: f64,
+        /// Lithium target thickness, µm. Omit for thick-target (protons
+        /// stop below threshold inside the Li).
+        #[arg(long)]
+        target_thickness_um: Option<f64>,
+        /// Beam axis: `x`, `y`, or `z`.
+        #[arg(long, default_value = "z")]
+        axis: String,
+        /// World coordinate of the source plane along `axis`, cm.
+        #[arg(long, default_value_t = 0.0)]
+        plane_offset_cm: f64,
+        /// Propagation direction sign along `axis`: +1 or −1.
+        #[arg(long, default_value_t = 1)]
+        direction_sign: i8,
+        /// Port radius (emitting disk), cm.
+        #[arg(long)]
+        port_radius_cm: f64,
+        /// Port center in the plane's in-plane world coordinates `u,v`, cm.
+        #[arg(long, default_value = "0,0")]
+        port_center_uv_cm: String,
+        /// Emission cone half-angle, degrees.
+        #[arg(long, default_value_t = 30.0)]
+        half_angle_deg: f64,
+        /// Spectrum histogram bin count.
+        #[arg(long, default_value_t = 128)]
+        spectrum_bins: u32,
+        /// New output path for the accelerator-source JSON.
+        #[arg(long)]
+        output: PathBuf,
+        /// Also emit a ready-to-use beam-description JSON at this path.
+        #[arg(long)]
+        beam_output: Option<PathBuf>,
+        /// Identifier for the emitted beam description (required with
+        /// --beam-output).
+        #[arg(long, requires = "beam_output")]
+        beam_id: Option<String>,
+    },
+    /// Emit a `BeamDescription` from an evaluated accelerator source —
+    /// `computed_model` provenance binds the source artifact by hash.
+    Beam {
+        /// `openbnct.accelerator-source/0.1.0` JSON document.
+        #[arg(long)]
+        source: PathBuf,
+        /// Identifier for the emitted beam description.
+        #[arg(long)]
+        beam_id: String,
+        /// Human-readable beam name.
+        #[arg(long)]
+        name: String,
+        /// Facility label for the emitted beam.
+        #[arg(long, default_value = "accelerator-based source (parametric)")]
+        facility: String,
+        /// New output path for the beam-description JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+}
+
+#[derive(Debug, Args)]
+struct BsaArgs {
+    #[command(subcommand)]
+    command: BsaCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum BsaCommand {
+    /// Validate a beam-shaping assembly JSON and print its stack.
+    Info {
+        /// `openbnct.beam-shaping-assembly/0.1.0` JSON document.
+        #[arg(long)]
+        assembly: PathBuf,
+    },
+    /// Rasterize an assembly onto a transport case's grid, emitting a
+    /// `openbnct.material-assignment` with the assembly's layers as
+    /// voxel regions. The case supplies the grid and base material.
+    Rasterize {
+        /// `openbnct.beam-shaping-assembly/0.1.0` JSON document.
+        #[arg(long)]
+        assembly: PathBuf,
+        /// `openbnct.transport-case/0.1.0` JSON — supplies the scoring
+        /// grid and base material.
+        #[arg(long)]
+        case: PathBuf,
+        /// New output path for the material-assignment JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Enumerate a BSA sweep: every combination of the declared layer
+    /// thicknesses becomes a variant assembly written to the output
+    /// directory, plus a `openbnct.bsa-sweep` record binding them all.
+    Sweep {
+        /// `openbnct.bsa-sweep/0.1.0` spec JSON (base ref + parameters).
+        #[arg(long)]
+        spec: PathBuf,
+        /// The base `openbnct.beam-shaping-assembly/0.1.0` JSON.
+        #[arg(long)]
+        base: PathBuf,
+        /// Directory the variant documents are written into.
+        #[arg(long)]
+        output_dir: PathBuf,
+        /// New output path for the sweep record JSON.
+        #[arg(long)]
+        record: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -2702,6 +2834,215 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                 }
                 println!("report: {}", output.display());
+            }
+        },
+        Some(Command::Accelerator(args)) => match args.command {
+            AcceleratorCommand::Source {
+                id,
+                proton_energy_mev,
+                proton_current_ma,
+                target_thickness_um,
+                axis,
+                plane_offset_cm,
+                direction_sign,
+                port_radius_cm,
+                port_center_uv_cm,
+                half_angle_deg,
+                spectrum_bins,
+                output,
+                beam_output,
+                beam_id,
+            } => {
+                let axis = parse_plane_axis(&axis)?;
+                let center = parse_f64_pair(&port_center_uv_cm)?;
+                let source = openbnct_transport::evaluate_accelerator_source(
+                    &id,
+                    openbnct_transport::AcceleratorSourceSpec {
+                        proton_energy_mev,
+                        proton_current_ma,
+                        target_thickness_um,
+                        axis,
+                        plane_offset_cm,
+                        direction_sign,
+                        port_radius_cm,
+                        port_center_uv_cm: center,
+                        half_angle_deg,
+                        spectrum_bins,
+                    },
+                )
+                .map_err(|error| io::Error::other(format!("accelerator source: {error}")))?;
+                write_new_json(&output, &source)?;
+                let source_bytes = serde_json::to_vec_pretty(&source)?;
+                let source_reference = openbnct_transport::ContentReference {
+                    id: source.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&source_bytes),
+                };
+                println!("accelerator source: {}", source.id);
+                println!(
+                    "  7Li(p,n): Ep={} MeV, I={} mA, {}",
+                    source.spec.proton_energy_mev,
+                    source.spec.proton_current_ma,
+                    if source.derived.thick_target {
+                        format!(
+                            "thick target ({:.1} µm required)",
+                            source.derived.thick_target_depth_um
+                        )
+                    } else {
+                        format!(
+                            "partially thick (Ep exit {:.3} MeV)",
+                            source.derived.proton_exit_energy_mev
+                        )
+                    }
+                );
+                println!(
+                    "  forward yield {:.3e} n/p/sr · cone yield {:.3e} n/s · En {:.0}–{:.0} keV",
+                    source.derived.forward_yield_per_proton_sr,
+                    source.derived.cone_yield_per_s,
+                    source.derived.neutron_energy_range_ev[0] / 1000.0,
+                    source.derived.neutron_energy_range_ev[1] / 1000.0
+                );
+                println!("source: {}", output.display());
+                if let Some(beam_path) = beam_output {
+                    let beam = source
+                        .to_beam_description(
+                            beam_id.as_deref().unwrap_or(""),
+                            &format!("parametric {} mA Li(p,n) source", proton_current_ma),
+                            "accelerator-based source (parametric)",
+                            source_reference,
+                        )
+                        .map_err(|error| io::Error::other(format!("beam derive: {error}")))?;
+                    write_new_json(&beam_path, &beam)?;
+                    println!("beam: {}", beam_path.display());
+                }
+            }
+            AcceleratorCommand::Beam {
+                source,
+                beam_id,
+                name,
+                facility,
+                output,
+            } => {
+                let source_bytes = fs::read(&source)?;
+                let source: openbnct_transport::AcceleratorSource =
+                    serde_json::from_slice(&source_bytes)?;
+                let reference = openbnct_transport::ContentReference {
+                    id: source.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&source_bytes),
+                };
+                let beam = source
+                    .to_beam_description(&beam_id, &name, &facility, reference)
+                    .map_err(|error| io::Error::other(format!("beam derive: {error}")))?;
+                write_new_json(&output, &beam)?;
+                println!("beam: {}", output.display());
+            }
+        },
+        Some(Command::Bsa(args)) => match args.command {
+            BsaCommand::Info { assembly } => {
+                let assembly: openbnct_transport::BeamShapingAssembly =
+                    serde_json::from_slice(&fs::read(&assembly)?)?;
+                assembly
+                    .validate()
+                    .map_err(|error| io::Error::other(format!("bsa: {error}")))?;
+                println!(
+                    "bsa: {} ({} layers, {:.1} cm depth)",
+                    assembly.id,
+                    assembly.layers.len(),
+                    assembly.total_depth_cm()
+                );
+                for layer in &assembly.layers {
+                    println!(
+                        "  {} [{}]: {:.2} cm {}",
+                        layer.name,
+                        serde_json::to_value(layer.kind)
+                            .and_then(serde_json::from_value::<String>)
+                            .unwrap_or_default(),
+                        layer.thickness_cm,
+                        layer.material.id
+                    );
+                }
+            }
+            BsaCommand::Rasterize {
+                assembly,
+                case,
+                output,
+            } => {
+                let assembly: openbnct_transport::BeamShapingAssembly =
+                    serde_json::from_slice(&fs::read(&assembly)?)?;
+                let case: TransportCase = serde_json::from_slice(&fs::read(&case)?)?;
+                let mut assignment = assembly
+                    .to_material_assignment(
+                        &case.geometry,
+                        case.material.clone(),
+                        &format!("bsa:{}", assembly.id),
+                    )
+                    .map_err(|error| io::Error::other(format!("bsa rasterize: {error}")))?;
+                assignment.case_id = case.case_id.clone();
+                assignment
+                    .validate(&case.geometry)
+                    .map_err(|error| io::Error::other(format!("assignment: {error}")))?;
+                write_new_json(&output, &assignment)?;
+                println!(
+                    "assignment: {} ({} regions)",
+                    output.display(),
+                    assignment.regions.len()
+                );
+            }
+            BsaCommand::Sweep {
+                spec,
+                base,
+                output_dir,
+                record,
+            } => {
+                let spec_bytes = fs::read(&spec)?;
+                let sweep: openbnct_transport::BsaSweep = serde_json::from_slice(&spec_bytes)?;
+                let base_bytes = fs::read(&base)?;
+                let base: openbnct_transport::BeamShapingAssembly =
+                    serde_json::from_slice(&base_bytes)?;
+                let variants = openbnct_transport::enumerate_bsa_sweep(&sweep, &base)
+                    .map_err(|error| io::Error::other(format!("bsa sweep: {error}")))?;
+                fs::create_dir_all(&output_dir)?;
+                let mut records = Vec::new();
+                for variant in &variants {
+                    let bytes = serde_json::to_vec_pretty(variant)?;
+                    let path = output_dir.join(format!("{}.json", variant.id));
+                    write_new_text(&path, &bytes)?;
+                    records.push(openbnct_transport::BsaSweepVariant {
+                        id: variant.id.clone(),
+                        parameters: openbnct_transport::sweep_variant_assignment(&sweep, variant),
+                        content: openbnct_transport::ContentReference {
+                            id: variant.id.clone(),
+                            sha256: openbnct_evidence::sha256_hex(&bytes),
+                        },
+                    });
+                }
+                let record_doc = openbnct_transport::BsaSweepRecord {
+                    schema_version: openbnct_transport::BSA_SWEEP_SCHEMA.into(),
+                    id: format!("{}.record", sweep.id),
+                    sweep: openbnct_transport::ContentReference {
+                        id: sweep.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&spec_bytes),
+                    },
+                    base: openbnct_transport::ContentReference {
+                        id: base.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&base_bytes),
+                    },
+                    variants: records,
+                    qualification: "enumerated beam-shaping-assembly variants for research \
+                        screening — transport execution and beam-quality evaluation run on the \
+                        existing paths; no equivalence or clinical claim"
+                        .into(),
+                };
+                record_doc
+                    .validate()
+                    .map_err(|error| io::Error::other(format!("sweep record: {error}")))?;
+                write_new_json(&record, &record_doc)?;
+                println!(
+                    "sweep {}: {} variants into {}",
+                    sweep.id,
+                    record_doc.variants.len(),
+                    output_dir.display()
+                );
+                println!("record: {}", record.display());
             }
         },
         Some(Command::Measurement(args)) => match args.command {
@@ -7017,6 +7358,32 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
+fn parse_plane_axis(value: &str) -> io::Result<openbnct_transport::PlaneAxis> {
+    match value {
+        "x" => Ok(openbnct_transport::PlaneAxis::X),
+        "y" => Ok(openbnct_transport::PlaneAxis::Y),
+        "z" => Ok(openbnct_transport::PlaneAxis::Z),
+        other => Err(io::Error::other(format!(
+            "--axis must be x|y|z, got {other:?}"
+        ))),
+    }
+}
+
+fn parse_f64_pair(value: &str) -> io::Result<[f64; 2]> {
+    let parts: Vec<&str> = value.split(',').collect();
+    if parts.len() != 2 {
+        return Err(io::Error::other(format!(
+            "expected `u,v` pair, got {value:?}"
+        )));
+    }
+    let parse = |s: &str| {
+        s.trim()
+            .parse::<f64>()
+            .map_err(|_| io::Error::other(format!("non-numeric coordinate {s:?}")))
+    };
+    Ok([parse(parts[0])?, parse(parts[1])?])
+}
+
 fn write_new_text(path: &Path, bytes: &[u8]) -> io::Result<()> {
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -7105,6 +7472,15 @@ fn print_beam_summary(beam: &openbnct_transport::BeamDescription) {
         }
         openbnct_transport::BeamProvenance::MeasuredCharacterization { citations, .. } => {
             ("measured characterization", citations)
+        }
+        openbnct_transport::BeamProvenance::ComputedModel {
+            generator,
+            derivation_note,
+        } => {
+            println!("provenance: computed model");
+            println!("  generator: {} sha256:{}", generator.id, generator.sha256);
+            println!("  derivation: {derivation_note}");
+            return;
         }
     };
     println!("provenance: {kind}");

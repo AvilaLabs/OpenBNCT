@@ -950,7 +950,21 @@ other and of R8 ordering unless noted.
   assembly sweeps feeding the existing TECDOC-1223 beam-quality figures
   of merit — lets users model and compare candidate beam designs, the
   field's modern direction. Uses the R8-01 fast solver for sweeps where
-  available.
+  available. In progress, ⁷Li(p,n) path landed: `openbnct accelerator
+  source` integrates the Liskien–Paulsen recommended 0° differential
+  cross sections over Bethe proton slowing in lithium with exact
+  nonrelativistic two-body kinematics (29.7 keV threshold floor, 0.79
+  MeV at 2.5 MeV), emits `openbnct.accelerator-source/0.1.0` with a
+  normalized histogram spectrum, and can write a ready-to-bind
+  `BeamDescription` whose new `computed_model` provenance variant
+  hash-binds the generator artifact. `openbnct bsa` adds
+  `openbnct.beam-shaping-assembly/0.1.0` — ordered moderator/filter/
+  reflector/collimator/aperture layer stacks with full/disk/annulus
+  footprints — plus `rasterize` onto a case grid as a
+  `MaterialAssignment` and `sweep` enumerating thickness combinations
+  into a content-bound `openbnct.bsa-sweep/0.1.0` record. Remaining:
+  ⁹Be(p,n) data path, sweep results wired through beam-quality
+  evaluation, and the R8-01 solver hookup when it lands.
 
 - **R9-03 — boron microdistribution artifacts.** Subcellular
   localization fractions and intercellular heterogeneity variance as a
