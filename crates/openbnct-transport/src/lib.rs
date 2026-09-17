@@ -17,6 +17,7 @@ mod model;
 mod multigroup;
 mod positioning;
 mod response;
+mod screening;
 mod uq;
 mod variance_reduction;
 
@@ -72,6 +73,10 @@ pub use response::{
     PhysicalTotalEstimator, ResponseGenerationMethod, ResponseInterpolation, ResponseMethodError,
     ResponseSetError, ResponseSetQualification, ResponseUnit, SourceNormalization,
     SpatialDoseModel, ToolIdentity,
+};
+pub use screening::{
+    SENSITIVITY_SCREENING_SCHEMA, SENSITIVITY_SPEC_SCHEMA, ScreeningEntry, ScreeningError,
+    ScreeningParameter, ScreeningTarget, SensitivityScreening, SensitivitySpec, run_screening,
 };
 pub use uq::{
     BudgetEntry, CovarianceBlock, CovarianceDiagonal, CovarianceParameter,

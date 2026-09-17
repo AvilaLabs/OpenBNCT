@@ -1647,4 +1647,28 @@ mod artifact_tests {
             .collect();
         assert_eq!(cov.multigroup_data.sha256, sha);
     }
+
+    /// The committed NF-BNCT-003 screening spec must deserialize,
+    /// validate, and content-bind to the committed case + data.
+    #[test]
+    fn committed_nf_bnct_003_sensitivity_spec_validates() {
+        use sha2::Digest;
+        let base = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../benchmarks/synthetic/nf-bnct-003/transport/"
+        );
+        let hex = |bytes: &[u8]| -> String {
+            sha2::Sha256::digest(bytes)
+                .iter()
+                .map(|b| format!("{b:02x}"))
+                .collect()
+        };
+        let case_bytes = std::fs::read(format!("{base}case.json")).unwrap();
+        let data_bytes = std::fs::read(format!("{base}multigroup-data.json")).unwrap();
+        let spec_bytes = std::fs::read(format!("{base}sensitivity-spec.json")).unwrap();
+        let spec: crate::screening::SensitivitySpec = serde_json::from_slice(&spec_bytes).unwrap();
+        spec.validate().unwrap();
+        assert_eq!(spec.case.sha256, hex(&case_bytes));
+        assert_eq!(spec.multigroup_data.sha256, hex(&data_bytes));
+    }
 }

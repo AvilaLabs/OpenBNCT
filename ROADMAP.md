@@ -945,11 +945,19 @@ requires licensed software, external approval, or any clinical claim.
   declared format) remains open follow-on scope; no BNCT tool ships
   any of this today.
 
-- **R8-04 — declared-input sensitivity screening.** Morris/Sobol
-  screening over declared uncertain inputs (boron concentration,
-  material assignment, beam model parameters, geometry tolerances),
-  extending the R6-08 systematic-propagation machinery into a complete
-  input-to-dose uncertainty budget.
+- **R8-04 — declared-input sensitivity screening.** Complete:
+  `openbnct.sensitivity-spec/0.1.0` declares parameter ranges over six
+  target kinds (material σ_t / scatter / response scales, beam disk
+  center/radius, geometry origin shifts) and `openbnct uq screen`
+  evaluates each design point as a full deterministic solve folded to
+  the component response. `morris` gives elementary-effects μ/μ*/σ in
+  r·(k+1) solves; `sobol` gives Jansen ST and centered Saltelli-2010
+  S1 indices in N·(2k+2) solves (output mean-centered to kill the m²
+  cancellation pathology). Reports are seed-reproducible
+  `openbnct.sensitivity-screening/0.1.0` artifacts with content-bound
+  spec/case/data; verified by exact linear-parameter recovery,
+  dead-parameter detection, seed determinism, and a committed
+  NF-BNCT-003 spec.
 
 - **R8-05 — site lineal-energy tallies.** Microdosimetric y·f(y)/y·d(y)
   spectra tallied directly in the generated deck, feeding the MKM family

@@ -1355,6 +1355,36 @@ openbnct uq propagate \
 openbnct uq budget-info --budget BUDGET.json
 ```
 
+`openbnct uq screen` runs a `openbnct.sensitivity-spec/0.1.0` design —
+global sensitivity screening over *declared* input ranges, answering
+which inputs deserve a covariance at all. Each parameter is an absolute
+range on a named target: `material_sigma_total_scale`,
+`material_scatter_scale`, `material_response_scale` (multiplicative,
+nominal 1.0), `source_center_shift_mm`, `source_radius_scale`, and
+`geometry_origin_shift_mm` (beam-positioning and phantom-placement
+tolerances, millimetres). Every design point is a full deterministic
+S_N solve folded to one component's integrated response.
+
+`method: "morris"` runs `samples` elementary-effects trajectories over
+a `levels`-point grid — `r·(k+1)` solves — reporting μ (mean signed
+effect), μ* (ranking statistic), and σ (nonlinearity/interaction flag).
+`method: "sobol"` runs the Saltelli design — `N·(2k+2)` solves — with
+Jansen total-order (ST) and centered Saltelli-2010 first-order (S1)
+estimators; output is mean-centered before estimation so the product
+term doesn't suffer the usual m²-cancellation noise. Results are
+bit-reproducible under `seed`. Reports bind the spec, case, and data
+hashes; a committed example spec ships with NF-BNCT-003.
+
+```text
+openbnct uq screen \
+  --case transport/case.json \
+  --data transport/multigroup-data.json \
+  --spec transport/sensitivity-spec.json \
+  --periodic x,y \
+  --id openbnct.case.screening.v1 --output NEW-SCREENING.json
+openbnct uq screening-info --report SCREENING.json
+```
+
 A committed demonstration covariance ships with NF-BNCT-003
 (`transport/multigroup-covariance.json`, content-bound to the case's
 multigroup data). Declared covariances are inputs, not evaluations —

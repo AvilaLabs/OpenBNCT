@@ -658,6 +658,56 @@ enum UqCommand {
         #[arg(long)]
         budget: PathBuf,
     },
+    /// Run a `openbnct.sensitivity-spec/0.1.0` screening design —
+    /// Morris elementary-effects or Saltelli-Sobol indices over
+    /// declared input ranges — emitting a
+    /// `openbnct.sensitivity-screening/0.1.0` report.
+    Screen {
+        /// `openbnct.transport-case/0.1.0` JSON.
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-data/0.1.0` JSON.
+        #[arg(long)]
+        data: PathBuf,
+        /// `openbnct.sensitivity-spec/0.1.0` JSON.
+        #[arg(long)]
+        spec: PathBuf,
+        /// `openbnct.material-assignment/0.1.0` JSON (overrides the
+        /// case's default assignment).
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// S_N quadrature order (even, 2–16).
+        #[arg(long, default_value_t = 4)]
+        order: u32,
+        /// Relative scalar-flux convergence target.
+        #[arg(long, default_value_t = 1e-6)]
+        convergence: f64,
+        /// Within-group iterations per group pass.
+        #[arg(long, default_value_t = 64)]
+        max_inner: u32,
+        /// Outer sweeps over the group structure.
+        #[arg(long, default_value_t = 32)]
+        max_outer: u32,
+        /// Axis treated as periodic; repeatable or comma-separated
+        /// (x, y, z).
+        #[arg(long, value_delimiter = ',')]
+        periodic: Vec<String>,
+        /// Disable the analytic uncollided-beam split.
+        #[arg(long)]
+        no_uncollided_split: bool,
+        /// Report id.
+        #[arg(long)]
+        id: String,
+        /// New output path for the screening report JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Validate and print a sensitivity-screening report.
+    ScreeningInfo {
+        /// `openbnct.sensitivity-screening/0.1.0` JSON document.
+        #[arg(long)]
+        report: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -7683,6 +7733,125 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         entry.variance_contribution.sqrt(),
                         entry.relative_contribution * 100.0,
                     );
+                }
+            }
+            UqCommand::Screen {
+                case,
+                data,
+                spec,
+                assignment,
+                order,
+                convergence,
+                max_inner,
+                max_outer,
+                periodic,
+                no_uncollided_split,
+                id,
+                output,
+            } => {
+                let case_bytes = fs::read(&case)?;
+                let transport_case: TransportCase = serde_json::from_slice(&case_bytes)?;
+                let data_bytes = fs::read(&data)?;
+                let mg_data: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&data_bytes)?;
+                let spec_bytes = fs::read(&spec)?;
+                let screen_spec: openbnct_transport::SensitivitySpec =
+                    serde_json::from_slice(&spec_bytes)?;
+                screen_spec
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let assignment_model = match &assignment {
+                    Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
+                        path,
+                    )?)?),
+                    None => None,
+                };
+                let mut periodic_axes = [false; 3];
+                for axis in &periodic {
+                    let index = match axis.as_str() {
+                        "x" => 0,
+                        "y" => 1,
+                        "z" => 2,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "periodic axis {other:?} must be x, y, or z"
+                            ))
+                            .into());
+                        }
+                    };
+                    periodic_axes[index] = true;
+                }
+                let options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    convergence,
+                    max_inner_iterations: max_inner,
+                    max_outer_iterations: max_outer,
+                    assignment: assignment_model,
+                    periodic: periodic_axes,
+                    beam_uncollided_split: !no_uncollided_split,
+                };
+                let report = openbnct_transport::run_screening(
+                    &transport_case,
+                    &mg_data,
+                    &options,
+                    &screen_spec,
+                    &id,
+                    openbnct_core::ContentReference {
+                        id: screen_spec.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&spec_bytes),
+                    },
+                    openbnct_core::ContentReference {
+                        id: mg_data.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                    },
+                    openbnct_core::ContentReference {
+                        id: transport_case.case_id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                    },
+                )
+                .map_err(|error| io::Error::other(format!("screening: {error}")))?;
+                write_new_json(&output, &report)?;
+                println!(
+                    "sensitivity screening at {} ({} evaluations, R0={:.6e})",
+                    output.display(),
+                    report.evaluations,
+                    report.nominal_response,
+                );
+                let mut ranked: Vec<_> = report.entries.iter().collect();
+                ranked.sort_by_key(|e| e.rank);
+                for entry in ranked {
+                    let stat = if report.method == "morris" {
+                        format!("mu*={:.4e} sigma={:.4e}", entry.mu_star, entry.sigma)
+                    } else {
+                        format!("S1={:.4e} ST={:.4e}", entry.first_order, entry.total_order)
+                    };
+                    println!("  #{} {}: {}", entry.rank, entry.name, stat);
+                }
+            }
+            UqCommand::ScreeningInfo { report } => {
+                let report: openbnct_transport::SensitivityScreening =
+                    serde_json::from_slice(&fs::read(&report)?)?;
+                report
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                println!("id: {}", report.id);
+                println!("case: {}", report.case_id);
+                println!("method: {}", report.method);
+                println!("response component: {}", report.response_component);
+                println!("nominal response: {:.6e}", report.nominal_response);
+                println!("evaluations: {}", report.evaluations);
+                let mut ranked: Vec<_> = report.entries.iter().collect();
+                ranked.sort_by_key(|e| e.rank);
+                for entry in ranked {
+                    let stat = if report.method == "morris" {
+                        format!(
+                            "mu={:.4e} mu*={:.4e} sigma={:.4e}",
+                            entry.mu, entry.mu_star, entry.sigma
+                        )
+                    } else {
+                        format!("S1={:.4e} ST={:.4e}", entry.first_order, entry.total_order)
+                    };
+                    println!("  #{} {}: {}", entry.rank, entry.name, stat);
                 }
             }
             UqCommand::Info { report } => {

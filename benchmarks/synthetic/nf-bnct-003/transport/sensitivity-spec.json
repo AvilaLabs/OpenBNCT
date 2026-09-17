@@ -1,0 +1,61 @@
+{
+  "schema_version": "openbnct.sensitivity-spec/0.1.0",
+  "id": "openbnct.nf-bnct-003.screen-spec.v1",
+  "case": {
+    "id": "nf-bnct-003",
+    "sha256": "c43c71c212600555782d343d1f33e92a23f2fe96b99d36b0b85ec3782adb3541"
+  },
+  "multigroup_data": {
+    "id": "openbnct.nf-bnct-003.multigroup-data.v1",
+    "sha256": "a2018b2456fc308ea57a598239763fee8746ddcd6b292e59784b5dcb7d7d8f4a"
+  },
+  "response_component": "boron",
+  "method": "morris",
+  "samples": 6,
+  "levels": 4,
+  "seed": 20260915,
+  "parameters": [
+    {
+      "name": "absorber.sigma_total",
+      "nominal": 1.0,
+      "low": 0.9,
+      "high": 1.1,
+      "target": {
+        "kind": "material_sigma_total_scale",
+        "material_id": "openbnct.nf-bnct-003.material.ideal-b10-absorber.v1"
+      }
+    },
+    {
+      "name": "absorber.boron_response",
+      "nominal": 1.0,
+      "low": 0.9,
+      "high": 1.1,
+      "target": {
+        "kind": "material_response_scale",
+        "material_id": "openbnct.nf-bnct-003.material.ideal-b10-absorber.v1",
+        "component": "boron"
+      }
+    },
+    {
+      "name": "beam.disk_u_shift_mm",
+      "nominal": 0.0,
+      "low": -0.4,
+      "high": 0.4,
+      "target": {
+        "kind": "source_center_shift_mm",
+        "coordinate": 0
+      }
+    },
+    {
+      "name": "beam.radius",
+      "nominal": 1.0,
+      "low": 0.95,
+      "high": 1.05,
+      "target": {
+        "kind": "source_radius_scale"
+      }
+    }
+  ],
+  "provenance_note": "Demonstration screening over the declared NF-BNCT-003 input tolerances: 10% nuclear-data and response scales, \u00b10.4 mm beam centering, \u00b15% aperture radius.",
+  "qualification": "research-verification only"
+}
