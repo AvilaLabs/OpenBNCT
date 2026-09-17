@@ -13,6 +13,7 @@ mod beam_quality;
 mod bsa;
 mod measurement;
 mod model;
+mod multigroup;
 mod positioning;
 mod response;
 mod variance_reduction;
@@ -47,6 +48,11 @@ pub use model::{
     MATERIAL_ASSIGNMENT_SCHEMA, MaterialAssignment, MaterialDefinition, MaterialRegion,
     MaterialRegionShape, NeutronThermalTreatment, NuclideMassFraction, ParticleType, PlaneAxis,
     SourceSpatialDistribution, TransportCase, TransportModelError,
+};
+pub use multigroup::{
+    MULTIGROUP_DATA_SCHEMA, MULTIGROUP_FLUX_SCHEMA, MultigroupData, MultigroupError,
+    MultigroupFlux, MultigroupMaterial, SnOptions, fold_multigroup_dose,
+    level_symmetric_quadrature, solve_multigroup,
 };
 pub use openbnct_core::ContentReference;
 pub use positioning::{

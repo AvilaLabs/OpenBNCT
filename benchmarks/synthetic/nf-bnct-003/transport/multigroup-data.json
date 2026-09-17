@@ -1,0 +1,23 @@
+{
+ "schema_version": "openbnct.multigroup-data/0.1.0",
+ "id": "openbnct.nf-bnct-003.multigroup-data.v1",
+ "energy_boundaries_ev": [1.0, 0.001],
+ "collapse_declaration": "Single thermal group spanning (0.001, 1.0] eV containing the declared 0.0253 eV beam; sigma_total set to the oracle-declared 0.2308 cm^-1 (B10 ideal absorber at rho = 1e-3 g/cm3); zero scatter. This artifact is a verification fixture for the deterministic solver, not an evaluation-derived data set.",
+ "component_profile": {
+  "id": "nctforge.macroscopic-absorbed-dose.v1",
+  "sha256": "a35b26c0134ae02d3b1b0ede5b8c6f38e86966e86c65e1727b4c7f38677ab41a"
+ },
+ "materials": [
+  {
+   "material_id": "openbnct.nf-bnct-003.material.ideal-b10-absorber.v1",
+   "sigma_total_per_cm": [0.2308],
+   "scatter_matrix_per_cm": [0.0],
+   "dose_response_gy_cm2": {
+    "boron": [8.55e-5],
+    "nitrogen": [0.0],
+    "hydrogen": [0.0],
+    "photon": [0.0]
+   }
+  }
+ ]
+}

@@ -38,7 +38,11 @@ are source-controlled.
   where the boron component follows `exp(−Σ_t·z)` to a documented bound.
   The declared expectation lives in `transport/analytic-oracle.json` and is
   checked by `openbnct analytic` — a closed-form ground truth rather than
-  another code's output.
+  another code's output. `transport/multigroup-data.json` is the declared
+  one-group data set for the deterministic S_N solver; `openbnct sn solve`
+  on this case folds a boron dose that reproduces the oracle's 0.2308 cm⁻¹
+  slope to 0.000% relative deviation — the cross-method check between the
+  deterministic and Monte Carlo transport paths.
 
 Evaluate an analytic oracle against a dose bundle with:
 

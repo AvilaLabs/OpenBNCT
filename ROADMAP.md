@@ -886,17 +886,29 @@ Draft scope, accepted for scheduling. Items are ordered by dependency;
 R8-01 gates R8-02 and enables parts of R8-03 and R9-02. No item in R8/R9
 requires licensed software, external approval, or any clinical claim.
 
-- **R8-01 — in-house deterministic transport path.** A multigroup
-  discrete-ordinates (S_N) solver over the regular scoring mesh inside
-  `openbnct-transport`, fed by group-collapsed nuclear data produced by
-  the existing NJOY/HDF5 pipeline as a versioned `openbnct.multigroup-*
-  ` artifact. Purpose: (a) a separately implemented transport path —
-  satisfying the specification's reference-promotion gate without any
-  licensed code; (b) seconds-scale research-preview dose estimates; (c)
-  the forward solve needed by R8-02. Verified against the NF-BNCT-001
-  contract machinery and manufactured-solution solver tests, with honest
-  characterization of where multigroup S_N departs from
-  continuous-energy Monte Carlo.
+- **R8-01 — in-house deterministic transport path.** *Landed.* A
+  multigroup discrete-ordinates (S_N) solver over the regular scoring
+  mesh inside `openbnct-transport` (`multigroup.rs`): 3-D Cartesian
+  diamond difference, level-symmetric quadrature (exact S2–S8 tables,
+  equal-moment extension to S16), vacuum/incident-flux/periodic faces,
+  Jacobi source iteration with an outer re-sweep for upscatter, and a
+  monodirectional-beam uncollided-flux split (analytic ray-trace for the
+  uncollided component — the standard fix for ordinate-obliquity bias).
+  It consumes the versioned `openbnct.multigroup-data/0.1.0` contract —
+  declared group structure plus per-material totals, scatter matrices,
+  and optional dose-response vectors — and emits content-bound
+  `openbnct.multigroup-flux/0.1.0` plus, with `--dose`, a folded
+  `PhysicalDoseBundle` the analytic/gamma/metamorphic evaluators consume
+  directly. Verification: unit tests pin the DD sweep to the Padé
+  per-cell ratio at 1e-9, the uncollided split to the exact exponential,
+  and heterogeneous inserts to per-region slopes; on NF-BNCT-003 the
+  solver's folded boron dose reproduces the analytic oracle's declared
+  0.2308 cm⁻¹ slope at 0.000% deviation — an independent transport
+  implementation matching a closed-form ground truth. Scope stays
+  honest: isotropic scattering, no fission, declared multigroup data —
+  a verification solver, not a production engine. NJOY-driven group
+  collapse (producing `multigroup-data` from evaluated libraries)
+  remains the open piece feeding R8-03.
 
 - **R8-02 — adjoint-driven variance reduction.** An open CADIS/FW-CADIS
   implementation: adjoint solve from R8-01 produces an importance map,

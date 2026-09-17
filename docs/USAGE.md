@@ -1021,6 +1021,41 @@ is, and a pass/fail against the tolerance — emitted as
 `openbnct.analytic-oracle-evaluation/0.1.0`. Axis-aligned grids only;
 the oracle is consistency evidence, not a correctness proof.
 
+### Deterministic multigroup transport (S_N)
+
+`openbnct sn solve` is the in-house deterministic transport path — a
+3-D Cartesian diamond-difference discrete-ordinates solver over the
+transport case's regular grid, consuming a declared
+`openbnct.multigroup-data/0.1.0` artifact (group structure plus
+per-material total and scatter cross sections, optionally flux→dose
+response vectors):
+
+```text
+openbnct sn solve \
+  --case benchmarks/synthetic/nf-bnct-003/transport/case.json \
+  --data benchmarks/synthetic/nf-bnct-003/transport/multigroup-data.json \
+  --order 4 --convergence 1e-6 \
+  --dose mg-dose.json \
+  --output mg-flux.json
+```
+
+The emitted `openbnct.multigroup-flux/0.1.0` record carries the
+content-bound case and data references, the quadrature order, iteration
+counts, the final residual, and the beam model. `--dose` additionally
+folds the flux through the data's declared `dose_response_gy_cm2`
+vectors into a `PhysicalDoseBundle` — which the analytic oracle,
+gamma-index, and metamorphic evaluators consume directly. Monodirectional
+on-face disk sources use an uncollided-flux split by default: the
+uncollided beam is ray-traced analytically (exact exponential, no
+ordinate-obliquity bias) while the sweep solves only the collided
+remainder — `--no-uncollided-split` exercises the pure boundary-flux
+path. `--periodic x,y` marks faces periodic for infinite-slab problems;
+other faces are vacuum. `--assignment` applies a material-assignment
+heterogeneity. Nonconvergence within the iteration budget is a hard
+error. Scope is honestly bounded: isotropic (P0) scattering, no fission,
+multigroup data as declared input — a verification solver, not a
+production engine, and its output is research-only.
+
 ### Exposure-plan tables and diagnostics
 
 The `openbnct plan` family bridges spreadsheet workflows and the JSON

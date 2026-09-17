@@ -256,6 +256,9 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Deterministic multigroup S_N transport — the in-house reference
+    /// solver (research-only).
+    Sn(SnArgs),
     /// Compute exact dose-volume metrics (D_x, V_x, min/mean/max, EUD)
     /// over a named voxel mask.
     Metrics {
@@ -1418,6 +1421,61 @@ enum EvidenceCommand {
 struct BenchmarkArgs {
     #[command(subcommand)]
     command: BenchmarkCommand,
+}
+
+#[derive(Debug, Args)]
+struct SnArgs {
+    #[command(subcommand)]
+    command: SnCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum SnCommand {
+    /// Solve a declared `openbnct.multigroup-data/0.1.0` problem on the
+    /// transport-case grid and emit `openbnct.multigroup-flux/0.1.0`.
+    /// With `--dose`, also folds the flux through the data's declared
+    /// dose-response vectors into a `PhysicalDoseBundle`.
+    Solve {
+        /// `openbnct.transport-case/0.1.0` case JSON.
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-data/0.1.0` data JSON.
+        #[arg(long)]
+        data: PathBuf,
+        /// Optional `openbnct.material-assignment/0.2.0` for
+        /// heterogeneous geometry.
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// S_N quadrature order (even, 2–16).
+        #[arg(long, default_value_t = 4)]
+        order: u32,
+        /// Relative scalar-flux convergence target.
+        #[arg(long, default_value_t = 1e-6)]
+        convergence: f64,
+        /// Within-group iterations per group pass.
+        #[arg(long, default_value_t = 64)]
+        max_inner: u32,
+        /// Outer sweeps over the group structure (upscatter).
+        #[arg(long, default_value_t = 32)]
+        max_outer: u32,
+        /// Axis treated as periodic; repeatable or comma-separated
+        /// (x, y, z). Periodic transverse faces realize an infinite slab.
+        #[arg(long, value_delimiter = ',')]
+        periodic: Vec<String>,
+        /// Disable the analytic uncollided-beam split (the beam then
+        /// enters as discrete-ordinates boundary flux on the nearest
+        /// ordinate).
+        #[arg(long)]
+        no_uncollided_split: bool,
+        /// Also write a folded `openbnct.physical-dose-bundle/0.2.0` to
+        /// this path (the data must declare `dose_response_gy_cm2` and a
+        /// `component_profile` binding).
+        #[arg(long)]
+        dose: Option<PathBuf>,
+        /// Output path for the multigroup-flux JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -6514,6 +6572,111 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             );
             println!("qualification: {}", evaluation.qualification);
         }
+        Some(Command::Sn(args)) => match args.command {
+            SnCommand::Solve {
+                case,
+                data,
+                assignment,
+                order,
+                convergence,
+                max_inner,
+                max_outer,
+                periodic,
+                no_uncollided_split,
+                dose,
+                output,
+            } => {
+                let case_bytes = fs::read(&case)?;
+                let transport_case: TransportCase = serde_json::from_slice(&case_bytes)?;
+                let data_bytes = fs::read(&data)?;
+                let mg_data: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&data_bytes)?;
+                let assignment_model = match &assignment {
+                    Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
+                        path,
+                    )?)?),
+                    None => None,
+                };
+                let mut periodic_axes = [false; 3];
+                for axis in &periodic {
+                    let index = match axis.as_str() {
+                        "x" => 0,
+                        "y" => 1,
+                        "z" => 2,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "periodic axis {other:?} must be x, y, or z"
+                            ))
+                            .into());
+                        }
+                    };
+                    periodic_axes[index] = true;
+                }
+                let options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    convergence,
+                    max_inner_iterations: max_inner,
+                    max_outer_iterations: max_outer,
+                    assignment: assignment_model.clone(),
+                    periodic: periodic_axes,
+                    beam_uncollided_split: !no_uncollided_split,
+                };
+                let data_ref = openbnct_core::ContentReference {
+                    id: mg_data.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                };
+                let case_ref = openbnct_core::ContentReference {
+                    id: transport_case.case_id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                };
+                let flux = openbnct_transport::solve_multigroup(
+                    &transport_case,
+                    &mg_data,
+                    &options,
+                    data_ref,
+                    case_ref,
+                )
+                .map_err(|error| io::Error::other(format!("multigroup: {error}")))?;
+                if !flux.converged {
+                    return Err(io::Error::other(format!(
+                        "multigroup solve did not converge (residual {:.3e} after {} outer iterations)",
+                        flux.residual, flux.outer_iterations
+                    ))
+                    .into());
+                }
+                write_new_json(&output, &flux)?;
+                println!(
+                    "multigroup flux at {} (S{}, {} groups, {} outer iterations, residual {:.2e})",
+                    output.display(),
+                    flux.quadrature_order,
+                    flux.energy_boundaries_ev.len().saturating_sub(1),
+                    flux.outer_iterations,
+                    flux.residual
+                );
+                if let Some(dose_path) = dose {
+                    let profile = mg_data.component_profile.clone().ok_or_else(|| {
+                        io::Error::other(
+                            "--dose requires the multigroup data to declare component_profile",
+                        )
+                    })?;
+                    let response_ref = openbnct_core::ContentReference {
+                        id: mg_data.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                    };
+                    let bundle = openbnct_transport::fold_multigroup_dose(
+                        &transport_case,
+                        &mg_data,
+                        &flux,
+                        assignment_model.as_ref(),
+                        profile,
+                        response_ref,
+                    )
+                    .map_err(|error| io::Error::other(format!("dose fold: {error}")))?;
+                    write_new_json(&dose_path, &bundle)?;
+                    println!("folded dose bundle at {}", dose_path.display());
+                }
+            }
+        },
         Some(Command::Plan(args)) => match args.command {
             PlanCommand::Import {
                 table,
