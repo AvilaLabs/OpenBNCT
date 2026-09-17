@@ -80,8 +80,12 @@ bundling those systems.
   reproduce to ~1e-4 (with an honestly recorded 29% J/Φ gap), and the
   20M-history cubical water-phantom run reproduces the published
   advantage depth within 20% (9.75 vs 8.1 cm) and the thermal-fluence
-  maximum at 2.75 cm vs ~2.0–2.5 cm. Records under `measurements/`;
-  in-phantom evidence under `validation/fir1-k63-water-phantom/`.
+  maximum at 2.75 cm vs ~2.0–2.5 cm. A deterministic S₈ three-group
+  solve on a like-for-like Ø20 × 24 cm cylindrical phantom matches the
+  digitized TECDOC-1223 measured depth profile within ~1.3σ at all 12
+  bins (χ² = 6.7). Records under `measurements/`; in-phantom evidence
+  under `validation/fir1-k63-water-phantom/` and
+  `validation/fir1-k63-cylindrical-phantom/`.
 - **RT Dose export** — `openbnct dicom export-rtdose` writes any dose
   volume as a multi-frame RTDOSE with full grid geometry and CT
   referencing, verified by independent-toolkit round-trip.
