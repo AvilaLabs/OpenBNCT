@@ -17,6 +17,7 @@ mod model;
 mod multigroup;
 mod positioning;
 mod response;
+mod uq;
 mod variance_reduction;
 
 pub use accelerator::{
@@ -71,6 +72,11 @@ pub use response::{
     PhysicalTotalEstimator, ResponseGenerationMethod, ResponseInterpolation, ResponseMethodError,
     ResponseSetError, ResponseSetQualification, ResponseUnit, SourceNormalization,
     SpatialDoseModel, ToolIdentity,
+};
+pub use uq::{
+    BudgetEntry, CovarianceBlock, CovarianceDiagonal, CovarianceParameter,
+    DOSE_UNCERTAINTY_BUDGET_SCHEMA, DoseUncertaintyBudget, MULTIGROUP_COVARIANCE_SCHEMA,
+    MultigroupCovariance, UqDerivation, UqError, propagate_uncertainty,
 };
 pub use variance_reduction::{
     AdjointMethod, AdjointResponse, ResolvedWeightWindow, ResolvedWeightWindows,

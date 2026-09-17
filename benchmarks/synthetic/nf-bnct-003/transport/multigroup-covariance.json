@@ -1,0 +1,37 @@
+{
+  "schema_version": "openbnct.multigroup-covariance/0.1.0",
+  "id": "openbnct.nf-bnct-003.multigroup-covariance.v1",
+  "multigroup_data": {
+    "id": "openbnct.nf-bnct-003.multigroup-data.v1",
+    "sha256": "a2018b2456fc308ea57a598239763fee8746ddcd6b292e59784b5dcb7d7d8f4a"
+  },
+  "diagonal": [
+    {
+      "material_id": "openbnct.nf-bnct-003.material.ideal-b10-absorber.v1",
+      "parameter": "sigma_total",
+      "component": null,
+      "groups": [
+        [
+          0,
+          0
+        ]
+      ],
+      "relative_std_dev": 0.05
+    },
+    {
+      "material_id": "openbnct.nf-bnct-003.material.ideal-b10-absorber.v1",
+      "parameter": "dose_response",
+      "component": "boron",
+      "groups": [
+        [
+          0,
+          0
+        ]
+      ],
+      "relative_std_dev": 0.03
+    }
+  ],
+  "blocks": [],
+  "provenance_note": "Declared demonstration covariance on the NF-BNCT-003 ideal absorber: 5% 1-sigma on the removal cross section (collapsed-data uncertainty), 3% on the boron kerma response (dosimetry-data uncertainty). Independent diagonal entries only; group-correlation blocks are exercised in the transport-crate unit tests.",
+  "qualification": "Declared input for verification-method demonstration; not an evaluated nuclear-data covariance library."
+}

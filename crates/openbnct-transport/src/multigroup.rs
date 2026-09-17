@@ -1627,4 +1627,24 @@ mod artifact_tests {
             "openbnct.nf-bnct-003.material.ideal-b10-absorber.v1"
         );
     }
+
+    /// The committed NF-BNCT-003 covariance artifact must deserialize,
+    /// validate, and content-bind to the committed multigroup data.
+    #[test]
+    fn committed_nf_bnct_003_covariance_validates() {
+        use sha2::Digest;
+        let base = concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../../benchmarks/synthetic/nf-bnct-003/transport/"
+        );
+        let data_bytes = std::fs::read(format!("{base}multigroup-data.json")).unwrap();
+        let cov_bytes = std::fs::read(format!("{base}multigroup-covariance.json")).unwrap();
+        let cov: crate::uq::MultigroupCovariance = serde_json::from_slice(&cov_bytes).unwrap();
+        cov.validate().unwrap();
+        let sha: String = sha2::Sha256::digest(&data_bytes)
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect();
+        assert_eq!(cov.multigroup_data.sha256, sha);
+    }
 }

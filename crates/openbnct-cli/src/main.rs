@@ -593,6 +593,71 @@ enum UqCommand {
         #[arg(long)]
         report: PathBuf,
     },
+    /// Propagate a `openbnct.multigroup-covariance/0.1.0` artifact
+    /// through the deterministic S_N solve (central-difference
+    /// sensitivities) into a `openbnct.dose-uncertainty-budget/0.1.0`
+    /// report on one dose component's integrated response.
+    Propagate {
+        /// `openbnct.transport-case/0.1.0` JSON.
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-data/0.1.0` JSON.
+        #[arg(long)]
+        data: PathBuf,
+        /// `openbnct.multigroup-covariance/0.1.0` JSON.
+        #[arg(long)]
+        covariance: PathBuf,
+        /// Dose component whose folded response is propagated.
+        #[arg(long)]
+        component: String,
+        /// `openbnct.material-assignment/0.1.0` JSON (overrides the
+        /// case's default assignment).
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// S_N quadrature order (even, 2–16).
+        #[arg(long, default_value_t = 4)]
+        order: u32,
+        /// Relative scalar-flux convergence target.
+        #[arg(long, default_value_t = 1e-6)]
+        convergence: f64,
+        /// Within-group iterations per group pass.
+        #[arg(long, default_value_t = 64)]
+        max_inner: u32,
+        /// Outer sweeps over the group structure.
+        #[arg(long, default_value_t = 32)]
+        max_outer: u32,
+        /// Axis treated as periodic; repeatable or comma-separated
+        /// (x, y, z).
+        #[arg(long, value_delimiter = ',')]
+        periodic: Vec<String>,
+        /// Disable the analytic uncollided-beam split.
+        #[arg(long)]
+        no_uncollided_split: bool,
+        /// Precomputed `openbnct.multigroup-flux/0.1.0` nominal forward
+        /// solve to reuse instead of solving again.
+        #[arg(long)]
+        forward_flux: Option<PathBuf>,
+        /// Declared relative 1σ statistical contribution folded in as an
+        /// independent variance.
+        #[arg(long)]
+        statistical_rel_std: Option<f64>,
+        /// Budget id.
+        #[arg(long)]
+        id: String,
+        /// New output path for the budget JSON.
+        #[arg(long)]
+        output: PathBuf,
+        /// Optional output path for the nominal forward-flux artifact;
+        /// the artifact is content-bound into the budget.
+        #[arg(long)]
+        flux: Option<PathBuf>,
+    },
+    /// Validate and print a dose-uncertainty budget.
+    BudgetInfo {
+        /// `openbnct.dose-uncertainty-budget/0.1.0` JSON document.
+        #[arg(long)]
+        budget: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -7481,6 +7546,145 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             }
         },
         Some(Command::Uq(args)) => match args.command {
+            UqCommand::Propagate {
+                case,
+                data,
+                covariance,
+                component,
+                assignment,
+                order,
+                convergence,
+                max_inner,
+                max_outer,
+                periodic,
+                no_uncollided_split,
+                forward_flux,
+                statistical_rel_std,
+                id,
+                output,
+                flux,
+            } => {
+                let case_bytes = fs::read(&case)?;
+                let transport_case: TransportCase = serde_json::from_slice(&case_bytes)?;
+                let data_bytes = fs::read(&data)?;
+                let mg_data: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&data_bytes)?;
+                let cov_bytes = fs::read(&covariance)?;
+                let cov: openbnct_transport::MultigroupCovariance =
+                    serde_json::from_slice(&cov_bytes)?;
+                cov.validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let assignment_model = match &assignment {
+                    Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
+                        path,
+                    )?)?),
+                    None => None,
+                };
+                let mut periodic_axes = [false; 3];
+                for axis in &periodic {
+                    let index = match axis.as_str() {
+                        "x" => 0,
+                        "y" => 1,
+                        "z" => 2,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "periodic axis {other:?} must be x, y, or z"
+                            ))
+                            .into());
+                        }
+                    };
+                    periodic_axes[index] = true;
+                }
+                let options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    convergence,
+                    max_inner_iterations: max_inner,
+                    max_outer_iterations: max_outer,
+                    assignment: assignment_model,
+                    periodic: periodic_axes,
+                    beam_uncollided_split: !no_uncollided_split,
+                };
+                let nominal_flux =
+                    match &forward_flux {
+                        Some(path) => Some(serde_json::from_slice::<
+                            openbnct_transport::MultigroupFlux,
+                        >(&fs::read(path)?)?),
+                        None => None,
+                    };
+                let derivation = openbnct_transport::propagate_uncertainty(
+                    &transport_case,
+                    &mg_data,
+                    &options,
+                    &cov,
+                    &component,
+                    nominal_flux.as_ref(),
+                    statistical_rel_std,
+                    &id,
+                    openbnct_core::ContentReference {
+                        id: cov.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&cov_bytes),
+                    },
+                    openbnct_core::ContentReference {
+                        id: mg_data.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                    },
+                    openbnct_core::ContentReference {
+                        id: transport_case.case_id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                    },
+                )
+                .map_err(|error| io::Error::other(format!("uq: {error}")))?;
+                let mut budget = derivation.budget;
+                if let Some(prefix) = &flux {
+                    let flux_path = prefix.with_extension("json");
+                    write_new_json(&flux_path, &derivation.forward_flux)?;
+                    let flux_bytes = fs::read(&flux_path)?;
+                    budget.fluxes.push(openbnct_core::ContentReference {
+                        id: format!("{}.nominal-flux", budget.id),
+                        sha256: openbnct_evidence::sha256_hex(&flux_bytes),
+                    });
+                }
+                write_new_json(&output, &budget)?;
+                println!(
+                    "dose uncertainty budget at {} (R={:.6e}, σ_rel={:.3e}, {} perturbed solves)",
+                    output.display(),
+                    budget.response_integral,
+                    budget.total_relative_std_dev,
+                    derivation.perturbed_solves,
+                );
+                for entry in &budget.entries {
+                    println!(
+                        "  {} {:>7.2}%  σ_R={:.3e}",
+                        entry.parameter,
+                        entry.relative_contribution * 100.0,
+                        entry.variance_contribution.sqrt(),
+                    );
+                }
+            }
+            UqCommand::BudgetInfo { budget } => {
+                let budget: openbnct_transport::DoseUncertaintyBudget =
+                    serde_json::from_slice(&fs::read(&budget)?)?;
+                budget
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                println!("id: {}", budget.id);
+                println!("case: {}", budget.case_id);
+                println!("component: {}", budget.component);
+                println!("response integral: {:.6e}", budget.response_integral);
+                println!(
+                    "total relative std dev: {:.4e}",
+                    budget.total_relative_std_dev
+                );
+                for entry in &budget.entries {
+                    println!(
+                        "  [{}] {}: σ_R={:.4e} share={:.2}%",
+                        entry.source,
+                        entry.parameter,
+                        entry.variance_contribution.sqrt(),
+                        entry.relative_contribution * 100.0,
+                    );
+                }
+            }
             UqCommand::Info { report } => {
                 let report: openbnct_core::SystematicUncertaintyReport =
                     serde_json::from_slice(&fs::read(&report)?)?;

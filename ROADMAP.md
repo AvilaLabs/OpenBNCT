@@ -926,13 +926,24 @@ requires licensed software, external approval, or any clinical claim.
   unit-weight normalization keeps the current unbiased-source decks
   consistent.
 
-- **R8-03 — nuclear-data uncertainty propagation.** ENDF/B-VIII.1
-  covariance data processed through the NJOY chain, propagated to dose
-  either by Total-Monte-Carlo resampling (using the demonstrated
-  parallel-seed orchestration) or by adjoint-weighted sensitivities from
-  R8-01. Output: an `openbnct.dose-uncertainty-budget` artifact
-  decomposing total uncertainty into statistical, nuclear-data, and
-  declared-model contributions. No BNCT tool does this today.
+- **R8-03 — nuclear-data uncertainty propagation.** Complete:
+  `openbnct.multigroup-covariance/0.1.0` declares per-material relative
+  standard deviations over `sigma_total`, per-transfer `scatter`
+  entries, and `dose_response` vectors — independent diagonal entries
+  plus dense group-correlation blocks. `openbnct uq propagate` folds a
+  component response through the R8-01 deterministic solve and emits
+  `openbnct.dose-uncertainty-budget/0.1.0`: σ²(R) = Sᵀ·C·S decomposed
+  by source (nuclear data / response data / declared statistical),
+  with the covariance, data, case, and nominal flux content-bound.
+  Sensitivities are central finite differences of the shipped discrete
+  operator — the positivity-clamped sweep is nonlinear, so continuous-
+  adjoint GPT inner products measured ~25–40% pointwise off and were
+  rejected for committed magnitudes (they remain correct for CADIS
+  importance ratios). Verified by step-stability checks, exact linear
+  response terms, correlated-vs-diagonal quadrature, and solver
+  conservation invariants. ENDF-covariance *processing* (NJOY → the
+  declared format) remains open follow-on scope; no BNCT tool ships
+  any of this today.
 
 - **R8-04 — declared-input sensitivity screening.** Morris/Sobol
   screening over declared uncertain inputs (boron concentration,

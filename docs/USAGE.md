@@ -1319,6 +1319,47 @@ openbnct uq apply \
 openbnct uq info --report UQ-REPORT.json
 ```
 
+`openbnct uq propagate` propagates a *declared nuclear-data covariance*
+through the deterministic S_N solve into a
+`openbnct.dose-uncertainty-budget/0.1.0` report on one dose component's
+integrated response. The `openbnct.multigroup-covariance/0.1.0`
+artifact declares per-material relative standard deviations over
+`sigma_total`, `scatter` (group-to-group transfer entries), and
+`dose_response` vectors — independent `diagonal` entries plus dense
+group-correlation `blocks` for `sigma_total`/`dose_response`. The
+nominal multigroup data stays untouched; every uncertainty lives in
+the covariance artifact.
+
+Sensitivities are central finite differences of the actual discrete
+solve — two perturbed solves per declared parameter — because the
+positivity-clamped diamond-difference operator is nonlinear and a
+continuous-adjoint inner product is only first-order-faithful to it
+(measured ~25–40% pointwise on coarse meshes; adjoint importance
+remains the right machinery for CADIS ratios). Response entries are
+linear in the integral and exact analytically. Propagation is the
+quadratic form σ²(R) = Sᵀ·C·S; `--statistical-rel-std` folds a Monte
+Carlo σ on the same integral in as an independent variance. Entries
+report each source's response-space σ and variance share; the nominal
+forward flux can be emitted (`--flux`) and is content-bound into the
+budget.
+
+```text
+openbnct uq propagate \
+  --case transport/case.json \
+  --data transport/multigroup-data.json \
+  --covariance transport/multigroup-covariance.json \
+  --component boron --periodic x,y \
+  --statistical-rel-std 0.02 \
+  --id openbnct.case.budget.v1 --output NEW-BUDGET.json \
+  --flux NEW-FLUX
+openbnct uq budget-info --budget BUDGET.json
+```
+
+A committed demonstration covariance ships with NF-BNCT-003
+(`transport/multigroup-covariance.json`, content-bound to the case's
+multigroup data). Declared covariances are inputs, not evaluations —
+the artifact's `provenance_note` must say where the numbers came from.
+
 ### Variance reduction
 
 `openbnct vr` manages weight-window variance reduction for the OpenMC
