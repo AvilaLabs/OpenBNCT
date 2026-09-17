@@ -328,16 +328,18 @@ pub struct MultigroupFlux {
 /// Incident boundary angular flux keyed `(face, cell_u, cell_v)` →
 /// `(direction_index, group)` → ψ (cm⁻²s⁻¹sr⁻¹). Face index is
 /// `2·axis` for the low face, `2·axis + 1` for the high face.
-type BoundarySource = std::collections::BTreeMap<(u8, u32, u32), Vec<(usize, usize, f64)>>;
+pub(crate) type BoundarySource =
+    std::collections::BTreeMap<(u8, u32, u32), Vec<(usize, usize, f64)>>;
 
-/// Map a `FixedSourceDefinition` onto boundary incident-flux cells and
-/// group weights. Only plane/disk sources sitting on a grid face are
-/// supported — interior volumetric sources are rejected honestly.
-fn map_boundary_source(
+/// The boundary face index (`2·axis` low / `2·axis+1` high), the
+/// transverse `(ju, jv)` cell columns the declared source covers, and
+/// the per-group emission weights — the shared geometry half of boundary
+/// source handling, used both by the discrete flux map and by CADIS
+/// source-weight normalization.
+pub(crate) fn source_coverage(
     case: &TransportCase,
     data: &MultigroupData,
-    quadrature: &[([f64; 3], f64)],
-) -> Result<BoundarySource, MultigroupError> {
+) -> Result<SourceCoverage, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
     let geometry = &case.geometry;
@@ -347,10 +349,10 @@ fn map_boundary_source(
     // Grid world bounds along the source-normal axis.
     let lo_mm = geometry.origin_mm[axis] - 0.5 * geometry.spacing_mm[axis];
     let hi_mm = lo_mm + geometry.spacing_mm[axis] * geometry.shape[axis] as f64;
-    let (face, inward_sign) = if (offset_cm * 10.0 - lo_mm).abs() < 1.0 {
-        (2 * axis as u8, 1.0_f64)
+    let face = if (offset_cm * 10.0 - lo_mm).abs() < 1.0 {
+        2 * axis as u8
     } else if (offset_cm * 10.0 - hi_mm).abs() < 1.0 {
-        (2 * axis as u8 + 1, -1.0_f64)
+        2 * axis as u8 + 1
     } else {
         return Err(invalid(format!(
             "source offset {offset_cm} cm is not on a grid face along axis {axis} \
@@ -394,6 +396,39 @@ fn map_boundary_source(
             )));
         }
     }
+    Ok(SourceCoverage {
+        face,
+        cells,
+        group_weights: source_group_weights(source, data)?,
+    })
+}
+
+/// Shared geometry half of boundary-source handling: which face, which
+/// transverse cell columns, which group weights.
+pub(crate) struct SourceCoverage {
+    /// `2·axis` for the low face, `2·axis + 1` for the high face.
+    pub face: u8,
+    /// Covered transverse `(ju, jv)` cell columns.
+    pub cells: Vec<(u32, u32)>,
+    /// Normalized per-group emission weights.
+    pub group_weights: Vec<f64>,
+}
+
+/// Map a `FixedSourceDefinition` onto boundary incident-flux cells and
+/// group weights. Only plane/disk sources sitting on a grid face are
+/// supported — interior volumetric sources are rejected honestly.
+fn map_boundary_source(
+    case: &TransportCase,
+    data: &MultigroupData,
+    quadrature: &[([f64; 3], f64)],
+) -> Result<BoundarySource, MultigroupError> {
+    let invalid = |m: String| MultigroupError::Source(m);
+    let source = &case.source;
+    let geometry = &case.geometry;
+    let axis = source.space.axis().index();
+    let coverage = source_coverage(case, data)?;
+    let (face, cells, group_weights) = (coverage.face, coverage.cells, coverage.group_weights);
+    let inward_sign = if face % 2 == 0 { 1.0_f64 } else { -1.0_f64 };
 
     // Angular map: the inward-hemisphere ordinates matching the declared
     // angular distribution, with each entry's fraction of the incident
@@ -473,11 +508,11 @@ fn map_boundary_source(
 
     // Energy → group weights.
     let groups = data.group_count();
-    let group_weights = source_group_weights(source, data)?;
     debug_assert_eq!(group_weights.len(), groups);
 
     // Unit-weight source: total rate = sites/history × weight → incident
     // partial-current density over the covered cells.
+    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
     let cell_area_cm2 = (geometry.spacing_mm[u] * geometry.spacing_mm[v]) / 100.0;
     let current_density = source.statistical_weight_per_site
         * source.source_sites_per_history as f64
@@ -796,52 +831,11 @@ pub fn solve_multigroup(
 ) -> Result<MultigroupFlux, MultigroupError> {
     case.validate()?;
     data.validate()?;
-    let invalid = |m: String| MultigroupError::Solve(m);
-
     let geometry = &case.geometry;
     let n_cells = geometry.voxel_count()?;
     let groups = data.group_count();
     let quadrature = level_symmetric_quadrature(options.quadrature_order)?;
-    let n_dirs = quadrature.len();
-
-    // Per-voxel material index: base material, then assignment regions.
-    let material_index = |material_id: &str| -> Result<usize, MultigroupError> {
-        data.materials
-            .iter()
-            .position(|m| m.material_id == material_id)
-            .ok_or_else(|| {
-                invalid(format!(
-                    "multigroup data has no entry for material {material_id:?}"
-                ))
-            })
-    };
-    let mut case_material = vec![material_index(&case.material.id)?; n_cells];
-    if let Some(assignment) = &options.assignment {
-        assignment.validate(geometry)?;
-        let [nx, ny, _] = geometry.shape.map(|d| d as usize);
-        for region in &assignment.regions {
-            let idx = material_index(&region.material.id)?;
-            match &region.shape {
-                MaterialRegionShape::VoxelBox { lower, upper } => {
-                    for k in lower[2]..=upper[2] {
-                        for j in lower[1]..=upper[1] {
-                            for i in lower[0]..=upper[0] {
-                                case_material
-                                    [i as usize + nx * j as usize + nx * ny * k as usize] = idx;
-                            }
-                        }
-                    }
-                }
-                MaterialRegionShape::VoxelSet { indices } => {
-                    for vox in indices {
-                        case_material
-                            [vox[0] as usize + nx * vox[1] as usize + nx * ny * vox[2] as usize] =
-                            idx;
-                    }
-                }
-            }
-        }
-    }
+    let case_material = cell_materials(case, data, options.assignment.as_ref())?;
 
     // Uncollided beam split or the discrete boundary-flux path.
     let uncollided = if options.beam_uncollided_split {
@@ -873,6 +867,161 @@ pub fn solve_multigroup(
         None => vec![vec![0.0; groups]; n_cells],
     };
 
+    let mut result = solve_sn_problem(
+        case,
+        data,
+        options,
+        &case_material,
+        &quadrature,
+        &boundary,
+        &fixed_source,
+        data_ref,
+        case_ref,
+    )?;
+
+    // Total flux = collided solve + analytic uncollided component.
+    if let Some(unc) = &uncollided {
+        for (row, unc_row) in result.flux.iter_mut().zip(unc.iter()) {
+            for (f, u) in row.iter_mut().zip(unc_row.iter()) {
+                *f += u;
+            }
+        }
+        result.beam_model = "uncollided_split".into();
+    } else {
+        result.beam_model = "boundary_flux".into();
+    }
+
+    Ok(result)
+}
+
+/// Adjoint multigroup solve: the scalar importance function for a
+/// declared volumetric response source.
+///
+/// On a reflection-symmetric quadrature the adjoint scalar flux equals
+/// the *forward* solve of the transposed problem — scatter matrix
+/// transposed (adjoint upscatter where forward downscatters), the same
+/// vacuum/periodic faces, and the adjoint source as a volumetric
+/// emission density. `adjoint_source` is `[cell][group]` in arbitrary
+/// consistent units — importance is only ever used up to a global scale.
+pub fn solve_multigroup_adjoint(
+    case: &TransportCase,
+    data: &MultigroupData,
+    options: &SnOptions,
+    adjoint_source: &[Vec<f64>],
+    data_ref: ContentReference,
+    case_ref: ContentReference,
+) -> Result<MultigroupFlux, MultigroupError> {
+    case.validate()?;
+    data.validate()?;
+    let invalid = |m: String| MultigroupError::Solve(m);
+    let n_cells = case.geometry.voxel_count()?;
+    let groups = data.group_count();
+    if adjoint_source.len() != n_cells || adjoint_source.iter().any(|row| row.len() != groups) {
+        return Err(invalid("adjoint source must be [cells][groups]".into()));
+    }
+    // Transposed scatter: the adjoint equation couples group g's source
+    // into g' via Σ_s[g'→g] — the transpose of the forward matrix.
+    let mut adjoint_data = data.clone();
+    adjoint_data.id = format!("{}.adjoint", data.id);
+    for material in &mut adjoint_data.materials {
+        let mut transposed = vec![0.0; groups * groups];
+        for g in 0..groups {
+            for gp in 0..groups {
+                transposed[g * groups + gp] = material.scatter_matrix_per_cm[gp * groups + g];
+            }
+        }
+        material.scatter_matrix_per_cm = transposed;
+    }
+    let case_material = cell_materials(case, &adjoint_data, options.assignment.as_ref())?;
+    let quadrature = level_symmetric_quadrature(options.quadrature_order)?;
+    let mut result = solve_sn_problem(
+        case,
+        &adjoint_data,
+        options,
+        &case_material,
+        &quadrature,
+        &BoundarySource::new(),
+        adjoint_source,
+        data_ref,
+        case_ref,
+    )?;
+    result.beam_model = "adjoint_volumetric".into();
+    result.energy_boundaries_ev = data.energy_boundaries_ev.clone();
+    Ok(result)
+}
+
+/// Per-voxel material index: base material, then assignment regions.
+pub(crate) fn cell_materials(
+    case: &TransportCase,
+    data: &MultigroupData,
+    assignment: Option<&MaterialAssignment>,
+) -> Result<Vec<usize>, MultigroupError> {
+    let invalid = |m: String| MultigroupError::Solve(m);
+    let geometry = &case.geometry;
+    let n_cells = geometry.voxel_count()?;
+    let material_index = |material_id: &str| -> Result<usize, MultigroupError> {
+        data.materials
+            .iter()
+            .position(|m| m.material_id == material_id)
+            .ok_or_else(|| {
+                invalid(format!(
+                    "multigroup data has no entry for material {material_id:?}"
+                ))
+            })
+    };
+    let mut case_material = vec![material_index(&case.material.id)?; n_cells];
+    if let Some(assignment) = assignment {
+        assignment.validate(geometry)?;
+        let [nx, ny, _] = geometry.shape.map(|d| d as usize);
+        for region in &assignment.regions {
+            let idx = material_index(&region.material.id)?;
+            match &region.shape {
+                MaterialRegionShape::VoxelBox { lower, upper } => {
+                    for k in lower[2]..=upper[2] {
+                        for j in lower[1]..=upper[1] {
+                            for i in lower[0]..=upper[0] {
+                                case_material
+                                    [i as usize + nx * j as usize + nx * ny * k as usize] = idx;
+                            }
+                        }
+                    }
+                }
+                MaterialRegionShape::VoxelSet { indices } => {
+                    for vox in indices {
+                        case_material
+                            [vox[0] as usize + nx * vox[1] as usize + nx * ny * vox[2] as usize] =
+                            idx;
+                    }
+                }
+            }
+        }
+    }
+    Ok(case_material)
+}
+
+/// Shared iteration core for the forward and adjoint solves: source
+/// iteration over `fixed_source` (volumetric or first-collision) plus
+/// `boundary` incident flux on the case grid.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn solve_sn_problem(
+    case: &TransportCase,
+    data: &MultigroupData,
+    options: &SnOptions,
+    case_material: &[usize],
+    quadrature: &[([f64; 3], f64)],
+    boundary: &BoundarySource,
+    fixed_source: &[Vec<f64>],
+    data_ref: ContentReference,
+    case_ref: ContentReference,
+) -> Result<MultigroupFlux, MultigroupError> {
+    let invalid = |m: String| MultigroupError::Solve(m);
+    let geometry = &case.geometry;
+    let n_cells = geometry.voxel_count()?;
+    let groups = data.group_count();
+    let n_dirs = quadrature.len();
+    if fixed_source.len() != n_cells || fixed_source.iter().any(|row| row.len() != groups) {
+        return Err(invalid("fixed source must be [cells][groups]".into()));
+    }
     let mut flux = vec![vec![0.0; groups]; n_cells];
     let mut psi = vec![vec![0.0; n_dirs]; n_cells];
     let mut psi_prev = vec![vec![0.0; n_dirs]; n_cells];
@@ -889,14 +1038,14 @@ pub fn solve_multigroup(
                 sweep_group(
                     g,
                     &flux,
-                    &fixed_source,
+                    fixed_source,
                     &psi_prev,
                     &mut psi,
-                    &case_material,
+                    case_material,
                     data,
                     geometry,
-                    &quadrature,
-                    &boundary,
+                    quadrature,
+                    boundary,
                     options.periodic,
                 );
                 let mut change = 0.0_f64;
@@ -927,26 +1076,13 @@ pub fn solve_multigroup(
         }
     }
 
-    // Total flux = collided solve + analytic uncollided component.
-    if let Some(unc) = &uncollided {
-        for cell in 0..n_cells {
-            for g in 0..groups {
-                flux[cell][g] += unc[cell][g];
-            }
-        }
-    }
-
     Ok(MultigroupFlux {
         schema_version: MULTIGROUP_FLUX_SCHEMA.into(),
         case_id: case.case_id.clone(),
         multigroup_data: data_ref,
         case: case_ref,
         energy_boundaries_ev: data.energy_boundaries_ev.clone(),
-        beam_model: if uncollided.is_some() {
-            "uncollided_split".into()
-        } else {
-            "boundary_flux".into()
-        },
+        beam_model: "volumetric_or_boundary".into(),
         flux,
         quadrature_order: options.quadrature_order,
         outer_iterations: outer_done,
@@ -1077,7 +1213,7 @@ pub fn fold_multigroup_dose(
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
     use crate::model::{
         FixedSourceDefinition, MaterialDefinition, NeutronThermalTreatment, NuclideMassFraction,
@@ -1142,7 +1278,7 @@ mod tests {
         }
     }
 
-    fn data(sigma_t: &[f64], scatter: Vec<f64>) -> MultigroupData {
+    pub(crate) fn data(sigma_t: &[f64], scatter: Vec<f64>) -> MultigroupData {
         MultigroupData {
             schema_version: MULTIGROUP_DATA_SCHEMA.into(),
             id: "mg-data".into(),

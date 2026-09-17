@@ -1327,9 +1327,10 @@ spec declares, per particle, a regular mesh (cm, world frame), optional
 energy groups, splitting/roulette knobs (`survival_ratio`, `max_split`,
 `weight_cutoff`), and how the bounds are supplied: `uniform` (one lower
 bound everywhere), `explicit` (concrete row-major `(energy, mesh)`
-arrays), or `forward_flux` (derived from a completed run's mesh flux
+arrays), `forward_flux` (derived from a completed run's mesh flux
 tally by the MAGIC-equivalent rule `lower = flux/(2 × group_max)` with
-noisy cells disabled).
+noisy cells disabled), or `adjoint` (derived by the in-house S_N
+adjoint solve — CADIS/FW-CADIS).
 
 `vr resolve` turns the spec into a `openbnct.weight-windows/0.1.0`
 artifact carrying the concrete bounds and a content-bound provenance
@@ -1350,6 +1351,33 @@ that reference it) and binds the artifact in the input manifest. The
 benchmark spec
 `variance-reduction/nf-bnct-001-ww-v1.json` derives neutron and photon
 windows from the case's diagnostic fluence tallies on the scoring mesh.
+
+`vr cadis` resolves `adjoint` bounds without any Monte Carlo run: the
+in-house S_N solver computes the adjoint (importance) field for the
+declared response — `dose_component` folds a named response vector
+through the material at each voxel, `voxel_box`/`global` declare a
+region response — and sets window targets `w₀ = w_ref/φ†` normalized so
+declared-source particles are born at unit weight on their local
+target. `fw_cadis` additionally takes `--forward-flux` (a
+`openbnct.multigroup-flux` artifact, e.g. from `sn solve`) and builds
+`q† = response/φ_fwd`, flattening the population for mesh-global
+tallies. Cells with zero importance become kill windows at
+`target_cap`× the source weight. The resolved artifact content-binds
+the spec, case, multigroup data, forward flux, and each adjoint solve:
+
+```text
+openbnct vr cadis \
+  --spec VR-CADIS.json \
+  --case benchmarks/synthetic/nf-bnct-003/transport/case.json \
+  --data benchmarks/synthetic/nf-bnct-003/transport/multigroup-data.json \
+  --order 4 --periodic x,y \
+  --id openbnct.nf-bnct-003.ww.cadis.v1 \
+  --output NEW-WW.json --adjoint-flux NEW-ADJ
+```
+
+The window mesh must coincide with the case grid and its energy bounds
+must be the multigroup structure in ascending order — the derivation
+never re-bins across the solve.
 
 `vr validate` evaluates a completed variance-reduced run through the
 ordinary acceptance machinery and then checks it for *unbiasedness*

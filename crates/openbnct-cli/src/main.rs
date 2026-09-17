@@ -621,6 +621,55 @@ enum VrCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Resolve `adjoint`-bounds windows through the in-house S_N adjoint
+    /// solver (CADIS/FW-CADIS). `uniform`/`explicit` windows pass
+    /// through; `forward_flux` windows stay with `vr resolve`.
+    Cadis {
+        /// `openbnct.variance-reduction/0.1.0` spec JSON.
+        #[arg(long)]
+        spec: PathBuf,
+        /// `openbnct.transport-case/0.1.0` case JSON.
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-data/0.1.0` data JSON.
+        #[arg(long)]
+        data: PathBuf,
+        /// Forward `openbnct.multigroup-flux/0.1.0` JSON — required for
+        /// `fw_cadis` windows.
+        #[arg(long)]
+        forward_flux: Option<PathBuf>,
+        /// Optional `openbnct.material-assignment/0.2.0` for
+        /// heterogeneous geometry.
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// S_N quadrature order (even, 2–16).
+        #[arg(long, default_value_t = 4)]
+        order: u32,
+        /// Relative scalar-flux convergence target.
+        #[arg(long, default_value_t = 1e-6)]
+        convergence: f64,
+        /// Within-group iterations per group pass.
+        #[arg(long, default_value_t = 64)]
+        max_inner: u32,
+        /// Outer sweeps over the group structure (adjoint upscatter).
+        #[arg(long, default_value_t = 32)]
+        max_outer: u32,
+        /// Axis treated as periodic; repeatable or comma-separated
+        /// (x, y, z).
+        #[arg(long, value_delimiter = ',')]
+        periodic: Vec<String>,
+        /// Resolved artifact id, e.g. `openbnct.nf-bnct-003.ww.cadis.v1`.
+        #[arg(long)]
+        id: String,
+        /// Output path for the `openbnct.weight-windows` JSON.
+        #[arg(long)]
+        output: PathBuf,
+        /// Optional output path for each adjoint flux solve; window i's
+        /// field lands at `<path>.<i>.json` and is content-bound into
+        /// the resolved artifact.
+        #[arg(long)]
+        adjoint_flux: Option<PathBuf>,
+    },
     /// Validate and print a spec or resolved weight-windows artifact.
     Info {
         /// `openbnct.variance-reduction` or `openbnct.weight-windows` JSON.
@@ -7743,6 +7792,135 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 println!("resolved weight windows at {}", output.display());
                 println!("method: {}", resolved.derivation.method);
                 for (index, window) in resolved.windows.iter().enumerate() {
+                    let active = window.lower_bounds.iter().filter(|v| **v >= 0.0).count();
+                    println!(
+                        "window {index}: {:?} {}x{}x{} mesh, {}/{} cells active",
+                        window.particle,
+                        window.mesh.dimensions[0],
+                        window.mesh.dimensions[1],
+                        window.mesh.dimensions[2],
+                        active,
+                        window.lower_bounds.len()
+                    );
+                }
+            }
+            VrCommand::Cadis {
+                spec,
+                case,
+                data,
+                forward_flux,
+                assignment,
+                order,
+                convergence,
+                max_inner,
+                max_outer,
+                periodic,
+                id,
+                output,
+                adjoint_flux,
+            } => {
+                let spec_bytes = fs::read(&spec)?;
+                let spec_doc: openbnct_transport::VarianceReductionSpec =
+                    serde_json::from_slice(&spec_bytes)?;
+                spec_doc
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let spec_sha256 = openbnct_evidence::sha256_file(&spec)?;
+                let case_bytes = fs::read(&case)?;
+                let transport_case: TransportCase = serde_json::from_slice(&case_bytes)?;
+                let data_bytes = fs::read(&data)?;
+                let mg_data: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&data_bytes)?;
+                let assignment_model = match &assignment {
+                    Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
+                        path,
+                    )?)?),
+                    None => None,
+                };
+                let mut periodic_axes = [false; 3];
+                for axis in &periodic {
+                    let index = match axis.as_str() {
+                        "x" => 0,
+                        "y" => 1,
+                        "z" => 2,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "periodic axis {other:?} must be x, y, or z"
+                            ))
+                            .into());
+                        }
+                    };
+                    periodic_axes[index] = true;
+                }
+                let options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    convergence,
+                    max_inner_iterations: max_inner,
+                    max_outer_iterations: max_outer,
+                    assignment: assignment_model,
+                    periodic: periodic_axes,
+                    beam_uncollided_split: true,
+                };
+                let forward = forward_flux
+                    .as_ref()
+                    .map(|path| {
+                        let bytes = fs::read(path)?;
+                        let flux: openbnct_transport::MultigroupFlux =
+                            serde_json::from_slice(&bytes)?;
+                        let reference = openbnct_core::ContentReference {
+                            id: flux.provenance_id.clone(),
+                            sha256: openbnct_evidence::sha256_hex(&bytes),
+                        };
+                        Ok::<_, io::Error>((flux, reference))
+                    })
+                    .transpose()?;
+                let data_ref = openbnct_core::ContentReference {
+                    id: mg_data.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                };
+                let case_ref = openbnct_core::ContentReference {
+                    id: transport_case.case_id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                };
+                let mut derivation = openbnct_transport::resolve_adjoint_windows(
+                    &spec_doc,
+                    &spec_sha256,
+                    &id,
+                    &transport_case,
+                    &mg_data,
+                    &options,
+                    forward.as_ref().map(|(f, r)| (f, r.clone())),
+                    data_ref,
+                    case_ref,
+                )
+                .map_err(|error| io::Error::other(error.to_string()))?;
+                if let Some(prefix) = &adjoint_flux {
+                    for (index, flux) in derivation.adjoint_fluxes.iter().enumerate() {
+                        let path = PathBuf::from(format!("{}.{}.json", prefix.display(), index));
+                        write_new_json(&path, flux)?;
+                        let bytes = fs::read(&path)?;
+                        derivation.resolved.derivation.adjoint_flux.push(
+                            openbnct_core::ContentReference {
+                                id: flux.provenance_id.clone(),
+                                sha256: openbnct_evidence::sha256_hex(&bytes),
+                            },
+                        );
+                        println!("adjoint flux {index} at {}", path.display());
+                    }
+                }
+                derivation
+                    .resolved
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                write_new_json(&output, &derivation.resolved)?;
+                let summary = openbnct_transport::summarize_adjoint_derivation(&derivation);
+                println!("resolved weight windows at {}", output.display());
+                println!("method: {}", derivation.resolved.derivation.method);
+                println!(
+                    "adjoint solves: {} (all converged: {})",
+                    summary.adjoint_solves, summary.all_converged
+                );
+                for (index, window) in derivation.resolved.windows.iter().enumerate() {
                     let active = window.lower_bounds.iter().filter(|v| **v >= 0.0).count();
                     println!(
                         "window {index}: {:?} {}x{}x{} mesh, {}/{} cells active",

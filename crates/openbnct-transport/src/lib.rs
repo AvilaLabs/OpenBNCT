@@ -11,6 +11,7 @@ mod accelerator;
 mod beam;
 mod beam_quality;
 mod bsa;
+mod cadis;
 mod measurement;
 mod model;
 mod multigroup;
@@ -37,6 +38,10 @@ pub use bsa::{
     BsaRadialExtent, BsaSweep, BsaSweepParameter, BsaSweepRecord, BsaSweepVariant,
     enumerate_bsa_sweep, sweep_variant_assignment,
 };
+pub use cadis::{
+    AdjointDerivation, CadisError, CadisSummary, DEFAULT_TARGET_CAP, resolve_adjoint_windows,
+    summarize as summarize_adjoint_derivation,
+};
 pub use measurement::{
     ComparisonSummary, MEASUREMENT_COMPARISON_SCHEMA, MEASUREMENT_RECORD_SCHEMA, Measurement,
     MeasurementComparison, MeasurementComparisonReport, MeasurementError, MeasurementMethod,
@@ -52,7 +57,7 @@ pub use model::{
 pub use multigroup::{
     MULTIGROUP_DATA_SCHEMA, MULTIGROUP_FLUX_SCHEMA, MultigroupData, MultigroupError,
     MultigroupFlux, MultigroupMaterial, SnOptions, fold_multigroup_dose,
-    level_symmetric_quadrature, solve_multigroup,
+    level_symmetric_quadrature, solve_multigroup, solve_multigroup_adjoint,
 };
 pub use openbnct_core::ContentReference;
 pub use positioning::{
@@ -68,9 +73,10 @@ pub use response::{
     SpatialDoseModel, ToolIdentity,
 };
 pub use variance_reduction::{
-    ResolvedWeightWindow, ResolvedWeightWindows, VARIANCE_REDUCTION_SCHEMA, VarianceReductionError,
-    VarianceReductionSpec, WEIGHT_WINDOWS_SCHEMA, WeightWindowBounds, WeightWindowDerivation,
-    WeightWindowMesh, WeightWindowParameters, WeightWindowSpec,
+    AdjointMethod, AdjointResponse, ResolvedWeightWindow, ResolvedWeightWindows,
+    VARIANCE_REDUCTION_SCHEMA, VarianceReductionError, VarianceReductionSpec,
+    WEIGHT_WINDOWS_SCHEMA, WeightWindowBounds, WeightWindowDerivation, WeightWindowMesh,
+    WeightWindowParameters, WeightWindowSpec,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

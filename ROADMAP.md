@@ -910,13 +910,21 @@ requires licensed software, external approval, or any clinical claim.
   collapse (producing `multigroup-data` from evaluated libraries)
   remains the open piece feeding R8-03.
 
-- **R8-02 — adjoint-driven variance reduction.** An open CADIS/FW-CADIS
-  implementation: adjoint solve from R8-01 produces an importance map,
-  from which optimal space/energy weight-window bounds and a consistent
-  biased source are derived as a new `openbnct.variance-reduction`
-  derivation method. Upgrades the validated forward-flux-derived
-  windows; the correlation-limited photon tally observed at 140M/196M is
-  the motivating case. No open CADIS-equivalent exists for BNCT today.
+- **R8-02 — adjoint-driven variance reduction.** *Landed.* An open
+  CADIS/FW-CADIS implementation: `adjoint` bounds in a
+  `openbnct.variance-reduction` spec are resolved by
+  `openbnct vr cadis` — the R8-01 solver runs the transposed problem
+  (reflection-symmetric quadrature makes the adjoint solve a forward
+  sweep of transposed data), converts the importance field into
+  source-normalized window targets `w₀ = w_ref/φ†`, and emits a
+  content-bound `openbnct.weight-windows` artifact consumable by the
+  existing `openmc generate --vr` path. FW-CADIS takes a forward
+  `multigroup-flux` artifact and builds `q† = response/φ_fwd`.
+  Verified by discrete reciprocity (⟨q†,φ⟩ = ⟨q,φ†⟩ to truncation
+  error), monotone-importance, and bound-shape invariants. A
+  deterministic-space biased-source artifact remains a follow-on; the
+  unit-weight normalization keeps the current unbiased-source decks
+  consistent.
 
 - **R8-03 — nuclear-data uncertainty propagation.** ENDF/B-VIII.1
   covariance data processed through the NJOY chain, propagated to dose

@@ -88,6 +88,9 @@ pub fn resolve_weight_windows(
                 };
                 derive_forward_flux(window, sp, tally, *rel_err_threshold, sp_path)?
             }
+            WeightWindowBounds::Adjoint { .. } => {
+                return Err(VarianceReductionError::AdjointResolution);
+            }
         };
         let boosted = window.apply_bound_boosts(&mut lower, &mut upper);
         if boosted > 0 {
@@ -126,6 +129,10 @@ pub fn resolve_weight_windows(
         windows,
         derivation: WeightWindowDerivation {
             method,
+            adjoint_flux: Vec::new(),
+            forward_flux: None,
+            multigroup_data: None,
+            transport_case: None,
             source_statepoint: statepoint.map(|(_, sha, path)| ContentReference {
                 id: path
                     .file_name()
@@ -162,6 +169,9 @@ fn derivation_note(spec: &VarianceReductionSpec, boost_notes: &[String]) -> Stri
                  survival_ratio={})",
                 window.parameters.survival_ratio
             ),
+            WeightWindowBounds::Adjoint { .. } => {
+                format!("window {index} adjoint-derived (resolve via vr cadis)")
+            }
         };
         parts.push(detail);
     }
@@ -586,6 +596,10 @@ pub enum VarianceReductionError {
     Parse(String),
     #[error("{0}")]
     Io(String),
+    #[error(
+        "adjoint bounds resolve through the in-house S_N solver          (`openbnct vr cadis`), not the statepoint path"
+    )]
+    AdjointResolution,
 }
 
 #[cfg(test)]

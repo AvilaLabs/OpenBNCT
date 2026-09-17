@@ -190,6 +190,61 @@ pub enum WeightWindowBounds {
         /// (bound pair set negative) rather than trusted.
         rel_err_threshold: f64,
     },
+    /// Derived by the in-house deterministic adjoint S_N solve
+    /// (CADIS/FW-CADIS): the adjoint scalar flux is the per-cell,
+    /// per-group importance toward the declared response, and window
+    /// targets follow `w₀(e,m) = w_ref / φ†(e,m)` normalized so
+    /// declared-source particles are born at their local target weight.
+    /// Resolution requires the transport case and `openbnct.multigroup-data`
+    /// artifact; `fw_cadis` additionally requires a forward
+    /// `openbnct.multigroup-flux` artifact.
+    Adjoint {
+        method: AdjointMethod,
+        response: AdjointResponse,
+        /// Clamp on the window target weight as a multiple of the unit
+        /// source weight; also the kill-window value assigned to cells
+        /// with zero adjoint flux. `None` uses the resolver default
+        /// (currently 1e6).
+        #[serde(default, skip_serializing_if = "Option::is_none")]
+        target_cap: Option<f64>,
+    },
+}
+
+impl WeightWindowBounds {
+    /// The declared `adjoint` target cap, if this is an adjoint window.
+    pub fn target_cap(&self) -> Option<f64> {
+        match self {
+            WeightWindowBounds::Adjoint { target_cap, .. } => *target_cap,
+            _ => None,
+        }
+    }
+}
+
+/// CADIS variant selected by `WeightWindowBounds::Adjoint`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum AdjointMethod {
+    /// Classical CADIS: adjoint source is the declared detector
+    /// response; windows pull the population toward that response.
+    Cadis,
+    /// Forward-weighted CADIS: adjoint source is `1/φ_fwd`, flattening
+    /// the population distribution for global (mesh-wide) tallies.
+    FwCadis,
+}
+
+/// What the adjoint source `q†` represents — the objective the
+/// importance map is built toward.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(tag = "kind", rename_all = "snake_case", deny_unknown_fields)]
+pub enum AdjointResponse {
+    /// A named dose-response vector from the `openbnct.multigroup-data`
+    /// artifact, folded through the material at each voxel — the adjoint
+    /// source for "importance toward that dose component".
+    DoseComponent { component: String },
+    /// Unit response inside an inclusive voxel box (detector region).
+    VoxelBox { lower: [u32; 3], upper: [u32; 3] },
+    /// Unit response in every voxel — global importance.
+    Global,
 }
 
 /// Resolved, backend-ready weight windows — concrete bounds plus the
@@ -225,13 +280,27 @@ pub struct ResolvedWeightWindow {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct WeightWindowDerivation {
-    /// `uniform`, `explicit`, or `forward_flux` — per-window resolution
-    /// is only homogeneous for the trivial policies; a mixed spec
-    /// records `mixed`.
+    /// `uniform`, `explicit`, `forward_flux`, `cadis`, or `fw_cadis` —
+    /// per-window resolution is only homogeneous for the trivial
+    /// policies; a mixed spec records `mixed`.
     pub method: String,
     /// Generating statepoint when bounds were flux-derived.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub source_statepoint: Option<ContentReference>,
+    /// Content-bound adjoint flux artifact(s) when bounds were derived
+    /// by the in-house adjoint S_N solve — one per adjoint window, in
+    /// window order.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub adjoint_flux: Vec<ContentReference>,
+    /// Content-bound forward flux artifact feeding `fw_cadis`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub forward_flux: Option<ContentReference>,
+    /// Content-bound multigroup data the adjoint solve consumed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multigroup_data: Option<ContentReference>,
+    /// Content-bound transport case the adjoint solve ran on.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_case: Option<ContentReference>,
     /// Free-text note recording derivation parameters (threshold,
     /// normalization) that are not recoverable from the artifact itself.
     pub note: String,
@@ -375,12 +444,17 @@ impl VarianceReductionSpec {
         Ok(())
     }
 
-    /// The spec resolves without a statepoint only when every window's
-    /// bounds are already concrete.
+    /// The spec resolves without external artifacts only when every
+    /// window's bounds are already concrete — `forward_flux` needs a
+    /// statepoint and `adjoint` needs the transport case plus multigroup
+    /// data.
     pub fn is_self_contained(&self) -> bool {
-        self.windows
-            .iter()
-            .all(|w| !matches!(w.bounds, WeightWindowBounds::ForwardFlux { .. }))
+        self.windows.iter().all(|w| {
+            matches!(
+                w.bounds,
+                WeightWindowBounds::Uniform { .. } | WeightWindowBounds::Explicit { .. }
+            )
+        })
     }
 }
 
@@ -550,6 +624,34 @@ fn validate_bounds(
                 )));
             }
         }
+        WeightWindowBounds::Adjoint {
+            response,
+            target_cap,
+            ..
+        } => {
+            if let Some(cap) = target_cap
+                && !strictly_greater(*cap, 1.0)
+            {
+                return Err(invalid("adjoint target_cap must be > 1".into()));
+            }
+            match response {
+                AdjointResponse::DoseComponent { component } => {
+                    if component.is_empty() {
+                        return Err(invalid("adjoint dose component name is empty".into()));
+                    }
+                }
+                AdjointResponse::VoxelBox { lower, upper } => {
+                    for axis in 0..3 {
+                        if lower[axis] > upper[axis] {
+                            return Err(invalid(format!(
+                                "adjoint voxel-box axis {axis}: lower above upper"
+                            )));
+                        }
+                    }
+                }
+                AdjointResponse::Global => {}
+            }
+        }
         WeightWindowBounds::ForwardFlux {
             tally,
             rel_err_threshold,
@@ -669,6 +771,10 @@ mod tests {
             derivation: WeightWindowDerivation {
                 method: "uniform".into(),
                 source_statepoint: None,
+                adjoint_flux: Vec::new(),
+                forward_flux: None,
+                multigroup_data: None,
+                transport_case: None,
                 note: "test".into(),
             },
             qualification: "variance_reduction_research_only".into(),
