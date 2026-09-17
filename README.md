@@ -83,9 +83,11 @@ bundling those systems.
   maximum at 2.75 cm vs ~2.0–2.5 cm. A deterministic S₈ three-group
   solve on a like-for-like Ø20 × 24 cm cylindrical phantom matches the
   digitized TECDOC-1223 measured depth profile within ~1.3σ at all 12
-  bins (χ² = 6.7). Records under `measurements/`; in-phantom evidence
-  under `validation/fir1-k63-water-phantom/` and
-  `validation/fir1-k63-cylindrical-phantom/`.
+  bins (χ² = 6.7), and the PMMA-phantom series reproduces likewise
+  (χ² = 6.0, 15 bins). Records under `measurements/`; in-phantom
+  evidence under `validation/fir1-k63-water-phantom/`,
+  `validation/fir1-k63-cylindrical-phantom/`, and
+  `validation/fir1-k63-pmma-phantom/`.
 - **RT Dose export** — `openbnct dicom export-rtdose` writes any dose
   volume as a multi-frame RTDOSE with full grid geometry and CT
   referencing, verified by independent-toolkit round-trip.
