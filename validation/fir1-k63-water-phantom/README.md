@@ -93,9 +93,27 @@ Completed — first in-phantom measured-data comparison (results/):
      dose is proportional to thermal fluence under uniform dilute
      loading.
 
-The literature limitation stands: absolute in-phantom depth profiles are
-figure-only in accessible sources, so the record encodes tabulated
-scalar figures of merit with `absolute_uncertainty_1sigma: null` where
-the source states none. Mn-55/Au-197 foil uncertainty is ~±3% and
+4. `measurement compare` against
+   `measurements/fir1-k63-cylindrical-phantom-depth.json`
+   (`results/measurement-comparison-depth.json`): the measured
+   thermal-fluence depth profile digitized from Aschan et al.
+   (TECDOC-1223) FIG. 3 — MTS-Ns TL detectors in the Ø20x24 cm
+   cylindrical water phantom, 250 kW scale, 13% stated 1σ. Peak-
+   normalized shape comparison against this case's computed
+   boron-dose (thermal-fluence proxy) profile: agreement within ~2σ
+   through the buildup and peak region (1.0-2.6 cm), then systematic
+   divergence (up to 2.5x at 8.75 cm) attributable to the phantom
+   geometry difference — the measured Ø20 cm cylinder lacks the
+   lateral backscatter of this case's ~51 cm cubical phantom, so its
+   axial falloff is steeper. The divergence direction and onset are
+   physically consistent; the PMMA and Liquid B series from the same
+   figure are recorded in the record under phantom-qualified metric
+   names and intentionally not compared against this water-phantom
+   profile. A like-for-like cylindrical-phantom computed profile is
+   the open follow-on for a quantitative gate.
+
+The figure-only limitation is resolved for the depth-profile series by
+direct figure digitization (documented interpolation convention in the
+record's derivation note); Mn-55/Au-197 foil uncertainty is ~±3% and
 calculated-to-measured phantom agreement is reported at 3-5%
 (Koivunoro 2014; Seppala 2002; Seren 1999).

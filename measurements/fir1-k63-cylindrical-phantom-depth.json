@@ -1,0 +1,66 @@
+{
+  "schema_version": "nctforge.measurement-record/0.1.0",
+  "id": "nctforge.measurement.fir1-k63-cylindrical-phantom-depth.v1",
+  "subject": {
+    "id": "nctforge.beam.fir1-k63.v1",
+    "sha256": "sha256:a7266c040a7863ee685f0e67397fc68425dd248a648335d5cc853addee2c72a7"
+  },
+  "provenance": {
+    "kind": "digitized_literature",
+    "citations": [
+      {
+        "authors": "Aschan, C.; Toivonen, M.; Seppälä, T.; Kotiluoto, P.; Auterinen, I.; Serén, T.; Stecher-Rasmussen, F.",
+        "title": "TL detectors in BNCT dosimetry",
+        "venue": "IAEA-TECDOC-1223, Current status of neutron capture therapy",
+        "year": 2001,
+        "doi": null,
+        "url": "https://www.iaea.org/publications/6131/current-status-of-neutron-capture-therapy"
+      }
+    ],
+    "derivation_note": "Thermal neutron fluence (6Li response) depth profiles digitized from FIG. 3 of Aschan et al., TECDOC-1223 pp. 171: MTS-Ns TL detectors in cylindrical phantoms (20 cm diameter, 24 cm length) on the FiR 1 K63 epithermal beam central axis at the 14 cm aperture. MTS-Ns irradiations ran at 10 kW for 15 min; the published axis is a fluence RATE whose scale (peak ~2.3e9 n cm^-2 s^-1) is only physical at the nominal 250 kW power, so values are recorded at the 250 kW scale. Detector stations: water {1.0, 2.0, 2.5, 3.0, 6.0, 10.0, 15.0} cm; PMMA adds a surface point at 0.2 cm; Liquid B matches water stations. Station values were digitized from the figure (symbol centers located by template matching; merged symbol clusters resolved from zoomed renders), then log-linear interpolated onto the declared bin centers — the interpolation convention is stated here rather than fabricating point values. Per-bin one-sigma uncertainties combine the paper's stated 13% (1 SD) total MTS-Ns uncertainty (TABLE I) with a 2.0e7 n cm^-2 s^-1 digitization allowance in quadrature. Spatial positioning uncertainty of the detectors in the water and Liquid B phantoms was stated as +/-0.5 cm. The phantom is the small Ø20x24 cm cylinder, NOT the ~51x51x47 cm cubical reference phantom used by the fir1-k63-water-phantom validation case — the comparison against that case's computed profile is therefore a peak-normalized shape comparison, recorded as such. The PMMA and Liquid B series are recorded for completeness under phantom-qualified metric names so they are not compared against the water-phantom computed profile."
+  },
+  "measurements": [
+    {
+      "id": "water-thermal-fluence-depth-profile",
+      "metric": "thermal_fluence_depth_profile",
+      "method": { "kind": "thermoluminescent_dosimeter" },
+      "value": {
+        "kind": "histogram",
+        "bin_edges": [0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.4, 4.2, 5.5, 7.5, 10.0, 13.0, 16.0],
+        "bin_values": [2700000000, 2558486087, 2424389281, 2286282011, 2116395185, 1819096992, 1444581006, 1022282595, 582070759, 253761437, 105560633, 45947934],
+        "bin_uncertainties_1sigma": [351569339, 333203966, 315804546, 297888811, 275857342, 237326830, 188857516, 134393239, 78267667, 38578145, 24255257, 20872937]
+      },
+      "unit": "n cm^-2 s^-1",
+      "position": { "frame": "phantom_axis", "point_cm": [0.0, 0.0, 0.0], "depth_cm": null },
+      "note": "Bin edges are depth in cm on the cylindrical water phantom central axis; bin contents are the digitized MTS-Ns thermal fluence rate at the bin center (log-linear interpolation between detector stations at 1.0, 2.0, 2.5, 3.0, 6.0, 10.0, 15.0 cm)."
+    },
+    {
+      "id": "pmma-thermal-fluence-depth-profile",
+      "metric": "thermal_fluence_depth_profile_pmma_phantom",
+      "method": { "kind": "thermoluminescent_dosimeter" },
+      "value": {
+        "kind": "histogram",
+        "bin_edges": [0.1, 0.4, 0.7, 1.0, 1.3, 1.6, 1.9, 2.2, 2.6, 3.0, 3.5, 4.3, 5.6, 7.5, 10.0, 13.0, 16.0],
+        "bin_values": [1843772900, 1993075102, 2154467267, 2251821769, 2275652808, 2299736051, 2288096429, 2076723573, 1922420169, 1733714964, 1444062722, 1074825650, 661160255, 308442165, 123406773, 46984758],
+        "bin_uncertainties_1sigma": [240523439, 259870520, 280793916, 293419242, 296510147, 299633913, 298124154, 270713863, 250713618, 226268584, 188790518, 141151436, 88247072, 44808571, 25639306, 20911908]
+      },
+      "unit": "n cm^-2 s^-1",
+      "position": { "frame": "phantom_axis", "point_cm": [0.0, 0.0, 0.0], "depth_cm": null },
+      "note": "PMMA phantom series (detector stations 0.2, 1.0, 2.0, 2.5, 3.0, 6.0, 10.0, 15.0 cm). Phantom-qualified metric: recorded for completeness, not compared against the water-phantom computed profile."
+    },
+    {
+      "id": "liquid-b-thermal-fluence-depth-profile",
+      "metric": "thermal_fluence_depth_profile_liquid_b_phantom",
+      "method": { "kind": "thermoluminescent_dosimeter" },
+      "value": {
+        "kind": "histogram",
+        "bin_edges": [0.8, 1.2, 1.6, 2.0, 2.4, 2.8, 3.4, 4.2, 5.5, 7.5, 10.0, 13.0, 16.0],
+        "bin_values": [2470000000, 2336649410, 2210498164, 2015781763, 1739476399, 1384887705, 1162246017, 893559193, 534551482, 193466532, 81206890, 44258150],
+        "bin_uncertainties_1sigma": [321722256, 304422116, 288059900, 262813729, 227014648, 181142888, 152409931, 117871844, 72312484, 32133396, 22615217, 20811138]
+      },
+      "unit": "n cm^-2 s^-1",
+      "position": { "frame": "phantom_axis", "point_cm": [0.0, 0.0, 0.0], "depth_cm": null },
+      "note": "Brain-substitute liquid (Liquid B) phantom series (stations 1.0, 2.0, 2.5, 3.0, 6.0, 10.0, 15.0 cm). Phantom-qualified metric: recorded for completeness, not compared against the water-phantom computed profile."
+    }
+  ]
+}

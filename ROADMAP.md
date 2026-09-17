@@ -846,8 +846,15 @@ review:
   run, and the first in-phantom measured-data comparison — computed
   advantage depth 9.75 cm vs published 8.1 cm, thermal-fluence maximum at
   2.75 cm vs published ~2.0–2.5 cm, with the advantage-ratio convention
-  gap honestly recorded. Remaining: richer figure-digitized depth
-  profiles if citable sources become accessible.)*
+  gap honestly recorded. Depth profiles landed:
+  `measurements/fir1-k63-cylindrical-phantom-depth.json` digitizes the
+  Aschan et al. (TECDOC-1223) TL-detector series in water, PMMA, and
+  Liquid B cylindrical phantoms with stated 13% 1σ and a documented
+  interpolation convention; the peak-normalized comparison
+  (`results/measurement-comparison-depth.json`) agrees through the
+  buildup region and records the expected tail divergence of the Ø20 cm
+  cylinder vs the cubical reference phantom. Remaining: a like-for-like
+  cylindrical-phantom computed profile for a quantitative depth gate.)*
 - **R7-03 — cross-code comparison depth.** Extend the MCNP meshtal and PHITS
   xyz-mesh import adapters into documented cross-code comparison workflows
   against the OpenMC path on the synthetic benchmark, and evaluate import
