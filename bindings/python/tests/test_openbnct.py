@@ -1311,6 +1311,24 @@ class R8R9ArtifactTest(unittest.TestCase):
             "nctforge.measurement-comparison.fir1-k63-cylindrical-depth.v1",
         )
 
+        validation = REPO_ROOT / "validation"
+        cyl = openbnct.load_measurement_comparison(
+            validation
+            / "fir1-k63-cylindrical-phantom"
+            / "measurement-comparison-cylindrical.json"
+        )
+        self.assertEqual(
+            cyl.id, "openbnct.measurement-comparison.fir1-k63-cylindrical.v1"
+        )
+        pmma = openbnct.load_measurement_comparison(
+            validation
+            / "fir1-k63-pmma-phantom"
+            / "measurement-comparison-pmma.json"
+        )
+        self.assertEqual(
+            pmma.id, "openbnct.measurement-comparison.fir1-k63-pmma.v1"
+        )
+
         quality = openbnct.load_beam_quality_report(
             self.FIR1_RESULTS / "beam-quality-tn-folded.json"
         )
