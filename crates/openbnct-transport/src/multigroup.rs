@@ -168,17 +168,16 @@ impl MultigroupData {
                     )));
                 }
             }
-            if let Some(mu_bar) = &material.transport_mu_bar {
-                if mu_bar.len() != groups
+            if let Some(mu_bar) = &material.transport_mu_bar
+                && (mu_bar.len() != groups
                     || !mu_bar
                         .iter()
-                        .all(|x| x.is_finite() && *x >= 0.0 && *x <= 1.0)
-                {
-                    return Err(invalid(format!(
-                        "material {:?} transport_mu_bar must be {groups} values in [0,1]",
-                        material.material_id
-                    )));
-                }
+                        .all(|x| x.is_finite() && *x >= 0.0 && *x <= 1.0))
+            {
+                return Err(invalid(format!(
+                    "material {:?} transport_mu_bar must be {groups} values in [0,1]",
+                    material.material_id
+                )));
             }
         }
         Ok(())
@@ -638,13 +637,16 @@ fn source_group_weights(
     Ok(weights)
 }
 
+/// (direction, weight) pairs covering a source angular distribution.
+type DirectionWeights = Vec<([f64; 3], f64)>;
+
 /// Deterministic equal-area sample directions over an isotropic cone:
 /// uniform grid in (cos θ, φ) about `axis`. Returns (direction, weight)
 /// pairs whose weights sum to the cone solid angle. A monodirectional
 /// distribution degenerates to a single unit-weighted direction.
 fn cone_directions(
     angle: &AngularDistribution,
-) -> Result<Option<Vec<([f64; 3], f64)>>, MultigroupError> {
+) -> Result<Option<DirectionWeights>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     match angle {
         AngularDistribution::Monodirectional { unit_vector } => Ok(Some(vec![(*unit_vector, 1.0)])),

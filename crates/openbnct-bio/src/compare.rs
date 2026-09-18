@@ -103,13 +103,13 @@ impl BioModelComparison {
                     )));
                 }
             }
-            if let Some(ratio) = row.mean_ratio {
-                if !ratio.is_finite() || ratio < 0.0 {
-                    return Err(BioError::Invalid(format!(
-                        "region {:?} mean_ratio must be finite and non-negative",
-                        row.region
-                    )));
-                }
+            if let Some(ratio) = row.mean_ratio
+                && (!ratio.is_finite() || ratio < 0.0)
+            {
+                return Err(BioError::Invalid(format!(
+                    "region {:?} mean_ratio must be finite and non-negative",
+                    row.region
+                )));
             }
         }
         if self.regions.is_empty() {

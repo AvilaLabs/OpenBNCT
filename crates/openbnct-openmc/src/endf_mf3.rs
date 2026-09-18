@@ -37,7 +37,7 @@ fn endf_float(s: &str) -> f64 {
     }
     // No exponent letter: split at the last + or − after position 0.
     if let Some(pos) = t
-        .rmatch_indices(|c| c == '+' || c == '-')
+        .rmatch_indices(['+', '-'])
         .map(|(i, _)| i)
         .find(|&i| i > 0)
     {
