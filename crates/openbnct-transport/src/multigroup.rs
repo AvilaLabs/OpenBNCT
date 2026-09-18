@@ -1189,8 +1189,8 @@ pub(crate) fn solve_sn_problem(
     // unchanged and the sweep stays contractive. The correction
     // applies to the collided sweep only — the uncollided ray-trace
     // keeps the exact exponential.
-    let corrected = options.transport_correction
-        && data.materials.iter().any(|m| m.transport_mu_bar.is_some());
+    let corrected =
+        options.transport_correction && data.materials.iter().any(|m| m.transport_mu_bar.is_some());
     let sigma_eff: Vec<Vec<f64>> = data
         .materials
         .iter()
@@ -1690,8 +1690,7 @@ pub(crate) mod tests {
         let mut mg = data(&[0.5], vec![0.4]);
         mg.materials[0].transport_mu_bar = Some(vec![0.9]);
         mg.validate().unwrap();
-        let flux =
-            solve_multigroup(&case, &mg, &options(), cref("mg"), cref("case")).unwrap();
+        let flux = solve_multigroup(&case, &mg, &options(), cref("mg"), cref("case")).unwrap();
         assert!(flux.converged);
         assert!(flux.transport_correction);
     }
