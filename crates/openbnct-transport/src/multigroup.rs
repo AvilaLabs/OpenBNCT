@@ -18,6 +18,7 @@
 //! attenuation oracle to discretization accuracy, which is precisely the
 //! cross-method evidence a second transport implementation is for.
 
+use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -1278,9 +1279,12 @@ fn sweep_group(
     ];
     let face_area = [dx[1] * dx[2], dx[0] * dx[2], dx[0] * dx[1]];
     let volume = dx[0] * dx[1] * dx[2];
-    let n_dirs = quadrature.len();
 
-    for d in 0..n_dirs {
+    // `psi`/`psi_prev` are [ordinate][cell]: each ordinate's sweep is
+    // independent given the lagged iterate, so `par_iter_mut` hands every
+    // direction its own row with no shared writes. Per-ordinate work is
+    // unchanged math — the parallel split keeps results bit-identical.
+    psi.par_iter_mut().enumerate().for_each(|(d, psi_d)| {
         let dir = quadrature[d].0;
         // Sweep order: ascend where the direction points positive,
         // descend where negative.
@@ -1331,7 +1335,7 @@ fn sweep_group(
                             // otherwise.
                             let mut wc = coord;
                             wc[a] = if positive { [nx, ny, nz][a] - 1 } else { 0 };
-                            psi_prev[wc[0] + nx * wc[1] + nx * ny * wc[2]][d]
+                            psi_prev[d][wc[0] + nx * wc[1] + nx * ny * wc[2]]
                         } else {
                             // Boundary face: declared incident flux or
                             // vacuum.
@@ -1376,14 +1380,14 @@ fn sweep_group(
                         + 2.0 * (ax * psi_in[0] + ay * psi_in[1] + az * psi_in[2]))
                         / denom.max(1e-30);
                     let psi_avg = psi_avg.max(0.0);
-                    psi[cell][d] = psi_avg;
+                    psi_d[cell] = psi_avg;
                     for a in 0..3 {
                         edge[a][cell] = (2.0 * psi_avg - psi_in[a]).max(0.0);
                     }
                 }
             }
         }
-    }
+    });
 }
 
 /// Solve the multigroup S_N problem on the case grid.
@@ -1957,8 +1961,10 @@ pub(crate) fn solve_sn_problem(
     // moments for l = 2..=lmax, iterated Jacobi-style alongside the
     // currents.
     let mut kernel_moments = vec![vec![vec![0.0_f64; n_kernel_moments]; groups]; n_cells];
-    let mut psi = vec![vec![0.0; n_dirs]; n_cells];
-    let mut psi_prev = vec![vec![0.0; n_dirs]; n_cells];
+    // Angular storage is [ordinate][cell] so the sweep can hand each
+    // direction an exclusive row under `par_iter_mut` (see `sweep_group`).
+    let mut psi = vec![vec![0.0; n_cells]; n_dirs];
+    let mut psi_prev = vec![vec![0.0; n_cells]; n_dirs];
     let mut converged = false;
     let mut residual = f64::MAX;
     let mut outer_done = 0;
@@ -2072,44 +2078,58 @@ pub(crate) fn solve_sn_problem(
                     boundary,
                     options.periodic,
                 );
-                let mut change = 0.0_f64;
-                for cell in 0..n_cells {
-                    let mut new_flux = 0.0_f64;
-                    let mut j = [0.0_f64; 3];
-                    for d in 0..n_dirs {
-                        let (dir, w) = quadrature[d];
-                        new_flux += w * psi[cell][d];
-                        if p1 {
-                            for a in 0..3 {
-                                j[a] += w * dir[a] * psi[cell][d];
+                // Moment reduction is per-cell independent — computed in
+                // parallel into an indexed buffer, then applied serially
+                // so `change` and the stores stay deterministic.
+                let reduced: Vec<(f64, [f64; 3], Vec<f64>)> = (0..n_cells)
+                    .into_par_iter()
+                    .map(|cell| {
+                        let mut new_flux = 0.0_f64;
+                        let mut j = [0.0_f64; 3];
+                        for d in 0..n_dirs {
+                            let (dir, w) = quadrature[d];
+                            new_flux += w * psi[d][cell];
+                            if p1 {
+                                for a in 0..3 {
+                                    j[a] += w * dir[a] * psi[d][cell];
+                                }
                             }
                         }
-                    }
-                    new_flux /= 4.0 * std::f64::consts::PI;
-                    if p1 {
-                        for ja in &mut j {
-                            *ja /= 4.0 * std::f64::consts::PI;
+                        new_flux /= 4.0 * std::f64::consts::PI;
+                        if p1 {
+                            for ja in &mut j {
+                                *ja /= 4.0 * std::f64::consts::PI;
+                            }
                         }
-                        current[cell][g] = j;
+                        let mut moments = Vec::new();
+                        if lmax >= 2 {
+                            // M_k = λ_k·Σ_d w_d u_k(d)ψ_d — eigenbasis
+                            // moments of the refreshed angular flux.
+                            moments.reserve(n_kernel_moments);
+                            for eigs in eigen.iter() {
+                                for (lam, u) in eigs.iter() {
+                                    let mut m = 0.0;
+                                    for d in 0..n_dirs {
+                                        m += quadrature[d].1 * u[d] * psi[d][cell];
+                                    }
+                                    moments.push(lam * m);
+                                }
+                            }
+                        }
+                        (new_flux, j, moments)
+                    })
+                    .collect();
+                let mut change = 0.0_f64;
+                for (cell, (new_flux, j, moments)) in reduced.iter().enumerate() {
+                    if p1 {
+                        current[cell][g] = *j;
                     }
                     if lmax >= 2 {
-                        // M_k = λ_k·Σ_d w_d u_k(d)ψ_d — eigenbasis
-                        // moments of the refreshed angular flux.
-                        let mut kk = 0;
-                        for eigs in eigen.iter() {
-                            for (k, (lam, u)) in eigs.iter().enumerate() {
-                                let mut m = 0.0;
-                                for d in 0..n_dirs {
-                                    m += quadrature[d].1 * u[d] * psi[cell][d];
-                                }
-                                kernel_moments[cell][g][kk + k] = lam * m;
-                            }
-                            kk += eigs.len();
-                        }
+                        kernel_moments[cell][g].copy_from_slice(moments);
                     }
                     change =
                         change.max((new_flux - flux[cell][g]).abs() / new_flux.abs().max(1e-30));
-                    flux[cell][g] = new_flux;
+                    flux[cell][g] = *new_flux;
                 }
                 if change < options.convergence {
                     break;
