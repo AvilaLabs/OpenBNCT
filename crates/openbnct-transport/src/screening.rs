@@ -120,6 +120,20 @@ pub enum ScreeningTarget {
     },
 }
 
+impl ScreeningTarget {
+    /// Whether the target perturbs transport inputs (σ_t, scatter,
+    /// source geometry, domain). Response-only targets leave the
+    /// converged flux untouched — a spec built entirely of them folds
+    /// one fixed solve instead of re-solving per sample.
+    fn touches_transport(&self) -> bool {
+        !matches!(
+            self,
+            ScreeningTarget::MaterialResponseScale { .. }
+                | ScreeningTarget::MicrodistributionUptakeScale { .. }
+        )
+    }
+}
+
 /// Declared screening design over a transport case + multigroup data.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -489,6 +503,7 @@ fn evaluate(
     x: &[f64],
     data_ref: &ContentReference,
     case_ref: &ContentReference,
+    precomputed_flux: Option<&MultigroupFlux>,
 ) -> Result<f64, ScreeningError> {
     let mut case_p = case.clone();
     let mut data_p = data.clone();
@@ -506,13 +521,22 @@ fn evaluate(
     // parameters mutate material definitions that only live there.
     let mut options_p = options.clone();
     options_p.assignment = assignment_p.clone();
-    let flux: MultigroupFlux = solve_multigroup(
-        &case_p,
-        &data_p,
-        &options_p,
-        data_ref.clone(),
-        case_ref.clone(),
-    )?;
+    // A spec with no transport-touching parameters supplies the
+    // converged nominal flux once — every perturbed fold reads it.
+    let owned;
+    let flux: &MultigroupFlux = match precomputed_flux {
+        Some(f) => f,
+        None => {
+            owned = solve_multigroup(
+                &case_p,
+                &data_p,
+                &options_p,
+                data_ref.clone(),
+                case_ref.clone(),
+            )?;
+            &owned
+        }
+    };
     // Boron microdistribution: material_id → definition, from the
     // perturbed case + assignment. The boron response scales by the
     // declared compound factor per cell (volume-fraction blended).
@@ -620,6 +644,12 @@ pub fn run_screening(
         .iter()
         .map(|p| (p.nominal - p.low) / (p.high - p.low))
         .collect();
+    // Fold-only fast path: when no declared parameter touches transport
+    // inputs, every evaluation folds the same converged flux — solve
+    // once at the nominal point and hand each fold the fixed field.
+    let static_flux = (!spec.parameters.iter().any(|p| p.target.touches_transport()))
+        .then(|| solve_multigroup(case, data, options, data_ref.clone(), case_ref.clone()))
+        .transpose()?;
     let nominal_response = evaluate(
         case,
         data,
@@ -631,6 +661,7 @@ pub fn run_screening(
         &nominal_x,
         &data_ref,
         &case_ref,
+        static_flux.as_ref(),
     )?;
     let mut evaluations = 1u32;
 
@@ -661,6 +692,7 @@ pub fn run_screening(
                     &x,
                     &data_ref,
                     &case_ref,
+                    static_flux.as_ref(),
                 )?;
                 evaluations += 1;
                 for &i in &order {
@@ -677,6 +709,7 @@ pub fn run_screening(
                         &x,
                         &data_ref,
                         &case_ref,
+                        static_flux.as_ref(),
                     )?;
                     evaluations += 1;
                     ee[i].push(
@@ -753,6 +786,7 @@ pub fn run_screening(
                         row,
                         &data_ref,
                         &case_ref,
+                        static_flux.as_ref(),
                     )?);
                     evaluations += 1;
                 }
@@ -768,6 +802,7 @@ pub fn run_screening(
                         row,
                         &data_ref,
                         &case_ref,
+                        static_flux.as_ref(),
                     )?);
                     evaluations += 1;
                 }
@@ -788,6 +823,7 @@ pub fn run_screening(
                             &row,
                             &data_ref,
                             &case_ref,
+                            static_flux.as_ref(),
                         )?);
                         evaluations += 1;
                     }
