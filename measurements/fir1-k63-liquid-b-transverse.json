@@ -1,0 +1,134 @@
+{
+ "schema_version": "nctforge.measurement-record/0.1.0",
+ "id": "nctforge.measurement.fir1-k63-liquid-b-transverse.v1",
+ "subject": {
+  "id": "nctforge.beam.fir1-k63.v1",
+  "sha256": "sha256:a7266c040a7863ee685f0e67397fc68425dd248a648335d5cc853addee2c72a7"
+ },
+ "provenance": {
+  "kind": "digitized_literature",
+  "citations": [
+   {
+    "authors": "Aschan, C.; Toivonen, M.; Sepp\u00e4l\u00e4, T.; Kotiluoto, P.; Auterinen, I.; Ser\u00e9n, T.; Stecher-Rasmussen, F.",
+    "title": "TL detectors in BNCT dosimetry",
+    "venue": "IAEA-TECDOC-1223, Current status of neutron capture therapy",
+    "year": 2001,
+    "doi": null,
+    "url": "https://www.iaea.org/publications/6131/current-status-of-neutron-capture-therapy"
+   }
+  ],
+  "derivation_note": "Transverse neutron-fluence-rate profiles (6Li response) digitized from FIG. 4 of Aschan et al., TECDOC-1223 p. 171: MTS-Ns TL detectors (symbols) in the brain-substitute Liquid B phantom (diameter 20 cm, length 24 cm) at 25 mm and 60 mm depths. Pixel extraction from the 200-dpi page render; marker-centroid positions calibrated against printed axis ticks. Phantom composition declared as the brain-tissue-equivalent elemental basis the reference formulation reproduces (ICRU adult brain atomic densities, rho=1.04 g/cm3) \u2014 the Liquid B solvent recipe is not published in the TECDOC. Declared 1sigma = 10% of value covering the paper's stated +-0.5 cm spatial uncertainty plus digitization error."
+ },
+ "measurements": [
+  {
+   "id": "liquid-b-transverse-25mm",
+   "metric": "thermal_fluence_transverse_profile_d25",
+   "method": {
+    "kind": "thermoluminescent_dosimeter"
+   },
+   "value": {
+    "kind": "histogram",
+    "bin_edges": [
+     -8.98,
+     -6.98,
+     -4.98,
+     -2.985,
+     -0.99,
+     1.015,
+     3.0149999999999997,
+     5.015,
+     7.015,
+     9.004999999999999
+    ],
+    "bin_values": [
+     775000000.0,
+     1380000000.0,
+     1650000000.0,
+     1790000000.0,
+     1820000000.0,
+     1880000000.0,
+     1790000000.0,
+     1480000000.0,
+     832000000.0
+    ],
+    "bin_uncertainties_1sigma": [
+     77500000.0,
+     138000000.0,
+     165000000.0,
+     179000000.0,
+     182000000.0,
+     188000000.0,
+     179000000.0,
+     148000000.0,
+     83200000.0
+    ]
+   },
+   "unit": "n cm^-2 s^-1",
+   "position": {
+    "frame": "phantom_axis",
+    "point_cm": [
+     0.0,
+     0.0,
+     2.5
+    ],
+    "depth_cm": 2.5
+   },
+   "note": "Transverse thermal-fluence-rate scan across the beam axis at 2.5 cm depth in the Liquid B phantom. Points digitized from TECDOC-1223 FIG.4 (TL detectors, symbols); declared 1sigma covers the stated +-0.5 cm spatial uncertainty plus digitization error, folded to ~10% of value."
+  },
+  {
+   "id": "liquid-b-transverse-60mm",
+   "metric": "thermal_fluence_transverse_profile_d60",
+   "method": {
+    "kind": "thermoluminescent_dosimeter"
+   },
+   "value": {
+    "kind": "histogram",
+    "bin_edges": [
+     -8.98,
+     -6.98,
+     -4.98,
+     -2.98,
+     -0.985,
+     1.015,
+     3.0199999999999996,
+     5.02,
+     7.02,
+     9.02
+    ],
+    "bin_values": [
+     250000000.0,
+     439000000.0,
+     576000000.0,
+     635000000.0,
+     661000000.0,
+     500000000.0,
+     556000000.0,
+     439000000.0,
+     262000000.0
+    ],
+    "bin_uncertainties_1sigma": [
+     25000000.0,
+     43900000.0,
+     57600000.0,
+     63500000.0,
+     66100000.0,
+     50000000.0,
+     55600000.0,
+     43900000.0,
+     26200000.0
+    ]
+   },
+   "unit": "n cm^-2 s^-1",
+   "position": {
+    "frame": "phantom_axis",
+    "point_cm": [
+     0.0,
+     0.0,
+     6.0
+    ],
+    "depth_cm": 6.0
+   },
+   "note": "Transverse thermal-fluence-rate scan across the beam axis at 6 cm depth in the Liquid B phantom. Points digitized from TECDOC-1223 FIG.4 (TL detectors, symbols); declared 1sigma covers the stated +-0.5 cm spatial uncertainty plus digitization error, folded to ~10% of value."
+  }
+ ]
+}

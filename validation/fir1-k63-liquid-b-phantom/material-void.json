@@ -1,0 +1,13 @@
+{
+ "schema_version": "openbnct.material-definition/0.1.0",
+ "id": "openbnct.fir1-k63-cylindrical-phantom.void.v1",
+ "density_g_cm3": 1e-09,
+ "temperature_k": 293.6,
+ "nuclides": [
+  {
+   "name": "H1",
+   "mass_fraction": 1.0
+  }
+ ],
+ "neutron_thermal_treatment": "free_gas"
+}
