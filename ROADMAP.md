@@ -960,7 +960,12 @@ requires licensed software, external approval, or any clinical claim.
   P0. An MF7/MT4 S(α,β) tape reader (`endf_mf7`) is landed and
   validated on the real ENDF/B-VIII.1 H(H₂O) and H(Lucite) evaluations
   (29,798 / 7,752 sections) — the collapse-side bound-atom transfer
-  integration is the remaining step.
+  integration is also landed: `sn collapse --tsl` applies the ENDF-102
+  incoherent-inelastic kernel below the tape's E_max (thermal
+  upscatter, σ_b/natom·((A_r+1)/A_r)² bound-atom normalization,
+  free-gas residual beyond the β domain), and its kernel-integrated
+  σ_s(E) reproduces NJOY 2016.79 THERMR's MF3/MT222 bound-atom σ_s
+  within ~10% across 0.025–5 eV.
 
   Honest validation status (FiR 1 cylindrical phantom, 28-group
   ENDF/B-VIII.1 data): the measured TECDOC-1223 water thermal-fluence
@@ -970,13 +975,13 @@ requires licensed software, external approval, or any clinical claim.
   transport correction overpredicts it ~1.7–4.8×, and the measured
   series sits between them closer to the corrected side. The absolute
   normalization is verified independently (solver incident thermal
-  fluence matches the declared port rate within 1%). Remaining
-  declared gaps are bound-atom S(α,β) thermal scattering (data +
-  reader landed, transfer integration pending) and the histogram
-  source bins' residual discretization; histogram source bins spread
-  collapse-consistently (Maxwellian below 0.5 eV, 1/E above), recorded
-  per-artifact as `source_spectrum_weighting`. See the validation
-  README for the full accounting.
+  fluence matches the declared port rate within 1%). The remaining
+  declared gap is the histogram source bins' residual discretization
+  (S(α,β) bound scattering and P1 anisotropy are both landed);
+  histogram source bins spread collapse-consistently (Maxwellian below
+  0.5 eV, 1/E above), recorded per-artifact as
+  `source_spectrum_weighting`. See the validation README for the full
+  accounting.
 
 - **R8-02 — adjoint-driven variance reduction.** *Landed.* An open
   CADIS/FW-CADIS implementation: `adjoint` bounds in a
