@@ -1459,6 +1459,9 @@ pub(crate) fn solve_sn_problem(
             converged = true;
             break;
         }
+        if std::env::var_os("OPENBNCT_SOLVE_PROGRESS").is_some() {
+            eprintln!("[sn-solve] outer {} residual {:.4e}", outer + 1, residual);
+        }
     }
 
     Ok(MultigroupFlux {

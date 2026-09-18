@@ -20,6 +20,7 @@ phantom and therefore cannot match the measured small-cylinder tail.
 | `multigroup-flux-28g-trcorr.json` / `dose-28g-trcorr.json` | Same solve with the extended transport correction active (σ_t,tr = σ_t − μ̄·Σ_s plus the consistent diagonal self-scatter reduction). |
 | `multigroup-flux-28g-1e.json` / `dose-28g-1e.json` and `multigroup-flux-28g-trcorr-1e.json` / `dose-28g-trcorr-1e.json` | The current-convention reruns of the pair above — collapse-consistent within-bin source weighting (`source_spectrum_weighting: "collapse_consistent"`). These are the reference artifacts for the numbers quoted below. |
 | `multigroup-flux-28g-p1-1e.json` / `dose-28g-p1-1e.json`, `beam-quality-cylindrical-28g-p1-1e.json`, `measurement-comparison-cylindrical-28g-p1-1e.json`, `bio-*-28g-p1-1e.json` | The P1-anisotropic solve on `multigroup-data-28g-v3.json` (which carries `scatter_p1_matrix_per_cm`): `scattering_order: "p1"`, normalized χ² 31 — the best deterministic result. |
+| `multigroup-data-28g-tsl-v4.json` | v3 + the ENDF/B-VIII.1 `lwtr` S(α,β) bound-atom kernel on H1 below E_max = 10 eV (`--tsl`): incoherent-inelastic (σ_b/4πkT)·√(E'/E)·e^(−β/2)·S integrated over the tabulated (α,β) domain with thermal upscatter, σ_b/natom·((A_r+1)/A_r)² = 81.81 b normalization, free-gas residual beyond the β domain. Kernel σ_s(E) verified against NJOY/THERMR MF3/MT222 within ~10%. |
 | `beam-quality-cylindrical-28g*.json` | `beam qa` reports including the absolute thermal-fluence depth profile (declared port fluence × J/Φ × port area → source rate) and transverse profiles. |
 | `measurement-comparison-cylindrical-28g*.json` | Both peak-normalized and absolute comparisons for each solve. |
 | `models/` | `cbe-protocol.json` (TECDOC-convention CBE/RBE weights) and `mkm-literature-constants.json` (MKM with literature-convention lineal energies) — the two biological interpretations compared by `bio compare`. |
@@ -147,12 +148,15 @@ Under the earlier uniform-per-eV bin mapping (the committed
 `*-28g-split` / `*-28g-trcorr` pair) the bracket ran ~10× under to
 ~9.5× over — the 1/E-consistent weighting softened the effective
 source spectrum, widening the raw underprediction and roughly halving
-the corrected overprediction. Remaining declared model gaps: no
-S(α,β) bound-atom thermal-scattering treatment below ~10 eV (the
-MF7/MT4 reader is landed and cross-validated against OpenMC's own
-parser; the collapse-side transfer integration is outstanding) and
-the three-bin source histogram (within-bin shape is declared 1/E —
-the measured FiR1 adjusted spectrum is not publicly tabulated).
+the corrected overprediction. Remaining declared model gaps: the three-bin source histogram
+(within-bin shape is declared 1/E — the measured FiR1 adjusted
+spectrum is not publicly tabulated). Bound-atom S(α,β) thermal
+scattering is now landed end-to-end — `multigroup-data-28g-tsl-v4.json`
+carries the ENDF/B-VIII.1 `lwtr` kernel on H1 (σ_s(E) verified against
+NJOY/THERMR MF3/MT222 within ~10%); the TSL+P1 solve's outer iteration
+converges slowly under the upscatter coupling (residual halving per
+sweep) and its flux artifact is pending — see the v4 row of the file
+table.
 The absolute scale itself is verified: the solver's incident thermal
 fluence (≈7.2e7 cm⁻² s⁻¹) reproduces the declared port thermal rate
 (7.19e7) within 1%, so the comparison is genuinely absolute — the
