@@ -163,6 +163,30 @@ declared 1/E — the measured FiR1 adjusted spectrum is not publicly
 tabulated) and the deepest-tail residual past ~9 cm where the
 multigroup collapse coarsens the very-low-energy transfer detail.
 
+## Boundary voxel fractions (`assignment-v2-fractions.json`)
+
+The v2 assignment replaces the center-inside binary region with
+per-cell `voxel_fractions` on the Ø20 cm cylinder: 6,624 interior +
+1,632 boundary voxels, subcell-sampled fill fractions 0.0117–0.9883,
+represented water volume 7,542.384 cm³ vs the ideal 7,539.822 —
+0.03% volume error (vs ~1.8% systematic undercount under the binary
+assignment). The fractions blend volume-weighted transport rows
+through `material_composition_map`, so the solver sees synthesized
+per-cell materials with no code-path change.
+
+S8 TSL+P1 solve on the fraction assignment
+(`multigroup-flux-28g-tsl-p1-frac-1e`, Anderson depth 5 — 39 outer
+iterations vs 122 unaccelerated): on-axis thermal profile is
+unchanged through the peak and +0.7% in the deepest tail — the
+fraction difference lives in the boundary ring, which the center
+column does not sample directly. Volume-integrated doses shift
+<1%: boron −0.10%, nitrogen −0.10%, hydrogen +0.19%, photon +0.92%
+(the extra rim water adds n→γ production). Normalized χ² = 18.75
+(vs 18.79 binary — on-axis insensitive as expected); absolute
+χ² = 131.6 (vs 146 — the exact water mass recovers the binary
+assignment's 1.8% volume deficit). `frac-compare.sh` reproduces
+the comparison chain including the CBE/MKM biological bundles.
+
 **Convergence note:** the TSL upscatter makes the group outer
 iteration weakly contractive — residual decays ~0.85–0.9 per sweep
 (vs ~4-iteration convergence for downscatter-dominated data), so the
