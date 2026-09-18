@@ -93,6 +93,14 @@ pub struct PhotonMaterial {
     /// summed over the material's nuclides and photon-producing
     /// reactions).
     pub production_matrix_per_cm: Vec<f64>,
+    /// cm⁻¹ — row-major `[Gγ × Gγ]` photon→photon secondary-production
+    /// matrix: photons created per unit photon flux (pair-production
+    /// annihilation secondaries, `2·σ_pair` into the 511 keV group).
+    /// Kept separate from the scatter matrix — photon number is not
+    /// conserved, so the neutron row-sum ≤ σ_t invariant does not
+    /// apply to it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub pair_production_matrix_per_cm: Vec<f64>,
     /// Gy·cm² — photon energy-deposition (kerma) response per unit
     /// photon fluence, per group `[Gγ]`: photoelectric and pair
     /// production deposit the incident energy locally; incoherent
@@ -164,6 +172,17 @@ impl MultigroupPhotonData {
                 && p1.len() != g_gamma * g_gamma
             {
                 return Err(invalid(format!("{m} scatter_p1 len != {g_gamma}²")));
+            }
+            if !material.pair_production_matrix_per_cm.is_empty()
+                && (material.pair_production_matrix_per_cm.len() != g_gamma * g_gamma
+                    || material
+                        .pair_production_matrix_per_cm
+                        .iter()
+                        .any(|v| !v.is_finite() || *v < 0.0))
+            {
+                return Err(invalid(format!(
+                    "{m} pair_production len != {g_gamma}² or negative"
+                )));
             }
             if material
                 .sigma_total_per_cm
@@ -292,7 +311,7 @@ pub fn solve_photon(
     let quadrature = level_symmetric_quadrature(options.quadrature_order)?;
 
     // Volumetric photon source from the converged neutron flux.
-    let fixed_source: Vec<Vec<f64>> = (0..n_cells)
+    let base_source: Vec<Vec<f64>> = (0..n_cells)
         .map(|cell| {
             (0..g_gamma)
                 .map(|gg| {
@@ -313,17 +332,68 @@ pub fn solve_photon(
         })
         .collect();
 
-    solve_sn_problem(
-        case,
-        &transport,
-        options,
-        &case_material,
-        &quadrature,
-        &boundary_empty(),
-        &fixed_source,
-        data_ref,
-        case_ref,
-    )
+    // Pair-production secondaries: annihilation photons (511 keV) are a
+    // photon-created volumetric source — a fixed point on the photon
+    // field itself. The daughters sit below the 1.022 MeV pair
+    // threshold, so they cannot regenerate pairs — the iteration is
+    // mathematically exact within a few passes, typically two. An outer
+    // source iteration keeps the sweep's conservative-scatter
+    // assumption intact.
+    let has_pair = data
+        .materials
+        .iter()
+        .any(|m| !m.pair_production_matrix_per_cm.is_empty());
+    let mut pair_source = vec![vec![0.0_f64; g_gamma]; n_cells];
+    let mut flux = None;
+    for _pass in 0..8 {
+        let mut fixed_source = base_source.clone();
+        if has_pair {
+            for cell in 0..n_cells {
+                for gg in 0..g_gamma {
+                    fixed_source[cell][gg] += pair_source[cell][gg];
+                }
+            }
+        }
+        let solved = solve_sn_problem(
+            case,
+            &transport,
+            options,
+            &case_material,
+            &quadrature,
+            &boundary_empty(),
+            &fixed_source,
+            data_ref.clone(),
+            case_ref.clone(),
+        )?;
+        if !has_pair {
+            return Ok(solved);
+        }
+        let mut next_pair = vec![vec![0.0_f64; g_gamma]; n_cells];
+        let mut change = 0.0_f64;
+        for cell in 0..n_cells {
+            for &(mi, f) in &compositions[cell] {
+                let pair = &data.materials[mi].pair_production_matrix_per_cm;
+                if pair.is_empty() {
+                    continue;
+                }
+                for gg in 0..g_gamma {
+                    for gp in 0..g_gamma {
+                        next_pair[cell][gp] += f * pair[gg * g_gamma + gp] * solved.flux[cell][gg];
+                    }
+                }
+            }
+            for gg in 0..g_gamma {
+                let d = (next_pair[cell][gg] - pair_source[cell][gg]).abs();
+                change = change.max(d / next_pair[cell][gg].abs().max(1e-30));
+            }
+        }
+        pair_source = next_pair;
+        flux = Some(solved);
+        if change < options.convergence {
+            break;
+        }
+    }
+    flux.ok_or_else(|| MultigroupError::Solve("photon solve produced no flux".into()))
 }
 
 fn boundary_empty() -> BoundarySource {

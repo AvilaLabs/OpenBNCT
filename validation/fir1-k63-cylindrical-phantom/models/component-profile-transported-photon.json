@@ -1,0 +1,55 @@
+{
+  "schema_version": "nctforge.component-definition-profile/0.1.0",
+  "id": "openbnct.transported-photon-kerma.v1",
+  "spatial_model": "macroscopic_photon_transport_with_local_charged_particle_kerma",
+  "source_normalization": "per_unit_weight_source_neutron",
+  "neutron_response": {
+    "unit": "gray_square_centimeter",
+    "interpolation": "collapsed_multigroup_constant_per_group",
+    "fold_normalization": "divide_track_length_by_scoring_volume_cm3",
+    "outside_domain": "reject_run"
+  },
+  "components": [
+    {
+      "component": "boron",
+      "estimator": {
+        "kind": "reaction_kerma_fluence_fold",
+        "nuclide": "B10",
+        "reaction_mt": 107,
+        "q_mev_source": "processed-table Q_value attribute",
+        "deposition": "local"
+      }
+    },
+    {
+      "component": "nitrogen",
+      "estimator": {
+        "kind": "reaction_kerma_fluence_fold",
+        "nuclide": "N14",
+        "reaction_mt": 103,
+        "q_mev_source": "processed-table Q_value attribute",
+        "deposition": "local"
+      }
+    },
+    {
+      "component": "hydrogen",
+      "estimator": {
+        "kind": "elastic_recoil_kerma_fluence_fold",
+        "nuclide": "H1",
+        "mean_recoil_mev": "E_bar*(1-alpha)/2 with scatter-weighted E_bar",
+        "deposition": "local"
+      }
+    },
+    {
+      "component": "photon",
+      "estimator": {
+        "kind": "transported_photon_kerma_fluence_fold",
+        "physics": "photoelectric+incoherent+coherent+pair-production transport; 2x511keV annihilation secondaries transported",
+        "q_mev_source": "photon-atomic kerma response (PE full-E, pair E-2mc2, incoherent recoil)",
+        "deposition": "local",
+        "photon_transport": true
+      }
+    }
+  ],
+  "physical_total": "photon_transport_plus_local_kerma",
+  "limitations": "Photon channel is transported: Klein-Nishina incoherent, coherent elastic, photoelectric, and pair-production with transported 511 keV annihilation secondaries. Bremsstrahlung, fluorescence, and charged-particle slowing-down range are not modeled. Neutron-born components still deposit locally at the interaction site. Research-use model."
+}

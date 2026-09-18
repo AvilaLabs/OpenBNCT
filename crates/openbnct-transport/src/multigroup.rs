@@ -2239,7 +2239,7 @@ pub fn fold_multigroup_dose(
             // The boron component carries the declared microdistribution
             // compound factor — the effective (target-weighted) boron
             // dose, the standard TPS convention.
-            if component == "component:boron" {
+            if component.strip_prefix("component:").unwrap_or(component) == "boron" {
                 *value *= cell_factor(cell);
             }
         }
@@ -2403,7 +2403,7 @@ pub(crate) mod tests {
         let mut d = data(&[1.0, 0.5], vec![0.2, 0.0, 0.0, 0.1]);
         d.materials[0].material_id = "a".into();
         d.materials[0].dose_response_gy_cm2 =
-            std::collections::BTreeMap::from([("component:boron".into(), vec![0.1, 0.2])]);
+            std::collections::BTreeMap::from([("boron".into(), vec![0.1, 0.2])]);
         d.materials[0].transport_mu_bar = Some(vec![0.4, 0.4]);
         d.materials.push(MultigroupMaterial {
             material_id: "b".into(),
@@ -2412,7 +2412,7 @@ pub(crate) mod tests {
             scatter_p1_matrix_per_cm: Some(vec![0.1, 0.0, 0.0, 0.1]),
             scatter_legendre_moments_per_cm: None,
             dose_response_gy_cm2: std::collections::BTreeMap::from([(
-                "component:boron".into(),
+                "boron".into(),
                 vec![0.5, 0.9],
             )]),
             transport_mu_bar: Some(vec![0.6, 0.6]),
@@ -2473,7 +2473,7 @@ pub(crate) mod tests {
         // Scatter blends the same way.
         assert!((blend.scatter_matrix_per_cm[0] - 0.3).abs() < 1e-12);
         // Boron dose response: 0.5·0.1 + 0.5·0.5 = 0.3.
-        let response = &blend.dose_response_gy_cm2["component:boron"];
+        let response = &blend.dose_response_gy_cm2["boron"];
         assert!((response[0] - 0.3).abs() < 1e-12);
         assert!((response[1] - 0.55).abs() < 1e-12);
         // μ̄ blends scatter-row-weighted: a's row sum = 0.2+0 = 0.2,

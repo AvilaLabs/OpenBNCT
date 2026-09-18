@@ -502,17 +502,21 @@ fn evaluate(
     let (data_eff, case_material) =
         material_composition_map(&case_p, &data_p, assignment_p.as_ref())
             .map_err(|e| ScreeningError::Invalid(format!("compositions: {e}")))?;
+    // The solve must see the perturbed assignment — microdistribution
+    // parameters mutate material definitions that only live there.
+    let mut options_p = options.clone();
+    options_p.assignment = assignment_p.clone();
     let flux: MultigroupFlux = solve_multigroup(
         &case_p,
         &data_p,
-        options,
+        &options_p,
         data_ref.clone(),
         case_ref.clone(),
     )?;
     // Boron microdistribution: material_id → definition, from the
     // perturbed case + assignment. The boron response scales by the
     // declared compound factor per cell (volume-fraction blended).
-    let boron_factor = if component == "component:boron" {
+    let boron_factor = if component.strip_prefix("component:").unwrap_or(component) == "boron" {
         let mut defs: std::collections::BTreeMap<&str, &crate::MaterialDefinition> =
             std::collections::BTreeMap::new();
         defs.insert(case_p.material.id.as_str(), &case_p.material);
@@ -1003,6 +1007,101 @@ mod tests {
         let sigma_t = report.entries.iter().find(|e| e.name == "sigma_t").unwrap();
         assert!(sigma_t.mu_star > 0.0);
         assert_eq!(sigma_t.rank, 1);
+    }
+
+    /// A compartment-uptake scale moves the compound factor → nonzero
+    /// effect on the boron response; a material without a declared
+    /// microdistribution is rejected.
+    #[test]
+    fn microdistribution_uptake_moves_boron_response() {
+        let mut case = slab_case();
+        case.material.boron_microdistribution = Some(crate::BoronMicrodistribution {
+            nucleus_fraction: 0.4,
+            cytoplasm_fraction: 0.4,
+            membrane_fraction: 0.2,
+            cell_radius_um: 6.0,
+            nucleus_radius_um: 4.0,
+        });
+        let mg = mg();
+        let s = spec(
+            vec![param(
+                "membrane",
+                ScreeningTarget::MicrodistributionUptakeScale {
+                    material_id: "absorber".into(),
+                    compartment: "membrane".into(),
+                },
+                0.5,
+                2.0,
+            )],
+            "morris",
+            4,
+        );
+        let report = run_screening(
+            &case,
+            &mg,
+            &options(),
+            &s,
+            "r3",
+            cref("s"),
+            cref("d"),
+            cref("c"),
+        )
+        .unwrap();
+        let e = &report.entries[0];
+        // Scaling the membrane share changes the compound factor —
+        // a real (nonzero) elementary effect.
+        assert!(
+            e.mu_star > 0.0,
+            "membrane uptake must move the boron response"
+        );
+        // The nominal response carries the compound factor: smaller
+        // than the raw boron fold (membrane-bound boron escapes).
+        assert!(report.nominal_response > 0.0);
+
+        // No declared microdistribution → the target is unknown.
+        let mut bare = slab_case();
+        bare.material.boron_microdistribution = None;
+        assert!(matches!(
+            run_screening(
+                &bare,
+                &mg,
+                &options(),
+                &s,
+                "r4",
+                cref("s"),
+                cref("d"),
+                cref("c")
+            ),
+            Err(ScreeningError::UnknownTarget(_))
+        ));
+
+        // An unknown compartment name fails spec validation.
+        let bad = spec(
+            vec![param(
+                "bad",
+                ScreeningTarget::MicrodistributionUptakeScale {
+                    material_id: "absorber".into(),
+                    compartment: "extracellular".into(),
+                },
+                0.5,
+                2.0,
+            )],
+            "morris",
+            4,
+        );
+        assert!(matches!(
+            run_screening(
+                &case,
+                &mg,
+                &options(),
+                &bad,
+                "r5",
+                cref("s"),
+                cref("d"),
+                cref("c")
+            ),
+            Err(ScreeningError::Invalid(_))
+        ));
     }
 
     /// Same seed replays the same design — screening output must be

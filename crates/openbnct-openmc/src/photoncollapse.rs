@@ -203,9 +203,17 @@ fn group_average(energy: &[f64], table: &[f64], lo: f64, hi: f64, w: &WeightingS
     if wacc > 0.0 { acc / wacc } else { 0.0 }
 }
 
-/// Load one element's photon-atomic table (`photo_<Elem>.h5`).
+/// Load one element's photon-atomic table (`photo_<Elem>.h5`, falling
+/// back to the official OpenMC layout's bare `<Elem>.h5`).
 fn load_photon_element(dir: &Path, elem: &str) -> Result<PhotonElement, CollapseError> {
-    let path = dir.join(format!("photo_{elem}.h5"));
+    let path = {
+        let prefixed = dir.join(format!("photo_{elem}.h5"));
+        if prefixed.exists() {
+            prefixed
+        } else {
+            dir.join(format!("{elem}.h5"))
+        }
+    };
     let file =
         File::open(&path).map_err(|e| CollapseError::Hdf5(format!("{}: {e}", path.display())))?;
     let root = file
@@ -444,6 +452,7 @@ pub fn collapse_photon(
         let mut sigma_t = vec![0.0; g_gamma];
         let mut scatter = vec![0.0; g_gamma * g_gamma];
         let mut scatter_p1 = vec![0.0; g_gamma * g_gamma];
+        let mut pair_production = vec![0.0; g_gamma * g_gamma];
         let mut production = vec![0.0; g_n * g_gamma];
         let mut dose = vec![0.0; g_gamma];
 
@@ -480,9 +489,12 @@ pub fn collapse_photon(
                 // Coherent: elastic → diagonal, maximally forward.
                 scatter[gg * g_gamma + gg] += dens * s_coh;
                 scatter_p1[gg * g_gamma + gg] += dens * s_coh;
-                // Pair production → 2 annihilation photons at 511 keV
-                // (isotropic — no P1 contribution).
-                scatter[gg * g_gamma + annih_group] += dens * 2.0 * s_pair;
+                // Pair production → 2 annihilation photons at 511 keV —
+                // a photon-created source, not scatter (photon number
+                // is not conserved); carried on the dedicated
+                // pair-production matrix the solve iterates as a
+                // volumetric source. Isotropic — no P1 contribution.
+                pair_production[gg * g_gamma + annih_group] += dens * 2.0 * s_pair;
                 // Kerma response: photoelectric full-E + pair (E−2mc²)
                 // + incoherent recoil (E−E′); coherent ~0.
                 let dep_inc: f64 = frac
@@ -610,6 +622,7 @@ pub fn collapse_photon(
             scatter_p1_matrix_per_cm: Some(scatter_p1),
             transport_mu_bar: mu_bar,
             production_matrix_per_cm: production,
+            pair_production_matrix_per_cm: pair_production,
             dose_response_gy_cm2: dose,
         });
     }
