@@ -956,9 +956,11 @@ requires licensed software, external approval, or any clinical claim.
   correction overpredicts it ~2.3–9.5×. The absolute normalization is
   verified independently (solver incident thermal fluence matches the
   declared port rate within 1%). Remaining declared gaps are P0-only
-  anisotropy beyond the scalar correction, no S(α,β) bound-atom
-  thermal treatment, and histogram source-bin mapping; see the
-  validation README for the full accounting.
+  anisotropy beyond the scalar correction and no S(α,β) bound-atom
+  thermal treatment; histogram source bins now spread
+  collapse-consistently (Maxwellian below 0.5 eV, 1/E above), recorded
+  per-artifact as `source_spectrum_weighting`. See the validation
+  README for the full accounting.
 
 - **R8-02 — adjoint-driven variance reduction.** *Landed.* An open
   CADIS/FW-CADIS implementation: `adjoint` bounds in a

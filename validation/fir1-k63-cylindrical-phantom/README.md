@@ -47,6 +47,50 @@ openbnct measurement compare \
   --output measurement-comparison-cylindrical.json
 ```
 
+The 28-group pipeline (ENDF-collapsed data, absolute-scale QA):
+
+```bash
+# collapse (once) — HDF5 library nuclides, or --endf N=PATH for PENDF
+openbnct sn collapse --library <endfb81-hdf5-neutron-dir> \
+  --material ../fir1-k63-water-phantom/material.json \
+  --material <void-material.json> \
+  --boundaries <28-group descending eV list> --id <artifact-id> \
+  --component-profile <local-kerma profile> \
+  --output multigroup-data-28g.json   # see artifact declaration for provenance
+
+# solve (uncollided split + transport correction on by default;
+# --no-transport-correction / --no-uncollided-split give the raw path)
+openbnct sn solve --case case.json --assignment assignment.json \
+  --data multigroup-data-28g.json --order 8 \
+  --dose dose-28g-trcorr.json --output multigroup-flux-28g-trcorr.json
+
+# QA with absolute depth profile + transverse profiles
+openbnct beam qa --beam ../../beams/fir1-k63.json \
+  --dose dose-28g-trcorr.json --flux multigroup-flux-28g-trcorr.json \
+  --transverse-depth-cm 2.0,6.0 \
+  --tumor-weights B=1995,N=3.2,H=3.2,P=1.0 \
+  --normal-weights B=150,N=3.2,H=3.2,P=1.0 \
+  --report-id openbnct.beam-quality.fir1-k63-cylindrical.28g-trcorr.v1 \
+  --output beam-quality-cylindrical-28g-trcorr.json
+
+# measurement comparison emits peak-normalized AND absolute rows
+openbnct measurement compare \
+  --record ../../measurements/fir1-k63-cylindrical-phantom-depth.json \
+  --against beam-quality-cylindrical-28g-trcorr.json \
+  --report-id openbnct.measurement-comparison.fir1-k63-cylindrical.28g-trcorr.v1 \
+  --output measurement-comparison-cylindrical-28g-trcorr.json
+
+# cross-model biological spread on the same physical bundle
+openbnct bio apply --model models/cbe-protocol.json \
+  --physical-bundle dose-28g-trcorr.json \
+  --region-mask tumor=region-tumor.json --output bio-cbe-28g-trcorr.json
+openbnct bio apply --model models/mkm-literature-constants.json \
+  --physical-bundle dose-28g-trcorr.json --output bio-mkm-28g-trcorr.json
+openbnct bio compare --a bio-cbe-28g-trcorr.json --b bio-mkm-28g-trcorr.json \
+  --region-mask tumor=region-tumor.json \
+  --output bio-model-comparison-28g-trcorr.json
+```
+
 The S₈ solve converges in 15 outer iterations (residual 9.8e−7). The
 8.54° source cone is narrower than any discrete ordinate direction, so
 the boundary flux collapses to the nearest inward ordinate while the
