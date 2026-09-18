@@ -967,6 +967,34 @@ requires licensed software, external approval, or any clinical claim.
   σ_s(E) reproduces NJOY 2016.79 THERMR's MF3/MT222 bound-atom σ_s
   within ~10% across 0.025–5 eV.
 
+  The physics layer grew six capabilities on top of that base.
+  **Coupled photon transport**: `sn photon-collapse` builds
+  `openbnct.multigroup-photon-data/0.1.0` — photoelectric/incoherent/
+  coherent/pair-production atomic tables with a Klein–Nishina transfer
+  kernel and per-subshell photoelectric response — and
+  `sn photon-solve` runs a two-pass n→γ solve (ENDF MF12/13/14/15
+  production collapse plus the declared 0.478 MeV ¹⁰B(n,α₁γ) line,
+  photon S_N sweep, photon-kerma dose fold). **P2–P5 anisotropy**:
+  `scatter_legendre_moments_per_cm` carries l = 2..5 transfer moments
+  through an exact discrete addition-theorem kernel — Jacobi
+  eigendecomposition of the P_l direction kernel yields the discrete
+  moment basis the quadrature resolves — behind `--anisotropy`.
+  **Bondarenko self-shielding**: `--self-shield` weights each nuclide's
+  collapse by 1/(σ_t + σ₀) with σ₀ the heterogeneous dilution of the
+  material's other nuclides. **Sub-voxel volume fractions**:
+  `voxel_fractions` material regions declare per-cell material
+  fractions (sum ≤ 1, no overlap with full regions); the shared
+  `cell_compositions`/`material_composition_map` path blends them into
+  synthesized transport rows every solver, fold, and screening pass
+  consumes. **Boron microdistribution**: a declared compartment-fraction
+  model (nucleus/cytoplasm/membrane) applies a first-order chord
+  compound factor to the boron dose component, with
+  `MicrodistributionUptakeScale` carrying the compartment fractions
+  through Morris/Sobol screening. **Anderson acceleration**: a
+  mixing-history accelerator on the symmetric down+up cycle's outer
+  fixed point cuts the upscatter-coupled iteration count — the
+  TSL solves' dominant cost.
+
   Honest validation status (FiR 1 cylindrical phantom, 28-group
   ENDF/B-VIII.1 data): the measured TECDOC-1223 water thermal-fluence
   depth profile is **bracketed**, not reproduced — but the

@@ -111,9 +111,27 @@ bundling those systems.
   produces declared multigroup data from pointwise ENDF/B evaluations —
   processed OpenMC-HDF5 nuclides or NJOY-broadened PENDF tapes via a
   built-in ENDF-6 MF3 reader — with P0 isotropic-in-CM elastic transfer
-  kernels and per-component mass-kerma dose responses. On NF-BNCT-003 it
-  reproduces the analytic attenuation oracle exactly (fitted slope
-  −0.23080 cm⁻¹, 0.000% deviation over 32 bins).
+  kernels and per-component mass-kerma dose responses. The physics reach
+  is now: **S(α,β) bound-atom scattering** (`--tsl` incoherent-inelastic
+  kernels with thermal upscatter + free-gas residual, ENDF MF7/MT4 via a
+  parser validated exactly against OpenMC's own, NJOY/THERMR-checked
+  bound-atom σ normalization), **P0–P5 anisotropy** (in-group Legendre
+  transfer moments `l = 1..5` through an exact discrete addition-theorem
+  kernel — eigendecomposed P_l direction kernels, `--anisotropy`),
+  **Bondarenko self-shielding** (`--self-shield` heterogeneous-dilution
+  weighting in the collapse), **coupled photon transport**
+  (`sn photon-collapse`/`sn photon-solve` — a two-pass n→γ solve:
+  photoelectric/incoherent/coherent/pair-production atomic tables with a
+  Klein–Nishina transfer kernel, ENDF MF12/13/14/15 production collapse
+  plus the declared 0.478 MeV ¹⁰B(n,α₁γ) line, photon S_N sweep and
+  photon-kerma dose fold), **sub-voxel volume fractions**
+  (`voxel_fractions` material regions — sum ≤ 1 per cell, volume-weighted
+  composition blending into synthesized transport rows), and **Anderson
+  acceleration** on the upscatter-coupled outer iteration. On NF-BNCT-003
+  the solver reproduces the analytic attenuation oracle exactly (fitted
+  slope −0.23080 cm⁻¹, 0.000% deviation over 32 bins); the water-phantom
+  TSL+P1 solve lands within ~±20% of the FiR1 measured profile through
+  9 cm (normalized χ² 18.8 — the best deterministic result).
 - **Adjoint-driven weight windows** — `openbnct vr cadis` runs the
   transposed adjoint solve for a declared response volume and derives
   CADIS bounds; a forward-flux-derived adjoint source gives the
@@ -144,7 +162,12 @@ bundling those systems.
 - **Subcellular boron microdistribution** — `openbnct boron
   microdistribution` computes deterministic chord-weighted partition
   corrections (nucleus/cytoplasm/membrane/extracellular) that bound onto
-  dose-component interpretation.
+  dose-component interpretation; a declared
+  `BoronMicrodistribution` on a material applies a first-order
+  compartment-fraction compound factor to the boron dose component, and
+  `MicrodistributionUptakeScale` carries compartment-fraction uncertainty
+  through Morris/Sobol screening (a declared research approximation, not
+  a cell-scale tally).
 - **Benchmark library** — NF-BNCT-002 adds a heterogeneous bone/air
   insert acceptance case; NF-BNCT-003 is a pure-absorber slab with a
   closed-form oracle — both with machine inputs, acceptance contracts,
