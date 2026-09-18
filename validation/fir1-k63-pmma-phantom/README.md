@@ -15,6 +15,7 @@ collapse.
 | `assignment.json` | `openbnct.material-assignment/0.2.0` — same voxel-set cylinder geometry, PMMA material (C5H8O2 with natural isotopic splits + dilute trace ¹⁰B/¹⁴N, ρ = 1.19 g/cm³). |
 | `multigroup-data.json` | `openbnct.multigroup-data/0.1.0` — three-group PMMA data; H1/C12/O16 σ_s and σ_a from the processed ENDF/B-VIII.1 294 K library at 0.0253 eV / ~70 eV / ~1.3 MeV representative energies; Fermi downscatter removal; boron response at the notional 10 µg/g basis scaled by ρ. Full declaration in the artifact. |
 | `multigroup-data-28g.json` | `openbnct.multigroup-data/0.1.0` — real-data 28-group `sn collapse` output for the PMMA material (same group structure and pipeline as the water check), including `transport_mu_bar`. |
+| `multigroup-flux-28g.json` / `dose-28g.json` | S₈ 28-group solve under the cone uncollided split + consistent transport correction. **Convention note:** this pair predates the collapse-consistent within-bin source weighting; its flux artifact carries the deserialization default `source_spectrum_weighting: "uniform_in_bin"`. A rerun under the current convention is pending. |
 | `beam-quality-pmma.json` | `openbnct.beam-quality/0.1.0` — folded `beam qa` output. |
 | `measurement-comparison-pmma.json` | `openbnct.measurement-comparison/0.1.0` — against `measurements/fir1-k63-pmma-phantom-depth.json` (the PMMA series of the same TECDOC-1223 FIG. 3 digitization, re-homed under the canonical metric name). |
 
