@@ -21,6 +21,7 @@ phantom and therefore cannot match the measured small-cylinder tail.
 | `multigroup-flux-28g-1e.json` / `dose-28g-1e.json` and `multigroup-flux-28g-trcorr-1e.json` / `dose-28g-trcorr-1e.json` | The current-convention reruns of the pair above — collapse-consistent within-bin source weighting (`source_spectrum_weighting: "collapse_consistent"`). These are the reference artifacts for the numbers quoted below. |
 | `multigroup-flux-28g-p1-1e.json` / `dose-28g-p1-1e.json`, `beam-quality-cylindrical-28g-p1-1e.json`, `measurement-comparison-cylindrical-28g-p1-1e.json`, `bio-*-28g-p1-1e.json` | The P1-anisotropic solve on `multigroup-data-28g-v3.json` (which carries `scatter_p1_matrix_per_cm`): `scattering_order: "p1"`, normalized χ² 31 — the best deterministic result. |
 | `multigroup-data-28g-tsl-v4.json` | v3 + the ENDF/B-VIII.1 `lwtr` S(α,β) bound-atom kernel on H1 below E_max = 10 eV (`--tsl`): incoherent-inelastic (σ_b/4πkT)·√(E'/E)·e^(−β/2)·S integrated over the tabulated (α,β) domain with thermal upscatter, σ_b/natom·((A_r+1)/A_r)² = 81.81 b normalization, free-gas residual beyond the β domain. Kernel σ_s(E) verified against NJOY/THERMR MF3/MT222 within ~10%. |
+| `multigroup-flux-28g-tsl-p1-1e.json` / `dose-28g-tsl-p1-1e.json`, `beam-quality-`, `measurement-comparison-`, `bio-*-28g-tsl-p1-1e.json` | The TSL+P1 solve on the v4 data: `scattering_order: "p1"`, converged at residual 9.8e-5 after 122 outer iterations (the upscatter coupling slows the sweep — see "convergence" note below). **Normalized χ² = 18.8 — the best deterministic result.** |
 | `beam-quality-cylindrical-28g*.json` | `beam qa` reports including the absolute thermal-fluence depth profile (declared port fluence × J/Φ × port area → source rate) and transverse profiles. |
 | `measurement-comparison-cylindrical-28g*.json` | Both peak-normalized and absolute comparisons for each solve. |
 | `models/` | `cbe-protocol.json` (TECDOC-convention CBE/RBE weights) and `mkm-literature-constants.json` (MKM with literature-convention lineal energies) — the two biological interpretations compared by `bio compare`. |
@@ -133,30 +134,43 @@ source-bin weighting (`*-1e` artifacts):
   profile ~1.7× at the entry rising to ~4.8× at depth (peak χ² = 261;
   absolute χ² = 2858).
 - **P1 in-group anisotropy** (`multigroup-flux-28g-p1-1e`,
-  `scatter_p1_matrix_per_cm` collapsed from the same data): the
-  strongest deterministic result to date — normalized χ² = **31**
-  (vs 128 raw / 261 corrected), with the deep-tail underprediction
-  roughly halved at mid-depth (rel diffs 0.22/0.49 at 6.5/8.75 cm vs
-  0.83/0.93 raw). Absolute χ² = 320 — the residual underprediction
-  (~27% at entry rising to ~28× at 14.5 cm) is real missing physics,
-  not normalization (incident rate verified to 1%).
+  `scatter_p1_matrix_per_cm` collapsed from the same data): normalized
+  χ² = **31** (vs 128 raw / 261 corrected), with the deep-tail
+  underprediction roughly halved at mid-depth.
+- **S(α,β) bound-atom scattering + P1** (`multigroup-flux-28g-tsl-p1-1e`
+  on `multigroup-data-28g-tsl-v4` — the ENDF/B-VIII.1 `lwtr` kernel on
+  H1 below E_max = 10 eV, thermal upscatter included): **the strongest
+  deterministic result** — normalized χ² = **18.8** (vs 31 P1-only /
+  128 raw / 261 corrected), holding the measured profile within ~±20%
+  through 9 cm (computed/measured 0.98 at 6.5 cm, 0.77 at 8.75 cm vs
+  0.78/0.51 P1-only). The bound-atom kernel closes most of the deep
+  tail the free-gas treatment was missing. Absolute χ² = 132 — a
+  residual ~1.6–2.3× uniform underprediction scale plus the deepest
+  tail (>9 cm) falling to 0.46/0.26 at 11.5/14.5 cm; the incident
+  rate is verified to 1% so this is a genuine model residual, not
+  normalization bookkeeping.
 
 The measured series sits between the raw-P0 and corrected-P0
-deterministic results, closer to the corrected side; the P1 solve
-lands inside the bracket, nearest the corrected end at mid-depth.
-Under the earlier uniform-per-eV bin mapping (the committed
-`*-28g-split` / `*-28g-trcorr` pair) the bracket ran ~10× under to
-~9.5× over — the 1/E-consistent weighting softened the effective
-source spectrum, widening the raw underprediction and roughly halving
-the corrected overprediction. Remaining declared model gaps: the three-bin source histogram
-(within-bin shape is declared 1/E — the measured FiR1 adjusted
-spectrum is not publicly tabulated). Bound-atom S(α,β) thermal
-scattering is now landed end-to-end — `multigroup-data-28g-tsl-v4.json`
-carries the ENDF/B-VIII.1 `lwtr` kernel on H1 (σ_s(E) verified against
-NJOY/THERMR MF3/MT222 within ~10%); the TSL+P1 solve's outer iteration
-converges slowly under the upscatter coupling (residual halving per
-sweep) and its flux artifact is pending — see the v4 row of the file
-table.
+deterministic results, closer to the corrected side; the TSL+P1 solve
+lands closest of all — inside the bracket, within ~±20% of measured
+through 9 cm. Under the earlier uniform-per-eV bin mapping (the
+committed `*-28g-split` / `*-28g-trcorr` pair) the bracket ran ~10×
+under to ~9.5× over — the 1/E-consistent weighting softened the
+effective source spectrum, widening the raw underprediction and
+roughly halving the corrected overprediction. Remaining declared
+model gaps: the three-bin source histogram (within-bin shape is
+declared 1/E — the measured FiR1 adjusted spectrum is not publicly
+tabulated) and the deepest-tail residual past ~9 cm where the
+multigroup collapse coarsens the very-low-energy transfer detail.
+
+**Convergence note:** the TSL upscatter makes the group outer
+iteration weakly contractive — residual decays ~0.85–0.9 per sweep
+(vs ~4-iteration convergence for downscatter-dominated data), so the
+TSL+P1 solve needed 122 sweeps (~4.5 h single-threaded S8) to reach
+its declared 1e-4 target. The artifact records `converged: true`,
+`outer_iterations: 122`, `residual: 9.8e-5`. The `--convergence 1e-4`
+target is honest for this evidence level — the flux is stable to
+<0.01% locally, far below the physics discrepancy it probes.
 The absolute scale itself is verified: the solver's incident thermal
 fluence (≈7.2e7 cm⁻² s⁻¹) reproduces the declared port thermal rate
 (7.19e7) within 1%, so the comparison is genuinely absolute — the
