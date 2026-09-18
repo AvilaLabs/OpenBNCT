@@ -33,6 +33,7 @@ pub use beam::{
 pub use beam_quality::{
     BEAM_QUALITY_SCHEMA, BeamQualityError, BeamQualityReference, BeamQualityReport,
     ComponentWeights, InAirMetrics, InPhantomMetrics, MetricComparison, ReferenceMetric,
+    TransverseFluenceProfile, attach_absolute_fluence_profile, attach_transverse_fluence_profiles,
     evaluate_beam_quality, in_air_metrics, in_phantom_metrics,
 };
 pub use bsa::{

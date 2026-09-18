@@ -1,0 +1,55 @@
+{
+  "schema_version": "nctforge.component-definition-profile/0.1.0",
+  "id": "openbnct.macroscopic-local-kerma.v1",
+  "spatial_model": "macroscopic_local_charged_particle_kerma",
+  "source_normalization": "per_unit_weight_source_neutron",
+  "neutron_response": {
+    "unit": "gray_square_centimeter",
+    "interpolation": "collapsed_multigroup_constant_per_group",
+    "fold_normalization": "divide_track_length_by_scoring_volume_cm3",
+    "outside_domain": "reject_run"
+  },
+  "components": [
+    {
+      "component": "boron",
+      "estimator": {
+        "kind": "reaction_kerma_fluence_fold",
+        "nuclide": "B10",
+        "reaction_mt": 107,
+        "q_mev_source": "processed-table Q_value attribute",
+        "deposition": "local"
+      }
+    },
+    {
+      "component": "nitrogen",
+      "estimator": {
+        "kind": "reaction_kerma_fluence_fold",
+        "nuclide": "N14",
+        "reaction_mt": 103,
+        "q_mev_source": "processed-table Q_value attribute",
+        "deposition": "local"
+      }
+    },
+    {
+      "component": "hydrogen",
+      "estimator": {
+        "kind": "elastic_recoil_kerma_fluence_fold",
+        "nuclide": "H1",
+        "mean_recoil_mev": "E_bar*(1-alpha)/2 with scatter-weighted E_bar",
+        "deposition": "local"
+      }
+    },
+    {
+      "component": "photon",
+      "estimator": {
+        "kind": "capture_gamma_local_kerma",
+        "reaction_mt": 102,
+        "q_mev_source": "processed-table Q_value attribute",
+        "deposition": "local",
+        "photon_transport": false
+      }
+    }
+  ],
+  "physical_total": "local_kerma_without_photon_transport",
+  "limitations": "All components deposit locally at the interaction site. The photon channel is capture-gamma kerma at the production site only — no photon transport, no bremsstrahlung or fluorescence, no charged-particle slowing-down range. Minor charged-particle channels (e.g. O17(n,a)) are counted in sigma_total removal but not folded into a named dose component."
+}

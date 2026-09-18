@@ -69,6 +69,12 @@ pub struct MultigroupMaterial {
     /// dose convention of the component profile the data declares.
     #[serde(default)]
     pub dose_response_gy_cm2: std::collections::BTreeMap<String, Vec<f64>>,
+    /// Scatter-weighted mean lab-frame cosine per group `[G]` —
+    /// Σ_s-weighted over the constituent nuclides (2/(3A) for iso-CM
+    /// elastic). When present and the solve enables the transport
+    /// correction, the sweep uses σ_t,tr = σ_t − μ̄_g·Σ_s,g.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub transport_mu_bar: Option<Vec<f64>>,
 }
 
 /// `openbnct.multigroup-data/0.1.0` — declared group structure and
@@ -158,6 +164,18 @@ impl MultigroupData {
                     return Err(invalid(format!(
                         "material {:?} response {component:?} must be {groups} \
                          non-negative values",
+                        material.material_id
+                    )));
+                }
+            }
+            if let Some(mu_bar) = &material.transport_mu_bar {
+                if mu_bar.len() != groups
+                    || !mu_bar
+                        .iter()
+                        .all(|x| x.is_finite() && *x >= 0.0 && *x <= 1.0)
+                {
+                    return Err(invalid(format!(
+                        "material {:?} transport_mu_bar must be {groups} values in [0,1]",
                         material.material_id
                     )));
                 }
@@ -272,14 +290,27 @@ pub struct SnOptions {
     /// grid. Inflow is the wrap-around cell's previous-iterate cell
     /// average (exact under transverse uniformity).
     pub periodic: [bool; 3],
-    /// Uncollided-flux split for monodirectional disk sources: the
-    /// uncollided beam is ray-traced analytically along the true
-    /// direction (exact exponential attenuation — no discrete-ordinates
-    /// obliquity bias) and the sweep carries only the collided remainder
-    /// driven by the first-collision source. The standard treatment for
-    /// beam sources in S_N; non-monodirectional sources always use the
-    /// boundary-flux path.
+    /// Uncollided-flux split for on-face disk sources: the uncollided
+    /// beam is ray-traced analytically (exact exponential attenuation —
+    /// no discrete-ordinates obliquity bias or thick-cell
+    /// diamond-difference damping on the streaming component) and the
+    /// sweep carries only the collided remainder driven by the
+    /// first-collision source. The standard treatment for beam sources
+    /// in S_N. Monodirectional beams ray-trace along d̂; forward
+    /// isotropic cones are integrated over a deterministic equal-area
+    /// direction grid, which also reproduces the cone's geometric
+    /// spread with depth. Wide cones and other distributions stay on
+    /// the boundary-flux path.
     pub beam_uncollided_split: bool,
+    /// Extended transport correction: when the data carries
+    /// `transport_mu_bar`, the sweep's effective total becomes
+    /// σ_t,tr = σ_t − μ̄_g·Σ_s,row(g) and the same forward-scatter
+    /// fraction is removed from the in-group diagonal — the consistent
+    /// P0 correction for anisotropic (forward-peaked) scatter, which
+    /// keeps the source iteration contractive. The uncollided ray-trace
+    /// still uses the physical σ_t — the correction applies only to
+    /// the collided component. No-op on data without `transport_mu_bar`.
+    pub transport_correction: bool,
 }
 
 impl Default for SnOptions {
@@ -292,6 +323,7 @@ impl Default for SnOptions {
             assignment: None,
             periodic: [false; 3],
             beam_uncollided_split: true,
+            transport_correction: true,
         }
     }
 }
@@ -316,6 +348,10 @@ pub struct MultigroupFlux {
     /// the total including the analytic uncollided component when the
     /// split is active.
     pub flux: Vec<Vec<f64>>,
+    /// Whether the extended transport correction (σ_t,tr = σ_t −
+    /// μ̄_g·Σ_s,g) was applied to the collided sweep.
+    #[serde(default)]
+    pub transport_correction: bool,
     pub quadrature_order: u32,
     pub outer_iterations: u32,
     /// Final relative scalar-flux change.
@@ -602,14 +638,87 @@ fn source_group_weights(
     Ok(weights)
 }
 
-/// Analytic uncollided-flux ray-trace for a monodirectional on-face disk
-/// source. For each cell the back-ray along −d̂ to the source-face plane
-/// determines coverage; φ_unc(cell, g) = I_beam·e^{−Σ_t·s}·w_g where
-/// s is the path length from entry to the cell center and
-/// I_beam = R/(A_disk·|d̂_axis|) is the beam-frame intensity.
+/// Deterministic equal-area sample directions over an isotropic cone:
+/// uniform grid in (cos θ, φ) about `axis`. Returns (direction, weight)
+/// pairs whose weights sum to the cone solid angle. A monodirectional
+/// distribution degenerates to a single unit-weighted direction.
+fn cone_directions(
+    angle: &AngularDistribution,
+) -> Result<Option<Vec<([f64; 3], f64)>>, MultigroupError> {
+    let invalid = |m: String| MultigroupError::Source(m);
+    match angle {
+        AngularDistribution::Monodirectional { unit_vector } => Ok(Some(vec![(*unit_vector, 1.0)])),
+        AngularDistribution::IsotropicCone {
+            axis_unit_vector,
+            half_angle_rad,
+        } => {
+            let axis = axis_unit_vector;
+            let norm: f64 = axis.iter().map(|c| c * c).sum::<f64>().sqrt();
+            if !(half_angle_rad.is_finite() && *half_angle_rad > 0.0 && norm > 0.0) {
+                return Err(invalid("isotropic cone needs a positive half angle".into()));
+            }
+            if *half_angle_rad > std::f64::consts::FRAC_PI_2 {
+                // The equal-area grid is only meaningful for a forward
+                // cone; wide beams stay on the boundary-flux path.
+                return Ok(None);
+            }
+            let ax: [f64; 3] = [axis[0] / norm, axis[1] / norm, axis[2] / norm];
+            // Orthonormal basis perpendicular to the cone axis.
+            let seed = if ax[0].abs() < 0.9 {
+                [1.0, 0.0, 0.0]
+            } else {
+                [0.0, 1.0, 0.0]
+            };
+            let mut u = [
+                ax[1] * seed[2] - ax[2] * seed[1],
+                ax[2] * seed[0] - ax[0] * seed[2],
+                ax[0] * seed[1] - ax[1] * seed[0],
+            ];
+            let un: f64 = u.iter().map(|c| c * c).sum::<f64>().sqrt();
+            for c in &mut u {
+                *c /= un;
+            }
+            let v = [
+                ax[1] * u[2] - ax[2] * u[1],
+                ax[2] * u[0] - ax[0] * u[2],
+                ax[0] * u[1] - ax[1] * u[0],
+            ];
+            let cos_h = half_angle_rad.cos();
+            // Equal-area grid: N_R rings in cos θ × N_PHI azimuths. For
+            // narrow beams (~9°) 8×16 resolves the disk-edge transition
+            // to well under a percent of the lit solid angle.
+            const N_R: usize = 8;
+            const N_PHI: usize = 16;
+            let omega = 2.0 * std::f64::consts::PI * (1.0 - cos_h);
+            let w = omega / (N_R * N_PHI) as f64;
+            let mut dirs = Vec::with_capacity(N_R * N_PHI);
+            for k in 0..N_R {
+                let cos_t = 1.0 - (k as f64 + 0.5) / N_R as f64 * (1.0 - cos_h);
+                let sin_t = (1.0 - cos_t * cos_t).max(0.0).sqrt();
+                for l in 0..N_PHI {
+                    let phi = 2.0 * std::f64::consts::PI * (l as f64 + 0.5) / N_PHI as f64;
+                    let d = [
+                        ax[0] * cos_t + sin_t * (u[0] * phi.cos() + v[0] * phi.sin()),
+                        ax[1] * cos_t + sin_t * (u[1] * phi.cos() + v[1] * phi.sin()),
+                        ax[2] * cos_t + sin_t * (u[2] * phi.cos() + v[2] * phi.sin()),
+                    ];
+                    dirs.push((d, w));
+                }
+            }
+            Ok(Some(dirs))
+        }
+    }
+}
+
+/// Analytic uncollided-flux ray-trace for an on-face disk source.
+/// For each cell the back-ray to the source-face plane determines disk
+/// coverage; φ_unc(cell, g) = (R/A_disk)·w_g·⟨hit·e^{−Σ_t·s}⟩/μ̄ where
+/// s is the path length from entry to the cell center and the average
+/// is over the angular distribution (a single direction for a
+/// monodirectional beam, the cone solid angle for an isotropic cone).
 ///
 /// Returns `None` for source shapes/angles that stay on the
-/// boundary-flux path (cones, off-face sources).
+/// boundary-flux path (wide cones, isotropic, off-face sources).
 fn uncollided_beam_flux(
     case: &TransportCase,
     data: &MultigroupData,
@@ -617,23 +726,25 @@ fn uncollided_beam_flux(
 ) -> Result<Option<Vec<Vec<f64>>>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
-    let (
-        SourceSpatialDistribution::UniformDisk {
-            axis,
-            offset_cm,
-            center_uv_cm,
-            radius_cm,
-        },
-        AngularDistribution::Monodirectional { unit_vector },
-    ) = (&source.space, &source.angle)
+    let SourceSpatialDistribution::UniformDisk {
+        axis,
+        offset_cm,
+        center_uv_cm,
+        radius_cm,
+    } = &source.space
     else {
+        return Ok(None);
+    };
+    let Some(dirs) = cone_directions(&source.angle)? else {
         return Ok(None);
     };
     let geometry = &case.geometry;
     let a = axis.index();
-    let d_hat = *unit_vector;
-    let d_axis = d_hat[a];
-    if d_axis.abs() < 1e-12 {
+    let omega: f64 = dirs.iter().map(|(_, w)| w).sum();
+    // Mean axial component ⟨Ω·â⟩ over the angular distribution — the
+    // current-to-fluence conversion at the source face.
+    let mu_bar = dirs.iter().map(|(d, w)| w * d[a]).sum::<f64>() / omega;
+    if mu_bar.abs() < 1e-12 {
         return Err(invalid(
             "beam direction parallel to its own source face".into(),
         ));
@@ -650,7 +761,8 @@ fn uncollided_beam_flux(
             "source offset {offset_cm} cm is not on a grid face along axis {a}"
         )));
     };
-    if face_cm == lo_mm / 10.0 && d_axis < 0.0 || face_cm == hi_mm / 10.0 && d_axis > 0.0 {
+    let inward = if face_cm == lo_mm / 10.0 { 1.0 } else { -1.0 };
+    if inward * mu_bar <= 0.0 {
         return Err(invalid(
             "beam direction points out of the domain through its source face".into(),
         ));
@@ -659,12 +771,16 @@ fn uncollided_beam_flux(
     let (u, v) = ((a + 1) % 3, (a + 2) % 3);
     let rate = source.statistical_weight_per_site * source.source_sites_per_history as f64;
     let disk_area_cm2 = std::f64::consts::PI * radius_cm * radius_cm;
-    let beam_intensity = rate / (disk_area_cm2 * d_axis.abs());
+    // Scalar fluence at the face per unit current: J/μ̄ with J = R/A.
+    let beam_intensity = rate / (disk_area_cm2 * mu_bar.abs());
     let group_weights = source_group_weights(source, data)?;
     let groups = data.group_count();
     let n_cells = geometry.voxel_count()?;
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
+    let r2 = radius_cm * radius_cm;
 
+    // Per-direction solid-angle average of hit·e^{−Σ_t·s}: only sample
+    // directions pointing inward contribute.
     let mut unc = vec![vec![0.0; groups]; n_cells];
     let mut lit = false;
     for k in 0..nz {
@@ -676,24 +792,33 @@ fn uncollided_beam_flux(
                     center_mm[1] / 10.0,
                     center_mm[2] / 10.0,
                 ];
-                let s = (c[a] - face_cm) / d_axis;
-                if s <= 0.0 {
-                    continue;
-                }
-                let eu = c[u] - d_hat[u] * s;
-                let ev = c[v] - d_hat[v] * s;
-                let du = eu - center_uv_cm[0];
-                let dv = ev - center_uv_cm[1];
-                if du * du + dv * dv > radius_cm * radius_cm {
-                    continue;
-                }
-                lit = true;
                 let cell = i + nx * j + nx * ny * k;
                 let material = &data.materials[case_material[cell]];
-                for (g, w) in group_weights.iter().enumerate() {
-                    if *w > 0.0 {
-                        unc[cell][g] =
-                            beam_intensity * w * (-material.sigma_total_per_cm[g] * s).exp();
+                for (d_hat, w_dir) in &dirs {
+                    let d_axis = d_hat[a];
+                    if inward * d_axis <= 0.0 {
+                        continue;
+                    }
+                    let s = (c[a] - face_cm) / d_axis;
+                    if s <= 0.0 {
+                        continue;
+                    }
+                    let eu = c[u] - d_hat[u] * s;
+                    let ev = c[v] - d_hat[v] * s;
+                    let du = eu - center_uv_cm[0];
+                    let dv = ev - center_uv_cm[1];
+                    if du * du + dv * dv > r2 {
+                        continue;
+                    }
+                    lit = true;
+                    let frac = w_dir / omega;
+                    for (g, w) in group_weights.iter().enumerate() {
+                        if *w > 0.0 {
+                            unc[cell][g] += beam_intensity
+                                * w
+                                * frac
+                                * (-material.sigma_total_per_cm[g] * s).exp();
+                        }
                     }
                 }
             }
@@ -712,6 +837,12 @@ fn uncollided_beam_flux(
 /// source from the current iterate (Jacobi across groups and
 /// within-group alike); `psi_prev` supplies periodic-boundary inflow
 /// (the wrap-around cell's previous-iterate cell average).
+/// `sigma_eff[material][group]` is the effective removal cross section —
+/// physical σ_t or the transport-corrected σ_t,tr when the solve
+/// enables it and the data carries `transport_mu_bar`.
+/// `scatter_eff[material]` mirrors `sigma_eff`: the declared matrix, or
+/// the matrix with the μ̄_g·Σ_s,row forward fraction removed from the
+/// diagonal under the transport correction.
 #[allow(clippy::too_many_arguments)]
 fn sweep_group(
     g: usize,
@@ -720,6 +851,8 @@ fn sweep_group(
     psi_prev: &[Vec<f64>],
     psi: &mut [Vec<f64>],
     case_material: &[usize],
+    sigma_eff: &[Vec<f64>],
+    scatter_eff: &[Vec<f64>],
     data: &MultigroupData,
     geometry: &GridGeometry,
     quadrature: &[([f64; 3], f64)],
@@ -809,15 +942,13 @@ fn sweep_group(
                                 .unwrap_or(0.0)
                         };
                     }
-                    let material = &data.materials[case_material[cell]];
-                    let st = material.sigma_total_per_cm[g];
+                    let mi = case_material[cell];
+                    let st = sigma_eff[mi][g];
                     // Scatter source into g from the current iterate plus
                     // the fixed (first-collision or volumetric) source.
                     let q: f64 = fixed_source[cell][g]
                         + (0..groups)
-                            .map(|gp| {
-                                material.scatter_matrix_per_cm[gp * groups + g] * flux[cell][gp]
-                            })
+                            .map(|gp| scatter_eff[mi][gp * groups + g] * flux[cell][gp])
                             .sum::<f64>();
                     let (ax, ay, az) = (
                         dir[0].abs() * face_area[0],
@@ -1047,6 +1178,57 @@ pub(crate) fn solve_sn_problem(
     if fixed_source.len() != n_cells || fixed_source.iter().any(|row| row.len() != groups) {
         return Err(invalid("fixed source must be [cells][groups]".into()));
     }
+    // Effective removal cross section and self-scatter per (material,
+    // group) under the extended transport correction: σ_t,tr = σ_t −
+    // μ̄_g·Σ_s,row(g) with the same forward-scatter fraction removed
+    // from the in-group diagonal σ_s,tr(g→g) = σ_s(g→g) − μ̄_g·Σ_s,row(g)
+    // (floored at zero). Reducing only σ_t would leave self-scatter
+    // able to exceed σ_t,tr — a divergent source iteration in
+    // near-conservative media. With the diagonal reduced consistently
+    // the balance σ_t,tr − σ_s,tr(g→g) = σ_a + σ_s,out-of-group is
+    // unchanged and the sweep stays contractive. The correction
+    // applies to the collided sweep only — the uncollided ray-trace
+    // keeps the exact exponential.
+    let corrected = options.transport_correction
+        && data.materials.iter().any(|m| m.transport_mu_bar.is_some());
+    let sigma_eff: Vec<Vec<f64>> = data
+        .materials
+        .iter()
+        .map(|m| {
+            (0..groups)
+                .map(|g| {
+                    let st = m.sigma_total_per_cm[g];
+                    match (corrected, &m.transport_mu_bar) {
+                        (true, Some(mu)) => {
+                            let ss: f64 = (0..groups)
+                                .map(|gp| m.scatter_matrix_per_cm[g * groups + gp])
+                                .sum();
+                            // Floor at the absorption part so the
+                            // operator stays positive.
+                            (st - mu[g] * ss).max(st - ss).max(1e-12)
+                        }
+                        _ => st,
+                    }
+                })
+                .collect()
+        })
+        .collect();
+    let scatter_eff: Vec<Vec<f64>> = data
+        .materials
+        .iter()
+        .map(|m| {
+            let mut row = m.scatter_matrix_per_cm.clone();
+            if let (true, Some(mu)) = (corrected, &m.transport_mu_bar) {
+                for g in 0..groups {
+                    let ss: f64 = (0..groups).map(|gp| row[g * groups + gp]).sum();
+                    let diag = &mut row[g * groups + g];
+                    *diag = (*diag - mu[g] * ss).max(0.0);
+                }
+            }
+            row
+        })
+        .collect();
+
     let mut flux = vec![vec![0.0; groups]; n_cells];
     let mut psi = vec![vec![0.0; n_dirs]; n_cells];
     let mut psi_prev = vec![vec![0.0; n_dirs]; n_cells];
@@ -1067,6 +1249,8 @@ pub(crate) fn solve_sn_problem(
                     &psi_prev,
                     &mut psi,
                     case_material,
+                    &sigma_eff,
+                    &scatter_eff,
                     data,
                     geometry,
                     quadrature,
@@ -1109,6 +1293,7 @@ pub(crate) fn solve_sn_problem(
         energy_boundaries_ev: data.energy_boundaries_ev.clone(),
         beam_model: "volumetric_or_boundary".into(),
         flux,
+        transport_correction: corrected,
         quadrature_order: options.quadrature_order,
         outer_iterations: outer_done,
         residual,
@@ -1321,6 +1506,7 @@ pub(crate) mod tests {
                 sigma_total_per_cm: sigma_t.to_vec(),
                 scatter_matrix_per_cm: scatter,
                 dose_response_gy_cm2: Default::default(),
+                transport_mu_bar: None,
             }],
         }
     }
@@ -1336,6 +1522,7 @@ pub(crate) mod tests {
             assignment: None,
             periodic: [true, true, false],
             beam_uncollided_split: true,
+            transport_correction: true,
         }
     }
 
@@ -1420,6 +1607,93 @@ pub(crate) mod tests {
             (slope - sigma).abs() / sigma < 1e-9,
             "slope {slope} vs analytic {sigma}"
         );
+    }
+
+    #[test]
+    fn narrow_cone_uncollided_split_approximates_monodirectional() {
+        // A narrow isotropic cone takes the analytic uncollided path:
+        // at the entry face its scalar fluence is I/μ̄ with
+        // μ̄ = (1 + cos θ_h)/2 — within ~1% of the monodirectional
+        // value for an 8.5° beam.
+        let mut case = slab_case();
+        let half_angle = 0.1491_f64;
+        case.source.angle = AngularDistribution::IsotropicCone {
+            axis_unit_vector: [0.0, 0.0, 1.0],
+            half_angle_rad: half_angle,
+        };
+        let sigma = 0.2308_f64;
+        let mg = data(&[sigma], vec![0.0]);
+        let flux = solve_multigroup(&case, &mg, &options(), cref("mg"), cref("case")).unwrap();
+        assert!(flux.converged);
+        assert_eq!(flux.beam_model, "uncollided_split");
+
+        let mono =
+            solve_multigroup(&slab_case(), &mg, &options(), cref("mg"), cref("case")).unwrap();
+        let mu_bar = (1.0 + half_angle.cos()) / 2.0;
+        for k in 0..4 {
+            let cone = flux.flux[5 + 16 * k][0];
+            let ray = mono.flux[5 + 16 * k][0];
+            // Near-entry cells: cone ≈ monodirectional up to the μ̄
+            // normalization and the obliquity of the outer rays.
+            let expected = ray / mu_bar;
+            assert!(
+                (cone - expected).abs() / expected < 0.02,
+                "cell {k}: cone {cone} vs monodirectional/mu_bar {expected}"
+            );
+        }
+    }
+
+    #[test]
+    fn transport_correction_deepens_scattered_flux() {
+        // Two-group cascade with a forward-peaked upper group:
+        // σ_t0 = 1.0, σ_s(0→0) = 0.10, σ_s(0→1) = 0.80, μ̄₀ = 0.7
+        // → σ_t0,tr = 0.37, σ_s,tr(0→0) = 0 — corrected epithermal flux
+        // penetrates farther and feeds the downscatter source deeper,
+        // so the deep group-1 flux must exceed the uncorrected solve.
+        let case = slab_case();
+        // Scatter layout is [src * G + dst].
+        let mut mg = data(&[1.0, 0.5], vec![0.10, 0.80, 0.0, 0.30]);
+        mg.materials[0].transport_mu_bar = Some(vec![0.7, 0.0]);
+        mg.validate().unwrap();
+
+        let mut corrected_opts = options();
+        corrected_opts.transport_correction = true;
+        let mut raw_opts = options();
+        raw_opts.transport_correction = false;
+        let corrected =
+            solve_multigroup(&case, &mg, &corrected_opts, cref("mg"), cref("case")).unwrap();
+        let raw = solve_multigroup(&case, &mg, &raw_opts, cref("mg"), cref("case")).unwrap();
+        assert!(corrected.converged && raw.converged);
+        assert!(corrected.transport_correction);
+        assert!(!raw.transport_correction);
+        // Deep cell group-1 flux: the cascade is driven deeper by the
+        // corrected epithermal penetration.
+        let deep = 5 + 16 * 17;
+        let near = 5 + 16;
+        assert!(
+            corrected.flux[deep][1] > raw.flux[deep][1],
+            "corrected deep thermal {} !> raw {}",
+            corrected.flux[deep][1],
+            raw.flux[deep][1]
+        );
+        assert!(corrected.flux[near][0] > 0.0 && raw.flux[near][0] > 0.0);
+    }
+
+    #[test]
+    fn transport_correction_reduces_self_scatter_consistently() {
+        // Near-conservative medium: σ_s(g→g) = 0.4 vs σ_t = 0.5, μ̄ = 0.9.
+        // A σ_t-only correction (σ_t,tr = 0.5 − 0.36 = 0.14 < σ_s = 0.4)
+        // makes the in-group Jacobi diverge; the consistent correction
+        // also removes μ̄Σ_s from the diagonal (σ_s,tr = 0.04 < σ_t,tr)
+        // and must converge.
+        let case = slab_case();
+        let mut mg = data(&[0.5], vec![0.4]);
+        mg.materials[0].transport_mu_bar = Some(vec![0.9]);
+        mg.validate().unwrap();
+        let flux =
+            solve_multigroup(&case, &mg, &options(), cref("mg"), cref("case")).unwrap();
+        assert!(flux.converged);
+        assert!(flux.transport_correction);
     }
 
     #[test]
@@ -1590,12 +1864,14 @@ mod heterogeneous_tests {
                     sigma_total_per_cm: vec![0.1],
                     scatter_matrix_per_cm: vec![0.0],
                     dose_response_gy_cm2: Default::default(),
+                    transport_mu_bar: None,
                 },
                 MultigroupMaterial {
                     material_id: "insert".into(),
                     sigma_total_per_cm: vec![1.0],
                     scatter_matrix_per_cm: vec![0.0],
                     dose_response_gy_cm2: Default::default(),
+                    transport_mu_bar: None,
                 },
             ],
         };

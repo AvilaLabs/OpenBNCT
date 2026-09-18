@@ -1,0 +1,89 @@
+{
+ "schema_version": "openbnct.material-definition/0.1.0",
+ "id": "openbnct.layered-head.brain.v1",
+ "density_g_cm3": 1.04,
+ "temperature_k": 293.6,
+ "nuclides": [
+  {
+   "name": "H1",
+   "mass_fraction": 0.1069876843012305
+  },
+  {
+   "name": "H2",
+   "mass_fraction": 1.2304998769500001e-05
+  },
+  {
+   "name": "C12",
+   "mass_fraction": 0.14344848565515
+  },
+  {
+   "name": "C13",
+   "mass_fraction": 0.00155149984485
+  },
+  {
+   "name": "N14",
+   "mass_fraction": 0.021919917808008
+  },
+  {
+   "name": "N15",
+   "mass_fraction": 8.007999199200001e-05
+  },
+  {
+   "name": "O16",
+   "mass_fraction": 0.710269968972996
+  },
+  {
+   "name": "O17",
+   "mass_fraction": 0.000270559972944
+  },
+  {
+   "name": "O18",
+   "mass_fraction": 0.00145959985404
+  },
+  {
+   "name": "Na23",
+   "mass_fraction": 0.0019999998
+  },
+  {
+   "name": "P31",
+   "mass_fraction": 0.0039999996
+  },
+  {
+   "name": "S32",
+   "mass_fraction": 0.0018997998100199998
+  },
+  {
+   "name": "S33",
+   "mass_fraction": 1.49999985e-05
+  },
+  {
+   "name": "S34",
+   "mass_fraction": 8.49999915e-05
+  },
+  {
+   "name": "Cl35",
+   "mass_fraction": 0.0022733997726600004
+  },
+  {
+   "name": "Cl37",
+   "mass_fraction": 0.0007265999273400001
+  },
+  {
+   "name": "K39",
+   "mass_fraction": 0.0027977427202257005
+  },
+  {
+   "name": "K40",
+   "mass_fraction": 3.509999649e-07
+  },
+  {
+   "name": "K41",
+   "mass_fraction": 0.00020190597980940004
+  },
+  {
+   "name": "B10",
+   "mass_fraction": 1e-07
+  }
+ ],
+ "neutron_thermal_treatment": "free_gas"
+}

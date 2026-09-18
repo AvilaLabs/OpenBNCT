@@ -1329,6 +1329,15 @@ class R8R9ArtifactTest(unittest.TestCase):
             pmma.id, "openbnct.measurement-comparison.fir1-k63-pmma.v1"
         )
 
+        bio_cmp = openbnct.load_bio_model_comparison(
+            validation
+            / "fir1-k63-cylindrical-phantom"
+            / "bio-model-comparison-28g.json"
+        )
+        self.assertEqual(
+            bio_cmp.schema_version, "openbnct.bio-model-comparison/0.1.0"
+        )
+
         quality = openbnct.load_beam_quality_report(
             self.FIR1_RESULTS / "beam-quality-tn-folded.json"
         )

@@ -18,6 +18,7 @@
 #![forbid(unsafe_code)]
 
 mod bed;
+mod compare;
 mod endpoint;
 mod lineal_tally;
 mod mkm;
@@ -33,6 +34,9 @@ use thiserror::Error;
 pub use bed::{
     BED_BUNDLE_SCHEMA, BedBundle, BedQuantity, COMBINED_DOSE_SCHEMA, CombinedDoseBundle,
     CombinedDoseInput, bed_from_external, combine_biological_doses,
+};
+pub use compare::{
+    BIO_MODEL_COMPARISON_SCHEMA, BioModelComparison, RegionStatistics, compare_biological_models,
 };
 pub use endpoint::{
     AppliedDoseStatistic, DoseStatistic, ENDPOINT_EVALUATION_SCHEMA, ENDPOINT_MODEL_SCHEMA,

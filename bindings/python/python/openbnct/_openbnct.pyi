@@ -388,6 +388,17 @@ class BiologicalDoseBundle:
     def write(self, output: str | PathLike[str]) -> None:
         """Write the bundle JSON; refuses to overwrite an existing file."""
 
+class BioModelComparison:
+    """A validated ``openbnct.bio-model-comparison/0.1.0`` artifact."""
+
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    @property
+    def max_voxelwise_ratio(self) -> float | None: ...
+    def to_json(self) -> str: ...
+
 class DoseVolumeHistogram:
     """A deterministic ``openbnct.dose-volume-histogram/0.1.0`` artifact."""
 
@@ -523,6 +534,10 @@ def load_physical_dose_bundle(path: str | PathLike[str]) -> PhysicalDoseBundle: 
 def collect_run(working_directory: str | PathLike[str]) -> PhysicalDoseBundle:
     """Collect a completed OpenMC run directory into a dose bundle."""
 def load_biological_model(path: str | PathLike[str]) -> BiologicalModel: ...
+def load_bio_model_comparison(
+    path: str | PathLike[str],
+) -> BioModelComparison:
+    """Read and validate a ``openbnct.bio-model-comparison/0.1.0`` artifact."""
 def make_biological_model(document: dict | str) -> BiologicalModel:
     """Validate a ``openbnct.biological-model/0.2.0`` document authored in
     Python (dict or JSON string) into a model object — the

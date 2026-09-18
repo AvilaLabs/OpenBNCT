@@ -358,6 +358,7 @@ mod tests {
                 sigma_total_per_cm: vec![0.5],
                 scatter_matrix_per_cm: vec![0.0],
                 dose_response_gy_cm2: BTreeMap::from([("boron".into(), vec![1e-4])]),
+                transport_mu_bar: None,
             }],
         };
         let flux = MultigroupFlux {
@@ -367,6 +368,7 @@ mod tests {
             case: cref("lt-case"),
             energy_boundaries_ev: vec![1.0, 1.0e-3],
             beam_model: "boundary_flux".into(),
+            transport_correction: false,
             quadrature_order: 4,
             converged: true,
             residual: 0.0,

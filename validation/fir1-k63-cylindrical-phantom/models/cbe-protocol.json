@@ -1,0 +1,25 @@
+{
+  "schema_version": "openbnct.biological-model/0.2.0",
+  "id": "openbnct.biological-model.cbe-protocol-fir1.v1",
+  "weight_semantics": "photon_isoeffective",
+  "input_unit": "gray_per_source_particle",
+  "component_weights": {
+    "boron": 1.0,
+    "nitrogen": 3.2,
+    "hydrogen": 3.2,
+    "photon": 1.0
+  },
+  "region_weights": {
+    "tumor": {
+      "boron": 3.8,
+      "nitrogen": 3.2,
+      "hydrogen": 3.2,
+      "photon": 1.0
+    }
+  },
+  "derivation": {
+    "id": "beams/references/fir1-k63-phantom.json",
+    "sha256": "0ce52c5d4c6a90be4301bf019a3f8ea4364eaa86114f0af19c260b2ad23a8b4f"
+  },
+  "validity_domain": "Protocol-convention CBE/RBE weights as applied at FiR 1 and in the inter-facility standard-model comparisons (TECDOC-1223): RBE 3.2 for the nitrogen capture and hydrogen recoil components, CBE_boron 3.8 in the 'tumor' region and 1.0 elsewhere, photon weight 1.0 by definition of the photon-isoeffective convention. Applies to trace-loaded phantom dosimetry only as a weighting convention \u2014 no clinical claim; the phantom boron loading is dilute (~0.1 ppm) so absolute weighted doses are not treatment-representative."
+}

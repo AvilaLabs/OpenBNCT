@@ -1,0 +1,101 @@
+{
+ "schema_version": "openbnct.material-definition/0.1.0",
+ "id": "openbnct.layered-head.skull.v1",
+ "density_g_cm3": 1.92,
+ "temperature_k": 293.6,
+ "nuclides": [
+  {
+   "name": "H1",
+   "mass_fraction": 0.03399609000000001
+  },
+  {
+   "name": "H2",
+   "mass_fraction": 3.910000000000001e-06
+  },
+  {
+   "name": "C12",
+   "mass_fraction": 0.1533415
+  },
+  {
+   "name": "C13",
+   "mass_fraction": 0.0016584999999999998
+  },
+  {
+   "name": "N14",
+   "mass_fraction": 0.04184712
+  },
+  {
+   "name": "N15",
+   "mass_fraction": 0.00015288
+  },
+  {
+   "name": "O16",
+   "mass_fraction": 0.43394324999999995
+  },
+  {
+   "name": "O17",
+   "mass_fraction": 0.0001653
+  },
+  {
+   "name": "O18",
+   "mass_fraction": 0.0008917500000000001
+  },
+  {
+   "name": "Na23",
+   "mass_fraction": 0.001
+  },
+  {
+   "name": "Mg24",
+   "mass_fraction": 0.0015798000000000001
+  },
+  {
+   "name": "Mg25",
+   "mass_fraction": 0.0002
+  },
+  {
+   "name": "Mg26",
+   "mass_fraction": 0.0002202
+  },
+  {
+   "name": "P31",
+   "mass_fraction": 0.103
+  },
+  {
+   "name": "S32",
+   "mass_fraction": 0.0028497
+  },
+  {
+   "name": "S33",
+   "mass_fraction": 2.2499999999999998e-05
+  },
+  {
+   "name": "S34",
+   "mass_fraction": 0.0001275
+  },
+  {
+   "name": "Ca40",
+   "mass_fraction": 0.21811725
+  },
+  {
+   "name": "Ca42",
+   "mass_fraction": 0.00145575
+  },
+  {
+   "name": "Ca43",
+   "mass_fraction": 0.00030375000000000004
+  },
+  {
+   "name": "Ca44",
+   "mass_fraction": 0.0046935
+  },
+  {
+   "name": "Ca46",
+   "mass_fraction": 9e-06
+  },
+  {
+   "name": "Ca48",
+   "mass_fraction": 0.00042075
+  }
+ ],
+ "neutron_thermal_treatment": "free_gas"
+}

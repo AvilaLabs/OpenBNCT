@@ -173,13 +173,21 @@ pub struct MeasurementComparison {
 pub struct ProfileComparison {
     pub measurement_id: String,
     pub metric: String,
+    /// `"peak"`: both sides peak-normalized (foil-scan convention).
+    /// `"absolute"`: raw values on the record's stated units — used when
+    /// the metric carries an absolute scale (e.g. the flux-derived
+    /// thermal fluence profile scaled by the declared source rate).
+    #[serde(default = "default_peak_normalization")]
+    pub normalization: String,
     /// Bin centers in the measurement's edge unit (e.g. cm). Only bins
     /// whose center lies inside the computed profile's depth range are
     /// carried — out-of-range bins are not comparable and are dropped.
     pub bin_centers: Vec<f64>,
-    /// Measured bin contents, peak-normalized (max = 1).
+    /// Measured bin contents — peak-normalized (max = 1) under
+    /// `"peak"`, raw under `"absolute"`.
     pub measured_normalized: Vec<f64>,
-    /// Computed profile interpolated at the bin centers, peak-normalized.
+    /// Computed profile interpolated at the bin centers — same scale
+    /// convention as `measured_normalized`.
     pub computed_normalized: Vec<f64>,
     /// Per-bin |computed − measured| / measured; inf where measured = 0.
     pub relative_differences: Vec<f64>,
@@ -388,12 +396,57 @@ pub fn beam_quality_profile<'a>(
         }
         "tumor_dose_depth_profile" => in_phantom.tumor_dose_profile.as_slice(),
         "normal_tissue_dose_depth_profile" => in_phantom.normal_tissue_dose_profile.as_slice(),
-        _ => return None,
+        // Absolute-scale comparison: requires the report to carry the
+        // flux-derived absolute profile (`--flux` at `beam qa` time).
+        "thermal_fluence_depth_profile_absolute" => in_phantom
+            .thermal_fluence_depth_profile_absolute_cm2_s
+            .as_deref()?,
+        _ => {
+            // Transverse scans: `thermal_fluence_transverse_profile_d<mm>`
+            // (and `_absolute` suffix) resolves the report's
+            // flux-derived transverse profile nearest the declared
+            // depth. The lateral axis stands in for depth_cm here.
+            let base = metric.strip_suffix("_absolute").unwrap_or(metric);
+            let (head, depth_mm) = base.rsplit_once("_d")?;
+            if head != "thermal_fluence_transverse_profile" {
+                return None;
+            }
+            let target_cm = depth_mm.parse::<f64>().ok()? / 10.0;
+            let profile = in_phantom
+                .thermal_fluence_transverse_profiles_cm2_s
+                .iter()
+                .min_by(|a, b| {
+                    (a.depth_cm - target_cm)
+                        .abs()
+                        .partial_cmp(&(b.depth_cm - target_cm).abs())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })?;
+            // Only a profile within half a centimetre of the declared
+            // depth resolves — the depth coordinate is part of the
+            // metric identity, not a fuzzy match.
+            if (profile.depth_cm - target_cm).abs() > 0.5 || profile.lateral_cm.is_empty() {
+                return None;
+            }
+            return Some((
+                profile.lateral_cm.as_slice(),
+                profile.values_cm2_s.as_slice(),
+            ));
+        }
     };
     if values.is_empty() {
         return None;
     }
     Some((in_phantom.depth_cm.as_slice(), values))
+}
+
+/// Whether a profile metric compares on an absolute scale (`true`) or
+/// after peak normalization (`false`, the foil-scan convention).
+fn profile_is_absolute(metric: &str) -> bool {
+    metric.ends_with("_absolute")
+}
+
+fn default_peak_normalization() -> String {
+    "peak".into()
 }
 
 /// Linear interpolation of `(xs, ys)` at `x`; `None` outside the range.
@@ -429,9 +482,16 @@ fn compare_profile(
     sigma_tolerance: f64,
 ) -> Option<ProfileComparison> {
     let (depth_cm, computed) = beam_quality_profile(report, &measurement.metric)?;
-    let measured_peak = values.iter().copied().fold(0.0_f64, f64::max);
-    let computed_peak = computed.iter().copied().fold(0.0_f64, f64::max);
-    if measured_peak <= 0.0 || computed_peak <= 0.0 {
+    let absolute = profile_is_absolute(&measurement.metric);
+    let (measured_scale, computed_scale) = if absolute {
+        (1.0, 1.0)
+    } else {
+        (
+            values.iter().copied().fold(0.0_f64, f64::max),
+            computed.iter().copied().fold(0.0_f64, f64::max),
+        )
+    };
+    if measured_scale <= 0.0 || computed_scale <= 0.0 {
         return None;
     }
     let mut bin_centers = Vec::new();
@@ -447,8 +507,8 @@ fn compare_profile(
         let Some(computed_at) = interpolate(depth_cm, computed, center) else {
             continue;
         };
-        let m = values[bin] / measured_peak;
-        let c = computed_at / computed_peak;
+        let m = values[bin] / measured_scale;
+        let c = computed_at / computed_scale;
         bin_centers.push(center);
         measured_normalized.push(m);
         computed_normalized.push(c);
@@ -458,7 +518,7 @@ fn compare_profile(
             (c - m).abs() / m
         });
         if let (Some(sigmas), Some(raw)) = (difference_sigma.as_mut(), uncertainties) {
-            let sigma = raw[bin] / measured_peak;
+            let sigma = raw[bin] / measured_scale;
             let d = (c - m).abs() / sigma.max(f64::MIN_POSITIVE);
             sigmas.push(d);
             chi_square += d * d;
@@ -474,6 +534,7 @@ fn compare_profile(
     Some(ProfileComparison {
         measurement_id: measurement.id.clone(),
         metric: measurement.metric.clone(),
+        normalization: if absolute { "absolute" } else { "peak" }.into(),
         bin_centers,
         measured_normalized,
         computed_normalized,
@@ -564,25 +625,45 @@ pub fn compare_measurement_record(
         return Err(MeasurementError::InvalidSigmaTolerance);
     }
     let comparisons = compare_with_beam_quality(record, report, sigma_tolerance);
-    let profile_comparisons: Vec<ProfileComparison> = record
-        .measurements
-        .iter()
-        .filter_map(|measurement| match &measurement.value {
-            MeasurementValue::Histogram {
-                bin_edges,
-                bin_values,
-                bin_uncertainties_1sigma,
-            } => compare_profile(
-                measurement,
+    let mut profile_comparisons: Vec<ProfileComparison> = Vec::new();
+    for measurement in &record.measurements {
+        let MeasurementValue::Histogram {
+            bin_edges,
+            bin_values,
+            bin_uncertainties_1sigma,
+        } = &measurement.value
+        else {
+            continue;
+        };
+        if let Some(comparison) = compare_profile(
+            measurement,
+            bin_edges,
+            bin_values,
+            bin_uncertainties_1sigma.as_deref(),
+            report,
+            sigma_tolerance,
+        ) {
+            profile_comparisons.push(comparison);
+        }
+        // When the report carries an absolute-scale profile for the
+        // same physical quantity (metric + "_absolute"), emit a second
+        // comparison without peak normalization — the record's values
+        // and σ are already absolute.
+        if !profile_is_absolute(&measurement.metric) {
+            let mut absolute_measurement = measurement.clone();
+            absolute_measurement.metric = format!("{}_absolute", measurement.metric);
+            if let Some(comparison) = compare_profile(
+                &absolute_measurement,
                 bin_edges,
                 bin_values,
                 bin_uncertainties_1sigma.as_deref(),
                 report,
                 sigma_tolerance,
-            ),
-            MeasurementValue::Scalar { .. } => None,
-        })
-        .collect();
+            ) {
+                profile_comparisons.push(comparison);
+            }
+        }
+    }
     let mut summary = ComparisonSummary {
         compared: 0,
         unmatched: 0,
@@ -809,6 +890,9 @@ mod tests {
             tumor_weights: weights.clone(),
             normal_weights: weights,
             dose: content("dose"),
+            thermal_fluence_depth_profile_absolute_cm2_s: None,
+            thermal_fluence_transverse_profiles_cm2_s: Vec::new(),
+            absolute_fluence_note: None,
         });
         report
     }

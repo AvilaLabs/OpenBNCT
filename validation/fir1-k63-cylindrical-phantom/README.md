@@ -15,6 +15,14 @@ phantom and therefore cannot match the measured small-cylinder tail.
 | `multigroup-data.json` | `openbnct.multigroup-data/0.1.0` — declared three-group data with boundaries matching the beam histogram bins (16.9 MeV / 10 keV / 0.5 eV / 1e−5 eV). H1/O16 pointwise σ evaluated from the processed ENDF/B-VIII.1 294 K library used by the OpenMC validation run; downscatter removal follows the Fermi slowing-down estimate; upscatter neglected by declaration. The boron dose response is the ¹⁰B(n,α) kerma coefficient at a notional dilute 10 µg/g basis — a folding convention, not phantom composition. Full collapse declaration is in the artifact. |
 | `beam-quality-cylindrical.json` | `openbnct.beam-quality/0.1.0` — `beam qa` output folded from the S₈ solve. |
 | `measurement-comparison-cylindrical.json` | `openbnct.measurement-comparison/0.1.0` — σ-weighted, peak-normalized profile comparison against the digitized TECDOC-1223 FIG. 3 water-phantom series (`measurements/fir1-k63-cylindrical-phantom-depth.json`). |
+| `multigroup-data-28g.json` | `openbnct.multigroup-data/0.1.0` — real-data 28-group collapse from the processed ENDF/B-VIII.1 library (`sn collapse`): pointwise σ collapsed over a Maxwellian/1-E weighting, P0 isotropic-in-CM elastic transfer matrix, per-component mass-kerma dose responses, and the scatter-weighted `transport_mu_bar` used by the extended transport correction. |
+| `multigroup-flux-28g-split.json` / `dose-28g-split.json` | S₈ 28-group solve and folded dose — cone analytic uncollided split, no transport correction. |
+| `multigroup-flux-28g-trcorr.json` / `dose-28g-trcorr.json` | Same solve with the extended transport correction active (σ_t,tr = σ_t − μ̄·Σ_s plus the consistent diagonal self-scatter reduction). |
+| `beam-quality-cylindrical-28g*.json` | `beam qa` reports including the absolute thermal-fluence depth profile (declared port fluence × J/Φ × port area → source rate) and transverse profiles. |
+| `measurement-comparison-cylindrical-28g*.json` | Both peak-normalized and absolute comparisons for each solve. |
+| `models/` | `cbe-protocol.json` (TECDOC-convention CBE/RBE weights) and `mkm-literature-constants.json` (MKM with literature-convention lineal energies) — the two biological interpretations compared by `bio compare`. |
+| `bio-cbe-28g*.json`, `bio-mkm-28g*.json`, `bio-model-comparison-28g*.json` | Biological bundles over the split- and corrected-solve doses plus the `openbnct.bio-model-comparison/0.1.0` records (cross-model spread ≈2.5×, uniform). |
+| `region-tumor.json` | Declared "tumor" mask (centered r≤4 cm disk, z ∈ [2,5] cm) used to exercise the CBE model's region override — a research convention on a water phantom, not an anatomy. |
 
 ## Reproduce
 
@@ -58,6 +66,33 @@ This resolves the tail divergence recorded by the cubical-phantom
 comparison (`../fir1-k63-water-phantom/results/measurement-comparison-depth.json`):
 the disagreement there was phantom geometry (lateral backscatter in a
 51 cm cube vs a Ø20 cm cylinder), not source or data.
+
+## 28-group real-data result — honest status
+
+The ENDF-collapsed 28-group solves do **not** pass the measured
+profile; they bracket it:
+
+- **Split-only solve** (`multigroup-flux-28g-split`): absolute thermal
+  fluence underpredicts the measured depth profile by ~10× at 14 cm
+  (peak-normalized χ² = 83; absolute χ² = 309). The P0-isotropic
+  transfer matrix over-removes forward-peaked hydrogen scattering.
+- **Extended transport correction** (`multigroup-flux-28g-trcorr`):
+  σ_t,tr = σ_t − μ̄·Σ_s applied consistently to removal *and* the
+  diagonal self-scatter converges cleanly (4 outer iterations,
+  residual 9.4e−7) and deepens the thermal tail — but now
+  **overpredicts** the measured profile ~2.3–9.5× (peak χ² = 531;
+  absolute χ² = 13605).
+
+The measured series therefore sits between the raw-P0 and
+corrected-P0 deterministic results. Remaining declared model gaps:
+P0 isotropic transfer even after the correction (no P1 anisotropic
+in-group source), no S(α,β) thermal-scattering treatment below ~4 eV,
+and the histogram source mapping that spreads each beam-energy bin
+uniformly-per-eV across its sub-groups. The absolute scale itself is
+verified: the solver's incident thermal fluence (≈7.2e7 cm⁻² s⁻¹)
+reproduces the declared port thermal rate (7.19e7) within 1%, so the
+comparison is genuinely absolute — the disagreement is transport
+physics, not normalization.
 
 ## Scope
 

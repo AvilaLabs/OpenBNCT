@@ -994,6 +994,21 @@ enum BeamCommand {
         /// beam; enables in-phantom metrics.
         #[arg(long)]
         dose: Option<PathBuf>,
+        /// Optional multigroup-flux JSON from the same run (requires
+        /// --dose): attaches an absolute-scale thermal fluence depth
+        /// profile scaled by the declared source rate — port fluence
+        /// rate × current-to-fluence × port area.
+        #[arg(long, requires = "dose")]
+        flux: Option<PathBuf>,
+        /// Thermal/epithermal boundary for the absolute fluence profile
+        /// in eV (groups whose upper edge lies at or below it).
+        #[arg(long, requires = "flux", default_value = "0.5")]
+        thermal_edge_ev: f64,
+        /// Depths (cm from the phantom entry face) at which to attach
+        /// absolute thermal-fluence transverse profiles through the
+        /// port axis; repeatable or comma-separated.
+        #[arg(long, requires = "flux", value_delimiter = ',')]
+        transverse_depth_cm: Vec<f64>,
         /// Per-component tumor weights `B=N,H=N,N=N,P=N` (required with
         /// --dose); compound biological effectiveness factors.
         #[arg(long, requires = "dose")]
@@ -1631,6 +1646,11 @@ enum SnCommand {
         /// ordinate).
         #[arg(long)]
         no_uncollided_split: bool,
+        /// Disable the extended transport correction (σ_t,tr = σ_t −
+        /// μ̄·Σ_s) on the collided sweep — applies only when the data
+        /// declares `transport_mu_bar`.
+        #[arg(long)]
+        no_transport_correction: bool,
         /// Also write a folded `openbnct.physical-dose-bundle/0.2.0` to
         /// this path (the data must declare `dose_response_gy_cm2` and a
         /// `component_profile` binding).
@@ -1639,6 +1659,67 @@ enum SnCommand {
         /// Output path for the multigroup-flux JSON.
         #[arg(long)]
         output: PathBuf,
+    },
+    /// Fold an existing `openbnct.multigroup-flux/0.1.0` through its
+    /// data's declared dose-response vectors into a
+    /// `openbnct.physical-dose-bundle/0.2.0` — the same fold `sn solve
+    /// --dose` performs, without re-solving.
+    Fold {
+        /// `openbnct.transport-case/0.1.0` case JSON.
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-data/0.1.0` data JSON; must declare
+        /// `component_profile` and dose-response vectors.
+        #[arg(long)]
+        data: PathBuf,
+        /// `openbnct.multigroup-flux/0.1.0` from a prior `sn solve`.
+        #[arg(long)]
+        flux: PathBuf,
+        /// The `openbnct.material-assignment/0.2.0` the solve used.
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// Output path for the dose bundle.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Collapse processed pointwise neutron HDF5 tables into a declared
+    /// multigroup-data artifact for one material.
+    ///
+    /// Emits `openbnct.multigroup-data/0.1.0` with weighting-collapsed
+    /// σt, an analytic P0 isotropic-in-CM elastic transfer matrix
+    /// (no thermal upscatter — declared), and mass-kerma dose
+    /// responses: boron (n,α), nitrogen (n,p), hydrogen recoil, and
+    /// photon capture-γ local kerma (no photon transport).
+    Collapse {
+        /// Directory of `<Nuclide>.h5` incident-neutron tables (294 K).
+        #[arg(long)]
+        library: PathBuf,
+        /// ENDF-6 tape for a nuclide outside the processed library —
+        /// `--endf Ca40=/path/n-020_Ca_040.endf`, repeatable. Raw
+        /// evaluations or NJOY PENDF tapes both parse.
+        #[arg(long, value_name = "NUCLIDE=PATH")]
+        endf: Vec<String>,
+        /// Material definition artifact (openbnct.material/0.1.0) —
+        /// repeat for every material the solve requires.
+        #[arg(long, required = true)]
+        material: Vec<PathBuf>,
+        /// Energy boundaries in eV, strictly descending — e.g.
+        /// `--boundaries 1.7e7,1e4,0.5,1e-5` (group 0 = highest).
+        #[arg(long, value_delimiter = ',', required = true)]
+        boundaries: Vec<f64>,
+        /// Artifact id for the emitted multigroup-data artifact.
+        #[arg(long)]
+        id: String,
+        /// Component-definition-profile JSON to content-bind; required
+        /// for `--dose` folding at solve time.
+        #[arg(long)]
+        component_profile: Option<PathBuf>,
+        /// Free-text appended to the collapse declaration.
+        #[arg(long)]
+        note: Option<String>,
+        /// Artifact path; printed to stdout when omitted.
+        #[arg(long)]
+        output: Option<PathBuf>,
     },
 }
 
@@ -1950,6 +2031,29 @@ enum BioCommand {
         #[arg(long)]
         assumption: String,
         /// New output path for the combined-dose JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Compare two biological dose bundles derived from the same
+    /// physical bundle — the cross-model spread (e.g. protocol-CBE vs
+    /// microdosimetric-kinetic) recorded as a checkable artifact.
+    Compare {
+        /// First biological dose bundle JSON.
+        #[arg(long)]
+        a: PathBuf,
+        /// Second biological dose bundle JSON — must share the first
+        /// bundle's physical-bundle provenance and geometry.
+        #[arg(long)]
+        b: PathBuf,
+        /// Region mask as `name=path` pairs; an `all` whole-phantom row
+        /// is always emitted.
+        #[arg(long = "region-mask")]
+        region_masks: Vec<String>,
+        /// Totals below this level are excluded from the pointwise
+        /// max-ratio report (ratios of near-zero doses are noise).
+        #[arg(long, default_value = "0.0")]
+        significant_floor: f64,
+        /// New output path for the comparison JSON.
         #[arg(long)]
         output: PathBuf,
     },
@@ -3131,6 +3235,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 beam,
                 report_id,
                 dose,
+                flux,
+                thermal_edge_ev,
+                transverse_depth_cm,
                 tumor_weights,
                 normal_weights,
                 reference,
@@ -3174,7 +3281,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         Ok::<_, io::Error>(reference)
                     })
                     .transpose()?;
-                let report = openbnct_transport::evaluate_beam_quality(
+                let mut report = openbnct_transport::evaluate_beam_quality(
                     &report_id,
                     &beam,
                     beam_reference,
@@ -3186,6 +3293,62 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     reference.as_ref(),
                 )
                 .map_err(|error| io::Error::other(format!("beam qa: {error}")))?;
+                if let Some(flux_path) = &flux {
+                    let bundle = &dose_inputs.as_ref().expect("--flux requires --dose").0;
+                    let flux_model: openbnct_transport::MultigroupFlux =
+                        serde_json::from_slice(&fs::read(flux_path)?)?;
+                    // Declared absolute scale: port fluence rate × the
+                    // beam's forward current/fluence ratio × port area
+                    // → source neutrons per second.
+                    let jphi = report.in_air.current_to_fluence_ratio;
+                    let area = report.in_air.port_area_cm2;
+                    let rate = match &beam.normalization {
+                        openbnct_transport::NormalizationBasis::FluenceRateAtPort {
+                            fluence_rate_cm2_s,
+                        } => fluence_rate_cm2_s * jphi * area,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "--flux requires a declared fluence-rate normalization, found {other:?}"
+                            ))
+                            .into());
+                        }
+                    };
+                    let note = format!(
+                        "absolute scale: declared port fluence rate {:.4e} cm^-2 s^-1 × \
+                         current-to-fluence {:.4} × port area {:.2} cm^2 → {:.4e} source \
+                         n/s; thermal groups below {thermal_edge_ev} eV; footprint-averaged",
+                        rate / (jphi * area),
+                        jphi,
+                        area,
+                        rate
+                    );
+                    openbnct_transport::attach_absolute_fluence_profile(
+                        &mut report,
+                        &beam,
+                        &bundle.geometry,
+                        &flux_model,
+                        thermal_edge_ev,
+                        rate,
+                        &note,
+                    )
+                    .map_err(|error| {
+                        io::Error::other(format!("beam qa absolute fluence: {error}"))
+                    })?;
+                    if !transverse_depth_cm.is_empty() {
+                        openbnct_transport::attach_transverse_fluence_profiles(
+                            &mut report,
+                            &beam,
+                            &bundle.geometry,
+                            &flux_model,
+                            thermal_edge_ev,
+                            rate,
+                            &transverse_depth_cm,
+                        )
+                        .map_err(|error| {
+                            io::Error::other(format!("beam qa transverse fluence: {error}"))
+                        })?;
+                    }
+                }
                 report
                     .validate()
                     .map_err(|error| io::Error::other(format!("beam qa report: {error}")))?;
@@ -6138,6 +6301,47 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 println!("assumption: {}", combined.additivity_assumption);
                 println!("qualification: {}", combined.qualification);
             }
+            BioCommand::Compare {
+                a,
+                b,
+                region_masks,
+                significant_floor,
+                output,
+            } => {
+                let a_bundle: openbnct_bio::BiologicalDoseBundle =
+                    serde_json::from_slice(&fs::read(&a)?)?;
+                let b_bundle: openbnct_bio::BiologicalDoseBundle =
+                    serde_json::from_slice(&fs::read(&b)?)?;
+                let masks = load_named_masks(&region_masks)?;
+                let comparison = openbnct_bio::compare_biological_models(
+                    &a_bundle,
+                    &b_bundle,
+                    &masks,
+                    format!("openbnct.bio-model-comparison.{}.v1", a_bundle.case_id),
+                    significant_floor,
+                )?;
+                write_new_json(&output, &comparison)?;
+                println!("bio-model comparison at {}", output.display());
+                println!(
+                    "models: {} ({}) vs {} ({})",
+                    comparison.models[0].id,
+                    comparison.weight_semantics[0],
+                    comparison.models[1].id,
+                    comparison.weight_semantics[1]
+                );
+                for row in &comparison.regions {
+                    println!(
+                        "  region {}: mean {:.4e} vs {:.4e} (ratio {})",
+                        row.region,
+                        row.mean,
+                        row.other_mean,
+                        row.mean_ratio
+                            .map(|r| format!("{r:.4}"))
+                            .unwrap_or_else(|| "n/a".into())
+                    );
+                }
+                println!("qualification: {}", comparison.qualification);
+            }
             BioCommand::Sweep {
                 model,
                 physical_bundle,
@@ -6828,6 +7032,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 max_outer,
                 periodic,
                 no_uncollided_split,
+                no_transport_correction,
                 dose,
                 output,
             } => {
@@ -6865,6 +7070,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     assignment: assignment_model.clone(),
                     periodic: periodic_axes,
                     beam_uncollided_split: !no_uncollided_split,
+                    transport_correction: !no_transport_correction,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: mg_data.id.clone(),
@@ -6919,6 +7125,117 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     .map_err(|error| io::Error::other(format!("dose fold: {error}")))?;
                     write_new_json(&dose_path, &bundle)?;
                     println!("folded dose bundle at {}", dose_path.display());
+                }
+            }
+            SnCommand::Fold {
+                case,
+                data,
+                flux,
+                assignment,
+                output,
+            } => {
+                let case_bytes = fs::read(&case)?;
+                let transport_case: TransportCase = serde_json::from_slice(&case_bytes)?;
+                let data_bytes = fs::read(&data)?;
+                let mg_data: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&data_bytes)?;
+                let flux_model: openbnct_transport::MultigroupFlux =
+                    serde_json::from_slice(&fs::read(&flux)?)?;
+                let assignment_model = match &assignment {
+                    Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
+                        path,
+                    )?)?),
+                    None => None,
+                };
+                let profile = mg_data.component_profile.clone().ok_or_else(|| {
+                    io::Error::other(
+                        "fold requires the multigroup data to declare component_profile",
+                    )
+                })?;
+                let response_ref = openbnct_core::ContentReference {
+                    id: mg_data.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                };
+                let bundle = openbnct_transport::fold_multigroup_dose(
+                    &transport_case,
+                    &mg_data,
+                    &flux_model,
+                    assignment_model.as_ref(),
+                    profile,
+                    response_ref,
+                )
+                .map_err(|error| io::Error::other(format!("dose fold: {error}")))?;
+                write_new_json(&output, &bundle)?;
+                println!("folded dose bundle at {}", output.display());
+            }
+            SnCommand::Collapse {
+                library,
+                endf,
+                material,
+                boundaries,
+                id,
+                component_profile,
+                note,
+                output,
+            } => {
+                let mut endf_paths = std::collections::BTreeMap::new();
+                for spec in &endf {
+                    let (name, path) = spec.split_once('=').ok_or_else(|| {
+                        io::Error::other(format!("--endf expects NUCLIDE=PATH, got {spec:?}"))
+                    })?;
+                    endf_paths.insert(name.to_string(), PathBuf::from(path));
+                }
+                let mut material_models = Vec::with_capacity(material.len());
+                for path in &material {
+                    material_models.push(serde_json::from_slice::<
+                        openbnct_transport::MaterialDefinition,
+                    >(&fs::read(path)?)?);
+                }
+                let profile_ref = match &component_profile {
+                    Some(path) => {
+                        let bytes = fs::read(path)?;
+                        let profile: serde_json::Value = serde_json::from_slice(&bytes)?;
+                        let profile_id = profile
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| {
+                                io::Error::other("component profile JSON has no string `id` field")
+                            })?
+                            .to_string();
+                        Some(openbnct_core::ContentReference {
+                            id: profile_id,
+                            sha256: openbnct_evidence::sha256_hex(&bytes),
+                        })
+                    }
+                    None => None,
+                };
+                let options = openbnct_openmc::CollapseOptions {
+                    library_dir: library.clone(),
+                    endf_paths,
+                    materials: material_models,
+                    energy_boundaries_ev: boundaries,
+                    weighting:
+                        openbnct_openmc::WeightingSpectrum::ThermalMaxwellianEpithermalFlat {
+                            cut_ev: 0.5,
+                        },
+                    id: id.clone(),
+                    component_profile: profile_ref,
+                    note: note.unwrap_or_default(),
+                };
+                let data = openbnct_openmc::collapse_multigroup(&options)
+                    .map_err(|error| io::Error::other(format!("collapse: {error}")))?;
+                let json = serde_json::to_string_pretty(&data)?;
+                match &output {
+                    Some(path) => {
+                        write_new_json(path, &data)?;
+                        println!(
+                            "multigroup data at {} ({} groups, {} materials)",
+                            path.display(),
+                            data.energy_boundaries_ev.len() - 1,
+                            data.materials.len()
+                        );
+                    }
+                    None => println!("{json}"),
                 }
             }
         },
@@ -7734,6 +8051,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     assignment: assignment_model,
                     periodic: periodic_axes,
                     beam_uncollided_split: !no_uncollided_split,
+                    transport_correction: true,
                 };
                 let nominal_flux =
                     match &forward_flux {
@@ -7870,6 +8188,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     assignment: assignment_model,
                     periodic: periodic_axes,
                     beam_uncollided_split: !no_uncollided_split,
+                    transport_correction: true,
                 };
                 let report = openbnct_transport::run_screening(
                     &transport_case,
@@ -8314,6 +8633,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     assignment: assignment_model,
                     periodic: periodic_axes,
                     beam_uncollided_split: true,
+                    transport_correction: true,
                 };
                 let forward = forward_flux
                     .as_ref()

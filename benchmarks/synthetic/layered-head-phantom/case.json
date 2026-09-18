@@ -1,0 +1,90 @@
+{
+ "schema_version": "openbnct.transport-case/0.1.0",
+ "case_id": "openbnct.layered-head-phantom.v1",
+ "geometry": {
+  "shape": [
+   25,
+   25,
+   25
+  ],
+  "spacing_mm": [
+   8.0,
+   8.0,
+   8.0
+  ],
+  "origin_mm": [
+   -96.0,
+   -96.0,
+   4.0
+  ],
+  "direction": [
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0,
+   0.0,
+   0.0,
+   0.0,
+   1.0
+  ]
+ },
+ "material": {
+  "schema_version": "openbnct.material-definition/0.1.0",
+  "id": "openbnct.layered-head.void.v1",
+  "density_g_cm3": 1e-09,
+  "temperature_k": 293.6,
+  "nuclides": [
+   {
+    "name": "H1",
+    "mass_fraction": 0.999885
+   },
+   {
+    "name": "H2",
+    "mass_fraction": 0.000115
+   }
+  ],
+  "neutron_thermal_treatment": "free_gas"
+ },
+ "source": {
+  "schema_version": "openbnct.fixed-source-definition/0.1.0",
+  "id": "nctforge.beam.fir1-k63.v1",
+  "particle": "neutron",
+  "source_sites_per_history": 1,
+  "statistical_weight_per_site": 1.0,
+  "space": {
+   "kind": "uniform_disk",
+   "axis": "z",
+   "offset_cm": 0.0,
+   "center_uv_cm": [
+    0.0,
+    0.0
+   ],
+   "radius_cm": 7.0
+  },
+  "angle": {
+   "kind": "isotropic_cone",
+   "axis_unit_vector": [
+    0.0,
+    0.0,
+    1.0
+   ],
+   "half_angle_rad": 0.1491
+  },
+  "energy": {
+   "kind": "tabulated_histogram",
+   "energy_boundaries_ev": [
+    1e-05,
+    0.5,
+    10000.0,
+    16900000.0
+   ],
+   "bin_weights": [
+    0.0611,
+    0.9093,
+    0.0296
+   ]
+  }
+ },
+ "requested_histories": 1
+}

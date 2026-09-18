@@ -14,8 +14,10 @@ mod acceptance;
 mod acquisition;
 mod data;
 mod domain;
+mod endf_mf3;
 mod evaluated;
 mod input;
+mod mgcollapse;
 mod statepoint;
 mod variance_reduction;
 
@@ -62,6 +64,7 @@ pub use input::{
     OpenMcRegionBounds, OpenMcRoiMesh, OpenMcRunControls, OpenMcRunMode, OpenMcScoringMesh,
     OpenMcTallyContract, OpenMcTallyQuantity, OpenMcTallyScope, OpenMcTemperatureMethod,
 };
+pub use mgcollapse::{CollapseError, CollapseOptions, WeightingSpectrum, collapse_multigroup};
 pub use statepoint::{
     CollectedDose, OPENMC_INPUT_MANIFEST_FILE, OpenMcCollectError, OpenMcEnergyFunction,
     OpenMcStatepoint, OpenMcStatepointTally, collect_completed, collect_statepoint,

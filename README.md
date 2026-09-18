@@ -52,7 +52,10 @@ bundling those systems.
 - **Biological interpretation** — versioned model families (weighted,
   photon-isoeffective, fractionation), sensitivity sweeps, endpoint models
   (logistic/probit TCP/NTCP, voxel-Poisson, UTCP), BED/EQD2 conversion —
-  always a distinct layer from physical dose.
+  always a distinct layer from physical dose. `openbnct bio compare`
+  records two model families' disagreement on one physical bundle as a
+  checkable `openbnct.bio-model-comparison/0.1.0` artifact (region-resolved
+  means plus the worst voxelwise ratio above a significance floor).
 - **Transport neutrality** — `openbnct.component-dose-interchange/0.1.0`
   import contract; MCNP meshtal and PHITS output adapters; MCNP input-deck
   export; external-dose import and combined-treatment evaluation; a
@@ -100,9 +103,15 @@ bundling those systems.
 - **Deterministic transport path** — an in-house 3-D Cartesian
   diamond-difference S_N solver behind `openbnct.multigroup-data/0.1.0`
   declared data (level-symmetric quadrature, vacuum/incident/reflective/
-  periodic boundaries, analytic uncollided-flux beam split, material
-  assignment overrides); `openbnct sn solve` emits a versioned flux
-  artifact foldable to a physical-dose bundle. On NF-BNCT-003 it
+  periodic boundaries, analytic uncollided-flux beam split including
+  narrow cones, optional extended transport correction σ_t,tr =
+  σ_t − μ̄·Σ_s, material assignment overrides); `openbnct sn solve`
+  emits a versioned flux artifact foldable to a physical-dose bundle
+  (`sn fold` folds an existing flux without re-solving). `sn collapse`
+  produces declared multigroup data from pointwise ENDF/B evaluations —
+  processed OpenMC-HDF5 nuclides or NJOY-broadened PENDF tapes via a
+  built-in ENDF-6 MF3 reader — with P0 isotropic-in-CM elastic transfer
+  kernels and per-component mass-kerma dose responses. On NF-BNCT-003 it
   reproduces the analytic attenuation oracle exactly (fitted slope
   −0.23080 cm⁻¹, 0.000% deviation over 32 bins).
 - **Adjoint-driven weight windows** — `openbnct vr cadis` runs the

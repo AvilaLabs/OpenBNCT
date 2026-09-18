@@ -120,10 +120,42 @@ pub struct InPhantomMetrics {
     /// Empty for reports produced before this field existed.
     #[serde(default)]
     pub boron_dose_profile: Vec<f64>,
+    /// Absolute thermal fluence rate (n cm⁻² s⁻¹) per depth layer on the
+    /// same footprint average — present only when the report was
+    /// produced with `--flux` and a declared source rate. Unlike the
+    /// dose profiles this is an absolute-scale quantity.
+    #[serde(default)]
+    pub thermal_fluence_depth_profile_absolute_cm2_s: Option<Vec<f64>>,
+    /// Absolute thermal fluence transverse profiles through the port
+    /// axis at declared depths — the lateral scan a foil string
+    /// measurement resolves (e.g. TECDOC-1223 FIG. 4).
+    #[serde(default)]
+    pub thermal_fluence_transverse_profiles_cm2_s: Vec<TransverseFluenceProfile>,
+    /// How the absolute scale was derived (declared port fluence ×
+    /// current-to-fluence × port area → source rate).
+    #[serde(default)]
+    pub absolute_fluence_note: Option<String>,
     pub tumor_weights: ComponentWeights,
     pub normal_weights: ComponentWeights,
     /// Content binding of the dose bundle the profile was computed from.
     pub dose: ContentReference,
+}
+
+/// One transverse fluence profile: the absolute thermal fluence along
+/// the port's first in-plane axis through the beam axis, at a declared
+/// depth layer.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TransverseFluenceProfile {
+    /// Depth-layer center of the scanned layer, cm from the bounding-box
+    /// minimum along the port axis.
+    pub depth_cm: f64,
+    /// Signed lateral offsets from the port axis along the first
+    /// in-plane axis, cm (bin centers).
+    pub lateral_cm: Vec<f64>,
+    /// Absolute thermal fluence rate at each lateral offset,
+    /// n cm⁻² s⁻¹.
+    pub values_cm2_s: Vec<f64>,
 }
 
 /// One metric compared against a declared reference value.
@@ -269,15 +301,13 @@ pub fn in_air_metrics(beam: &BeamDescription) -> Result<InAirMetrics, BeamQualit
 /// layer along the port axis.
 type DepthProfiles = (Vec<f64>, Vec<f64>, Vec<f64>, Vec<f64>);
 
-/// Depth profile of a dose bundle along the port axis, averaged over the
-/// aperture footprint.
-fn depth_profiles(
+/// Voxel columns inside the port aperture footprint, in the bundle's
+/// voxel-index space.
+fn footprint_voxels(
+    geometry: &openbnct_core::GridGeometry,
     beam: &BeamDescription,
-    dose: &PhysicalDoseBundle,
-    tumor_weights: &ComponentWeights,
-    normal_weights: &ComponentWeights,
-) -> Result<DepthProfiles, BeamQualityError> {
-    if dose.geometry.direction
+) -> Result<Vec<[usize; 3]>, BeamQualityError> {
+    if geometry.direction
         != [
             1.0, 0.0, 0.0, //
             0.0, 1.0, 0.0, //
@@ -286,16 +316,12 @@ fn depth_profiles(
     {
         return Err(BeamQualityError::RotatedGeometryUnsupported);
     }
-    let shape = dose.geometry.shape.map(|v| v as usize);
-    let axis = beam.port.axis.index();
+    let shape = geometry.shape.map(|v| v as usize);
     let (u_axis, v_axis) = beam.port.axis.in_plane_axes();
-    let (minimum, _) = dose.geometry.bounding_box_lps_mm()?;
     // Aperture footprint in voxel-index space (mm → index).
     let in_footprint = |voxel: [usize; 3]| -> bool {
-        let u_mm = dose.geometry.origin_mm[u_axis]
-            + voxel[u_axis] as f64 * dose.geometry.spacing_mm[u_axis];
-        let v_mm = dose.geometry.origin_mm[v_axis]
-            + voxel[v_axis] as f64 * dose.geometry.spacing_mm[v_axis];
+        let u_mm = geometry.origin_mm[u_axis] + voxel[u_axis] as f64 * geometry.spacing_mm[u_axis];
+        let v_mm = geometry.origin_mm[v_axis] + voxel[v_axis] as f64 * geometry.spacing_mm[v_axis];
         match &beam.port.shape {
             crate::beam::PortShape::Circle {
                 center_uv_cm,
@@ -332,6 +358,21 @@ fn depth_profiles(
     if footprint.is_empty() {
         return Err(BeamQualityError::NoFootprintVoxels);
     }
+    Ok(footprint)
+}
+
+/// Depth profile of a dose bundle along the port axis, averaged over the
+/// aperture footprint.
+fn depth_profiles(
+    beam: &BeamDescription,
+    dose: &PhysicalDoseBundle,
+    tumor_weights: &ComponentWeights,
+    normal_weights: &ComponentWeights,
+) -> Result<DepthProfiles, BeamQualityError> {
+    let shape = dose.geometry.shape.map(|v| v as usize);
+    let axis = beam.port.axis.index();
+    let (minimum, _) = dose.geometry.bounding_box_lps_mm()?;
+    let footprint = footprint_voxels(&dose.geometry, beam)?;
     let component = |kind: DoseComponent| -> Result<&[f64], BeamQualityError> {
         dose.components
             .iter()
@@ -373,6 +414,177 @@ fn depth_profiles(
         normal.push(normal_sum / n);
     }
     Ok((depth_cm, tumor, normal, boron_profile))
+}
+
+/// Attach an absolute-scale thermal fluence depth profile to a report
+/// that already carries in-phantom metrics: the footprint-averaged sum
+/// of group fluxes below `thermal_edge_ev`, scaled by the declared
+/// source rate (source neutrons per second).
+///
+/// The scale derivation belongs in `scale_note` — e.g. `fluence rate
+/// 1.1769e9 cm⁻² s⁻¹ × current-to-fluence 0.9945 × port area
+/// 153.94 cm² → 1.80e11 source n/s`.
+pub fn attach_absolute_fluence_profile(
+    report: &mut BeamQualityReport,
+    beam: &BeamDescription,
+    geometry: &openbnct_core::GridGeometry,
+    flux: &crate::multigroup::MultigroupFlux,
+    thermal_edge_ev: f64,
+    source_rate_per_s: f64,
+    scale_note: &str,
+) -> Result<(), BeamQualityError> {
+    let Some(in_phantom) = report.in_phantom.as_mut() else {
+        return Err(BeamQualityError::DegenerateProfile(
+            "absolute fluence attach requires in-phantom metrics",
+        ));
+    };
+    let shape = geometry.shape.map(|v| v as usize);
+    let n_cells: usize = shape.iter().product();
+    if flux.flux.len() != n_cells {
+        return Err(BeamQualityError::DegenerateProfile(
+            "flux artifact cell count does not match the dose geometry",
+        ));
+    }
+    let axis = beam.port.axis.index();
+    let footprint = footprint_voxels(geometry, beam)?;
+    // Thermal groups: those whose upper edge sits at or below the
+    // declared thermal/epithermal boundary.
+    let b = &flux.energy_boundaries_ev;
+    let thermal_groups: Vec<usize> = (0..b.len().saturating_sub(1))
+        .filter(|&g| b[g] <= thermal_edge_ev)
+        .collect();
+    if thermal_groups.is_empty() {
+        return Err(BeamQualityError::DegenerateProfile(
+            "no group lies entirely below the thermal edge",
+        ));
+    }
+    let layers = shape[axis];
+    let mut profile = Vec::with_capacity(layers);
+    for layer in 0..layers {
+        let mut sum = 0.0;
+        for voxel in &footprint {
+            let mut index_voxel = *voxel;
+            index_voxel[axis] = layer;
+            let index = index_voxel[0] + shape[0] * (index_voxel[1] + shape[1] * index_voxel[2]);
+            for &g in &thermal_groups {
+                sum += flux.flux[index][g];
+            }
+        }
+        profile.push(sum / footprint.len() as f64 * source_rate_per_s);
+    }
+    in_phantom.thermal_fluence_depth_profile_absolute_cm2_s = Some(profile);
+    in_phantom.absolute_fluence_note = Some(scale_note.into());
+    Ok(())
+}
+
+/// Attach absolute thermal-fluence transverse profiles at the declared
+/// depths: the lateral scan through the port axis along the port's
+/// first in-plane axis, at the nearest depth layer to each requested
+/// depth. The detector-string geometry a transverse foil measurement
+/// resolves (lateral offset vs fluence at fixed depth).
+///
+/// `depths_cm` are measured from the bounding-box minimum along the
+/// port axis — the same coordinate convention as `depth_cm` on the
+/// depth profiles.
+pub fn attach_transverse_fluence_profiles(
+    report: &mut BeamQualityReport,
+    beam: &BeamDescription,
+    geometry: &openbnct_core::GridGeometry,
+    flux: &crate::multigroup::MultigroupFlux,
+    thermal_edge_ev: f64,
+    source_rate_per_s: f64,
+    depths_cm: &[f64],
+) -> Result<(), BeamQualityError> {
+    let Some(in_phantom) = report.in_phantom.as_mut() else {
+        return Err(BeamQualityError::DegenerateProfile(
+            "transverse fluence attach requires in-phantom metrics",
+        ));
+    };
+    let shape = geometry.shape.map(|v| v as usize);
+    let n_cells: usize = shape.iter().product();
+    if flux.flux.len() != n_cells {
+        return Err(BeamQualityError::DegenerateProfile(
+            "flux artifact cell count does not match the dose geometry",
+        ));
+    }
+    let axis = beam.port.axis.index();
+    let (u_axis, v_axis) = beam.port.axis.in_plane_axes();
+    let (minimum, _) = geometry.bounding_box_lps_mm()?;
+    // Thermal groups: those whose upper edge sits at or below the
+    // declared thermal/epithermal boundary.
+    let b = &flux.energy_boundaries_ev;
+    let thermal_groups: Vec<usize> = (0..b.len().saturating_sub(1))
+        .filter(|&g| b[g] <= thermal_edge_ev)
+        .collect();
+    if thermal_groups.is_empty() {
+        return Err(BeamQualityError::DegenerateProfile(
+            "no group lies entirely below the thermal edge",
+        ));
+    }
+    // The scanned row: v-index nearest the port center along v.
+    let v_center_cm = match &beam.port.shape {
+        crate::beam::PortShape::Circle { center_uv_cm, .. } => center_uv_cm[1],
+        crate::beam::PortShape::Rectangle { v_range_cm, .. } => {
+            (v_range_cm[0] + v_range_cm[1]) / 2.0
+        }
+    };
+    let v_index = (0..shape[v_axis])
+        .min_by(|&i, &j| {
+            let ci = geometry.origin_mm[v_axis] + i as f64 * geometry.spacing_mm[v_axis];
+            let cj = geometry.origin_mm[v_axis] + j as f64 * geometry.spacing_mm[v_axis];
+            (ci / 10.0 - v_center_cm)
+                .abs()
+                .partial_cmp(&(cj / 10.0 - v_center_cm).abs())
+                .unwrap_or(std::cmp::Ordering::Equal)
+        })
+        .ok_or(BeamQualityError::NoFootprintVoxels)?;
+    let u_center_cm = match &beam.port.shape {
+        crate::beam::PortShape::Circle { center_uv_cm, .. } => center_uv_cm[0],
+        crate::beam::PortShape::Rectangle { u_range_cm, .. } => {
+            (u_range_cm[0] + u_range_cm[1]) / 2.0
+        }
+    };
+
+    let mut profiles = Vec::with_capacity(depths_cm.len());
+    for &depth_cm in depths_cm {
+        // Nearest depth layer to the requested depth.
+        let layer = (0..shape[axis])
+            .min_by(|&i, &j| {
+                let di = geometry.origin_mm[axis] + i as f64 * geometry.spacing_mm[axis];
+                let dj = geometry.origin_mm[axis] + j as f64 * geometry.spacing_mm[axis];
+                let target = minimum[axis] + depth_cm * 10.0;
+                (di - target)
+                    .abs()
+                    .partial_cmp(&(dj - target).abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .ok_or(BeamQualityError::DegenerateProfile("empty depth axis"))?;
+        let depth_actual_cm = (geometry.origin_mm[axis] + layer as f64 * geometry.spacing_mm[axis]
+            - minimum[axis])
+            / 10.0;
+        let mut lateral_cm = Vec::with_capacity(shape[u_axis]);
+        let mut values = Vec::with_capacity(shape[u_axis]);
+        for i in 0..shape[u_axis] {
+            let mut voxel = [0_usize; 3];
+            voxel[u_axis] = i;
+            voxel[v_axis] = v_index;
+            voxel[axis] = layer;
+            let index = voxel[0] + shape[0] * (voxel[1] + shape[1] * voxel[2]);
+            let u_cm = (geometry.origin_mm[u_axis] + i as f64 * geometry.spacing_mm[u_axis]) / 10.0;
+            lateral_cm.push(u_cm - u_center_cm);
+            let fluence: f64 = thermal_groups.iter().map(|&g| flux.flux[index][g]).sum();
+            values.push(fluence * source_rate_per_s);
+        }
+        profiles.push(TransverseFluenceProfile {
+            depth_cm: depth_actual_cm,
+            lateral_cm,
+            values_cm2_s: values,
+        });
+    }
+    in_phantom
+        .thermal_fluence_transverse_profiles_cm2_s
+        .extend(profiles);
+    Ok(())
 }
 
 /// In-phantom metrics from a transported dose bundle and declared
@@ -431,6 +643,9 @@ pub fn in_phantom_metrics(
         advantage_ratio,
         peak_therapeutic_ratio,
         boron_dose_profile: boron_profile,
+        thermal_fluence_depth_profile_absolute_cm2_s: None,
+        thermal_fluence_transverse_profiles_cm2_s: Vec::new(),
+        absolute_fluence_note: None,
         tumor_weights: tumor_weights.clone(),
         normal_weights: normal_weights.clone(),
         dose: dose_reference,

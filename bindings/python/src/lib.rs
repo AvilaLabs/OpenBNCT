@@ -1064,6 +1064,11 @@ fn load_response_set(path: PathBuf) -> PyResult<PyResponseSet> {
 contract_check!(PhysicalDoseBundle, validate, openbnct_core::ValidationError);
 contract_check!(BiologicalModel, validate, openbnct_bio::BioError);
 contract_check!(BiologicalDoseBundle, validate, openbnct_bio::BioError);
+contract_check!(
+    openbnct_bio::BioModelComparison,
+    validate,
+    openbnct_bio::BioError
+);
 
 /// One component's dose values over the case grid.
 #[pyclass(frozen, name = "DoseVolume")]
@@ -2268,6 +2273,42 @@ fn make_biological_model(document: Bound<'_, PyAny>) -> PyResult<PyBiologicalMod
     Ok(PyBiologicalModel {
         inner: model,
         bytes,
+    })
+}
+
+/// A validated cross-model biological comparison artifact.
+#[pyclass(frozen, name = "BioModelComparison")]
+struct PyBioModelComparison {
+    inner: openbnct_bio::BioModelComparison,
+}
+
+#[pymethods]
+impl PyBioModelComparison {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    #[getter]
+    fn max_voxelwise_ratio(&self) -> Option<f64> {
+        self.inner.max_voxelwise_ratio
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+}
+
+/// Read and validate a `openbnct.bio-model-comparison/0.1.0` artifact.
+#[pyfunction]
+fn load_bio_model_comparison(path: PathBuf) -> PyResult<PyBioModelComparison> {
+    Ok(PyBioModelComparison {
+        inner: load_contract(path)?,
     })
 }
 
@@ -3749,6 +3790,7 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPhysicalDoseBundle>()?;
     m.add_class::<PyBiologicalModel>()?;
     m.add_class::<PyBiologicalDoseBundle>()?;
+    m.add_class::<PyBioModelComparison>()?;
     m.add_class::<PyAppliedFractionation>()?;
     m.add_class::<PyDoseVolumeHistogram>()?;
     m.add_class::<PyRegionDoseMetrics>()?;
@@ -3803,6 +3845,7 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load_physical_dose_bundle, m)?)?;
     m.add_function(wrap_pyfunction!(collect_run, m)?)?;
     m.add_function(wrap_pyfunction!(load_biological_model, m)?)?;
+    m.add_function(wrap_pyfunction!(load_bio_model_comparison, m)?)?;
     m.add_function(wrap_pyfunction!(make_biological_model, m)?)?;
     m.add_function(wrap_pyfunction!(apply_model, m)?)?;
     m.add_function(wrap_pyfunction!(compute_dvh, m)?)?;

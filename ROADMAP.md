@@ -722,7 +722,15 @@ prerequisites for starting external review.
   derivation hashes verified by the suite. The family is kept distinct
   from photon-isoeffective weighting: a weight-model declaring
   `microdosimetric_kinetic` semantics is rejected, and MKM outputs assert
-  no clinical RBE/CBE/Gy-Eq claim.
+  no clinical RBE/CBE/Gy-Eq claim. Cross-model comparison landed with
+  `openbnct bio compare`: two biological bundles over the same physical
+  dose are checked for shared provenance and geometry, then summarized
+  per region with a maximum voxelwise ratio above a significance floor —
+  the emitted `openbnct.bio-model-comparison/0.1.0` record keeps the
+  research-only qualification explicit. On the FiR 1 cylindrical-phantom
+  dose the TECDOC-convention CBE weights and the literature-constant MKM
+  differ by a uniform ≈2.5× — a quantified cross-model spread, not a
+  clinical statement.
 - **R6-06 — PET-derived boron.** *(implemented)*
   `openbnct.boron-uptake-model/0.1.0` maps a co-registered SUV volume to a
   per-voxel B-10 concentration field: `suv_ratio` (measured blood-pool
@@ -924,9 +932,33 @@ requires licensed software, external approval, or any clinical claim.
   0.2308 cm⁻¹ slope at 0.000% deviation — an independent transport
   implementation matching a closed-form ground truth. Scope stays
   honest: isotropic scattering, no fission, declared multigroup data —
-  a verification solver, not a production engine. NJOY-driven group
-  collapse (producing `multigroup-data` from evaluated libraries)
-  remains the open piece feeding R8-03.
+  a verification solver, not a production engine.
+  
+  The data pipeline landed with the FiR 1 28-group work:
+  `openbnct sn collapse` produces `multigroup-data` from pointwise
+  evaluations — processed OpenMC-HDF5 nuclides or NJOY-broadened PENDF
+  tapes through a built-in ENDF-6 MF3 reader — with analytic P0
+  isotropic-in-CM elastic transfer, mass-kerma dose responses
+  (¹⁰B(n,α), ¹⁴N(n,p), recoil, capture-γ local kerma), and the
+  scatter-weighted `transport_mu_bar`. Beam handling grew the cone
+  uncollided split (the analytic ray-trace now integrates narrow
+  isotropic cones over an equal-area direction grid) and the consistent
+  extended transport correction (σ_t,tr = σ_t − μ̄·Σ_s with the same
+  forward fraction removed from the in-group diagonal — required for
+  contractive iteration in near-conservative media). Opt-out flags
+  (`--no-uncollided-split`, `--no-transport-correction`) keep the raw
+  path available for comparison.
+
+  Honest validation status (FiR 1 cylindrical phantom, 28-group
+  ENDF/B-VIII.1 data): the measured TECDOC-1223 water thermal-fluence
+  depth profile is **bracketed**, not reproduced — the raw P0 solve
+  underpredicts the deep tail ~10× while the consistent transport
+  correction overpredicts it ~2.3–9.5×. The absolute normalization is
+  verified independently (solver incident thermal fluence matches the
+  declared port rate within 1%). Remaining declared gaps are P0-only
+  anisotropy beyond the scalar correction, no S(α,β) bound-atom
+  thermal treatment, and histogram source-bin mapping; see the
+  validation README for the full accounting.
 
 - **R8-02 — adjoint-driven variance reduction.** *Landed.* An open
   CADIS/FW-CADIS implementation: `adjoint` bounds in a
@@ -1085,6 +1117,12 @@ other and of R8 ordering unless noted.
   oracle instead; a cross-code OpenPINT-format fixture remains under
   R9-06's export path. Execution of both new cases is pending their
   material-bound response sets, same phased pattern as NF-BNCT-001.
+  Additionally `benchmarks/synthetic/layered-head-phantom` adds a
+  concentric-layer head surrogate (skin/skull/brain over a declared
+  void, ICRU-44-style isotopic compositions with trace ¹⁰B as a
+  dose-activation convention) collapsed to 28 groups through the
+  R8-01 ENDF/PENDF pipeline — explicitly not an anatomical or clinical
+  model.
 
 - **R9-06 — bidirectional interop.** Complete: `openbnct nifti
   export-components` writes all four components as float64 NIfTI volumes

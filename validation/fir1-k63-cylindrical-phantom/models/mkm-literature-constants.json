@@ -1,0 +1,50 @@
+{
+  "schema_version": "openbnct.microdosimetric-model/0.1.0",
+  "id": "openbnct.microdosimetric-model.mkm-hsg-literature.v1",
+  "input_unit": "gray_per_source_particle",
+  "domain_radius_um": 1.0,
+  "domain_density_g_cm3": 1.0,
+  "components": {
+    "boron": {
+      "alpha_0": 0.172,
+      "beta": 0.0615,
+      "lineal_energy": {
+        "kind": "constant",
+        "dose_mean_lineal_energy_kev_um": 180.0,
+        "note": "Composite dose-mean lineal energy for 10B(n,alpha)7Li capture products; literature-convention value used in MKM cross-checks, order 150-250 keV/um depending on cell geometry."
+      }
+    },
+    "nitrogen": {
+      "alpha_0": 0.172,
+      "beta": 0.0615,
+      "lineal_energy": {
+        "kind": "constant",
+        "dose_mean_lineal_energy_kev_um": 30.0,
+        "note": "Composite dose-mean lineal energy for 14N(n,p)14C capture protons (~580 keV); representative literature-convention value."
+      }
+    },
+    "hydrogen": {
+      "alpha_0": 0.172,
+      "beta": 0.0615,
+      "lineal_energy": {
+        "kind": "constant",
+        "dose_mean_lineal_energy_kev_um": 15.0,
+        "note": "Composite dose-mean lineal energy for fast-neutron recoil protons; representative literature-convention value."
+      }
+    },
+    "photon": {
+      "alpha_0": 0.172,
+      "beta": 0.0615,
+      "lineal_energy": {
+        "kind": "constant",
+        "dose_mean_lineal_energy_kev_um": 1.5,
+        "note": "Composite dose-mean lineal energy for photon secondaries; representative low-LET value."
+      }
+    }
+  },
+  "derivation": {
+    "id": "beams/references/fir1-k63-phantom.json",
+    "sha256": "0ce52c5d4c6a90be4301bf019a3f8ea4364eaa86114f0af19c260b2ad23a8b4f"
+  },
+  "validity_domain": "HSG-like cell linear-quadratic parameters (alpha0 0.172 Gy^-1, beta 0.0615 Gy^-2) in a 1 um tissue-equivalent MKM domain; component lineal energies are literature-convention constants, not fitted spectra. Research cross-model reference \u2014 not a clinical model and not a fitted TEPC-based model."
+}
