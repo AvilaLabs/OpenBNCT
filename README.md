@@ -131,7 +131,8 @@ bundling those systems.
   the solver reproduces the analytic attenuation oracle exactly (fitted
   slope −0.23080 cm⁻¹, 0.000% deviation over 32 bins); the water-phantom
   TSL+P1 solve lands within ~±20% of the FiR1 measured profile through
-  9 cm (normalized χ² 18.8 — the best deterministic result).
+  9 cm and the PMMA TSL+P1 solve within ~±5% through 5 cm (normalized
+  χ² 18.8 on both compositions — the best deterministic results).
 - **Adjoint-driven weight windows** — `openbnct vr cadis` runs the
   transposed adjoint solve for a declared response volume and derives
   CADIS bounds; a forward-flux-derived adjoint source gives the

@@ -1,9 +1,97 @@
 {
   "schema_version": "openbnct.material-assignment/0.2.0",
-  "id": "openbnct.fir1-k63-water-phantom.assignment.v1",
   "case_id": "fir1-k63-water-phantom",
   "base_material": {
-    "id": "openbnct.fir1-k63-water-phantom.material.v1"
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "openbnct.fir1-k63-water-phantom.material.v1",
+    "density_g_cm3": 1.0,
+    "temperature_k": 293.6,
+    "nuclides": [
+      {
+        "name": "H1",
+        "mass_fraction": 0.1117591740049086
+      },
+      {
+        "name": "H2",
+        "mass_fraction": 0.00014070290522680425
+      },
+      {
+        "name": "O16",
+        "mass_fraction": 0.8859389886471125
+      },
+      {
+        "name": "O17",
+        "mass_fraction": 0.00033872096740693585
+      },
+      {
+        "name": "O18",
+        "mass_fraction": 0.0018213134765551761
+      },
+      {
+        "name": "B10",
+        "mass_fraction": 9.9999890000121e-08
+      },
+      {
+        "name": "N14",
+        "mass_fraction": 9.9999890000121e-07
+      }
+    ],
+    "neutron_thermal_treatment": "free_gas"
   },
-  "regions": []
+  "regions": [
+    {
+      "name": "water-box",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "openbnct.fir1-k63-water-phantom.material.v1",
+        "density_g_cm3": 1.0,
+        "temperature_k": 293.6,
+        "nuclides": [
+          {
+            "name": "H1",
+            "mass_fraction": 0.1117591740049086
+          },
+          {
+            "name": "H2",
+            "mass_fraction": 0.00014070290522680425
+          },
+          {
+            "name": "O16",
+            "mass_fraction": 0.8859389886471125
+          },
+          {
+            "name": "O17",
+            "mass_fraction": 0.00033872096740693585
+          },
+          {
+            "name": "O18",
+            "mass_fraction": 0.0018213134765551761
+          },
+          {
+            "name": "B10",
+            "mass_fraction": 9.9999890000121e-08
+          },
+          {
+            "name": "N14",
+            "mass_fraction": 9.9999890000121e-07
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          0,
+          0,
+          0
+        ],
+        "upper": [
+          25,
+          25,
+          93
+        ]
+      }
+    }
+  ],
+  "provenance_id": "openbnct.fir1-k63-water-phantom.assignment.v1"
 }
