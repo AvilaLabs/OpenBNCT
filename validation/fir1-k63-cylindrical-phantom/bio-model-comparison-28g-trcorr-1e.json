@@ -1,0 +1,45 @@
+{
+  "schema_version": "openbnct.bio-model-comparison/0.1.0",
+  "id": "openbnct.bio-model-comparison.fir1-k63-cylindrical-phantom.v1",
+  "physical_bundle_provenance": "sn-s8-fir1-k63-cylindrical-phantom",
+  "case_id": "fir1-k63-cylindrical-phantom",
+  "models": [
+    {
+      "id": "openbnct.biological-model.cbe-protocol-fir1.v1",
+      "sha256": "b8ac19fd37fe2a5f7866b2e24882726e017ba0036c87498771ee35bda406115d"
+    },
+    {
+      "id": "openbnct.microdosimetric-model.mkm-hsg-literature.v1",
+      "sha256": "d84d5834be8cc16c4a05d5a24c9cac69910606c9eb37c58e2488fdfb00fe0855"
+    }
+  ],
+  "weight_semantics": [
+    "photon_isoeffective",
+    "microdosimetric_kinetic"
+  ],
+  "units": [
+    "weighted_gray_per_source_particle",
+    "mkm_weighted_gray_per_source_particle"
+  ],
+  "regions": [
+    {
+      "region": "all",
+      "voxel_count": 14976,
+      "mean": 5.1035937018609455e-9,
+      "maximum": 1.3228859989352574e-7,
+      "other_mean": 2.0311538954255266e-9,
+      "mean_ratio": 2.5126573192484476
+    },
+    {
+      "region": "tumor",
+      "voxel_count": 196,
+      "mean": 1.3258272744516425e-8,
+      "maximum": 1.7359523046278755e-8,
+      "other_mean": 5.276825250796965e-9,
+      "mean_ratio": 2.512547244674061
+    }
+  ],
+  "max_voxelwise_ratio": 2.5127075744972087,
+  "significant_floor": 0.0,
+  "qualification": "research-only: cross-model biological spread, not a clinical dose statement"
+}

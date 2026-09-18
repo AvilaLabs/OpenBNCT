@@ -37,16 +37,21 @@ openbnct sn solve --case case.json --data multigroup-data-28g.json \
 
 ## Landed result
 
-`multigroup-flux-28g.json` / `dose-28g.json`: the S₈ 28-group solve
-with the cone uncollided split and consistent transport correction
-converged in 4 outer iterations (residual 9.1e−7) over the 15625-cell
-heterogeneous assignment (skin 3272 / skull 1250 / brain 3695 voxels,
-remainder void). `beam-quality-28g.json` carries the absolute
-thermal-fluence depth and transverse profiles. The head phantom's QA
-metrics are degenerate by construction (no tumor region is declared —
-the trace-¹⁰B brain convention makes the advantage ratio ≈ 1), so the
-report's value is the resolved absolute profiles through a realistic
-tissue stack rather than the summary indices.
+`multigroup-flux-28g-1e.json` / `dose-28g-1e.json`: the S₈ 28-group
+solve with the cone uncollided split, consistent transport correction,
+and collapse-consistent source-bin weighting converged in 4 outer
+iterations over the 15625-cell heterogeneous assignment (skin 3272 /
+skull 1250 / brain 3695 voxels, remainder void);
+`source_spectrum_weighting: "collapse_consistent"` is recorded on the
+flux artifact. `beam-quality-28g-1e.json` carries the absolute
+thermal-fluence depth profile and in-phantom tumor-dose profile. The
+superseded `multigroup-flux-28g.json` pair predates the
+within-bin-weighting fix (deserialization default `"uniform_in_bin"`).
+The head phantom's QA metrics are degenerate by construction (no tumor
+region is declared — the trace-¹⁰B brain convention makes the
+advantage ratio ≈ 1), so the report's value is the resolved absolute
+profiles through a realistic tissue stack rather than the summary
+indices.
 
 Research scope only — no clinical qualification, commissioning, or
 treatment-use claim.
