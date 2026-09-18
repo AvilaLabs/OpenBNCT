@@ -18,6 +18,9 @@ collapse.
 | `multigroup-flux-28g.json` / `dose-28g.json` | S₈ 28-group solve under the cone uncollided split + consistent transport correction. **Convention note:** this pair predates the collapse-consistent within-bin source weighting; its flux artifact carries the deserialization default `source_spectrum_weighting: "uniform_in_bin"`. |
 | `multigroup-flux-28g-1e.json` / `dose-28g-1e.json` | The current-convention rerun (`collapse_consistent` weighting, cone split + transport correction) — the reference pair for the 28-group result below. |
 | `beam-quality-pmma-28g-1e.json` / `measurement-comparison-pmma-28g-1e.json` | QA report (absolute + transverse profiles) and both comparisons for the `-1e` solve. |
+| `multigroup-data-28g-tsl-v2.json` | 28-group PMMA data with the ENDF/B-VIII.1 `H(Lucite)` TSL bound-atom kernel — upscatter + bound-atom transfer moments. |
+| `multigroup-flux-28g-tsl-p1-1e.json` / `dose-28g-tsl-p1-1e.json` | The TSL+P1 solve pair — S₈, converged at residual 9.9e−5 after 116 outer iterations (TSL upscatter coupling). |
+| `beam-quality-pmma-28g-tsl-p1-1e.json` / `measurement-comparison-pmma-28g-tsl-p1-1e.json` | QA report and peak-normalized + absolute comparisons for the TSL+P1 solve. |
 | `beam-quality-pmma.json` | `openbnct.beam-quality/0.1.0` — folded `beam qa` output. |
 | `measurement-comparison-pmma.json` | `openbnct.measurement-comparison/0.1.0` — against `measurements/fir1-k63-pmma-phantom-depth.json` (the PMMA series of the same TECDOC-1223 FIG. 3 digitization, re-homed under the canonical metric name). |
 
@@ -47,6 +50,16 @@ the 2σ tolerance (max 2.4σ, ratio ≈ 1.32). Normalized χ² = 20.8,
 absolute χ² = 28.3 over 15 bins. This is markedly tighter than the
 water-phantom bracket — consistent with PMMA's smaller hydrogen-driven
 forward-scatter error.
+
+28-group TSL+P1 result (`*-tsl-p1-1e`, `H(Lucite)` bound-atom kernel +
+P1): **best deterministic PMMA profile** — normalized χ² = 18.8, with
+every bin through z ≈ 5 cm within ~±5% of the measured shape (the −1e
+solve peaked at 1.32). Absolute scale sits at a uniform ~0.5–0.65×
+through mid-depth — the same source-normalization deficit seen on the
+water phantom (the 3-bin source histogram stands in for the untabulated
+measured FiR 1 spectrum); the deep tail beyond ~9 cm still falls to
+0.2–0.4× measured. Cross-composition consistency: the TSL+P1 normalized
+χ² is essentially identical on water (18.8) and PMMA (18.8).
 
 ## Scope
 
