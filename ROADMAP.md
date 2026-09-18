@@ -969,19 +969,21 @@ requires licensed software, external approval, or any clinical claim.
 
   Honest validation status (FiR 1 cylindrical phantom, 28-group
   ENDF/B-VIII.1 data): the measured TECDOC-1223 water thermal-fluence
-  depth profile is **bracketed**, not reproduced — under the
+  depth profile is **bracketed**, not reproduced — but the
+  best-physics solve now sits essentially on it. Under the
   collapse-consistent source weighting (`*-1e` artifacts) the raw P0
-  solve underpredicts the deep tail ~23–50× while the consistent
-  transport correction overpredicts it ~1.7–4.8×, and the measured
-  series sits between them closer to the corrected side. The absolute
-  normalization is verified independently (solver incident thermal
-  fluence matches the declared port rate within 1%). The remaining
-  declared gap is the histogram source bins' residual discretization
-  (S(α,β) bound scattering and P1 anisotropy are both landed);
-  histogram source bins spread collapse-consistently (Maxwellian below
-  0.5 eV, 1/E above), recorded per-artifact as
-  `source_spectrum_weighting`. See the validation README for the full
-  accounting.
+  solve underpredicts the deep tail ~23–50×, the consistent transport
+  correction overpredicts it ~1.7–4.8×, and the **TSL+P1 solve**
+  (`multigroup-flux-28g-tsl-p1-1e` — ENDF/B-VIII.1 `lwtr` bound-atom
+  kernel on H1 below 10 eV + P1 anisotropy) lands within ~±20% of
+  measured through 9 cm (normalized χ² = 18.8 vs 31 P1-only / 128 raw
+  / 261 corrected). Residual disagreement: a ~1.6–2.3× uniform
+  absolute-scale offset plus the >9 cm tail (0.46/0.26 at 11.5/14.5
+  cm) — genuine model residual (incident rate verified to 1%), driven
+  by the declared three-bin source histogram (the measured FiR1
+  adjusted spectrum is not publicly tabulated) and the coarse
+  very-low-energy transfer detail. See the validation README for the
+  full accounting.
 
 - **R8-02 — adjoint-driven variance reduction.** *Landed.* An open
   CADIS/FW-CADIS implementation: `adjoint` bounds in a
