@@ -19,6 +19,8 @@ for spec in \
   ENDF_ARGS+=(--endf "$1=$PENDF/$2/tape22")
 done
 
+TSL=/home/connoravila/Documents/Avila-Labs/.nctforge-data/nctforge/endfb81-tsl-v1/evaluations
+
 openbnct sn collapse \
   --library "$LIB" \
   "${ENDF_ARGS[@]}" \
@@ -29,3 +31,16 @@ openbnct sn collapse \
   --component-profile "$PROFILE" \
   --note "Liquid B brain-tissue-substitute surrogate (ICRU brain elemental basis, rho 1.04); H/C/N/O/B10 from 294K HDF5, minors from NJOY 293.6K PENDF (ENDF/B-VIII.1). Free-gas treatment — H(H2O) TSL follow-on." \
   --output "$ROOT/multigroup-data-28g.json"
+
+openbnct sn collapse \
+  --library "$LIB" \
+  "${ENDF_ARGS[@]}" \
+  --material "$ROOT/material-liquid-b.json" \
+  --material "$ROOT/material-void.json" \
+  --tsl "H1=$TSL/tsl_H(H2O)_0001.dat" \
+  --tsl-temperature 293.6 \
+  --boundaries "$BOUNDS" \
+  --id openbnct.fir1-k63-liquid-b-phantom.multigroup-28g-tsl.v2 \
+  --component-profile "$PROFILE" \
+  --note "v2: v1 + lwtr S(a,b) bound-atom kernel on H1 below E_max=10 eV — standard lwtr treatment for tissue hydrogen (Liquid B is a water-rich brain surrogate); sigma_b/natom*((A+1)/A)^2 = 81.81 b, free-gas residual beyond the beta domain." \
+  --output "$ROOT/multigroup-data-28g-tsl-v2.json"
