@@ -1102,6 +1102,36 @@ plus an `exposures` sheet. The same Rust code serves the Python surface
 `plan_table_read`, `plan_table_write`) and the GUI's Plan workspace, which
 displays the exposure table alongside every detected issue.
 
+`plan optimize` closes the loop the exposure plan leaves open: given a
+`openbnct.inverse-plan-objective/0.1.0` document — dose-volume
+objectives (`min_eud`, `max_mean`, `min_dose_at_volume`,
+`max_dose_at_volume`) on named region masks over `physical_total` or a
+named component — it solves the non-negative weight assignment across
+per-beam dose bundles by projected-gradient descent with analytic metric
+gradients and an Armijo line search. A `weight_regularization` term
+selects the minimum-total-weight feasible plan (feasibility alone is a
+plateau). Each `--dose` bundle is one beam's unit-weight dose field,
+named by file stem; each `--mask` is a `RegionMask` JSON
+(`{"name", "voxels"}`) that every objective mask must resolve against.
+The result is `openbnct.inverse-plan-result/0.1.0` — per-beam weights,
+per-objective achieved/violation, iteration count, and convergence,
+content-bound to the hashed objective document and qualified
+`inverse_planning_research_only_not_clinical`:
+
+```text
+openbnct plan optimize \
+  --objective OBJECTIVE.json \
+  --dose BEAM-AP-DOSE.json --dose BEAM-PA-DOSE.json \
+  --mask TUMOR-MASK.json --mask OAR-MASK.json \
+  [--initial 1.0 --initial 1.0] \
+  --output NEW-RESULT.json
+```
+
+The solver is deterministic — same inputs, byte-identical weights. It is
+a research optimizer over linear dose superposition, not a commissioned
+treatment-planning product; see `docs/IP_BOUNDARY.md` for the
+optimization-adjacent scope boundary.
+
 ### Dose-volume metrics and endpoint response models
 
 `openbnct metrics` computes exact dose-volume readings over a region mask
@@ -1166,7 +1196,7 @@ openbnct nifti export-dose \
   --dose DOSE-BUNDLE.json --quantity component:boron \
   --output NEW-BORON-DOSE.nii.gz
 openbnct nifti export-components \
-  --dose DOSE-BUNDLE.json --output-dir NEW-DIR [--gzip]
+  --dose DOSE-BUNDLE.json --output-dir NEW-DIR [--gzip] [--pint]
 openbnct nifti resample \
   --input map.nii.gz --target DOSE-BUNDLE.json \
   --interpolation nearest --output NEW-RESAMPLED.nii.gz
@@ -1181,7 +1211,10 @@ the bundle's grid; `export-components` writes all four components at once —
 bundle carries per-voxel uncertainties — alongside an
 `openbnct.component-nifti-manifest/0.1.0` record hash-binding every written
 file, so the set re-imports through `import nifti` with component, value,
-sigma, and grid fidelity. `resample` interpolates an external image onto a
+sigma, and grid fidelity. `--pint` switches the component filenames to the
+fixed OpenPINT convention (`<case>_B10`, `_N14`, `_n`, `_g`; sigma companions
+keep the `.<component>.sigma` form) for direct hand-off to PINT-workflow
+consumers — the manifest and contents are unchanged. `resample` interpolates an external image onto a
 dose bundle's grid or a transport case's CT-aligned grid (nearest-neighbor
 or trilinear). The affine handling is
 regression-tested against independent `nibabel` output including oblique
@@ -1233,6 +1266,25 @@ interoperability feature; it makes no clinical assertion about alignment
 quality beyond the recorded landmark residual.
 
 ### PET-derived boron fields
+
+The SUV input can come straight off the scanner: `openbnct dicom
+import-pet` converts a native single-frame PET series into a body-weight
+SUV volume on the same validated geometry path as the CT importer. The
+series must carry `Units = BQML`, `Decay Correction = START` (the tag
+may be absent on older exports; any other value is rejected), a positive
+Patient's Weight, and a complete Radiopharmaceutical Information
+Sequence — total dose (Bq), radionuclide half-life (s), and start
+time — plus an Acquisition or Series Time to decay the injected dose
+to. Pixels may be signed or unsigned 16-bit; rescaled activity
+concentrations below zero are clamped and counted in the record rather
+than hidden. Output is a float64 NIfTI (`.nii.gz` compresses
+automatically):
+
+```text
+openbnct dicom import-pet \
+  --slices PET-001.dcm PET-002.dcm PET-003.dcm ... \
+  --output NEW-PET-SUV.nii.gz
+```
 
 `openbnct boron` maps a co-registered PET SUV volume to a per-voxel B-10
 concentration field (`openbnct.boron-field/0.1.0`, µg/g) under a versioned

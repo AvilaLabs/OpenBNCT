@@ -902,7 +902,13 @@ review:
   path is now characterized — 5×3 cells×order matrix, 91k cell-direction
   sweeps/s serial at the 64k-cell end, direction-count-linear scaling —
   `docs/research/SN_SOLVER_THROUGHPUT.md`. Remaining: actual OpenMC
-  run-path profiling once the workstation has free CPU.)*
+  run-path profiling once the workstation has free CPU. **Parallel sweep
+  landed:** the S_N ordinate sweep and per-cell moment reduction are
+  rayon-parallel — angular flux stored `[ordinate][cell]` so each
+  direction owns an exclusive row under `par_iter_mut`, per-cell
+  reductions computed in parallel then applied serially to preserve the
+  deterministic convergence order. Bit-for-bit solver semantics; thread
+  count bounded by `RAYON_NUM_THREADS`.)*
 
 Nothing in R7 changes the deferred list below or adds any clinical claim.
 
@@ -1182,14 +1188,40 @@ other and of R8 ordering unless noted.
   with sigma companions — the per-component convention `import nifti`
   consumes — plus a content-hashed
   `openbnct.component-nifti-manifest/0.1.0` (export→import round-trip is
-  value-, sigma-, and grid-exact in tests). DICOM RT Plan is now
-  bidirectional: `dicom rtplan-info` parses a plan into
-  `openbnct.rtplan-summary/0.1.0` (fraction groups, referenced-beam
-  metersets, per-beam static delivery geometry), and
+  value-, sigma-, and grid-exact in tests). `--pint` switches the
+  filenames to the fixed OpenPINT convention
+  (`<case>_B10/_N14/_n/_g`); the manifest stays authoritative either
+  way. DICOM RT Plan is now bidirectional: `dicom rtplan-info` parses
+  a plan into `openbnct.rtplan-summary/0.1.0` (fraction groups,
+  referenced-beam metersets, per-beam static delivery geometry), and
   `dicom export-rtplan` writes a minimal static-beam RTPLAN — one
   fraction group, one control point per beam — covering BNCT's
-  fixed-field regime. Both directions are research interop, not
-  commissioned planning.
+  fixed-field regime. `dicom import-pet` converts a native single-frame
+  PET series to a body-weight SUV volume (`PetVolume` — BQML units,
+  START decay correction, radiopharmaceutical dose/half-life/start-time
+  record, unsigned 16-bit pixels, scan-time decay to injection) on the
+  shared CT geometry path, emitting float64 NIfTI for the boron uptake
+  model. Both directions are research interop, not commissioned
+  planning.
+
+- **R9-07 — inverse planning (provisional).** *Landed, pending the
+  IP-boundary note below.* `openbnct.inverse-plan-objective/0.1.0`
+  declares dose-volume objectives — `min_eud`, `max_mean`,
+  `min_dose_at_volume`, `max_dose_at_volume` on named masks over
+  `physical_total` or a named component — and
+  `openbnct.inverse-plan-result/0.1.0` records the outcome.
+  `openbnct plan optimize` solves the non-negative weight assignment by
+  projected-gradient descent with analytic metric gradients and an
+  Armijo line search; a `weight_regularization` term selects the
+  minimum-total-weight feasible plan. Deterministic (no sampling),
+  content-bound to the objective document, qualified
+  `inverse_planning_research_only_not_clinical`. **Boundary note:**
+  dose superposition over per-beam dose fields is standard
+  radiotherapy-planning mathematics, but weighted recombination of
+  transport outputs may intersect the "designated transport-run
+  recomposition" item in `docs/IP_BOUNDARY.md` — the feature ships
+  provisionally under the same recorded-review requirement until the
+  boundary review confirms scope.
 
 Nothing in R8/R9 changes the deferred list below or adds any clinical
 claim; plan optimization involving Avify Dose patent subject matter

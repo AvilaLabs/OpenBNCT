@@ -5,6 +5,13 @@ run-path profiling.
 
 **Date:** 2026-10-02
 
+> **Update (2026-10):** the ordinate sweep and per-cell moment reduction
+> are now rayon-parallel (`[ordinate][cell]` flux layout, exclusive
+> per-direction rows, serially-applied reductions). The numbers below
+> remain the honest *serial* baseline they were measured as; parallel
+> speedup tracks ordinate count (S8 → up to 8× per-direction work
+> divided across `RAYON_NUM_THREADS`).
+
 ## 1. Purpose
 
 R7-05 asks for transport throughput numbers on the workbench's run paths.

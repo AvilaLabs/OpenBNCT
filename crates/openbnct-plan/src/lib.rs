@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
-//! Tabular CSV/XLSX interchange for `openbnct.exposure-plan` documents.
+//! Tabular CSV/XLSX interchange for `openbnct.exposure-plan` documents
+//! plus deterministic exposure-weight optimization.
 //!
 //! Spreadsheet tooling is where many research irradiation schedules are
 //! authored. This crate round-trips an [`ExposurePlan`] between its JSON
@@ -18,6 +19,12 @@
 //! [`TableImportOptions::bundles_dir`] is given, in which case each file is
 //! hashed on import. Unknown columns are rejected so spreadsheet typos
 //! cannot silently drop data.
+//!
+//! The [`optimize`] module solves non-negative exposure weights against
+//! `openbnct.inverse-plan-objective` dose-volume objectives by
+//! projected-gradient descent — a research optimizer qualified
+//! `inverse_planning_research_only_not_clinical`, not a commissioned
+//! treatment-planning product.
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;

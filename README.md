@@ -127,7 +127,11 @@ bundling those systems.
   photon-kerma dose fold), **sub-voxel volume fractions**
   (`voxel_fractions` material regions — sum ≤ 1 per cell, volume-weighted
   composition blending into synthesized transport rows), and **Anderson
-  acceleration** on the upscatter-coupled outer iteration. On NF-BNCT-003
+  acceleration** on the upscatter-coupled outer iteration. The ordinate
+  sweep and per-cell moment reduction are rayon-parallel
+  (`RAYON_NUM_THREADS`-bounded; `[ordinate][cell]` flux layout so each
+  direction owns an exclusive row, reductions applied serially to keep
+  convergence deterministic). On NF-BNCT-003
   the solver reproduces the analytic attenuation oracle exactly (fitted
   slope −0.23080 cm⁻¹, 0.000% deviation over 32 bins); the water-phantom
   TSL+P1 solve lands within ~±20% of the FiR1 measured profile through
@@ -181,11 +185,21 @@ bundling those systems.
   insert acceptance case; NF-BNCT-003 is a pure-absorber slab with a
   closed-form oracle — both with machine inputs, acceptance contracts,
   and conformance tests alongside NF-BNCT-001.
+- **Inverse planning** — `openbnct plan optimize` solves non-negative
+  exposure-weight assignments against `openbnct.inverse-plan-objective/
+  0.1.0` dose-volume objectives (EUD, mean, and dose-at-volume quantile
+  targets on named masks over `physical_total` or a component) by
+  projected-gradient descent with analytic gradients and a weight
+  regularizer selecting the minimum-weight feasible plan — a research
+  optimizer, not a commissioned treatment-planning product.
 - **Bidirectional interop** — `openbnct nifti export-components` writes
-  the four-component OpenPINT-convention NIfTI set with a hash-bound
-  manifest (re-importable through `openbnct import nifti`); `openbnct
-  dicom rtplan-info`/`export-rtplan` read and write minimal RTPLAN
-  beam sequences.
+  the four-component NIfTI set with a hash-bound manifest (re-importable
+  through `openbnct import nifti`); `--pint` switches filenames to the
+  OpenPINT convention (`<case>_B10/_N14/_n/_g`). `openbnct dicom
+  rtplan-info`/`export-rtplan` read and write minimal RTPLAN beam
+  sequences, and `dicom import-pet` converts a native PET series to a
+  body-weight SUV volume (BQML + decay correction, radiopharmaceutical
+  record validated) feeding the boron uptake model.
 - **Three surfaces, one implementation** — CLI (`openbnct`), a native egui
   workbench (integrity-gated tri-planar viewer, dose wash, DVH/metrics,
   plan workspace, source positioning), and a bounded Python package —

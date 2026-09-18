@@ -4,6 +4,33 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
+## [Unreleased]
+
+### Added
+
+- Rayon-parallel S_N ordinate sweep in `openbnct-transport`: angular
+  flux stored `[ordinate][cell]` so each direction owns an exclusive
+  row, with per-cell moment reductions computed in parallel and applied
+  serially — bit-for-bit solver semantics under `RAYON_NUM_THREADS`.
+- `openbnct nifti export-components --pint`: fixed OpenPINT-convention
+  filenames (`<case>_B10`, `_N14`, `_n`, `_g`) on the same
+  content-hashed component manifest.
+- `openbnct dicom import-pet` / `openbnct_dicom::import_pet_series`:
+  native single-frame PET series → body-weight SUVbw volume (BQML,
+  START decay correction, radiopharmaceutical dose/half-life/start-time
+  record, signed or unsigned 16-bit pixels, negative-activity clamp
+  counted in the record) on the shared CT geometry path, emitted as
+  float64 NIfTI for the boron uptake model.
+- `openbnct plan optimize` / `openbnct_plan::optimize`: deterministic
+  non-negative beam-weight optimization against
+  `openbnct.inverse-plan-objective/0.1.0` dose-volume objectives
+  (EUD, mean, dose-at-volume quantiles on named masks over
+  `physical_total` or a component) — projected-gradient descent,
+  analytic gradients, Armijo line search, weight regularization
+  selecting the minimum-weight feasible plan; results emitted as
+  `openbnct.inverse-plan-result/0.1.0` qualified
+  `inverse_planning_research_only_not_clinical`.
+
 ## [0.1.1] — 2026-09-16
 
 ### Added
