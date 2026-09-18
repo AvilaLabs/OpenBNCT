@@ -179,10 +179,10 @@ impl MultigroupData {
                 && (mu_bar.len() != groups
                     || !mu_bar
                         .iter()
-                        .all(|x| x.is_finite() && *x >= 0.0 && *x <= 1.0))
+                        .all(|x| x.is_finite() && *x >= -1.0 && *x <= 1.0))
             {
                 return Err(invalid(format!(
-                    "material {:?} transport_mu_bar must be {groups} values in [0,1]",
+                    "material {:?} transport_mu_bar must be {groups} values in [-1,1]",
                     material.material_id
                 )));
             }

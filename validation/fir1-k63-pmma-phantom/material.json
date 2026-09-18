@@ -1,0 +1,45 @@
+{
+  "schema_version": "openbnct.material-definition/0.1.0",
+  "id": "openbnct.fir1-k63-pmma-phantom.material.v1",
+  "density_g_cm3": 1.19,
+  "temperature_k": 293.6,
+  "nuclides": [
+    {
+      "name": "H1",
+      "mass_fraction": 0.08053615599853417
+    },
+    {
+      "name": "H2",
+      "mass_fraction": 9.263017942465755e-06
+    },
+    {
+      "name": "C12",
+      "mass_fraction": 0.5934891495884828
+    },
+    {
+      "name": "C13",
+      "mass_fraction": 0.006358012315469856
+    },
+    {
+      "name": "O16",
+      "mass_fraction": 0.31882961757296924
+    },
+    {
+      "name": "O17",
+      "mass_fraction": 0.00012150023534595587
+    },
+    {
+      "name": "O18",
+      "mass_fraction": 0.0006552012691248584
+    },
+    {
+      "name": "B10",
+      "mass_fraction": 1.000001937003752e-07
+    },
+    {
+      "name": "N14",
+      "mass_fraction": 1.000001937003752e-06
+    }
+  ],
+  "neutron_thermal_treatment": "free_gas"
+}
