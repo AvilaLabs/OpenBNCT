@@ -1,0 +1,203 @@
+{
+  "schema_version": "openbnct.measurement-comparison/0.1.0",
+  "id": "openbnct.measurement-comparison.fir1-k63-cylindrical.28g-p1-1e.v1",
+  "measurements": {
+    "id": "nctforge.measurement.fir1-k63-cylindrical-phantom-depth.v1",
+    "sha256": "sha256:7ebe87ccb9ca2e1768bca5866b8ed6de9c2e0b5abd1413a6296100e373d72001"
+  },
+  "computed": {
+    "id": "openbnct.beam-quality.fir1-k63-cylindrical.28g-p1-1e.v1",
+    "sha256": "sha256:6bbee7649c5dce9ef646e14bab42d29ea4227a50673817e4b237bad29a3cb38e"
+  },
+  "sigma_tolerance": 2.0,
+  "comparisons": [
+    {
+      "measurement_id": "pmma-thermal-fluence-depth-profile",
+      "metric": "thermal_fluence_depth_profile_pmma_phantom",
+      "measured": null,
+      "uncertainty_1sigma": null,
+      "computed": null,
+      "relative_difference": null,
+      "difference_sigma": null,
+      "passed": null
+    },
+    {
+      "measurement_id": "liquid-b-thermal-fluence-depth-profile",
+      "metric": "thermal_fluence_depth_profile_liquid_b_phantom",
+      "measured": null,
+      "uncertainty_1sigma": null,
+      "computed": null,
+      "relative_difference": null,
+      "difference_sigma": null,
+      "passed": null
+    }
+  ],
+  "profile_comparisons": [
+    {
+      "measurement_id": "water-thermal-fluence-depth-profile",
+      "metric": "thermal_fluence_depth_profile",
+      "normalization": "peak",
+      "bin_centers": [
+        1.0,
+        1.4,
+        1.8,
+        2.2,
+        2.5999999999999996,
+        3.0999999999999996,
+        3.8,
+        4.85,
+        6.5,
+        8.75,
+        11.5,
+        14.5
+      ],
+      "measured_normalized": [
+        1.0,
+        0.9475874396296297,
+        0.8979219559259259,
+        0.8467711151851852,
+        0.7838500685185186,
+        0.6737396266666666,
+        0.5350300022222222,
+        0.37862318333333334,
+        0.2155817625925926,
+        0.09398571740740741,
+        0.039096530740740744,
+        0.017017753333333333
+      ],
+      "computed_normalized": [
+        0.8825974491651472,
+        0.9765194898330294,
+        0.9619884110897362,
+        0.9113062925427177,
+        0.852858424726683,
+        0.7506770301978283,
+        0.6025846741284548,
+        0.39121886792914456,
+        0.16839204224963267,
+        0.048262181640440924,
+        0.0099935524237716,
+        0.002320199489437903
+      ],
+      "relative_differences": [
+        0.11740255083485285,
+        0.03053232767068757,
+        0.07134969218760859,
+        0.07621324842123232,
+        0.08803769876373257,
+        0.11419456491198267,
+        0.12626333406658968,
+        0.03326707172265837,
+        0.2188947700188317,
+        0.4864945124455987,
+        0.7443877440164335,
+        0.8636600587638534
+      ],
+      "difference_sigma": [
+        0.9016340507842258,
+        0.23444059351076052,
+        0.5477420484703464,
+        0.5849329428668525,
+        0.6754308600640547,
+        0.8752950078764227,
+        0.9657948384052037,
+        0.2530510363597258,
+        1.6279039584250263,
+        3.2000902731536085,
+        3.239629308228591,
+        1.9011888637673586
+      ],
+      "max_relative_difference": 0.8636600587638534,
+      "chi_square": 30.729583151800625,
+      "passed": false
+    },
+    {
+      "measurement_id": "water-thermal-fluence-depth-profile",
+      "metric": "thermal_fluence_depth_profile_absolute",
+      "normalization": "absolute",
+      "bin_centers": [
+        1.0,
+        1.4,
+        1.8,
+        2.2,
+        2.5999999999999996,
+        3.0999999999999996,
+        3.8,
+        4.85,
+        6.5,
+        8.75,
+        11.5,
+        14.5
+      ],
+      "measured_normalized": [
+        2700000000.0,
+        2558486087.0,
+        2424389281.0,
+        2286282011.0,
+        2116395185.0,
+        1819096992.0,
+        1444581006.0,
+        1022282595.0,
+        582070759.0,
+        253761437.0,
+        105560633.0,
+        45947934.0
+      ],
+      "computed_normalized": [
+        723451718.5286411,
+        783424281.948862,
+        757715819.2929561,
+        703447014.6116748,
+        645923880.5518965,
+        561816227.8078095,
+        443074489.6535564,
+        281203001.1269883,
+        117968371.8528704,
+        33231875.097923853,
+        6882612.99940908,
+        1633215.0183265456
+      ],
+      "relative_differences": [
+        0.7320549190634662,
+        0.6937938080142227,
+        0.6874611576485699,
+        0.6923183530171796,
+        0.6947999668824154,
+        0.6911565297075652,
+        0.693285120174454,
+        0.724926353532422,
+        0.7973298434445658,
+        0.869042847917338,
+        0.9347994341848151,
+        0.964455093490677
+      ],
+      "difference_sigma": [
+        5.622072411358258,
+        5.327252932671089,
+        5.277547403345625,
+        5.3135093965926945,
+        5.3305498189281595,
+        5.297676475062641,
+        5.302974102160931,
+        5.514262468761629,
+        5.929682139971408,
+        5.716437685173203,
+        4.068314757522088,
+        2.1230706048541927
+      ],
+      "max_relative_difference": 0.964455093490677,
+      "chi_square": 319.9793768675694,
+      "passed": false
+    }
+  ],
+  "summary": {
+    "compared": 0,
+    "unmatched": 2,
+    "passed": 0,
+    "failed": 0,
+    "without_uncertainty": 0,
+    "chi_square": null,
+    "degrees_of_freedom": 0,
+    "profiles_compared": 2
+  }
+}

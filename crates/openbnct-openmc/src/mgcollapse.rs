@@ -13,8 +13,11 @@
 //! - the scatter matrix is the analytic P0 isotropic-in-CM elastic
 //!   transfer kernel per nuclide — outgoing energy uniform on
 //!   `[αE, E]`, α = ((A−1)/(A+1))² — integrated against the declared
-//!   weighting spectrum; no thermal upscatter (free-gas / S(α,β)
-//!   binding effects are not modeled and are declared as such);
+//!   weighting spectrum; when an MF7/MT4 tape is declared for a
+//!   nuclide (`--tsl`), its incoherent-inelastic S(α,β) kernel
+//!   replaces the free-gas kernel below the tape's E_max (thermal
+//!   upscatter included); otherwise free-gas / no-upscatter applies
+//!   and is declared as such;
 //! - dose responses are mass-kerma coefficients in Gy·cm² per unit
 //!   fluence: boron from ¹⁰B(n,α) with a declared branch-weighted
 //!   2.34 MeV charged release, nitrogen from ¹⁴N(n,p) with declared
@@ -324,28 +327,33 @@ fn load_nuclide_endf(path: &Path, name: &str) -> Result<NuclideTable, CollapseEr
     })
 }
 
+/// Log-log table evaluation at `e` (log-E/log-σ when both sides are
+/// positive, else linear), clamped at the grid ends — the convention
+/// shared with [`integrate_grid`]. Cross sections follow power-law
+/// shapes (1/v tails, thresholds) where log-log interpolation is far
+/// more faithful than linear-in-E.
+fn log_interp(energy: &[f64], f: &[f64], e: f64) -> f64 {
+    if e <= energy[0] {
+        return f[0];
+    }
+    if e >= energy[energy.len() - 1] {
+        return f[f.len() - 1];
+    }
+    let i = energy.partition_point(|&x| x < e);
+    let (e0, e1) = (energy[i - 1], energy[i]);
+    let (f0, f1) = (f[i - 1], f[i]);
+    if f0 > 0.0 && f1 > 0.0 && e0 > 0.0 && e1 > 0.0 {
+        let t = (e.ln() - e0.ln()) / (e1.ln() - e0.ln());
+        (f0.ln() + t * (f1.ln() - f0.ln())).exp()
+    } else {
+        f0 + (f1 - f0) * (e - e0) / (e1 - e0)
+    }
+}
+
 /// Integrate `f(E)` over `[lo, hi]` by trapezoid on the nuclide's own
-/// grid points plus boundary samples interpolated log-log — cross
-/// sections follow power-law shapes (1/v tails, thresholds) where
-/// log-log interpolation is far more faithful than linear-in-E.
+/// grid points plus boundary samples from [`log_interp`].
 fn integrate_grid(energy: &[f64], f: &[f64], lo: f64, hi: f64) -> f64 {
-    let interp = |e: f64| -> f64 {
-        if e <= energy[0] {
-            return f[0];
-        }
-        if e >= energy[energy.len() - 1] {
-            return f[f.len() - 1];
-        }
-        let i = energy.partition_point(|&x| x < e);
-        let (e0, e1) = (energy[i - 1], energy[i]);
-        let (f0, f1) = (f[i - 1], f[i]);
-        if f0 > 0.0 && f1 > 0.0 && e0 > 0.0 && e1 > 0.0 {
-            let t = (e.ln() - e0.ln()) / (e1.ln() - e0.ln());
-            (f0.ln() + t * (f1.ln() - f0.ln())).exp()
-        } else {
-            f0 + (f1 - f0) * (e - e0) / (e1 - e0)
-        }
-    };
+    let interp = |e: f64| log_interp(energy, f, e);
     let mut pts: Vec<(f64, f64)> = vec![(lo, interp(lo))];
     for (i, &e) in energy.iter().enumerate() {
         if e > lo && e < hi {
@@ -426,6 +434,15 @@ pub struct CollapseOptions {
     pub energy_boundaries_ev: Vec<f64>,
     /// Declared collapse weighting spectrum.
     pub weighting: WeightingSpectrum,
+    /// Per-nuclide MF7/MT4 thermal-scattering-law tape paths. For a
+    /// listed nuclide the incoherent-inelastic bound-atom kernel
+    /// replaces the free-gas elastic kernel below the tape's E_max,
+    /// with free-gas retained for the residual far-downscatter and all
+    /// higher energies.
+    pub tsl_paths: BTreeMap<String, PathBuf>,
+    /// Material temperature for the S(α,β) evaluation — the nearest
+    /// tabulated temperature on each tape is used.
+    pub tsl_temperature_k: f64,
     /// Artifact id.
     pub id: String,
     /// Component-profile reference for the dose-response vectors.
@@ -446,9 +463,21 @@ pub fn collapse_multigroup(opts: &CollapseOptions) -> Result<MultigroupData, Col
         return Err(invalid("at least one material is required"));
     }
 
+    // Parse every declared TSL tape once — materials share nuclides.
+    let mut tsl_kernels: BTreeMap<String, crate::endf_mf7::SabKernel> = BTreeMap::new();
+    for (name, path) in &opts.tsl_paths {
+        let text = std::fs::read_to_string(path)
+            .map_err(|e| CollapseError::Model(format!("TSL tape {}: {e}", path.display())))?;
+        let tsl = crate::endf_mf7::parse_tsl(&text)
+            .map_err(|e| CollapseError::Model(format!("TSL tape {}: {e}", path.display())))?;
+        let kern = crate::endf_mf7::SabKernel::build(&tsl, opts.tsl_temperature_k)
+            .map_err(|e| CollapseError::Model(format!("TSL tape {}: {e}", path.display())))?;
+        tsl_kernels.insert(name.clone(), kern);
+    }
+
     let mut materials = Vec::with_capacity(opts.materials.len());
     for material in &opts.materials {
-        materials.push(collapse_material(opts, material, groups)?);
+        materials.push(collapse_material(opts, &tsl_kernels, material, groups)?);
     }
 
     let endf_note = if opts.endf_paths.is_empty() {
@@ -469,6 +498,28 @@ pub fn collapse_multigroup(opts: &CollapseOptions) -> Result<MultigroupData, Col
                 .join(", "),
         )
     };
+    let tsl_note = if tsl_kernels.is_empty() {
+        "no thermal upscatter — free-gas model, molecular binding \
+         (S(α,β)) not included."
+            .to_string()
+    } else {
+        format!(
+            "bound-atom incoherent-inelastic S(α,β) transfer applied \
+             for [{}] at {} K (nearest tabulated T per tape; ENDF-102 \
+             DDXS (σ_b/4πkT)·√(E'/E)·e^(−β/2)·S(α,|β|) integrated over \
+             E'∈[E±β_max·kT] and μ, symmetric-β extension verified \
+             against detailed balance; free-gas retained for the \
+             |ΔE|>β_max·kT residual and E>E_max; thermal upscatter \
+             included via the bound kernel). Tapes: {}.",
+            tsl_kernels.keys().cloned().collect::<Vec<_>>().join(", "),
+            opts.tsl_temperature_k,
+            opts.tsl_paths
+                .iter()
+                .map(|(k, v)| format!("{k}={}", v.display()))
+                .collect::<Vec<_>>()
+                .join(", "),
+        )
+    };
     let mut declaration = format!(
         "Collapsed from the processed ENDF/B-VIII.1 294 K OpenMC HDF5 \
          tables in {} by `openbnct sn collapse` at {groups} groups. \
@@ -477,16 +528,16 @@ pub fn collapse_multigroup(opts: &CollapseOptions) -> Result<MultigroupData, Col
          return neglected). Scatter = analytic P0 isotropic-in-CM \
          elastic kernel, α = ((A−1)/(A+1))², with the P1 lab-cosine \
          transfer moments emitted alongside (scatter_p1_matrix_per_cm); \
-         no thermal upscatter — \
-         free-gas model, molecular binding (S(α,β)) not included. \
+         {tsl_note} \
          Dose responses are mass-kerma coefficients (Gy·cm² per unit \
          fluence): boron = 10B(n,α) charged kerma with declared \
          2.34 MeV (branch-weighted; the table's lumped Q is absent), \
          nitrogen = 14N(n,p) with declared 0.626 MeV, hydrogen = \
-         elastic recoil kerma (Ē(1−α)/2 summed over all nuclides), \
-         photon = capture-γ kerma from table MT102 Q values plus the \
-         10B (n,α₁) 0.478 MeV γ (0.449 MeV branch-weighted), all \
-         depositing locally — no photon transport. Other \
+         elastic recoil kerma (Ē(1−α)/2 summed over all nuclides — \
+         bound-atom nuclides use the TSL kernel's ∫(E−E')σ dE' \
+         instead), photon = capture-γ kerma from table MT102 Q values \
+         plus the 10B (n,α₁) 0.478 MeV γ (0.449 MeV branch-weighted), \
+         all depositing locally — no photon transport. Other \
          charged-particle channels (e.g. 17O(n,α)) remain in σt \
          removal but are not folded into a named component. \
          Weighting: {}.{}{}",
@@ -516,10 +567,64 @@ pub fn collapse_multigroup(opts: &CollapseOptions) -> Result<MultigroupData, Col
     Ok(data)
 }
 
+/// Bound-atom/free-gas transfer from incident energy `e` into
+/// `[lo, hi]` for a TSL-treated nuclide: `(P0 σ, P1 σ, recoil-kerma σ)`
+/// in barns. The incoherent-inelastic kernel covers
+/// `|E'−E| ≤ β_max·kT`; free-gas covers the residual downscatter
+/// window (or the full window above E_max).
+fn tsl_group_transfer(
+    kern: &crate::endf_mf7::SabKernel,
+    e: f64,
+    sigma_free: f64,
+    alpha: f64,
+    mass: f64,
+    lo: f64,
+    hi: f64,
+) -> (f64, f64, f64) {
+    let mut s0 = 0.0;
+    let mut s1 = 0.0;
+    let mut k = 0.0;
+    if e <= kern.emax_ev {
+        let tlo = lo.max(e - kern.delta_ev).max(0.0);
+        let thi = hi.min(e + kern.delta_ev);
+        if thi > tlo {
+            const NEP: usize = 48;
+            let st = (thi - tlo) / NEP as f64;
+            for m in 0..NEP {
+                let ep = tlo + (m as f64 + 0.5) * st;
+                let d0 = kern.sigma0_de(e, ep) * st;
+                s0 += d0;
+                s1 += kern.sigma1_de(e, ep) * st;
+                // Recoil kerma counts deposited energy only — an
+                // upscattered neutron takes energy FROM the bath and
+                // deposits nothing.
+                k += (e - ep).max(0.0) * d0;
+            }
+        }
+    }
+    // Free-gas remainder: E' ∈ [αe, e−Δ] inside the group — or the
+    // full [αe, e] window when the bound law does not apply.
+    let fhi = hi.min(if e <= kern.emax_ev {
+        e - kern.delta_ev
+    } else {
+        e
+    });
+    let flo = lo.max(alpha * e);
+    if fhi > flo {
+        let p0 = elastic_transfer_p(e, alpha, flo, fhi);
+        let p1 = elastic_transfer_p1(e, alpha, mass, flo, fhi);
+        s0 += sigma_free * p0;
+        s1 += sigma_free * p1;
+        k += sigma_free * p0 * (e - 0.5 * (flo + fhi));
+    }
+    (s0, s1, k)
+}
+
 /// Collapse one material: group σt, the P0 elastic transfer matrix,
 /// and the four mass-kerma dose-response vectors.
 fn collapse_material(
     opts: &CollapseOptions,
+    tsl_kernels: &BTreeMap<String, crate::endf_mf7::SabKernel>,
     material: &MaterialDefinition,
     groups: usize,
 ) -> Result<MultigroupMaterial, CollapseError> {
@@ -575,32 +680,82 @@ fn collapse_material(
             }
             let collapse = |f: &[f64]| integrate_grid(e, f, lo, hi) / w_norm;
 
-            let sigma_s = collapse(&sw(&table.elastic));
             let sigma_a = collapse(&sw(&absorption));
 
             // Elastic transfer out of g: T[g][g'] = N ∫σs·W·P(E→g') / ∫W.
             // P varies within g, so integrate the product numerically.
-            let elastic_weighted = sw(&table.elastic);
             let mut row = vec![0.0; groups];
             let mut row_p1 = vec![0.0; groups];
             let a = table.mass_number as f64;
-            for gp in 0..groups {
-                let integrand: Vec<f64> = e
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &x)| {
-                        elastic_weighted[i] * elastic_transfer_p(x, alpha, b[gp + 1], b[gp])
-                    })
-                    .collect();
-                row[gp] = collapse(&integrand);
-                let integrand_p1: Vec<f64> = e
-                    .iter()
-                    .enumerate()
-                    .map(|(i, &x)| {
-                        elastic_weighted[i] * elastic_transfer_p1(x, alpha, a, b[gp + 1], b[gp])
-                    })
-                    .collect();
-                row_p1[gp] = collapse(&integrand_p1);
+            let tsl = tsl_kernels.get(&table.name);
+            // σ_s and the recoil-kerma σ·⟨E−E'⟩ depend on which kernel
+            // drives the transfer.
+            let sigma_s;
+            let recoil_sigma;
+            if let Some(kern) = tsl {
+                // Bound-atom S(α,β): explicit E-quadrature — the kernel
+                // is not separable as σ(E)·P(E).
+                const NE: usize = 24;
+                let mut wsum = 0.0;
+                let mut s_acc = 0.0;
+                let mut k_acc = 0.0;
+                for j in 0..NE {
+                    let e_j = lo + (j as f64 + 0.5) * (hi - lo) / NE as f64;
+                    let w_j = opts.weighting.w(e_j);
+                    let sig_f = log_interp(e, &table.elastic, e_j);
+                    let mut s0tot = 0.0;
+                    for gp in 0..groups {
+                        let (s0, s1, kj) =
+                            tsl_group_transfer(kern, e_j, sig_f, alpha, a, b[gp + 1], b[gp]);
+                        row[gp] += w_j * s0;
+                        row_p1[gp] += w_j * s1;
+                        s0tot += s0;
+                        k_acc += w_j * kj;
+                    }
+                    s_acc += w_j * s0tot;
+                    wsum += w_j;
+                }
+                // The j-accumulation carries the weighting integral —
+                // divide it out so the row matches σ_s (and the
+                // row-sum ≤ σ_t invariant holds).
+                for val in row.iter_mut() {
+                    *val /= wsum;
+                }
+                for val in row_p1.iter_mut() {
+                    *val /= wsum;
+                }
+                sigma_s = s_acc / wsum;
+                recoil_sigma = k_acc / wsum;
+            } else {
+                sigma_s = collapse(&sw(&table.elastic));
+                let elastic_weighted = sw(&table.elastic);
+                for gp in 0..groups {
+                    let integrand: Vec<f64> = e
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &x)| {
+                            elastic_weighted[i] * elastic_transfer_p(x, alpha, b[gp + 1], b[gp])
+                        })
+                        .collect();
+                    row[gp] = collapse(&integrand);
+                    let integrand_p1: Vec<f64> = e
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &x)| {
+                            elastic_weighted[i] * elastic_transfer_p1(x, alpha, a, b[gp + 1], b[gp])
+                        })
+                        .collect();
+                    row_p1[gp] = collapse(&integrand_p1);
+                }
+                // Iso-CM elastic mean recoil: Ē·(1−α)/2.
+                let ebar = collapse(
+                    &e.iter()
+                        .zip(&table.elastic)
+                        .zip(&weight)
+                        .map(|((x, s), w)| x * s * w)
+                        .collect::<Vec<_>>(),
+                ) / sigma_s.max(f64::MIN_POSITIVE);
+                recoil_sigma = sigma_s * ebar * (1.0 - alpha) / 2.0;
             }
             for (gp, val) in row.iter().enumerate() {
                 transfer[g * groups + gp] += n_density * val;
@@ -609,24 +764,24 @@ fn collapse_material(
                 transfer_p1[g * groups + gp] += n_density * val;
             }
             sigma_t[g] += n_density * (sigma_s + sigma_a);
-            // Iso-CM elastic: mean lab cosine is exactly 2/(3A).
-            let mu = 2.0 / (3.0 * table.mass_number as f64);
-            mu_num[g] += n_density * sigma_s * mu;
-            mu_den[g] += n_density * sigma_s;
+            // Scatter-weighted mean lab cosine: analytic 2/(3A) for
+            // free-gas, the TSL P1/P0 ratio when bound-atom applies.
+            if tsl.is_some() {
+                mu_num[g] += n_density * row_p1.iter().sum::<f64>();
+                mu_den[g] += n_density * row.iter().sum::<f64>();
+            } else {
+                let mu = 2.0 / (3.0 * table.mass_number as f64);
+                mu_num[g] += n_density * sigma_s * mu;
+                mu_den[g] += n_density * sigma_s;
+            }
 
             // Dose responses (mass-kerma per unit fluence, Gy·cm²).
             let conv = MEV_TO_J * G_PER_KG / rho;
-            // "hydrogen" — elastic recoil kerma summed over all nuclides
-            // (overwhelmingly H); mean recoil Ē·(1−α)/2 per collision.
-            let recoil_frac = (1.0 - alpha) / 2.0;
-            let ebar = collapse(
-                &e.iter()
-                    .zip(&table.elastic)
-                    .zip(&weight)
-                    .map(|((x, s), w)| x * s * w)
-                    .collect::<Vec<_>>(),
-            ) / sigma_s.max(f64::MIN_POSITIVE);
-            dose_hydrogen[g] += n_density * sigma_s * ebar * recoil_frac * conv;
+            // "hydrogen" — elastic recoil kerma summed over all
+            // nuclides (overwhelmingly H). For the free-gas path this
+            // is σ_s·Ē·(1−α)/2; for a bound-atom nuclide the TSL
+            // kernel's ∫(E−E')σ dE' integral is used directly.
+            dose_hydrogen[g] += n_density * recoil_sigma * conv;
             // "photon" — capture-γ cascade kerma from every nuclide's
             // MT102 (table Q), plus the ¹⁰B (n,α₁) 0.478 MeV γ.
             dose_photon[g] += n_density * collapse(&sw(&table.capture.0)) * table.capture.1 * conv;
@@ -784,6 +939,94 @@ mod tests {
         );
         let den = integrate_grid(&e, &w, lo, hi);
         assert!((num / den - 3.7).abs() < 1e-9);
+    }
+
+    /// A constant-S toy law: S(α,β) = 1 on α ∈ [0.01, 8], β ∈ {0, 8}
+    /// at a single temperature — enough structure for the kernel's
+    /// α-window integrals and the β extension to engage.
+    fn toy_tsl() -> crate::endf_mf7::ThermalScatteringLaw {
+        let alpha: Vec<f64> = (0..40).map(|i| 0.01 * (1.25_f64).powi(i)).collect();
+        let mk = |beta: f64| crate::endf_mf7::SabSection {
+            temperature_k: 300.0,
+            beta,
+            li: 0,
+            alpha: alpha.clone(),
+            s: vec![1.0; alpha.len()],
+        };
+        crate::endf_mf7::ThermalScatteringLaw {
+            za: 1001.0,
+            awr: 1.0,
+            sigma_b_barns: 40.0,
+            natom: 2.0,
+            beta_max: 8.0,
+            emax_ev: 10.0,
+            sections: vec![mk(0.0), mk(8.0)],
+            temperatures_k: vec![300.0],
+            betas: vec![0.0, 8.0],
+        }
+    }
+
+    #[test]
+    fn tsl_transfer_upscatters_and_free_gases_above_emax() {
+        let kern = crate::endf_mf7::SabKernel::build(&toy_tsl(), 300.0).unwrap();
+        let b = test_boundaries(20.0, 1.0e-4, 40);
+        let e = 0.05; // well below E_max
+        // Find the group containing e and the group directly above it.
+        let g_src = (0..b.len() - 1)
+            .find(|&g| e <= b[g] && e > b[g + 1])
+            .unwrap();
+        let g_up = g_src - 1;
+        // Thermal upscatter: a destination above E gets weight — under
+        // free-gas this transfer is identically zero.
+        let (s0_up, _, _) = tsl_group_transfer(&kern, e, 20.0, 0.0, 1.0, b[g_up + 1], b[g_up]);
+        let free_up = elastic_transfer_p(e, 0.0, b[g_up + 1], b[g_up]);
+        assert_eq!(free_up, 0.0, "free-gas upscatter must be zero");
+        assert!(s0_up > 0.0, "bound-atom upscatter must be positive");
+        // In-group + downscatter also positive.
+        let (s0_src, s1_src, k_src) =
+            tsl_group_transfer(&kern, e, 20.0, 0.0, 1.0, b[g_src + 1], b[g_src]);
+        assert!(s0_src > 0.0 && k_src != 0.0);
+        assert!(s1_src.abs() <= s0_src + 1e-30);
+        // Above E_max the kernel reverts to pure free-gas: no upscatter
+        // and the row equals σ_free·P.
+        let e_hi = 12.0; // inside group [11, 14.8]; group 0 sits above it
+        let g_hi_src = (0..b.len() - 1)
+            .find(|&g| e_hi <= b[g] && e_hi > b[g + 1])
+            .unwrap();
+        let (s0_hi, _, _) =
+            tsl_group_transfer(&kern, e_hi, 20.0, 0.0, 1.0, b[g_hi_src + 1], b[g_hi_src]);
+        let free_hi = 20.0 * elastic_transfer_p(e_hi, 0.0, b[g_hi_src + 1], b[g_hi_src]);
+        assert!((s0_hi - free_hi).abs() / free_hi < 1e-9);
+        // Upscatter above E_max stays zero (group 0 = [14.8, 20] is
+        // wholly above the source energy).
+        let (s0_up_hi, _, _) = tsl_group_transfer(&kern, e_hi, 20.0, 0.0, 1.0, b[1], b[0]);
+        assert_eq!(s0_up_hi, 0.0);
+    }
+
+    #[test]
+    fn tsl_transfer_rows_sum_to_total_cross_section() {
+        // Over a group structure covering the whole β domain, the
+        // transfer row must recover σ_s,total(E) = ∫σ(E→E')dE' plus
+        // the free-gas remainder — i.e. it partitions the kernel's
+        // own total, not the free-atom value.
+        let kern = crate::endf_mf7::SabKernel::build(&toy_tsl(), 300.0).unwrap();
+        let b = test_boundaries(30.0, 1.0e-4, 60);
+        let e = 0.4;
+        let row: f64 = (0..b.len() - 1)
+            .map(|g| tsl_group_transfer(&kern, e, 20.0, 0.0, 1.0, b[g + 1], b[g]).0)
+            .sum();
+        // Direct quadrature of the same kernel over its domain.
+        let (tlo, thi) = (0.0_f64, e + kern.delta_ev);
+        let mut direct = 0.0;
+        let n = 4000;
+        for i in 0..n {
+            let ep = tlo + (i as f64 + 0.5) * (thi - tlo) / n as f64;
+            direct += kern.sigma0_de(e, ep) * (thi - tlo) / n as f64;
+        }
+        assert!(
+            (row - direct).abs() / direct < 2e-3,
+            "group-sum {row} vs direct integral {direct}"
+        );
     }
 
     #[test]

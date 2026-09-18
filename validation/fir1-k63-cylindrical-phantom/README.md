@@ -19,6 +19,7 @@ phantom and therefore cannot match the measured small-cylinder tail.
 | `multigroup-flux-28g-split.json` / `dose-28g-split.json` | S₈ 28-group solve and folded dose — cone analytic uncollided split, no transport correction. |
 | `multigroup-flux-28g-trcorr.json` / `dose-28g-trcorr.json` | Same solve with the extended transport correction active (σ_t,tr = σ_t − μ̄·Σ_s plus the consistent diagonal self-scatter reduction). |
 | `multigroup-flux-28g-1e.json` / `dose-28g-1e.json` and `multigroup-flux-28g-trcorr-1e.json` / `dose-28g-trcorr-1e.json` | The current-convention reruns of the pair above — collapse-consistent within-bin source weighting (`source_spectrum_weighting: "collapse_consistent"`). These are the reference artifacts for the numbers quoted below. |
+| `multigroup-flux-28g-p1-1e.json` / `dose-28g-p1-1e.json`, `beam-quality-cylindrical-28g-p1-1e.json`, `measurement-comparison-cylindrical-28g-p1-1e.json`, `bio-*-28g-p1-1e.json` | The P1-anisotropic solve on `multigroup-data-28g-v3.json` (which carries `scatter_p1_matrix_per_cm`): `scattering_order: "p1"`, normalized χ² 31 — the best deterministic result. |
 | `beam-quality-cylindrical-28g*.json` | `beam qa` reports including the absolute thermal-fluence depth profile (declared port fluence × J/Φ × port area → source rate) and transverse profiles. |
 | `measurement-comparison-cylindrical-28g*.json` | Both peak-normalized and absolute comparisons for each solve. |
 | `models/` | `cbe-protocol.json` (TECDOC-convention CBE/RBE weights) and `mkm-literature-constants.json` (MKM with literature-convention lineal energies) — the two biological interpretations compared by `bio compare`. |
@@ -130,20 +131,32 @@ source-bin weighting (`*-1e` artifacts):
   deepens the thermal tail — now **overpredicting** the measured
   profile ~1.7× at the entry rising to ~4.8× at depth (peak χ² = 261;
   absolute χ² = 2858).
+- **P1 in-group anisotropy** (`multigroup-flux-28g-p1-1e`,
+  `scatter_p1_matrix_per_cm` collapsed from the same data): the
+  strongest deterministic result to date — normalized χ² = **31**
+  (vs 128 raw / 261 corrected), with the deep-tail underprediction
+  roughly halved at mid-depth (rel diffs 0.22/0.49 at 6.5/8.75 cm vs
+  0.83/0.93 raw). Absolute χ² = 320 — the residual underprediction
+  (~27% at entry rising to ~28× at 14.5 cm) is real missing physics,
+  not normalization (incident rate verified to 1%).
 
 The measured series sits between the raw-P0 and corrected-P0
-deterministic results, closer to the corrected side. Under the earlier
-uniform-per-eV bin mapping (the committed `*-28g-split` /
-`*-28g-trcorr` pair) the bracket ran ~10× under to ~9.5× over — the
-1/E-consistent weighting softened the effective source spectrum,
-widening the raw underprediction and roughly halving the corrected
-overprediction. Remaining declared model gaps: P0 isotropic transfer
-even after the correction (no P1 anisotropic in-group source) and no
-S(α,β) thermal-scattering treatment below ~4 eV. The absolute scale
-itself is verified: the solver's incident thermal fluence (≈7.2e7
-cm⁻² s⁻¹) reproduces the declared port thermal rate (7.19e7) within
-1%, so the comparison is genuinely absolute — the disagreement is
-transport physics, not normalization.
+deterministic results, closer to the corrected side; the P1 solve
+lands inside the bracket, nearest the corrected end at mid-depth.
+Under the earlier uniform-per-eV bin mapping (the committed
+`*-28g-split` / `*-28g-trcorr` pair) the bracket ran ~10× under to
+~9.5× over — the 1/E-consistent weighting softened the effective
+source spectrum, widening the raw underprediction and roughly halving
+the corrected overprediction. Remaining declared model gaps: no
+S(α,β) bound-atom thermal-scattering treatment below ~10 eV (the
+MF7/MT4 reader is landed and cross-validated against OpenMC's own
+parser; the collapse-side transfer integration is outstanding) and
+the three-bin source histogram (within-bin shape is declared 1/E —
+the measured FiR1 adjusted spectrum is not publicly tabulated).
+The absolute scale itself is verified: the solver's incident thermal
+fluence (≈7.2e7 cm⁻² s⁻¹) reproduces the declared port thermal rate
+(7.19e7) within 1%, so the comparison is genuinely absolute — the
+disagreement is transport physics, not normalization.
 
 Note on convention history: the committed `*-28g*` flux artifacts
 without a `-1e` suffix were produced while histogram bins spread

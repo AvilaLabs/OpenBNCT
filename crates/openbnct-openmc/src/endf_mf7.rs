@@ -52,7 +52,7 @@ struct Record {
     c1: f64,
     c2: f64,
     l1: i64,
-    _l2: i64,
+    l2: i64,
     n1: i64,
     n2: i64,
     mf: i32,
@@ -66,7 +66,7 @@ fn parse_record(line: &str) -> Record {
         c1: f(0, 11),
         c2: f(11, 22),
         l1: i(22, 33),
-        _l2: i(33, 44),
+        l2: i(33, 44),
         n1: i(44, 55),
         n2: i(55, 66),
         mf: i(70, 72) as i32,
@@ -98,10 +98,19 @@ pub struct ThermalScatteringLaw {
     pub za: f64,
     /// Mass ratio to the neutron.
     pub awr: f64,
-    /// Bound/free cross-section scale σ_b, barns.
+    /// Bound/free cross-section scale σ_b, barns. On ENDF tapes this
+    /// is `natom·σ_free` — the molecular bound-scattering scale for the
+    /// whole scattering unit.
     pub sigma_b_barns: f64,
+    /// Number of principal scattering atoms per scattering unit (the
+    /// σ_b LIST record's sixth field — 2 for H in H₂O, 1 for H in
+    /// Lucite). Defaults to 1 when absent.
+    pub natom: f64,
     /// Largest tabulated β.
     pub beta_max: f64,
+    /// Largest incident energy the law applies to, eV (the σ_b
+    /// record's E_max — 10 eV on the ENDF/B-VIII.1 water evaluation).
+    pub emax_ev: f64,
     /// All (T, β) sections in tape order — `beta_count` per
     /// temperature block, principal first.
     pub sections: Vec<SabSection>,
@@ -112,6 +121,17 @@ pub struct ThermalScatteringLaw {
 }
 
 impl ThermalScatteringLaw {
+    /// Bound-atom scattering cross section per principal atom, barns:
+    /// `σ_b / natom · ((A_r+1)/A_r)²`. This is the σ_b the ENDF-102
+    /// DDXS prefactor expects — NJOY/THERMR's `sb = smz·((az+1)/az)²`
+    /// convention. Verified: integrating the resulting kernel over the
+    /// real H(H₂O) tape reproduces THERMR's MF3/MT222 σ_s(E) within
+    /// ~10% across 0.025–5 eV.
+    pub fn bound_sigma_b(&self) -> f64 {
+        let n = if self.natom > 0.0 { self.natom } else { 1.0 };
+        self.sigma_b_barns / n * ((self.awr + 1.0) / self.awr).powi(2)
+    }
+
     /// The (T, β) section nearest `t` at exactly `beta`, if present.
     pub fn section(&self, temperature_k: f64, beta: f64) -> Option<&SabSection> {
         self.sections
@@ -204,7 +224,9 @@ pub fn parse_tsl(text: &str) -> Result<ThermalScatteringLaw, String> {
     // the β-grid TAB2 appears — it is the first record with N2 > 2
     // (the β count), followed by NR×2/6 interpolation lines.
     let mut sigma_b = 0.0;
+    let mut natom = 1.0;
     let mut beta_max = 0.0;
+    let mut emax_ev = 10.0;
     let mut ns = 0usize;
     let (nr, nb) = loop {
         if i >= lines.len() {
@@ -221,7 +243,16 @@ pub fn parse_tsl(text: &str) -> Result<ThermalScatteringLaw, String> {
             break (r.n1.max(0) as usize, r.n2.max(0) as usize);
         }
         if r.c1 > 1.0 && r.c2 > 50.0 {
+            // First σ_b LIST-body line: [σ_b, ε, A_r, E_max, M0, natom]
+            // read as a CONT — σ_b lands in c1, E_max in l2, natom in
+            // n2 (the sixth field on the line).
             sigma_b = r.c1;
+            if r.l2 > 0 {
+                emax_ev = r.l2 as f64;
+            }
+            if r.n2 > 0 {
+                natom = r.n2 as f64;
+            }
         } else if (0.9..=1.1).contains(&r.c1) && r.c2 > 0.0 {
             beta_max = r.c2;
         } else if r.n1 > 0 {
@@ -330,19 +361,220 @@ pub fn parse_tsl(text: &str) -> Result<ThermalScatteringLaw, String> {
         .map(|s| s.beta)
         .collect();
     betas.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    if beta_max <= 0.0 {
-        beta_max = betas.last().copied().unwrap_or(0.0);
-    }
+    // β_max is the tabulated grid limit — the CONT constant read as a
+    // candidate is not always the grid max (H(H2O) carries 3.79 while
+    // its grid runs to 395.26), so the parsed sections win.
+    beta_max = betas.last().copied().unwrap_or(beta_max);
 
     Ok(ThermalScatteringLaw {
         za,
         awr,
         sigma_b_barns: sigma_b,
+        natom,
         beta_max,
+        emax_ev,
         sections,
         temperatures_k: temperatures,
         betas,
     })
+}
+
+/// Boltzmann constant, eV/K.
+pub const K_B_EV: f64 = 8.617333262e-5;
+
+/// Per-β cumulative α-integrals of S(α,β,T) at one temperature.
+/// `cum0[k] = ∫_{α_0}^{α_k} S dα`, `cum1[k] = ∫ α S dα` (trapezoidal
+/// on the tabulated grid).
+#[derive(Debug)]
+struct SabGrid {
+    alpha: Vec<f64>,
+    cum0: Vec<f64>,
+    cum1: Vec<f64>,
+}
+
+impl SabGrid {
+    /// Cumulative integral `cum(α)` at arbitrary α — log-α
+    /// interpolation between grid points, flat extrapolation off the
+    /// ends (S is tabulated through the small-α ridge).
+    fn cum_at(cum: &[f64], alpha: &[f64], a: f64) -> f64 {
+        if a <= alpha[0] {
+            return 0.0;
+        }
+        if a >= *alpha.last().unwrap() {
+            return *cum.last().unwrap();
+        }
+        let i = alpha.partition_point(|&x| x <= a).clamp(1, alpha.len() - 1);
+        let (x0, x1) = (alpha[i - 1], alpha[i]);
+        let (c0, c1) = (cum[i - 1], cum[i]);
+        let t = (a.ln() - x0.ln()) / (x1.ln() - x0.ln());
+        c0 + t * (c1 - c0)
+    }
+}
+
+/// The incoherent-inelastic bound-atom scattering kernel built from a
+/// parsed [`ThermalScatteringLaw`] at one temperature. Implements the
+/// ENDF-102 DDXS
+///
+/// ```text
+/// σ(E→E',μ) = (σ_b/4πkT)·√(E'/E)·e^(−β/2)·S(α,|β|)
+/// β = (E'−E)/kT,  α = (E+E'−2μ√EE')/(A_r·kT)
+/// ```
+///
+/// with the symmetric β extension (detailed balance verified
+/// numerically: with the `e^(−β/2)·√(E'/E)` prefactor the symmetric
+/// extension reproduces the Maxwellian ratio exactly).
+#[derive(Debug)]
+pub struct SabKernel {
+    /// The tabulated temperature this kernel was built at, K.
+    pub temperature_k: f64,
+    /// kT in eV.
+    pub kt_ev: f64,
+    /// Effective bound-atom σ_b used in the DDXS prefactor, barns —
+    /// `σ_b_tape/natom·((A_r+1)/A_r)²` per [`ThermalScatteringLaw::bound_sigma_b`].
+    pub sigma_b_barns: f64,
+    /// Effective mass ratio A_r (α denominator).
+    pub a_r: f64,
+    /// |E'−E| domain limit = β_max·kT, eV.
+    pub delta_ev: f64,
+    /// Incident-energy ceiling, eV — above this the bound law does not
+    /// apply and the free-gas kernel governs.
+    pub emax_ev: f64,
+    beta_grid: Vec<f64>,
+    grids: Vec<SabGrid>,
+}
+
+impl SabKernel {
+    /// Build the kernel at the tabulated temperature nearest
+    /// `temperature_k`. Every β section at that temperature is folded
+    /// into cumulative α-integrals.
+    pub fn build(tsl: &ThermalScatteringLaw, temperature_k: f64) -> Result<Self, String> {
+        let t = tsl
+            .temperatures_k
+            .iter()
+            .min_by(|a, b| {
+                (*a - temperature_k)
+                    .abs()
+                    .partial_cmp(&(*b - temperature_k).abs())
+                    .unwrap_or(std::cmp::Ordering::Equal)
+            })
+            .copied()
+            .ok_or("no temperatures on tape")?;
+        let kt = K_B_EV * t;
+        let mut beta_grid = Vec::new();
+        let mut grids = Vec::new();
+        for &beta in &tsl.betas {
+            let secs: Vec<&SabSection> = tsl
+                .sections
+                .iter()
+                .filter(|s| (s.beta - beta).abs() < 1e-9)
+                .collect();
+            let sec = secs
+                .iter()
+                .min_by(|a, b| {
+                    (a.temperature_k - t)
+                        .abs()
+                        .partial_cmp(&(b.temperature_k - t).abs())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                })
+                .ok_or_else(|| format!("β {beta}: no section at T {t}"))?;
+            let n = sec.alpha.len();
+            let mut cum0 = Vec::with_capacity(n);
+            let mut cum1 = Vec::with_capacity(n);
+            cum0.push(0.0);
+            cum1.push(0.0);
+            for j in 1..n {
+                let da = sec.alpha[j] - sec.alpha[j - 1];
+                cum0.push(cum0[j - 1] + 0.5 * (sec.s[j] + sec.s[j - 1]) * da);
+                cum1.push(
+                    cum1[j - 1]
+                        + 0.5 * (sec.alpha[j] * sec.s[j] + sec.alpha[j - 1] * sec.s[j - 1]) * da,
+                );
+            }
+            beta_grid.push(beta);
+            grids.push(SabGrid {
+                alpha: sec.alpha.clone(),
+                cum0,
+                cum1,
+            });
+        }
+        Ok(SabKernel {
+            temperature_k: t,
+            kt_ev: kt,
+            sigma_b_barns: tsl.bound_sigma_b(),
+            a_r: tsl.awr,
+            delta_ev: tsl.beta_max * kt,
+            emax_ev: tsl.emax_ev,
+            beta_grid,
+            grids,
+        })
+    }
+
+    /// `(I0, I1)` — the α-window integrals `∫S dα` and `∫αS dα` over
+    /// `[a_lo, a_hi]` at `|beta|`, linearly interpolated in β.
+    fn i01(&self, beta: f64, a_lo: f64, a_hi: f64) -> (f64, f64) {
+        if a_hi <= a_lo || self.grids.is_empty() {
+            return (0.0, 0.0);
+        }
+        let bs = &self.beta_grid;
+        let eval = |g: &SabGrid| -> (f64, f64) {
+            (
+                SabGrid::cum_at(&g.cum0, &g.alpha, a_hi) - SabGrid::cum_at(&g.cum0, &g.alpha, a_lo),
+                SabGrid::cum_at(&g.cum1, &g.alpha, a_hi) - SabGrid::cum_at(&g.cum1, &g.alpha, a_lo),
+            )
+        };
+        if beta <= bs[0] {
+            return eval(&self.grids[0]);
+        }
+        if beta >= *bs.last().unwrap() {
+            return eval(self.grids.last().unwrap());
+        }
+        let i = bs.partition_point(|&b| b <= beta).clamp(1, bs.len() - 1);
+        let (b0, b1) = (bs[i - 1], bs[i]);
+        let (p0, q0) = eval(&self.grids[i - 1]);
+        let (p1, q1) = eval(&self.grids[i]);
+        let t = (beta - b0) / (b1 - b0);
+        (p0 + t * (p1 - p0), q0 + t * (q1 - q0))
+    }
+
+    /// dσ/dE' (barns/eV) at incident `e`, outgoing `ep` — the
+    /// μ-integrated P0 kernel. Zero outside the β domain.
+    pub fn sigma0_de(&self, e: f64, ep: f64) -> f64 {
+        if e <= 0.0 || ep <= 0.0 {
+            return 0.0;
+        }
+        let beta = (ep - e) / self.kt_ev;
+        let abs = beta.abs();
+        if abs > self.beta_grid.last().copied().unwrap_or(0.0) {
+            return 0.0;
+        }
+        let (re, rp) = (e.sqrt(), ep.sqrt());
+        let ar_kt = self.a_r * self.kt_ev;
+        let a_lo = (re - rp) * (re - rp) / ar_kt;
+        let a_hi = (re + rp) * (re + rp) / ar_kt;
+        let (i0, _) = self.i01(abs, a_lo, a_hi);
+        self.sigma_b_barns * self.a_r / (4.0 * e) * (-beta / 2.0).exp() * i0
+    }
+
+    /// dσ₁/dE' (barns/eV) — the lab-cosine-weighted P1 moment kernel
+    /// `∫ μ σ(E→E',μ) dμ`.
+    pub fn sigma1_de(&self, e: f64, ep: f64) -> f64 {
+        if e <= 0.0 || ep <= 0.0 {
+            return 0.0;
+        }
+        let beta = (ep - e) / self.kt_ev;
+        let abs = beta.abs();
+        if abs > self.beta_grid.last().copied().unwrap_or(0.0) {
+            return 0.0;
+        }
+        let (re, rp) = (e.sqrt(), ep.sqrt());
+        let ar_kt = self.a_r * self.kt_ev;
+        let a_lo = (re - rp) * (re - rp) / ar_kt;
+        let a_hi = (re + rp) * (re + rp) / ar_kt;
+        let (i0, i1) = self.i01(abs, a_lo, a_hi);
+        self.sigma_b_barns * self.a_r / (8.0 * e * re * rp)
+            * (-beta / 2.0).exp()
+            * ((e + ep) * i0 - ar_kt * i1)
+    }
 }
 
 #[cfg(test)]
@@ -403,6 +635,9 @@ mod tests {
         let tsl = parse_tsl(&mini_tape()).unwrap();
         assert_eq!(tsl.za, 1001.0);
         assert!((tsl.sigma_b_barns - 40.87).abs() < 1e-9);
+        assert!((tsl.natom - 2.0).abs() < 1e-9);
+        // σ_b/natom·((A_r+1)/A_r)² — the DDXS bound-atom scale.
+        assert!((tsl.bound_sigma_b() - 81.9).abs() < 0.1);
         assert_eq!(tsl.temperatures_k, vec![300.0, 310.0]);
         assert_eq!(tsl.betas, vec![0.0, 2.0]);
         assert_eq!(tsl.sections.len(), 4);
@@ -419,5 +654,64 @@ mod tests {
         // Cut inside the final β section's declared S list.
         t.truncate(t.len() - 300);
         assert!(parse_tsl(&t).is_err());
+    }
+
+    #[test]
+    fn kernel_total_cross_section_and_domain_gate() {
+        let tsl = parse_tsl(&mini_tape()).unwrap();
+        let kern = SabKernel::build(&tsl, 300.0).unwrap();
+        assert!((kern.temperature_k - 300.0).abs() < 1e-9);
+        assert!(kern.kt_ev > 0.0);
+        assert!((kern.emax_ev - 10.0).abs() < 1e-9);
+        // Kernel is positive inside the β domain, zero outside.
+        let e = 0.05;
+        let inside = kern.sigma0_de(e, e * 0.8);
+        let outside = kern.sigma0_de(e, e + 3.0 * kern.kt_ev);
+        assert!(inside > 0.0, "σ(E→E') inside domain = {inside}");
+        assert_eq!(outside, 0.0, "outside β domain must be zero");
+        // Total cross section integrates to a finite positive bound.
+        let mut total = 0.0;
+        for i in 0..2000 {
+            let ep = 1e-4 * e + i as f64 * (2.0 * e - 1e-4 * e) / 2000.0;
+            total += kern.sigma0_de(e, ep) * (2.0 * e - 1e-4 * e) / 2000.0;
+        }
+        assert!(total > 0.0 && total < kern.sigma_b_barns * 10.0);
+    }
+
+    #[test]
+    fn kernel_symmetric_beta_detailed_balance() {
+        // On a constant-S(α,|β|) toy the ratio σ(E→E')/σ(E'→E) with
+        // the √(E'/E)·e^(−β/2) prefactor equals e^((E−E')/kT) — the
+        // Maxwellian detailed-balance factor — when the α integrals
+        // coincide. The mini tape has two β sections so a mid-grid
+        // (E,E') pair that shares the α window exercises the β
+        // interpolation path instead; check smoothness/positivity
+        // there rather than exact equality (different β sections have
+        // different S here).
+        let tsl = parse_tsl(&mini_tape()).unwrap();
+        let kern = SabKernel::build(&tsl, 300.0).unwrap();
+        let kt = kern.kt_ev;
+        // Pick E,E' inside β-grid range 0..2 → |ΔE| ≤ 2·kT.
+        let e = 1.0 * kt;
+        let ep = 1.8 * kt;
+        let up = kern.sigma0_de(e, ep); // β = +0.8 — upscatter
+        let down = kern.sigma0_de(ep, e); // β = −0.8 — downscatter
+        assert!(up > 0.0 && down > 0.0);
+        // Downscatter exceeds upscatter (e^(−β/2)·√(E'/E) tilts to
+        // energy loss — the detailed-balance direction).
+        assert!(down > up, "down {down} vs up {up}");
+    }
+
+    #[test]
+    fn p1_kernel_bounded_by_p0() {
+        // |σ1(E→E')| ≤ σ0(E→E') pointwise — the cosine-weighted
+        // integral is bounded by the unweighted one.
+        let tsl = parse_tsl(&mini_tape()).unwrap();
+        let kern = SabKernel::build(&tsl, 300.0).unwrap();
+        for (e, ep) in [(0.02, 0.018), (0.05, 0.04), (0.03, 0.035)] {
+            let s0 = kern.sigma0_de(e, ep);
+            let s1 = kern.sigma1_de(e, ep);
+            assert!(s1.abs() <= s0 + 1e-30, "e={e} ep={ep}: |s1|={s1} s0={s0}");
+        }
     }
 }

@@ -1705,6 +1705,18 @@ enum SnCommand {
         /// evaluations or NJOY PENDF tapes both parse.
         #[arg(long, value_name = "NUCLIDE=PATH")]
         endf: Vec<String>,
+        /// MF7/MT4 thermal-scattering-law tape for a nuclide —
+        /// `--tsl H1=/path/tsl_H(H2O)_0001.dat`, repeatable. Its
+        /// incoherent-inelastic S(α,β) kernel replaces the free-gas
+        /// elastic kernel below the tape's E_max (thermal upscatter
+        /// included); free-gas covers the |ΔE|>β_max·kT residual and
+        /// higher energies.
+        #[arg(long, value_name = "NUCLIDE=PATH")]
+        tsl: Vec<String>,
+        /// Material temperature (K) for the S(α,β) evaluation — the
+        /// nearest tabulated temperature on each tape is used.
+        #[arg(long, default_value_t = 293.6)]
+        tsl_temperature: f64,
         /// Material definition artifact (openbnct.material/0.1.0) —
         /// repeat for every material the solve requires.
         #[arg(long, required = true)]
@@ -7179,6 +7191,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             SnCommand::Collapse {
                 library,
                 endf,
+                tsl,
+                tsl_temperature,
                 material,
                 boundaries,
                 id,
@@ -7192,6 +7206,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         io::Error::other(format!("--endf expects NUCLIDE=PATH, got {spec:?}"))
                     })?;
                     endf_paths.insert(name.to_string(), PathBuf::from(path));
+                }
+                let mut tsl_paths = std::collections::BTreeMap::new();
+                for spec in &tsl {
+                    let (name, path) = spec.split_once('=').ok_or_else(|| {
+                        io::Error::other(format!("--tsl expects NUCLIDE=PATH, got {spec:?}"))
+                    })?;
+                    tsl_paths.insert(name.to_string(), PathBuf::from(path));
                 }
                 let mut material_models = Vec::with_capacity(material.len());
                 for path in &material {
@@ -7220,6 +7241,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let options = openbnct_openmc::CollapseOptions {
                     library_dir: library.clone(),
                     endf_paths,
+                    tsl_paths,
+                    tsl_temperature_k: tsl_temperature,
                     materials: material_models,
                     energy_boundaries_ev: boundaries,
                     weighting:
