@@ -370,6 +370,47 @@ fn elastic_transfer_p(e: f64, alpha: f64, lo: f64, hi: f64) -> f64 {
     overlap / ((1.0 - alpha) * e)
 }
 
+/// P1 iso-CM elastic transfer moment: the outgoing lab-frame mean
+/// cosine folded into the transfer probability — the `l = 1` Legendre
+/// moment of the elastic kernel restricted to `[lo, hi]`.
+///
+/// For iso-CM elastic scattering, `μ_cm = (2E'/E − 1 − α)/(1 − α)` and
+/// the lab cosine of the outgoing neutron is
+/// `μ_lab = (A·μ_cm + 1)/√(A² + 2A·μ_cm + 1)`. The return value is
+/// `∫_{lo}^{hi} μ_lab(E,E') / (E·(1−α)) dE'` over the reachable window,
+/// so `p1(g→g')/p0(g→g')` is the mean lab cosine of transfers into the
+/// destination group. For A = 1 this reduces analytically to the known
+/// `⟨μ⟩ = 2/3` over the full outgoing range.
+fn elastic_transfer_p1(e: f64, alpha: f64, mass_number: f64, lo: f64, hi: f64) -> f64 {
+    if e <= 0.0 {
+        return 0.0;
+    }
+    let elo = alpha * e;
+    let lo_c = elo.max(lo);
+    let hi_c = e.min(hi);
+    if hi_c <= lo_c {
+        return 0.0;
+    }
+    // Midpoint quadrature over the overlap — μ_lab is smooth in E'.
+    const N: usize = 64;
+    let step = (hi_c - lo_c) / N as f64;
+    let a = mass_number;
+    let mut acc = 0.0;
+    for i in 0..N {
+        let ep = lo_c + (i as f64 + 0.5) * step;
+        let mu_cm = (2.0 * ep / e - 1.0 - alpha) / (1.0 - alpha);
+        let den2 = a * a + 2.0 * a * mu_cm + 1.0;
+        // E'→0 on A=1 is a 0/0 corner; the kinematic limit is μ_lab→0.
+        let mu_lab = if den2 > 1e-30 {
+            (a * mu_cm + 1.0) / den2.sqrt()
+        } else {
+            0.0
+        };
+        acc += mu_lab;
+    }
+    acc * step / ((1.0 - alpha) * e)
+}
+
 /// Options for [`collapse_multigroup`].
 pub struct CollapseOptions {
     /// Directory of `<Nuclide>.h5` incident-neutron tables.
@@ -434,7 +475,9 @@ pub fn collapse_multigroup(opts: &CollapseOptions) -> Result<MultigroupData, Col
          sigma_total = collapsed elastic + summed non-elastic removal \
          (capture, (n,p), (n,α), inelastic, other; inelastic energy \
          return neglected). Scatter = analytic P0 isotropic-in-CM \
-         elastic kernel, α = ((A−1)/(A+1))²; no thermal upscatter — \
+         elastic kernel, α = ((A−1)/(A+1))², with the P1 lab-cosine \
+         transfer moments emitted alongside (scatter_p1_matrix_per_cm); \
+         no thermal upscatter — \
          free-gas model, molecular binding (S(α,β)) not included. \
          Dose responses are mass-kerma coefficients (Gy·cm² per unit \
          fluence): boron = 10B(n,α) charged kerma with declared \
@@ -503,6 +546,7 @@ fn collapse_material(
 
     let mut sigma_t = vec![0.0; groups];
     let mut transfer = vec![0.0; groups * groups];
+    let mut transfer_p1 = vec![0.0; groups * groups];
     let mut dose_boron = vec![0.0; groups];
     let mut dose_nitrogen = vec![0.0; groups];
     let mut dose_hydrogen = vec![0.0; groups];
@@ -538,6 +582,8 @@ fn collapse_material(
             // P varies within g, so integrate the product numerically.
             let elastic_weighted = sw(&table.elastic);
             let mut row = vec![0.0; groups];
+            let mut row_p1 = vec![0.0; groups];
+            let a = table.mass_number as f64;
             for gp in 0..groups {
                 let integrand: Vec<f64> = e
                     .iter()
@@ -547,9 +593,20 @@ fn collapse_material(
                     })
                     .collect();
                 row[gp] = collapse(&integrand);
+                let integrand_p1: Vec<f64> = e
+                    .iter()
+                    .enumerate()
+                    .map(|(i, &x)| {
+                        elastic_weighted[i] * elastic_transfer_p1(x, alpha, a, b[gp + 1], b[gp])
+                    })
+                    .collect();
+                row_p1[gp] = collapse(&integrand_p1);
             }
             for (gp, val) in row.iter().enumerate() {
                 transfer[g * groups + gp] += n_density * val;
+            }
+            for (gp, val) in row_p1.iter().enumerate() {
+                transfer_p1[g * groups + gp] += n_density * val;
             }
             sigma_t[g] += n_density * (sigma_s + sigma_a);
             // Iso-CM elastic: mean lab cosine is exactly 2/(3A).
@@ -600,6 +657,7 @@ fn collapse_material(
         material_id: material.id.clone(),
         sigma_total_per_cm: sigma_t,
         scatter_matrix_per_cm: transfer,
+        scatter_p1_matrix_per_cm: Some(transfer_p1),
         dose_response_gy_cm2,
         transport_mu_bar: Some(
             mu_num
@@ -665,6 +723,42 @@ mod tests {
                 assert!(p < 0.01, "off-diagonal transfer {p} should be ~0");
             }
         }
+    }
+
+    #[test]
+    fn elastic_transfer_p1_recovers_analytic_mean_cosines() {
+        // Full-range P1/P0 ratio must equal the iso-CM elastic mean lab
+        // cosine 2/(3A) exactly — the kinematic identity for the kernel.
+        // H: μ̄ = 2/3; A=12: μ̄ = 1/18; Pb-like: ~3e-3.
+        for (a, expected) in [
+            (1.0_f64, 2.0 / 3.0),
+            (12.0, 2.0 / 36.0),
+            (207.0, 2.0 / 621.0),
+        ] {
+            let alpha = ((a - 1.0) / (a + 1.0)).powi(2);
+            let e = 1.0e6;
+            let (lo, hi) = (alpha * e, e);
+            let p0 = elastic_transfer_p(e, alpha, lo, hi);
+            let p1 = elastic_transfer_p1(e, alpha, a, lo, hi);
+            assert!(
+                (p1 / p0 - expected).abs() / expected < 2e-3,
+                "A={a}: p1/p0 = {} expected {expected}",
+                p1 / p0
+            );
+        }
+    }
+
+    #[test]
+    fn elastic_transfer_p1_hydrogen_subrange() {
+        // A = 1: μ_lab = √(E'/E); P1 over [lo,hi] is
+        // ∫√(E'/E)/E dE' = (2/3)·(hi^{3/2} − lo^{3/2})/E^{3/2}.
+        let (e, lo, hi) = (1.0e6, 2.0e5, 5.0e5);
+        let p1 = elastic_transfer_p1(e, 0.0, 1.0, lo, hi);
+        let want = (2.0 / 3.0) * (hi.powf(1.5) - lo.powf(1.5)) / e.powf(1.5);
+        assert!(
+            (p1 - want).abs() / want < 1e-3,
+            "H subrange p1 = {p1} expected {want}"
+        );
     }
 
     #[test]

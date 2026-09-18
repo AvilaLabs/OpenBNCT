@@ -64,6 +64,13 @@ pub struct MultigroupMaterial {
     pub sigma_total_per_cm: Vec<f64>,
     /// Row-major scatter matrix `[g_from][g_to]`, cm⁻¹.
     pub scatter_matrix_per_cm: Vec<f64>,
+    /// Optional P1 (l = 1 Legendre) transfer moments `[g_from][g_to]`,
+    /// cm⁻¹ — each entry is the P0 transfer cross section weighted by
+    /// the outgoing lab-frame mean cosine. Feeds the anisotropic
+    /// scattering source `3·Σ_a Ω_a·Σ_s1·J_a` when the solve enables
+    /// `p1_anisotropic`. Absent on pre-P1 artifacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scatter_p1_matrix_per_cm: Option<Vec<f64>>,
     /// Optional per-component flux→dose response vectors `[G]` in
     /// `Gy·cm²` — folding scalar flux by these reproduces the component
     /// dose convention of the component profile the data declares.
@@ -178,6 +185,25 @@ impl MultigroupData {
                     "material {:?} transport_mu_bar must be {groups} values in [0,1]",
                     material.material_id
                 )));
+            }
+            if let Some(p1) = &material.scatter_p1_matrix_per_cm {
+                if p1.len() != groups * groups {
+                    return Err(invalid(format!(
+                        "material {:?} scatter_p1 matrix must be {groups}x{groups}",
+                        material.material_id
+                    )));
+                }
+                // Each P1 moment is the P0 transfer weighted by a mean
+                // cosine in [−1,1] — bounded by the P0 row in magnitude.
+                for (i, v) in p1.iter().enumerate() {
+                    if !v.is_finite() || v.abs() > material.scatter_matrix_per_cm[i] + 1e-12 {
+                        return Err(invalid(format!(
+                            "material {:?} scatter_p1 entry {i} must be finite and \
+                             |Σ_s1| ≤ Σ_s0",
+                            material.material_id
+                        )));
+                    }
+                }
             }
         }
         Ok(())
@@ -310,6 +336,15 @@ pub struct SnOptions {
     /// still uses the physical σ_t — the correction applies only to
     /// the collided component. No-op on data without `transport_mu_bar`.
     pub transport_correction: bool,
+    /// P1 anisotropic scattering: when the data carries
+    /// `scatter_p1_matrix_per_cm`, add the first-Legendre source term
+    /// `3·Σ_a Ω_{d,a}·Σ_s1(gp→g)·J_{a,gp}` to the sweep source, with the
+    /// cell group currents `J_a` iterated alongside the scalar flux.
+    /// Requires the P1 table on every material that contributes
+    /// scatter; mutually exclusive with `transport_correction` (both
+    /// treat the same anisotropy — combining them double-counts the
+    /// forward peak). Physical σ_t applies when this is set.
+    pub p1_anisotropic: bool,
 }
 
 impl Default for SnOptions {
@@ -323,6 +358,7 @@ impl Default for SnOptions {
             periodic: [false; 3],
             beam_uncollided_split: true,
             transport_correction: true,
+            p1_anisotropic: false,
         }
     }
 }
@@ -351,6 +387,13 @@ pub struct MultigroupFlux {
     /// μ̄_g·Σ_s,g) was applied to the collided sweep.
     #[serde(default)]
     pub transport_correction: bool,
+    /// Scattering treatment actually solved: `p0` (isotropic transfer),
+    /// `p0_transport_corrected` (extended transport correction applied),
+    /// or `p1` (P1 anisotropic source from `scatter_p1` moments).
+    /// Absent on pre-P1 artifacts — resolve via
+    /// [`MultigroupFlux::scattering_order`].
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scattering_order: Option<String>,
     /// How histogram source bins were spread across sub-groups:
     /// `collapse_consistent` = Maxwellian below 0.5 eV / 1-E above,
     /// matching the multigroup collapse's declared weighting;
@@ -366,6 +409,21 @@ pub struct MultigroupFlux {
     pub converged: bool,
     pub qualification: String,
     pub provenance_id: String,
+}
+
+impl MultigroupFlux {
+    /// Scattering treatment this artifact was produced under —
+    /// `p0`, `p0_transport_corrected`, or `p1`. Pre-P1 artifacts lack
+    /// the field; they resolve from `transport_correction`.
+    pub fn scattering_order(&self) -> &str {
+        self.scattering_order
+            .as_deref()
+            .unwrap_or(if self.transport_correction {
+                "p0_transport_corrected"
+            } else {
+                "p0"
+            })
+    }
 }
 
 /// Incident boundary angular flux keyed `(face, cell_u, cell_v)` →
@@ -888,6 +946,8 @@ fn uncollided_beam_flux(
 /// `scatter_eff[material]` mirrors `sigma_eff`: the declared matrix, or
 /// the matrix with the μ̄_g·Σ_s,row forward fraction removed from the
 /// diagonal under the transport correction.
+/// `p1_source[cell][axis]` is the P1 anisotropic source for group `g`
+/// (Σ_gp Σ_s1(gp→g)·J_{a,gp}) when the P1 mode is on — `None` under P0.
 #[allow(clippy::too_many_arguments)]
 fn sweep_group(
     g: usize,
@@ -898,6 +958,7 @@ fn sweep_group(
     case_material: &[usize],
     sigma_eff: &[Vec<f64>],
     scatter_eff: &[Vec<f64>],
+    p1_source: Option<&[[f64; 3]]>,
     data: &MultigroupData,
     geometry: &GridGeometry,
     quadrature: &[([f64; 3], f64)],
@@ -991,10 +1052,15 @@ fn sweep_group(
                     let st = sigma_eff[mi][g];
                     // Scatter source into g from the current iterate plus
                     // the fixed (first-collision or volumetric) source.
+                    // The P1 term adds 3·Σ_a Ω_{d,a}·S_a(cell) — the
+                    // anisotropic part of the scattering source.
                     let q: f64 = fixed_source[cell][g]
                         + (0..groups)
                             .map(|gp| scatter_eff[mi][gp * groups + g] * flux[cell][gp])
-                            .sum::<f64>();
+                            .sum::<f64>()
+                        + p1_source.map_or(0.0, |s| {
+                            3.0 * (dir[0] * s[cell][0] + dir[1] * s[cell][1] + dir[2] * s[cell][2])
+                        });
                     let (ax, ay, az) = (
                         dir[0].abs() * face_area[0],
                         dir[1].abs() * face_area[1],
@@ -1130,13 +1196,19 @@ pub fn solve_multigroup_adjoint(
             }
         }
         material.scatter_matrix_per_cm = transposed;
+        // The P1 adjoint couples adjoint harmonic moments differently —
+        // not a matrix transpose. The adjoint solve stays P0; importance
+        // functions for weight windows do not need the P1 fidelity.
+        material.scatter_p1_matrix_per_cm = None;
     }
     let case_material = cell_materials(case, &adjoint_data, options.assignment.as_ref())?;
     let quadrature = level_symmetric_quadrature(options.quadrature_order)?;
+    let mut adjoint_options = options.clone();
+    adjoint_options.p1_anisotropic = false;
     let mut result = solve_sn_problem(
         case,
         &adjoint_data,
-        options,
+        &adjoint_options,
         &case_material,
         &quadrature,
         &BoundarySource::new(),
@@ -1234,8 +1306,28 @@ pub(crate) fn solve_sn_problem(
     // unchanged and the sweep stays contractive. The correction
     // applies to the collided sweep only — the uncollided ray-trace
     // keeps the exact exponential.
-    let corrected =
-        options.transport_correction && data.materials.iter().any(|m| m.transport_mu_bar.is_some());
+    //
+    // P1 supersedes the correction: it carries the same anisotropy
+    // physics explicitly, so the correction is disabled and physical
+    // σ_t applies. Every material that scatters must carry the P1
+    // table — an absent table would silently downgrade that material
+    // to isotropic.
+    let p1 = options.p1_anisotropic;
+    if p1 {
+        for material in &data.materials {
+            let scatters = material.scatter_matrix_per_cm.iter().any(|&v| v > 0.0);
+            if scatters && material.scatter_p1_matrix_per_cm.is_none() {
+                return Err(invalid(format!(
+                    "p1_anisotropic requires scatter_p1_matrix_per_cm on every \
+                     scattering material; {:?} lacks it",
+                    material.material_id
+                )));
+            }
+        }
+    }
+    let corrected = options.transport_correction
+        && !p1
+        && data.materials.iter().any(|m| m.transport_mu_bar.is_some());
     let sigma_eff: Vec<Vec<f64>> = data
         .materials
         .iter()
@@ -1275,6 +1367,10 @@ pub(crate) fn solve_sn_problem(
         .collect();
 
     let mut flux = vec![vec![0.0; groups]; n_cells];
+    // P1: angle-averaged cell currents J_a[cell][group][axis] —
+    // J_a = (1/4π)·Σ_d w_d·Ω_{d,a}·ψ_d, iterated Jacobi-style with the
+    // scalar flux.
+    let mut current = vec![vec![[0.0_f64; 3]; groups]; n_cells];
     let mut psi = vec![vec![0.0; n_dirs]; n_cells];
     let mut psi_prev = vec![vec![0.0; n_dirs]; n_cells];
     let mut converged = false;
@@ -1286,6 +1382,26 @@ pub(crate) fn solve_sn_problem(
         for g in 0..groups {
             // Within-group Jacobi iteration on the scatter source.
             for _inner in 0..options.max_inner_iterations {
+                // P1 anisotropic source into group g:
+                // S_a(cell) = Σ_gp Σ_s1(gp→g)·J_{a,gp}(cell).
+                let p1_source: Option<Vec<[f64; 3]>> = if p1 {
+                    let mut src = vec![[0.0_f64; 3]; n_cells];
+                    for cell in 0..n_cells {
+                        let mi = case_material[cell];
+                        if let Some(m) = &data.materials[mi].scatter_p1_matrix_per_cm {
+                            for gp in 0..groups {
+                                let s = m[gp * groups + g];
+                                let j = &current[cell][gp];
+                                src[cell][0] += s * j[0];
+                                src[cell][1] += s * j[1];
+                                src[cell][2] += s * j[2];
+                            }
+                        }
+                    }
+                    Some(src)
+                } else {
+                    None
+                };
                 std::mem::swap(&mut psi, &mut psi_prev);
                 sweep_group(
                     g,
@@ -1296,6 +1412,7 @@ pub(crate) fn solve_sn_problem(
                     case_material,
                     &sigma_eff,
                     &scatter_eff,
+                    p1_source.as_deref(),
                     data,
                     geometry,
                     quadrature,
@@ -1304,10 +1421,24 @@ pub(crate) fn solve_sn_problem(
                 );
                 let mut change = 0.0_f64;
                 for cell in 0..n_cells {
-                    let new_flux: f64 = (0..n_dirs)
-                        .map(|d| quadrature[d].1 * psi[cell][d])
-                        .sum::<f64>()
-                        / (4.0 * std::f64::consts::PI);
+                    let mut new_flux = 0.0_f64;
+                    let mut j = [0.0_f64; 3];
+                    for d in 0..n_dirs {
+                        let (dir, w) = quadrature[d];
+                        new_flux += w * psi[cell][d];
+                        if p1 {
+                            for a in 0..3 {
+                                j[a] += w * dir[a] * psi[cell][d];
+                            }
+                        }
+                    }
+                    new_flux /= 4.0 * std::f64::consts::PI;
+                    if p1 {
+                        for ja in &mut j {
+                            *ja /= 4.0 * std::f64::consts::PI;
+                        }
+                        current[cell][g] = j;
+                    }
                     change =
                         change.max((new_flux - flux[cell][g]).abs() / new_flux.abs().max(1e-30));
                     flux[cell][g] = new_flux;
@@ -1339,6 +1470,16 @@ pub(crate) fn solve_sn_problem(
         beam_model: "volumetric_or_boundary".into(),
         flux,
         transport_correction: corrected,
+        scattering_order: Some(
+            if p1 {
+                "p1"
+            } else if corrected {
+                "p0_transport_corrected"
+            } else {
+                "p0"
+            }
+            .into(),
+        ),
         source_spectrum_weighting: "collapse_consistent".into(),
         quadrature_order: options.quadrature_order,
         outer_iterations: outer_done,
@@ -1551,6 +1692,7 @@ pub(crate) mod tests {
                 material_id: "absorber".into(),
                 sigma_total_per_cm: sigma_t.to_vec(),
                 scatter_matrix_per_cm: scatter,
+                scatter_p1_matrix_per_cm: None,
                 dose_response_gy_cm2: Default::default(),
                 transport_mu_bar: None,
             }],
@@ -1569,6 +1711,7 @@ pub(crate) mod tests {
             periodic: [true, true, false],
             beam_uncollided_split: true,
             transport_correction: true,
+            p1_anisotropic: false,
         }
     }
 
@@ -1772,6 +1915,95 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn p1_zero_matrix_is_p0_equivalent() {
+        // P1 enabled but every moment is zero — the anisotropic source
+        // vanishes and the solve must reproduce the uncorrected P0
+        // result exactly (and disable the transport correction).
+        let case = slab_case();
+        let mut mg = data(&[1.0, 0.5], vec![0.10, 0.80, 0.0, 0.30]);
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(vec![0.0; 4]);
+        mg.materials[0].transport_mu_bar = Some(vec![0.7, 0.0]);
+        mg.validate().unwrap();
+        let mut p1_opts = options();
+        p1_opts.p1_anisotropic = true;
+        let mut p0_opts = options();
+        p0_opts.transport_correction = false;
+        let p1 = solve_multigroup(&case, &mg, &p1_opts, cref("mg"), cref("case")).unwrap();
+        let p0 = solve_multigroup(&case, &mg, &p0_opts, cref("mg"), cref("case")).unwrap();
+        assert!(p1.converged && p0.converged);
+        assert_eq!(p1.scattering_order(), "p1");
+        assert_eq!(p0.scattering_order(), "p0");
+        for (a, b) in p1.flux.iter().zip(&p0.flux) {
+            for (x, y) in a.iter().zip(b) {
+                assert_eq!(x, y, "P1 with zero moments diverged from P0");
+            }
+        }
+    }
+
+    #[test]
+    fn p1_requires_moments_on_scattering_materials() {
+        let case = slab_case();
+        // Scatter > 0 but no P1 table — must be refused, not silently
+        // downgraded to isotropic.
+        let mg = data(&[1.0], vec![0.5]);
+        let mut opts = options();
+        opts.p1_anisotropic = true;
+        let err = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap_err();
+        assert!(format!("{err}").contains("scatter_p1"));
+    }
+
+    #[test]
+    fn p1_forward_peak_deepens_penetration() {
+        // Same cascade as the transport-correction test:
+        // σ_t = [1.0, 0.5], Σ_s = [[0.10, 0.80], [0, 0.30]] (src, dst).
+        // Give every transfer a forward mean cosine μ̄ = 0.7 — the P1
+        // source term 3·Ω_z·Σ_s1·J_z adds a downbeam-biased source, so
+        // the collided field must penetrate deeper than P0.
+        let case = slab_case();
+        let scatter = vec![0.10, 0.80, 0.0, 0.30];
+        let p1: Vec<f64> = scatter.iter().map(|s| s * 0.7).collect();
+        let mut mg = data(&[1.0, 0.5], scatter);
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(p1);
+        mg.validate().unwrap();
+        let mut p1_opts = options();
+        p1_opts.p1_anisotropic = true;
+        let mut p0_opts = options();
+        p0_opts.transport_correction = false;
+        let p1f = solve_multigroup(&case, &mg, &p1_opts, cref("mg"), cref("case")).unwrap();
+        let p0f = solve_multigroup(&case, &mg, &p0_opts, cref("mg"), cref("case")).unwrap();
+        assert!(p1f.converged && p0f.converged);
+        let deep = 5 + 16 * 17;
+        assert!(
+            p1f.flux[deep][1] > p0f.flux[deep][1],
+            "P1 deep thermal {} !> P0 {}",
+            p1f.flux[deep][1],
+            p0f.flux[deep][1]
+        );
+        // The same forward bias also deepens the epithermal group.
+        assert!(
+            p1f.flux[deep][0] > p0f.flux[deep][0],
+            "P1 deep epi {} !> P0 {}",
+            p1f.flux[deep][0],
+            p0f.flux[deep][0]
+        );
+    }
+
+    #[test]
+    fn scatter_p1_bounded_by_p0_row() {
+        // |Σ_s1(g→g')| ≤ Σ_s0(g→g') — the P1 moment is a cosine-weighted
+        // P0 moment; an unphysical entry must fail validation.
+        let mut mg = data(&[1.0], vec![0.5]);
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(vec![0.6]);
+        assert!(mg.validate().is_err());
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(vec![0.5]);
+        mg.validate().unwrap();
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(vec![-0.5]);
+        mg.validate().unwrap();
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(vec![f64::NAN]);
+        assert!(mg.validate().is_err());
+    }
+
+    #[test]
     fn pure_absorber_boundary_flux_matches_diamond_difference() {
         // With the split disabled the beam rides the nearest ordinate —
         // the DD sweep must reproduce the Padé per-cell ratio along ξ.
@@ -1938,6 +2170,7 @@ mod heterogeneous_tests {
                     material_id: "absorber".into(),
                     sigma_total_per_cm: vec![0.1],
                     scatter_matrix_per_cm: vec![0.0],
+                    scatter_p1_matrix_per_cm: None,
                     dose_response_gy_cm2: Default::default(),
                     transport_mu_bar: None,
                 },
@@ -1945,6 +2178,7 @@ mod heterogeneous_tests {
                     material_id: "insert".into(),
                     sigma_total_per_cm: vec![1.0],
                     scatter_matrix_per_cm: vec![0.0],
+                    scatter_p1_matrix_per_cm: None,
                     dose_response_gy_cm2: Default::default(),
                     transport_mu_bar: None,
                 },

@@ -1651,6 +1651,12 @@ enum SnCommand {
         /// declares `transport_mu_bar`.
         #[arg(long)]
         no_transport_correction: bool,
+        /// Enable P1 anisotropic scattering (requires
+        /// `scatter_p1_matrix_per_cm` on every scattering material in
+        /// the data; supersedes the transport correction — physical σ_t
+        /// applies).
+        #[arg(long)]
+        p1: bool,
         /// Also write a folded `openbnct.physical-dose-bundle/0.2.0` to
         /// this path (the data must declare `dose_response_gy_cm2` and a
         /// `component_profile` binding).
@@ -7033,6 +7039,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 periodic,
                 no_uncollided_split,
                 no_transport_correction,
+                p1,
                 dose,
                 output,
             } => {
@@ -7071,6 +7078,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic: periodic_axes,
                     beam_uncollided_split: !no_uncollided_split,
                     transport_correction: !no_transport_correction,
+                    p1_anisotropic: p1,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: mg_data.id.clone(),
@@ -8052,6 +8060,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic: periodic_axes,
                     beam_uncollided_split: !no_uncollided_split,
                     transport_correction: true,
+                    p1_anisotropic: false,
                 };
                 let nominal_flux =
                     match &forward_flux {
@@ -8189,6 +8198,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic: periodic_axes,
                     beam_uncollided_split: !no_uncollided_split,
                     transport_correction: true,
+                    p1_anisotropic: false,
                 };
                 let report = openbnct_transport::run_screening(
                     &transport_case,
@@ -8634,6 +8644,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic: periodic_axes,
                     beam_uncollided_split: true,
                     transport_correction: true,
+                    p1_anisotropic: false,
                 };
                 let forward = forward_flux
                     .as_ref()

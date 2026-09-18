@@ -15,6 +15,7 @@ mod acquisition;
 mod data;
 mod domain;
 mod endf_mf3;
+pub mod endf_mf7;
 mod evaluated;
 mod input;
 mod mgcollapse;
