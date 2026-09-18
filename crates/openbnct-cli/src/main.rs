@@ -19,7 +19,8 @@ use openbnct_core::{ExposurePlan, PhysicalDoseBundle, ResampleMethod};
 use openbnct_dicom::synthetic::generate_nf_bnct_001;
 use openbnct_dicom::{load_nf_bnct_001, verify_nf_bnct_001};
 use openbnct_nifti::{
-    Interpolation, NiftiImage, read_nifti_file, read_target_geometry, resample_to_grid, write_nifti,
+    DT_FLOAT64, Interpolation, NiftiImage, read_nifti_file, read_target_geometry, resample_to_grid,
+    write_nifti,
 };
 use openbnct_njoy::{
     DEFAULT_CAPTURE_ENERGY_BALANCE_RELATIVE_TOLERANCE,
@@ -1145,6 +1146,19 @@ enum DicomCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Import a DICOM PET series as a body-weight SUV (SUVbw) volume —
+    /// NIfTI float64, directly resampleable onto a transport grid for
+    /// the boron uptake model. Requires BQML units, patient weight, and
+    /// a complete radiopharmaceutical record.
+    ImportPet {
+        /// PET slice `.dcm` files; repeatable or directory-expanded
+        /// upstream.
+        #[arg(long, required = true)]
+        slices: Vec<PathBuf>,
+        /// Output `.nii` or `.nii.gz` path for the SUVbw volume.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -1199,6 +1213,10 @@ enum NiftiCommand {
         /// Write gzip-compressed `.nii.gz` files.
         #[arg(long)]
         gzip: bool,
+        /// Name dose files with the OpenPINT convention
+        /// (`<case>_<B10|N14|n|g>.nii`) instead of `component:<name>`.
+        #[arg(long)]
+        pint: bool,
     },
     /// Resample a NIfTI volume onto a transport-case or dose-bundle grid.
     Resample {
@@ -1560,6 +1578,36 @@ enum PlanCommand {
         /// `openbnct.exposure-plan/0.1.0` JSON.
         #[arg(long)]
         plan: PathBuf,
+    },
+    /// Optimize non-negative exposure weights against dose-volume
+    /// objectives (`openbnct.inverse-plan-objective/0.1.0` →
+    /// `openbnct.inverse-plan-result/0.1.0`). Research optimizer — not
+    /// a commissioned treatment-planning product.
+    Optimize {
+        /// `openbnct.inverse-plan-objective` JSON document.
+        #[arg(long)]
+        objective: PathBuf,
+        /// Per-beam `openbnct.physical-dose-bundle` JSON — one file
+        /// per beam; repeatable. The beam name is the file stem.
+        #[arg(long, required = true)]
+        dose: Vec<PathBuf>,
+        /// `RegionMask` JSON (`{"name": ..., "voxels": [...]}`);
+        /// repeatable. Every mask the objectives name must be supplied.
+        #[arg(long, required = true)]
+        mask: Vec<PathBuf>,
+        /// Initial weight per beam in `--dose` order; repeatable.
+        /// Defaults to 1.0 for every beam.
+        #[arg(long)]
+        initial: Vec<f64>,
+        /// Result document identifier.
+        #[arg(long, default_value = "openbnct.inverse-plan-result")]
+        id: String,
+        /// Provenance identifier recorded on the result.
+        #[arg(long)]
+        provenance_id: Option<String>,
+        /// Output path for the result JSON.
+        #[arg(long)]
+        output: PathBuf,
     },
 }
 
@@ -4006,6 +4054,34 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 openbnct_dicom::export_rt_plan(&output, &options)
                     .map_err(|error| io::Error::other(format!("rtplan export: {error}")))?;
                 println!("rtplan: {}", output.display());
+            }
+            DicomCommand::ImportPet { slices, output } => {
+                let volume = openbnct_dicom::import_pet_series(&slices)
+                    .map_err(|error| io::Error::other(format!("pet import: {error}")))?;
+                let image = NiftiImage {
+                    geometry: volume.geometry.clone(),
+                    values: volume.suv.clone(),
+                    datatype: DT_FLOAT64,
+                    transform_source: "sform",
+                    description: format!("openbnct SUVbw {}", volume.series_instance_uid),
+                    intent_name: String::new(),
+                    units_declared_mm: true,
+                };
+                write_nifti(&image, &output)?;
+                println!(
+                    "pet: {} SUVbw voxels -> {}",
+                    volume.suv.len(),
+                    output.display()
+                );
+                println!(
+                    "  weight {:.1} kg | dose {:.0} -> {:.0} MBq (Δt {:.0} s, T½ {:.0} s) | clamped {}",
+                    volume.patient_weight_kg,
+                    volume.injected_dose_bq / 1e6,
+                    volume.decayed_dose_bq / 1e6,
+                    volume.delta_t_s,
+                    volume.radionuclide_half_life_s,
+                    volume.clamped_negative_voxels
+                );
             }
         },
         Some(Command::Openmc(args)) => match args.command {
@@ -6652,9 +6728,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 dose,
                 output_dir,
                 gzip,
+                pint,
             } => {
                 let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(&dose)?)?;
-                let manifest = openbnct_nifti::export_component_niftis(&bundle, &output_dir, gzip)?;
+                let manifest =
+                    openbnct_nifti::export_component_niftis(&bundle, &output_dir, gzip, pint)?;
                 let manifest_path = output_dir.join(format!("{}.components.json", bundle.case_id));
                 fs::write(&manifest_path, serde_json::to_vec_pretty(&manifest)?)?;
                 for entry in &manifest.files {
@@ -7626,6 +7704,99 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                     return Err(io::Error::other("exposure plan validation failed").into());
                 }
+            }
+            PlanCommand::Optimize {
+                objective,
+                dose,
+                mask,
+                initial,
+                id,
+                provenance_id,
+                output,
+            } => {
+                use openbnct_plan::optimize::{
+                    BeamDoseField, DoseQuantity, InversePlanObjective, ResultProvenance,
+                    optimize_weights,
+                };
+                let spec_bytes = fs::read(&objective)?;
+                let spec: InversePlanObjective =
+                    serde_json::from_slice(&spec_bytes).map_err(|error| {
+                        io::Error::other(format!("inverse-plan objective: {error}"))
+                    })?;
+                let mut fields = Vec::with_capacity(dose.len());
+                for path in &dose {
+                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)?;
+                    let values = match spec.dose_quantity {
+                        DoseQuantity::PhysicalTotal => bundle.physical_total.values.clone(),
+                        DoseQuantity::Component(component) => bundle
+                            .components
+                            .iter()
+                            .find(|volume| volume.component == component)
+                            .ok_or_else(|| {
+                                io::Error::other(format!(
+                                    "{}: no {:?} component",
+                                    path.display(),
+                                    component
+                                ))
+                            })?
+                            .values
+                            .clone(),
+                    };
+                    fields.push(BeamDoseField {
+                        name: path
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| path.display().to_string()),
+                        values,
+                    });
+                }
+                let masks: Vec<RegionMask> = mask
+                    .iter()
+                    .map(|path| {
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("{}: {error}", path.display())).into()
+                        })
+                    })
+                    .collect::<Result<_, Box<dyn Error>>>()?;
+                let weights0 = if initial.is_empty() {
+                    vec![1.0; fields.len()]
+                } else {
+                    initial
+                };
+                let spec_sha = openbnct_evidence::sha256_hex(&spec_bytes);
+                let provenance = ResultProvenance {
+                    id,
+                    provenance_id: provenance_id
+                        .unwrap_or_else(|| format!("inverse-plan-run:{}", &spec_sha[..12])),
+                    objective: openbnct_core::ContentReference {
+                        id: spec.id.clone(),
+                        sha256: format!("sha256:{spec_sha}"),
+                    },
+                };
+                let result = optimize_weights(&fields, &masks, &spec, &weights0, provenance)
+                    .map_err(|error| io::Error::other(format!("optimize: {error}")))?;
+                fs::write(&output, serde_json::to_vec_pretty(&result)?)?;
+                println!(
+                    "optimize: {} beams, penalty {:.6e}, {} iterations, converged={}",
+                    result.weights.len(),
+                    result.penalty,
+                    result.iterations,
+                    result.converged
+                );
+                for w in &result.weights {
+                    println!("  {}: weight {:.6e}", w.name, w.weight);
+                }
+                for o in &result.outcomes {
+                    println!(
+                        "  {} {}: achieved {:.6e} vs bound {:.6e} ({})",
+                        o.kind,
+                        o.mask,
+                        o.achieved,
+                        o.bound,
+                        if o.satisfied { "satisfied" } else { "VIOLATED" }
+                    );
+                }
+                println!("result: {}", output.display());
             }
         },
         Some(Command::Evidence(args)) => match args.command {

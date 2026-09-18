@@ -35,7 +35,9 @@ const DT_UINT8: i16 = 2;
 const DT_INT16: i16 = 4;
 const DT_INT32: i16 = 8;
 const DT_FLOAT32: i16 = 16;
-const DT_FLOAT64: i16 = 64;
+/// NIfTI-1 datatype code for float64 — the only datatype this crate
+/// writes.
+pub const DT_FLOAT64: i16 = 64;
 
 /// How voxels are interpolated when resampling onto another grid.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -729,6 +731,18 @@ pub struct ComponentNiftiManifest {
     pub provenance_id: String,
 }
 
+/// OpenPINT dose-map suffix per component (`*_B10`, `*_N14`, `*_n`,
+/// `*_g`) — the fixed file convention OpenPINT's `sim_result_2_nifti`
+/// produces and its downstream plan tooling consumes.
+fn pint_suffix(component: openbnct_core::DoseComponent) -> &'static str {
+    match component {
+        openbnct_core::DoseComponent::Boron => "B10",
+        openbnct_core::DoseComponent::Nitrogen => "N14",
+        openbnct_core::DoseComponent::Hydrogen => "n",
+        openbnct_core::DoseComponent::Photon => "g",
+    }
+}
+
 /// Export every component of a physical dose bundle as float64 NIfTI
 /// volumes — the per-component plus sigma-companion convention
 /// `interchange_from_niftis` consumes, so the pair round-trips.
@@ -736,11 +750,14 @@ pub struct ComponentNiftiManifest {
 /// Files are named `<case_id>.<component>.nii` (`.nii.gz` when
 /// `gzip` is set) with `…<component>.sigma.nii` companions for
 /// components carrying per-voxel uncertainties. The manifest records
-/// each written file's SHA-256.
+/// each written file's SHA-256. With `pint_names` the dose files use
+/// the OpenPINT convention `<case_id>_<B10|N14|n|g>.nii(.gz)` so the
+/// output drops directly into an OpenPINT workflow.
 pub fn export_component_niftis(
     bundle: &openbnct_core::PhysicalDoseBundle,
     output_dir: &Path,
     gzip: bool,
+    pint_names: bool,
 ) -> io::Result<ComponentNiftiManifest> {
     std::fs::create_dir_all(output_dir)?;
     let ext = if gzip { ".nii.gz" } else { ".nii" };
@@ -766,7 +783,16 @@ pub fn export_component_niftis(
         let name = serde_json::to_value(component.component)
             .and_then(serde_json::from_value::<String>)
             .unwrap_or_else(|_| "unknown".into());
-        let file = format!("{}.{}{}", bundle.case_id, name, ext);
+        let file = if pint_names {
+            format!(
+                "{}_{}{}",
+                bundle.case_id,
+                pint_suffix(component.component),
+                ext
+            )
+        } else {
+            format!("{}.{}{}", bundle.case_id, name, ext)
+        };
         let image = NiftiImage {
             geometry: bundle.geometry.clone(),
             values: component.values.clone(),
@@ -1197,7 +1223,7 @@ mod tests {
             },
         };
         let dir = tempfile::tempdir().unwrap();
-        let manifest = export_component_niftis(&bundle, dir.path(), false).unwrap();
+        let manifest = export_component_niftis(&bundle, dir.path(), false, false).unwrap();
         assert_eq!(manifest.files.len(), 4);
         for entry in &manifest.files {
             assert!(entry.sigma_file.is_some());

@@ -7,6 +7,7 @@
 mod benchmark;
 mod ct;
 mod error;
+mod pet;
 mod rtdose;
 mod rtplan;
 mod rtstruct;
@@ -17,6 +18,7 @@ pub use benchmark::{
 };
 pub use ct::{CtVolume, import_ct_series};
 pub use error::{DicomError, Result};
+pub use pet::{PetVolume, import_pet_series};
 pub use rtdose::{DoseSelection, RtDoseExportOptions, RtDoseExportResult, export_rt_dose};
 pub use rtplan::{
     RTPLAN_SUMMARY_SCHEMA, RtPlanBeamSpec, RtPlanBeamSummary, RtPlanControlPoint,

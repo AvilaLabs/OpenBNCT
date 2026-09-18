@@ -30,6 +30,8 @@ use openbnct_core::{
 };
 use thiserror::Error;
 
+pub mod optimize;
+
 /// Format token written into exported tables and required on import when
 /// metadata is present.
 pub const TABLE_FORMAT: &str = "openbnct.exposure-plan-table/1";

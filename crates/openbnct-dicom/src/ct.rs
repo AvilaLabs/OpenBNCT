@@ -80,21 +80,22 @@ impl CtVolume {
 }
 
 #[derive(Debug, Clone)]
-struct RawSlice {
-    path: PathBuf,
-    study_instance_uid: String,
-    series_instance_uid: String,
-    frame_of_reference_uid: String,
-    sop_instance_uid: String,
-    rows: u16,
-    columns: u16,
-    pixel_spacing: [f64; 2],
-    image_position: [f64; 3],
-    image_orientation: [f64; 6],
-    projection: f64,
-    stored_pixels: Vec<i16>,
-    rescale_slope: f64,
-    rescale_intercept: f64,
+pub(crate) struct RawSlice {
+    pub(crate) path: PathBuf,
+    pub(crate) study_instance_uid: String,
+    pub(crate) series_instance_uid: String,
+    pub(crate) frame_of_reference_uid: String,
+    pub(crate) sop_instance_uid: String,
+    pub(crate) rows: u16,
+    pub(crate) columns: u16,
+    pub(crate) pixel_spacing: [f64; 2],
+    pub(crate) image_position: [f64; 3],
+    pub(crate) image_orientation: [f64; 6],
+    pub(crate) projection: f64,
+    /// i32 so unsigned 16-bit PET samples (0..=65535) stay exact.
+    pub(crate) stored_pixels: Vec<i32>,
+    pub(crate) rescale_slope: f64,
+    pub(crate) rescale_intercept: f64,
 }
 
 /// Import a single-frame CT series from any input file order.
@@ -103,21 +104,22 @@ struct RawSlice {
 /// Little Endian CT in this first boundary. Unsupported encodings fail closed
 /// instead of being guessed. Slices are ordered from their patient-space image
 /// positions, never from filenames or Instance Number.
-pub fn import_ct_series(paths: &[PathBuf]) -> Result<CtVolume> {
-    if paths.is_empty() {
-        return Err(DicomError::EmptySeries);
-    }
-    if paths.len() < 2 {
-        return Err(DicomError::Geometry(
-            "at least two slices are required to establish slice spacing".into(),
-        ));
-    }
+/// The shared volume-assembly result: geometry plus flattened pixels.
+pub(crate) struct AssembledSeries {
+    pub(crate) geometry: GridGeometry,
+    pub(crate) frame_of_reference_uid: String,
+    pub(crate) study_instance_uid: String,
+    pub(crate) series_instance_uid: String,
+    pub(crate) slice_sop_instance_uids: Vec<String>,
+    pub(crate) stored_pixels: Vec<i32>,
+    pub(crate) rescale_slope: f64,
+    pub(crate) rescale_intercept: f64,
+}
 
-    let mut slices = Vec::with_capacity(paths.len());
-    for path in paths {
-        slices.push(read_slice(path)?);
-    }
-
+/// Validate a parsed slice set for geometric consistency and assemble the
+/// shared grid — modality-agnostic; the caller's slice reader supplies
+/// `RawSlice` values parsed under its own SOP-class/modality gates.
+pub(crate) fn assemble_series(mut slices: Vec<RawSlice>) -> Result<AssembledSeries> {
     let reference = slices[0].clone();
     let x_axis = array3(&reference.image_orientation[0..3]);
     let y_axis = array3(&reference.image_orientation[3..6]);
@@ -213,7 +215,7 @@ pub fn import_ct_series(paths: &[PathBuf]) -> Result<CtVolume> {
         slice_sop_instance_uids.push(slice.sop_instance_uid);
     }
 
-    Ok(CtVolume {
+    Ok(AssembledSeries {
         geometry,
         frame_of_reference_uid: reference.frame_of_reference_uid.clone(),
         study_instance_uid: reference.study_instance_uid.clone(),
@@ -225,7 +227,66 @@ pub fn import_ct_series(paths: &[PathBuf]) -> Result<CtVolume> {
     })
 }
 
-fn read_slice(path: &Path) -> Result<RawSlice> {
+/// Import a single-frame CT series from any input file order.
+///
+/// The importer deliberately accepts only native, signed 16-bit Explicit VR
+/// Little Endian CT in this first boundary. Unsupported encodings fail closed
+/// instead of being guessed. Slices are ordered from their patient-space image
+/// positions, never from filenames or Instance Number.
+pub fn import_ct_series(paths: &[PathBuf]) -> Result<CtVolume> {
+    let slices = read_series(paths, uids::CT_IMAGE_STORAGE, "CT", PixelKind::Signed16)?;
+    let assembled = assemble_series(slices)?;
+    Ok(CtVolume {
+        geometry: assembled.geometry,
+        frame_of_reference_uid: assembled.frame_of_reference_uid,
+        study_instance_uid: assembled.study_instance_uid,
+        series_instance_uid: assembled.series_instance_uid,
+        slice_sop_instance_uids: assembled.slice_sop_instance_uids,
+        // CT pixels are signed 16-bit by the PixelKind gate — exact cast.
+        stored_pixels: assembled.stored_pixels.iter().map(|v| *v as i16).collect(),
+        rescale_slope: assembled.rescale_slope,
+        rescale_intercept: assembled.rescale_intercept,
+    })
+}
+
+/// Accepted pixel encoding for a slice reader.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PixelKind {
+    /// `Pixel Representation = 1` — signed 16-bit.
+    Signed16,
+    /// Either signed or unsigned 16-bit samples.
+    Either16,
+}
+
+/// Read and gate every slice file under one SOP class + modality pair.
+pub(crate) fn read_series(
+    paths: &[PathBuf],
+    sop_class_uid: &str,
+    modality: &str,
+    pixel_kind: PixelKind,
+) -> Result<Vec<RawSlice>> {
+    if paths.is_empty() {
+        return Err(DicomError::EmptySeries);
+    }
+    if paths.len() < 2 {
+        return Err(DicomError::Geometry(
+            "at least two slices are required to establish slice spacing".into(),
+        ));
+    }
+
+    let mut slices = Vec::with_capacity(paths.len());
+    for path in paths {
+        slices.push(read_slice(path, sop_class_uid, modality, pixel_kind)?);
+    }
+    Ok(slices)
+}
+
+pub(crate) fn read_slice(
+    path: &Path,
+    sop_class_uid: &str,
+    modality: &str,
+    pixel_kind: PixelKind,
+) -> Result<RawSlice> {
     let obj = open_file(path).map_err(|source| DicomError::Read {
         path: path.to_path_buf(),
         source: Box::new(source),
@@ -247,9 +308,9 @@ fn read_slice(path: &Path) -> Result<RawSlice> {
         path,
         tags::SOP_CLASS_UID,
         "SOP Class UID",
-        uids::CT_IMAGE_STORAGE,
+        sop_class_uid,
     )?;
-    require_string(&obj, path, tags::MODALITY, "Modality", "CT")?;
+    require_string(&obj, path, tags::MODALITY, "Modality", modality)?;
 
     let rows = integer(&obj, path, tags::ROWS, "Rows")?;
     let columns = integer(&obj, path, tags::COLUMNS, "Columns")?;
@@ -298,13 +359,23 @@ fn read_slice(path: &Path) -> Result<RawSlice> {
     require_integer(&obj, path, tags::BITS_ALLOCATED, "Bits Allocated", 16_u16)?;
     require_integer(&obj, path, tags::BITS_STORED, "Bits Stored", 16_u16)?;
     require_integer(&obj, path, tags::HIGH_BIT, "High Bit", 15_u16)?;
-    require_integer(
+    let pixel_representation = integer(
         &obj,
         path,
         tags::PIXEL_REPRESENTATION,
         "Pixel Representation",
-        1_u16,
     )?;
+    let pixel_signed = match (pixel_kind, pixel_representation) {
+        (PixelKind::Signed16, 1) | (PixelKind::Either16, 1) => true,
+        (PixelKind::Either16, 0) => false,
+        _ => {
+            return Err(attribute_error(
+                path,
+                "Pixel Representation",
+                format!("unsupported value {pixel_representation}"),
+            ));
+        }
+    };
 
     let rescale_slope = float(&obj, path, tags::RESCALE_SLOPE, "Rescale Slope")?;
     let rescale_intercept = float(&obj, path, tags::RESCALE_INTERCEPT, "Rescale Intercept")?;
@@ -317,7 +388,7 @@ fn read_slice(path: &Path) -> Result<RawSlice> {
     }
 
     let expected_pixels = usize::from(rows) * usize::from(columns);
-    let stored_pixels = pixels(&obj, path, expected_pixels)?;
+    let stored_pixels = pixels(&obj, path, expected_pixels, pixel_signed)?;
 
     Ok(RawSlice {
         path: path.to_path_buf(),
@@ -342,18 +413,46 @@ fn read_slice(path: &Path) -> Result<RawSlice> {
     })
 }
 
-fn pixels(obj: &DefaultDicomObject, path: &Path, expected: usize) -> Result<Vec<i16>> {
+fn pixels(
+    obj: &DefaultDicomObject,
+    path: &Path,
+    expected: usize,
+    signed: bool,
+) -> Result<Vec<i32>> {
     let element = obj
         .element(tags::PIXEL_DATA)
         .map_err(|error| attribute_error(path, "Pixel Data", error.to_string()))?;
-    let output = match element.value() {
-        Value::Primitive(PrimitiveValue::U16(values)) => {
-            values.iter().map(|value| *value as i16).collect()
+    let output: Vec<i32> = match element.value() {
+        Value::Primitive(PrimitiveValue::U16(values)) => values
+            .iter()
+            .map(|value| {
+                if signed {
+                    i32::from(*value as i16)
+                } else {
+                    i32::from(*value)
+                }
+            })
+            .collect(),
+        Value::Primitive(PrimitiveValue::I16(values)) => {
+            if signed {
+                values.iter().map(|value| i32::from(*value)).collect()
+            } else {
+                return Err(attribute_error(
+                    path,
+                    "Pixel Data",
+                    "unsigned series carries signed pixel words",
+                ));
+            }
         }
-        Value::Primitive(PrimitiveValue::I16(values)) => values.to_vec(),
         Value::Primitive(PrimitiveValue::U8(bytes)) if bytes.len() % 2 == 0 => bytes
             .chunks_exact(2)
-            .map(|pair| i16::from_le_bytes([pair[0], pair[1]]))
+            .map(|pair| {
+                if signed {
+                    i32::from(i16::from_le_bytes([pair[0], pair[1]]))
+                } else {
+                    i32::from(u16::from_le_bytes([pair[0], pair[1]]))
+                }
+            })
             .collect(),
         _ => {
             return Err(attribute_error(
@@ -429,7 +528,12 @@ fn validate_axes(x_axis: [f64; 3], y_axis: [f64; 3], path: &Path) -> Result<()> 
     Ok(())
 }
 
-fn string(obj: &DefaultDicomObject, path: &Path, tag: Tag, name: &'static str) -> Result<String> {
+pub(crate) fn string(
+    obj: &DefaultDicomObject,
+    path: &Path,
+    tag: Tag,
+    name: &'static str,
+) -> Result<String> {
     obj.element(tag)
         .map_err(|error| attribute_error(path, name, error.to_string()))?
         .to_str()
@@ -455,7 +559,12 @@ fn require_string(
     Ok(())
 }
 
-fn integer(obj: &DefaultDicomObject, path: &Path, tag: Tag, name: &'static str) -> Result<u16> {
+pub(crate) fn integer(
+    obj: &DefaultDicomObject,
+    path: &Path,
+    tag: Tag,
+    name: &'static str,
+) -> Result<u16> {
     obj.element(tag)
         .map_err(|error| attribute_error(path, name, error.to_string()))?
         .to_int::<u16>()
@@ -480,7 +589,12 @@ fn require_integer(
     Ok(())
 }
 
-fn float(obj: &DefaultDicomObject, path: &Path, tag: Tag, name: &'static str) -> Result<f64> {
+pub(crate) fn float(
+    obj: &DefaultDicomObject,
+    path: &Path,
+    tag: Tag,
+    name: &'static str,
+) -> Result<f64> {
     obj.element(tag)
         .map_err(|error| attribute_error(path, name, error.to_string()))?
         .to_float64()
@@ -507,7 +621,11 @@ fn fixed_floats<const N: usize>(
     })
 }
 
-fn attribute_error(path: &Path, attribute: &'static str, detail: impl Into<String>) -> DicomError {
+pub(crate) fn attribute_error(
+    path: &Path,
+    attribute: &'static str,
+    detail: impl Into<String>,
+) -> DicomError {
     DicomError::Attribute {
         path: path.to_path_buf(),
         attribute,
