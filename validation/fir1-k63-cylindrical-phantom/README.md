@@ -87,12 +87,18 @@ The measured series therefore sits between the raw-P0 and
 corrected-P0 deterministic results. Remaining declared model gaps:
 P0 isotropic transfer even after the correction (no P1 anisotropic
 in-group source), no S(α,β) thermal-scattering treatment below ~4 eV,
-and the histogram source mapping that spreads each beam-energy bin
-uniformly-per-eV across its sub-groups. The absolute scale itself is
+and the histogram source-bin mapping. The absolute scale itself is
 verified: the solver's incident thermal fluence (≈7.2e7 cm⁻² s⁻¹)
 reproduces the declared port thermal rate (7.19e7) within 1%, so the
 comparison is genuinely absolute — the disagreement is transport
 physics, not normalization.
+
+Note on convention history: the committed `*-28g*` flux artifacts were
+produced while histogram bins spread uniform-per-eV across sub-groups
+(`source_spectrum_weighting: "uniform_in_bin"` — the deserialization
+default). The solver now maps within-bin weight
+collapse-consistently (Maxwellian below 0.5 eV, 1/E above); artifacts
+emitted after the change record `collapse_consistent` explicitly.
 
 ## Scope
 

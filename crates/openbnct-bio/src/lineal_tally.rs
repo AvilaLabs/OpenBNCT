@@ -369,6 +369,7 @@ mod tests {
             energy_boundaries_ev: vec![1.0, 1.0e-3],
             beam_model: "boundary_flux".into(),
             transport_correction: false,
+            source_spectrum_weighting: "collapse_consistent".into(),
             quadrature_order: 4,
             converged: true,
             residual: 0.0,

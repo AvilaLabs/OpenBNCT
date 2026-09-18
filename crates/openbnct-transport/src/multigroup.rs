@@ -351,6 +351,14 @@ pub struct MultigroupFlux {
     /// μ̄_g·Σ_s,g) was applied to the collided sweep.
     #[serde(default)]
     pub transport_correction: bool,
+    /// How histogram source bins were spread across sub-groups:
+    /// `collapse_consistent` = Maxwellian below 0.5 eV / 1-E above,
+    /// matching the multigroup collapse's declared weighting;
+    /// `uniform_in_bin` = the earlier uniform-per-eV spread (the
+    /// deserialization default for artifacts produced before the field
+    /// existed).
+    #[serde(default = "default_spectrum_weighting")]
+    pub source_spectrum_weighting: String,
     pub quadrature_order: u32,
     pub outer_iterations: u32,
     /// Final relative scalar-flux change.
@@ -594,6 +602,29 @@ fn map_boundary_source(
     Ok(source_map)
 }
 
+/// Within-bin spectrum weighting matching the collapse declaration:
+/// Maxwellian ∝ E·exp(−E/kT) below 0.5 eV, 1/E slowing-down above —
+/// histogram bins declare only integrals, so the within-bin shape must
+/// come from the same declared convention the data was collapsed under.
+fn spectrum_weight_integral(lo_ev: f64, hi_ev: f64) -> f64 {
+    const KT_EV: f64 = 0.0253;
+    const CUT_EV: f64 = 0.5;
+    let maxwell = |a: f64, b: f64| {
+        (KT_EV * (KT_EV + a) * (-a / KT_EV).exp()) - (KT_EV * (KT_EV + b) * (-b / KT_EV).exp())
+    };
+    let inv_e = |a: f64, b: f64| (b / a).ln();
+    let (lo, hi) = (lo_ev.max(1.0e-30), hi_ev.max(lo_ev));
+    let mid = CUT_EV.clamp(lo, hi);
+    let mut w = 0.0;
+    if mid > lo {
+        w += maxwell(lo, mid);
+    }
+    if hi > mid {
+        w += inv_e(mid.max(1.0e-30), hi);
+    }
+    w
+}
+
 /// Map the source's energy distribution onto normalized group weights.
 fn source_group_weights(
     source: &crate::model::FixedSourceDefinition,
@@ -618,11 +649,17 @@ fn source_group_weights(
             for (bin, w) in bin_weights.iter().enumerate() {
                 let lo = energy_boundaries_ev[bin];
                 let hi = energy_boundaries_ev[bin + 1];
+                let bin_norm = spectrum_weight_integral(lo, hi);
+                if bin_norm <= 0.0 {
+                    continue;
+                }
                 for (g, weight) in weights.iter_mut().enumerate() {
                     let glo = data.energy_boundaries_ev[g + 1];
                     let ghi = data.energy_boundaries_ev[g];
-                    let overlap = (hi.min(ghi) - lo.max(glo)).max(0.0);
-                    *weight += w * overlap / (hi - lo);
+                    let (olo, ohi) = (lo.max(glo), hi.min(ghi));
+                    if ohi > olo {
+                        *weight += w * spectrum_weight_integral(olo, ohi) / bin_norm;
+                    }
                 }
             }
             let total: f64 = weights.iter().sum();
@@ -639,6 +676,12 @@ fn source_group_weights(
 
 /// (direction, weight) pairs covering a source angular distribution.
 type DirectionWeights = Vec<([f64; 3], f64)>;
+
+/// Deserialization default: artifacts written before the field existed
+/// were produced under the uniform-per-eV within-bin spread.
+fn default_spectrum_weighting() -> String {
+    "uniform_in_bin".into()
+}
 
 /// Deterministic equal-area sample directions over an isotropic cone:
 /// uniform grid in (cos θ, φ) about `axis`. Returns (direction, weight)
@@ -1296,6 +1339,7 @@ pub(crate) fn solve_sn_problem(
         beam_model: "volumetric_or_boundary".into(),
         flux,
         transport_correction: corrected,
+        source_spectrum_weighting: "collapse_consistent".into(),
         quadrature_order: options.quadrature_order,
         outer_iterations: outer_done,
         residual,
@@ -1608,6 +1652,36 @@ pub(crate) mod tests {
         assert!(
             (slope - sigma).abs() / sigma < 1e-9,
             "slope {slope} vs analytic {sigma}"
+        );
+    }
+
+    #[test]
+    fn histogram_source_uses_collapse_consistent_within_bin_weighting() {
+        // A 1/E epithermal bin spread over sub-groups must concentrate
+        // weight at the bin's LOW edge — the slowing-down convention —
+        // not uniformly per eV.
+        let mut case = slab_case();
+        case.source.energy = EnergyDistribution::TabulatedHistogram {
+            energy_boundaries_ev: vec![0.5, 10_000.0],
+            bin_weights: vec![1.0],
+        };
+        // 8 groups covering [0.5, 1e4] eV logarithmically-ish.
+        let mut mg = data(&[0.5; 8], vec![0.0; 64]);
+        mg.energy_boundaries_ev = vec![1e4, 3e3, 1e3, 3e2, 1e2, 3e1, 1e1, 3.0, 0.5];
+        mg.validate().unwrap();
+        let w = source_group_weights(&case.source, &mg).unwrap();
+        assert!(w.iter().all(|x| x.is_finite() && *x >= 0.0));
+        assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        // 1/E weighting: equal per decade → lowest two groups (0.5–3 eV
+        // and 3–10 eV, sub-decade) carry comparable weight to the
+        // decade-wide groups; under uniform-per-eV the lowest group
+        // would carry ~0.0003 of the bin. Assert the lowest group
+        // carries >5% and exceeds the top group's share.
+        assert!(
+            w[7] > 0.05 && w[7] > w[0],
+            "1/E low-end weighting: w_low={} w_high={}",
+            w[7],
+            w[0]
         );
     }
 
