@@ -120,3 +120,60 @@ direct figure digitization (documented interpolation convention in the
 record's derivation note); Mn-55/Au-197 foil uncertainty is ~±3% and
 calculated-to-measured phantom agreement is reported at 3-5%
 (Koivunoro 2014; Seppala 2002; Seren 1999).
+
+## Deterministic transport on the same grid
+
+The deterministic S_N solver now runs this case directly
+(`qa-tsl.sh` reproduces the chain; release binary):
+
+- `sn solve` — S8, 28-group TSL+P1 data (the cylindrical phantom's
+  `multigroup-data-28g-tsl-v4.json`; identical material and group
+  structure), Anderson depth 5: converged 62 outer iterations at
+  residual 9.55e-5 (vs ~116 unaccelerated on the cylindrical case).
+  `multigroup-flux-28g-tsl-p1-1e.json`, `dose-28g-tsl-p1-1e.json`.
+- `sn photon-solve` — 16-group transported photons sourced by the
+  converged neutron flux (n→γ production matrix + pair-annihilation
+  secondaries): 3 outer iterations, residual 8.57e-7.
+  `multigroup-photon-flux-16g.json`, `dose-photon-16g.json`.
+
+Component-dose check against the OpenMC tallies on the identical
+26×26×94 grid (same beam, same geometry, `led` electron treatment on
+both sides — no bremsstrahlung anywhere in the comparison):
+
+| component | deterministic | OpenMC | ratio |
+|-----------|---------------|--------|-------|
+| boron     | 2.97e-14      | 7.69e-14 | 0.386 |
+| nitrogen  | 2.70e-17      | 7.03e-17 | 0.384 |
+| photon (neutron fold, local kerma) | 2.71e-11 | 3.27e-11 | 0.828 |
+| photon (transported) | 1.52e-11 | 3.27e-11 | 0.465 |
+
+Reading:
+
+- The neutron-driven components (boron, nitrogen — both ∝ thermal
+  fluence under dilute loading) sit at ~0.39× the MC tally. This is
+  the same uniform normalization deficit seen in the absolute
+  thermal-profile comparisons on both phantoms (~0.5-0.65×), rooted
+  in the 3-bin source histogram + multigroup collapse; it is not a
+  transport-shape error.
+- Local-kerma photon production is within ~17% of the MC-deposited
+  photon dose — given MC loses ~15% of photon energy to boundary
+  escape, the underlying n→γ production matrix is close to the MC
+  production.
+- The *transported* photon dose retains ~56% of production; its
+  depth ratio to MC declines smoothly 0.86 → ~0.25, consistent with
+  the neutron-field deficit compounding the photon escape. The
+  hydrogen component's ~2e5× apparent mismatch is definitional —
+  the deterministic component folds recoil-proton kerma while the
+  MC bundle's hydrogen channel carries a different convention —
+  and is excluded from interpretation.
+- `beam qa`/`measurement compare` on this dose (artifacts
+  `beam-quality-water-28g-tsl-p1-1e.json`,
+  `measurement-comparison-water-28g-tsl-p1-1e.json`) are recorded
+  for completeness; the advantage-depth/ratio metrics are
+  degenerate on an unboronated phantom (no therapeutic window
+  exists), so only thermal-fluence-max-depth is physically
+  meaningful: computed 1.25 cm vs measured 2.25 cm.
+
+Research-scope note: this is a verification comparison of a
+deterministic S_N solve against an independent Monte Carlo tally —
+not a commissioning or equivalence claim.
