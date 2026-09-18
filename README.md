@@ -132,7 +132,12 @@ bundling those systems.
   slope −0.23080 cm⁻¹, 0.000% deviation over 32 bins); the water-phantom
   TSL+P1 solve lands within ~±20% of the FiR1 measured profile through
   9 cm and the PMMA TSL+P1 solve within ~±5% through 5 cm (normalized
-  χ² 18.8 on both compositions — the best deterministic results).
+  χ² 18.8 on both compositions — the best deterministic results). The
+  k63 water-phantom case now also carries the first coupled n→γ check
+  against the OpenMC tallies on the identical 26×26×94 grid
+  (photon production within ~17% of the MC-deposited component;
+  transported photon at ~0.47× with the deficit tracking the neutron
+  normalization — `validation/fir1-k63-water-phantom/README.md`).
 - **Adjoint-driven weight windows** — `openbnct vr cadis` runs the
   transposed adjoint solve for a declared response volume and derives
   CADIS bounds; a forward-flux-derived adjoint source gives the
@@ -143,7 +148,10 @@ bundling those systems.
   group-correlation blocks) through central-difference sensitivities of
   the actual discrete operator into a `openbnct.dose-uncertainty-budget`
   per source; `uq screen` runs Morris elementary-effects and
-  Saltelli/Sobol screening over declared input dimensions.
+  Saltelli/Sobol screening over declared input dimensions, with a
+  fold-only fast path — specs declaring only response-space targets
+  (dose-response scales, microdistribution uptake) reuse one converged
+  solve instead of re-solving transport per sample.
 - **Microdosimetric tallies** — `openbnct bio lineal-tally` evaluates a
   declared site/reaction-product table over a computed multigroup flux
   into the `openbnct.lineal-spectrum/0.1.0` that MKM's computed-spectrum
