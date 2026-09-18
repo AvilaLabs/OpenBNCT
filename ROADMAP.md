@@ -951,16 +951,18 @@ requires licensed software, external approval, or any clinical claim.
 
   Honest validation status (FiR 1 cylindrical phantom, 28-group
   ENDF/B-VIII.1 data): the measured TECDOC-1223 water thermal-fluence
-  depth profile is **bracketed**, not reproduced — the raw P0 solve
-  underpredicts the deep tail ~10× while the consistent transport
-  correction overpredicts it ~2.3–9.5×. The absolute normalization is
-  verified independently (solver incident thermal fluence matches the
-  declared port rate within 1%). Remaining declared gaps are P0-only
-  anisotropy beyond the scalar correction and no S(α,β) bound-atom
-  thermal treatment; histogram source bins now spread
-  collapse-consistently (Maxwellian below 0.5 eV, 1/E above), recorded
-  per-artifact as `source_spectrum_weighting`. See the validation
-  README for the full accounting.
+  depth profile is **bracketed**, not reproduced — under the
+  collapse-consistent source weighting (`*-1e` artifacts) the raw P0
+  solve underpredicts the deep tail ~23–50× while the consistent
+  transport correction overpredicts it ~1.7–4.8×, and the measured
+  series sits between them closer to the corrected side. The absolute
+  normalization is verified independently (solver incident thermal
+  fluence matches the declared port rate within 1%). Remaining
+  declared gaps are P0-only anisotropy beyond the scalar correction
+  and no S(α,β) bound-atom thermal treatment; histogram source bins
+  spread collapse-consistently (Maxwellian below 0.5 eV, 1/E above),
+  recorded per-artifact as `source_spectrum_weighting`. See the
+  validation README for the full accounting.
 
 - **R8-02 — adjoint-driven variance reduction.** *Landed.* An open
   CADIS/FW-CADIS implementation: `adjoint` bounds in a
