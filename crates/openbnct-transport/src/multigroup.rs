@@ -1209,15 +1209,26 @@ fn symmetric_jacobi_eigen(mut a: Vec<f64>, n: usize) -> Vec<(f64, Vec<f64>)> {
 /// M_k = λ_k·Σ_b w_b u_k(b)ψ_b, no direction² inner loop needed.
 fn kernel_eigenbasis(quadrature: &[([f64; 3], f64)], l: u32) -> Vec<(f64, Vec<f64>)> {
     let n = quadrature.len();
+    // Eigendecompose the weight-symmetrized kernel
+    // B_ab = √w_a·P_l(Ω_a·Ω_b)·√w_b. Its eigenpairs (λ_k, v_k) give the
+    // physical modes u_k = v_k/√w, orthonormal under the discrete
+    // inner product ⟨u,v⟩_w = Σ w u v — the same product the moment
+    // extraction uses, so the expansion is a consistent projection.
     let mut k = vec![0.0; n * n];
     for a in 0..n {
+        let (da, wa) = quadrature[a];
         for b in 0..n {
-            let da = quadrature[a].0;
-            let db = quadrature[b].0;
-            k[a * n + b] = legendre_p(l, da[0] * db[0] + da[1] * db[1] + da[2] * db[2]);
+            let (db, wb) = quadrature[b];
+            k[a * n + b] =
+                (wa * wb).sqrt() * legendre_p(l, da[0] * db[0] + da[1] * db[1] + da[2] * db[2]);
         }
     }
     let mut pairs = symmetric_jacobi_eigen(k, n);
+    for (_, v) in &mut pairs {
+        for a in 0..n {
+            v[a] /= quadrature[a].1.sqrt();
+        }
+    }
     let lam_max = pairs.first().map(|p| p.0.abs()).unwrap_or(0.0);
     pairs.retain(|(lam, _)| lam.abs() > lam_max * 1e-9);
     pairs.truncate(2 * l as usize + 1);
@@ -1993,15 +2004,20 @@ pub(crate) fn solve_sn_problem(
                     None
                 };
                 // Higher-Legendre in-scatter for group g:
-                // q[cell][d] = Σ_l(2l+1)·Σ_k u_k(d)·W_k(cell),
+                // q[cell][d] = Σ_l(2l+1)/(4π)·Σ_k u_k(d)·W_k(cell),
                 // W_k = Σ_gp σ_l(gp→g)·M_k(cell,gp). Folded over the
-                // l-blocks of the flattened moment vector.
+                // l-blocks of the flattened moment vector. The 1/(4π)
+                // is the per-sr source convention — the P0 path carries
+                // it inside σ_0 (σ(μ) = Σ_l(2l+1)/(4π)·σ_l·P_l(μ));
+                // without it the in-scatter is 4π× too strong and the
+                // inner iteration diverges.
                 let kernel_source: Option<Vec<Vec<f64>>> = if lmax >= 2 {
+                    let inv_4pi = 1.0 / (4.0 * std::f64::consts::PI);
                     let mut weighted = vec![vec![0.0_f64; n_kernel_moments]; n_cells];
                     let mut kk = 0;
                     for (li, eigs) in eigen.iter().enumerate() {
                         let l = li as u32 + 2;
-                        let two_l1 = (2 * l + 1) as f64;
+                        let two_l1 = (2 * l + 1) as f64 * inv_4pi;
                         for cell in 0..n_cells {
                             let mi = case_material[cell];
                             let moments = &data.materials[mi]
@@ -2925,11 +2941,13 @@ pub(crate) mod tests {
                 basis.iter().all(|(lam, _)| *lam != 0.0),
                 "P_{l} basis carries a zero-eigenvalue mode"
             );
-            // Eigenvalues sum to the kernel trace = n·P_l(1) = n.
+            // The weight-symmetrized kernel's trace is
+            // Σ_a w_a·P_l(1) = Σ_a w_a = 4π.
             let trace: f64 = basis.iter().map(|(lam, _)| lam).sum();
+            let expected: f64 = quad.iter().map(|(_, w)| w).sum();
             assert!(
-                (trace - quad.len() as f64).abs() < 1e-8,
-                "P_{l} eigenvalue sum {trace} != n"
+                (trace - expected).abs() < 1e-8,
+                "P_{l} eigenvalue sum {trace} != Σw {expected}"
             );
         }
     }
@@ -2955,6 +2973,56 @@ pub(crate) mod tests {
         opts.anisotropy_order = 3;
         let flux = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap();
         assert!(flux.converged);
+    }
+
+    #[test]
+    fn legendre_l2_solve_converges_and_corrects() {
+        // Nonzero l = 2 moments exercise the kernel source — a
+        // mis-normalized source (e.g. dropping the 1/(4π) per-sr
+        // convention) makes the inner iteration diverge outright.
+        let mut case = slab_case();
+        case.material = material("absorber");
+        let mut mg = data(&[0.5, 0.5], vec![0.2, 0.1, 0.05, 0.15]);
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(vec![0.05, 0.0, 0.0, 0.03]);
+        // l = 2 moments ≈ a quarter of the P0 rows — a real but modest
+        // forward-anisotropy correction.
+        mg.materials[0].scatter_legendre_moments_per_cm = Some(vec![
+            vec![0.04, 0.01, 0.0, 0.05],
+            vec![0.0; 4],
+            vec![0.0; 4],
+            vec![0.0; 4],
+        ]);
+        let mut opts = options();
+        opts.p1_anisotropic = true;
+        opts.anisotropy_order = 2;
+        let flux = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap();
+        assert!(
+            flux.converged,
+            "l=2 solve failed to converge (residual {:.3e})",
+            flux.residual
+        );
+        assert!(
+            flux.flux
+                .iter()
+                .flatten()
+                .all(|v| v.is_finite() && *v >= 0.0)
+        );
+        // P1-only reference: the l=2 correction is small (<10% per cell).
+        let mut ref_opts = options();
+        ref_opts.p1_anisotropic = true;
+        let reference = solve_multigroup(&case, &mg, &ref_opts, cref("mg"), cref("case")).unwrap();
+        for (cell, row) in flux.flux.iter().enumerate() {
+            for (g, &v) in row.iter().enumerate() {
+                let r = reference.flux[cell][g];
+                if r > 1e-12 {
+                    assert!(
+                        (v - r).abs() / r < 0.10,
+                        "l=2 moved cell {cell} group {g} by {:.1}%",
+                        (v - r).abs() / r * 100.0
+                    );
+                }
+            }
+        }
     }
 
     #[test]

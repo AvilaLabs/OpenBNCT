@@ -1845,8 +1845,8 @@ enum SnCommand {
         #[arg(long)]
         p1: bool,
         /// Higher-order Legendre scattering l = 2..=5 — requires
-        /// `--p1` and l-moment tables in the photon data (the
-        /// Klein–Nishina collapse emits l = 2 moments).
+        /// `--p1` and l-moment tables in the photon data (not yet
+        /// emitted by the Klein–Nishina collapse; P0/P1 only today).
         #[arg(long, default_value_t = 0)]
         anisotropy: u32,
         /// Also write a folded `openbnct.physical-dose-bundle/0.2.0`

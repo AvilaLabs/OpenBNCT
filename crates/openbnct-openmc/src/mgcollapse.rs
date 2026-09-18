@@ -748,13 +748,20 @@ fn collapse_material(
         let alpha = ((table.mass_number as f64 - 1.0) / (table.mass_number as f64 + 1.0)).powi(2);
         let e = &table.energy;
         // Bondarenko shield factor at e: σ₀/(σ_t,n·n_n + σ₀) — 1.0 when
-        // self-shielding is off. Applied to every weighting integral
-        // below (grid weights and the TSL explicit quadrature alike).
+        // self-shielding is off or the nuclide has no dilution partner
+        // (a single-nuclide material's shielding is a spatial transport
+        // effect, not a collapse correction — zeroing its weight would
+        // produce a meaningless empty group integral). Applied to every
+        // weighting integral below (grid weights and the TSL explicit
+        // quadrature alike).
         let shield_factor = |e: f64| -> f64 {
             if !opts.self_shielding {
                 return 1.0;
             }
             let s0 = sigma0_macro(n_idx, e);
+            if s0 <= 0.0 {
+                return 1.0;
+            }
             let st = log_interp(&table.energy, &total_xs[n_idx], e) * n_density;
             if s0 + st > 0.0 { s0 / (s0 + st) } else { 1.0 }
         };
