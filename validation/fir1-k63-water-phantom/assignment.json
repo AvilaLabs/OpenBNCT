@@ -1,0 +1,9 @@
+{
+  "schema_version": "openbnct.material-assignment/0.2.0",
+  "id": "openbnct.fir1-k63-water-phantom.assignment.v1",
+  "case_id": "fir1-k63-water-phantom",
+  "base_material": {
+    "id": "openbnct.fir1-k63-water-phantom.material.v1"
+  },
+  "regions": []
+}
