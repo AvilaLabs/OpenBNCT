@@ -949,6 +949,19 @@ requires licensed software, external approval, or any clinical claim.
   (`--no-uncollided-split`, `--no-transport-correction`) keep the raw
   path available for comparison.
 
+  P1 in-group anisotropy landed as a third scattering treatment:
+  the collapse emits exact lab-cosine transfer moments
+  (`scatter_p1_matrix_per_cm`, validated against the 2/(3A) mean-cosine
+  identity), and `sn solve --p1` iterates angular currents alongside
+  the scalar flux and adds `3·Ω·Σ_s1·J` to the directional source —
+  superseding the extended transport correction (same diffusion limit,
+  exact kinematics rather than the row-mean approximation). Flux
+  artifacts record `scattering_order`; the adjoint path stays honest
+  P0. An MF7/MT4 S(α,β) tape reader (`endf_mf7`) is landed and
+  validated on the real ENDF/B-VIII.1 H(H₂O) and H(Lucite) evaluations
+  (29,798 / 7,752 sections) — the collapse-side bound-atom transfer
+  integration is the remaining step.
+
   Honest validation status (FiR 1 cylindrical phantom, 28-group
   ENDF/B-VIII.1 data): the measured TECDOC-1223 water thermal-fluence
   depth profile is **bracketed**, not reproduced — under the
@@ -958,11 +971,12 @@ requires licensed software, external approval, or any clinical claim.
   series sits between them closer to the corrected side. The absolute
   normalization is verified independently (solver incident thermal
   fluence matches the declared port rate within 1%). Remaining
-  declared gaps are P0-only anisotropy beyond the scalar correction
-  and no S(α,β) bound-atom thermal treatment; histogram source bins
-  spread collapse-consistently (Maxwellian below 0.5 eV, 1/E above),
-  recorded per-artifact as `source_spectrum_weighting`. See the
-  validation README for the full accounting.
+  declared gaps are bound-atom S(α,β) thermal scattering (data +
+  reader landed, transfer integration pending) and the histogram
+  source bins' residual discretization; histogram source bins spread
+  collapse-consistently (Maxwellian below 0.5 eV, 1/E above), recorded
+  per-artifact as `source_spectrum_weighting`. See the validation
+  README for the full accounting.
 
 - **R8-02 — adjoint-driven variance reduction.** *Landed.* An open
   CADIS/FW-CADIS implementation: `adjoint` bounds in a
