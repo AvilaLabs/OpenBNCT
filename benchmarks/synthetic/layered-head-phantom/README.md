@@ -31,8 +31,22 @@ tapes omit resonance contributions in MF3.
 # after generating the PENDF tapes (process-tissue-pendf.sh) and
 # multigroup data:
 openbnct sn solve --case case.json --data multigroup-data-28g.json \
-  --assignment assignment.json --order 8 --output multigroup-flux-28g.json
+  --assignment assignment.json --order 8 \
+  --dose dose-28g.json --output multigroup-flux-28g.json
 ```
+
+## Landed result
+
+`multigroup-flux-28g.json` / `dose-28g.json`: the S₈ 28-group solve
+with the cone uncollided split and consistent transport correction
+converged in 4 outer iterations (residual 9.1e−7) over the 15625-cell
+heterogeneous assignment (skin 3272 / skull 1250 / brain 3695 voxels,
+remainder void). `beam-quality-28g.json` carries the absolute
+thermal-fluence depth and transverse profiles. The head phantom's QA
+metrics are degenerate by construction (no tumor region is declared —
+the trace-¹⁰B brain convention makes the advantage ratio ≈ 1), so the
+report's value is the resolved absolute profiles through a realistic
+tissue stack rather than the summary indices.
 
 Research scope only — no clinical qualification, commissioning, or
 treatment-use claim.
