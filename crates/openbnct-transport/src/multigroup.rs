@@ -1379,7 +1379,14 @@ pub(crate) fn solve_sn_problem(
 
     for outer in 0..options.max_outer_iterations {
         let previous = flux.clone();
+        // Symmetric Gauss-Seidel over the group structure: alternate the
+        // sweep direction each outer iteration. Downscatter-only
+        // ordering converges one-coupling-per-sweep under bound-atom
+        // (S(α,β)) upscatter; alternating carries upscatter information
+        // at full speed on the ascending pass.
+        let ascending = outer % 2 == 1;
         for g in 0..groups {
+            let g = if ascending { groups - 1 - g } else { g };
             // Within-group Jacobi iteration on the scatter source.
             for _inner in 0..options.max_inner_iterations {
                 // P1 anisotropic source into group g:
