@@ -33,7 +33,7 @@
 
 use openbnct_core::ContentReference;
 use openbnct_transport::{
-    MaterialAssignment, MultigroupData, MultigroupFlux, TransportCase, cell_materials,
+    MaterialAssignment, MultigroupData, MultigroupFlux, TransportCase, material_composition_map,
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -210,8 +210,9 @@ pub fn compute_lineal_spectrum(
         )));
     }
     let groups = data.group_count();
-    let case_material = cell_materials(case, data, assignment)
+    let (data_eff, case_material) = material_composition_map(case, data, assignment)
         .map_err(|e| invalid(format!("material assignment: {e}")))?;
+    let data = &data_eff;
     let cell_volume_cm3 = case.geometry.spacing_mm.iter().product::<f64>() / 1000.0;
     let edges = &spec.bin_edges_kev_um;
     let mut bins = vec![0.0_f64; edges.len() - 1];
@@ -327,6 +328,7 @@ mod tests {
                     mass_fraction: 1.0,
                 }],
                 neutron_thermal_treatment: openbnct_transport::NeutronThermalTreatment::FreeGas,
+                boron_microdistribution: None,
             },
             source: FixedSourceDefinition {
                 schema_version: "openbnct.fixed-source-definition/0.1.0".into(),
@@ -358,6 +360,7 @@ mod tests {
                 sigma_total_per_cm: vec![0.5],
                 scatter_matrix_per_cm: vec![0.0],
                 scatter_p1_matrix_per_cm: None,
+                scatter_legendre_moments_per_cm: None,
                 dose_response_gy_cm2: BTreeMap::from([("boron".into(), vec![1e-4])]),
                 transport_mu_bar: None,
             }],

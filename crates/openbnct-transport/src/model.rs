@@ -20,6 +20,93 @@ pub struct MaterialDefinition {
     pub temperature_k: f64,
     pub nuclides: Vec<NuclideMassFraction>,
     pub neutron_thermal_treatment: NeutronThermalTreatment,
+    /// Optional declared boron microdistribution — the sub-cellular
+    /// ¹⁰B compartment model that rescales the boron dose component to
+    /// the effective (compound-factor) dose. Absent means the material
+    /// boron dose carries no microdistribution correction (uniform
+    /// uptake, factor 1.0).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boron_microdistribution: Option<BoronMicrodistribution>,
+}
+
+/// Declared sub-cellular ¹⁰B compartment model: the fraction of boron
+/// resident in each compartment (nucleus / cytoplasm / membrane, summing
+/// to one — the convention microdistribution measurements report) plus
+/// the cell geometry the α/⁷Li tracks resolve. The ¹⁰B(n,α) products
+/// have ~4.8/9.6 µm ranges — sub-cellular placement changes the
+/// fraction of emitted energy deposited inside the cell, the standard
+/// "compound factor" correction applied to the boron dose component in
+/// BNCT treatment-planning practice.
+///
+/// `compound_factor()` returns `Σ_c f_c·F_c` with
+/// `F_c = 1 − exp(−⟨ℓ_c⟩/L)` the first-order escape correction —
+/// `⟨ℓ⟩` the mean chord: `4R/3` for volume-distributed compartments
+/// (Cauchy mean chord of the cell), `2R/3` for membrane-bound boron's
+/// inward surface emission (declared approximation), and `L = 9.5 µm`
+/// the effective combined α+⁷Li track range. A first-order geometric
+/// model — not a cell-scale Monte Carlo tally.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BoronMicrodistribution {
+    /// Fraction of the cell's ¹⁰B resident in the nucleus compartment.
+    pub nucleus_fraction: f64,
+    /// Fraction resident in the cytoplasm compartment.
+    pub cytoplasm_fraction: f64,
+    /// Fraction bound to the cell membrane.
+    pub membrane_fraction: f64,
+    /// Cell radius in micrometres.
+    pub cell_radius_um: f64,
+    /// Nucleus radius in micrometres (≤ cell radius; carried for the
+    /// record — the first-order factor uses the cell chord only).
+    pub nucleus_radius_um: f64,
+}
+
+/// Effective combined α+⁷Li track range for the ¹⁰B(n,α) products —
+/// the mean chord-equivalent length in tissue (declared constant;
+/// the α is ~4.8 µm and ⁷Li ~9.6 µm at the emitted energies).
+pub const BORON_TRACK_RANGE_UM: f64 = 9.5;
+
+impl BoronMicrodistribution {
+    pub fn validate(&self) -> Result<(), TransportModelError> {
+        let fractions = [
+            self.nucleus_fraction,
+            self.cytoplasm_fraction,
+            self.membrane_fraction,
+        ];
+        if fractions.iter().any(|u| !u.is_finite() || *u < 0.0)
+            || (fractions.iter().sum::<f64>() - 1.0).abs() > 1e-6
+        {
+            return Err(TransportModelError::MalformedMaterialRegion(
+                "boron microdistribution fractions must be non-negative \
+                 and sum to one"
+                    .into(),
+            ));
+        }
+        if !self.cell_radius_um.is_finite()
+            || self.cell_radius_um <= 0.0
+            || !self.nucleus_radius_um.is_finite()
+            || self.nucleus_radius_um <= 0.0
+            || self.nucleus_radius_um > self.cell_radius_um
+        {
+            return Err(TransportModelError::MalformedMaterialRegion(
+                "boron microdistribution radii must be positive with nucleus ≤ cell".into(),
+            ));
+        }
+        Ok(())
+    }
+
+    /// `Σ_c f_c·F_c` — the compartment-fraction-weighted deposited
+    /// fraction (the compound factor multiplying the boron dose
+    /// component).
+    pub fn compound_factor(&self) -> f64 {
+        let l = BORON_TRACK_RANGE_UM;
+        let r = self.cell_radius_um;
+        let f_vol = 1.0 - (-4.0 * r / (3.0 * l)).exp();
+        let f_mem = 1.0 - (-2.0 * r / (3.0 * l)).exp();
+        self.nucleus_fraction * f_vol
+            + self.cytoplasm_fraction * f_vol
+            + self.membrane_fraction * f_mem
+    }
 }
 
 impl MaterialDefinition {
@@ -34,6 +121,9 @@ impl MaterialDefinition {
         }
         if self.nuclides.is_empty() {
             return Err(TransportModelError::EmptyComposition);
+        }
+        if let Some(micro) = &self.boron_microdistribution {
+            micro.validate()?;
         }
 
         let mut names = BTreeSet::new();
@@ -420,6 +510,18 @@ pub enum MaterialRegionShape {
     /// Explicit `[i, j, k]` voxel indices (grid convention
     /// `i + nx*j + nx*ny*k`); realized as per-voxel lattice elements.
     VoxelSet { indices: Vec<[u32; 3]> },
+    /// Partial-cell volumes: each listed voxel carries `fraction` of
+    /// this region's material and the remainder of the base material —
+    /// the sub-voxel mixture rule for boundary voxels. `fractions[i]`
+    /// pairs with `indices[i]`, each in (0, 1]; the sum across
+    /// overlapping regions must stay ≤ 1. The solver blends the
+    /// macroscopic tables (σ_t, scatter moments, dose responses) by
+    /// volume fraction — the correct first-order treatment for
+    /// optically-thin material mixtures.
+    VoxelFractions {
+        indices: Vec<[u32; 3]>,
+        fractions: Vec<f64>,
+    },
 }
 
 impl MaterialRegion {
@@ -443,6 +545,7 @@ impl MaterialRegion {
                 }
             }
             MaterialRegionShape::VoxelSet { indices } => indices.len(),
+            MaterialRegionShape::VoxelFractions { indices, .. } => indices.len(),
         }
     }
 
@@ -459,6 +562,11 @@ impl MaterialRegion {
                 }
             }
             MaterialRegionShape::VoxelSet { indices } => {
+                for &index in indices {
+                    visit(index);
+                }
+            }
+            MaterialRegionShape::VoxelFractions { indices, .. } => {
                 for &index in indices {
                     visit(index);
                 }
@@ -546,6 +654,42 @@ impl MaterialAssignment {
                     ));
                 }
             }
+            // Partial-cell fractions: same length as indices, each
+            // fraction finite and in (0, 1], indices in-grid and
+            // unique. A voxel may appear in several fraction regions
+            // (ternary blends) but never alongside a full region —
+            // checked in the occupancy pass below.
+            if let MaterialRegionShape::VoxelFractions { indices, fractions } = &region.shape {
+                if indices.len() != fractions.len() {
+                    return Err(TransportModelError::MalformedMaterialRegion(format!(
+                        "region {:?} indices/fractions length mismatch",
+                        region.name
+                    )));
+                }
+                if fractions
+                    .iter()
+                    .any(|f| !f.is_finite() || *f <= 0.0 || *f > 1.0)
+                {
+                    return Err(TransportModelError::MalformedMaterialRegion(format!(
+                        "region {:?} fractions must be in (0,1]",
+                        region.name
+                    )));
+                }
+                if indices
+                    .iter()
+                    .any(|voxel| (0..3).any(|axis| voxel[axis] >= geometry.shape[axis]))
+                {
+                    return Err(TransportModelError::MaterialRegionOutsideGrid(
+                        region.name.clone(),
+                    ));
+                }
+                let mut unique = BTreeSet::new();
+                if indices.iter().any(|voxel| !unique.insert(voxel)) {
+                    return Err(TransportModelError::DuplicateVoxelInRegion(
+                        region.name.clone(),
+                    ));
+                }
+            }
         }
         // No voxel may carry two materials: occupancy is checked per voxel so
         // boxes and voxel sets share one exact overlap rule.
@@ -557,14 +701,52 @@ impl MaterialAssignment {
         let nx = geometry.shape[0] as usize;
         let ny = geometry.shape[1] as usize;
         let mut occupancy = vec![usize::MAX; voxel_total];
+        // Fraction regions carry a fractional occupancy per voxel —
+        // they may share a voxel with other fraction regions (sum ≤ 1)
+        // but never with a full box/set region (a voxel is either fully
+        // one material or a declared mixture).
+        let mut fraction_sum = vec![0.0_f64; voxel_total];
+        let mut fraction_owner = vec![usize::MAX; voxel_total];
         for (index, region) in self.regions.iter().enumerate() {
+            if let MaterialRegionShape::VoxelFractions { indices, fractions } = &region.shape {
+                for (voxel, f) in indices.iter().zip(fractions.iter()) {
+                    let flat =
+                        voxel[0] as usize + nx * voxel[1] as usize + nx * ny * voxel[2] as usize;
+                    if occupancy[flat] != usize::MAX {
+                        return Err(TransportModelError::OverlappingMaterialRegions {
+                            first: self.regions[occupancy[flat]].name.clone(),
+                            second: region.name.clone(),
+                        });
+                    }
+                    fraction_sum[flat] += f;
+                    if fraction_sum[flat] > 1.0 + 1e-9 {
+                        let first = fraction_owner[flat];
+                        return Err(TransportModelError::VoxelFractionOverflow {
+                            first: if first == usize::MAX {
+                                region.name.clone()
+                            } else {
+                                self.regions[first].name.clone()
+                            },
+                            second: region.name.clone(),
+                        });
+                    }
+                    if fraction_owner[flat] == usize::MAX {
+                        fraction_owner[flat] = index;
+                    }
+                }
+                continue;
+            }
             let mut overlap = None;
             region.for_each_voxel(|voxel| {
                 let flat = voxel[0] as usize + nx * voxel[1] as usize + nx * ny * voxel[2] as usize;
-                if occupancy[flat] == usize::MAX {
+                if occupancy[flat] == usize::MAX && fraction_owner[flat] == usize::MAX {
                     occupancy[flat] = index;
                 } else {
-                    overlap = Some(occupancy[flat]);
+                    overlap = Some(if occupancy[flat] == usize::MAX {
+                        fraction_owner[flat]
+                    } else {
+                        occupancy[flat]
+                    });
                 }
             });
             if let Some(first) = overlap {
@@ -677,6 +859,10 @@ pub enum TransportModelError {
     EmptyMaterialRegion(String),
     #[error("material region {0} lists the same voxel more than once")]
     DuplicateVoxelInRegion(String),
+    #[error("material region malformed: {0}")]
+    MalformedMaterialRegion(String),
+    #[error("voxel-fraction regions {first:?} and {second:?} exceed a full voxel (sum > 1)")]
+    VoxelFractionOverflow { first: String, second: String },
     #[error(
         "material assignment requires an axis-aligned grid (identity direction); \
          rotated or permuted voxel axes are not representable by box surfaces or rectilinear lattices"
@@ -929,6 +1115,204 @@ mod tests {
             assignment().validate(&rotated),
             Err(TransportModelError::NonAxisAlignedMaterialAssignment)
         );
+    }
+
+    fn fraction_region(name: &str, voxels: &[[u32; 3]], fractions: &[f64]) -> MaterialRegion {
+        MaterialRegion {
+            name: name.into(),
+            material: material(),
+            shape: MaterialRegionShape::VoxelFractions {
+                indices: voxels.to_vec(),
+                fractions: fractions.to_vec(),
+            },
+        }
+    }
+
+    #[test]
+    fn voxel_fractions_validate_local_shape() {
+        let geo = geometry();
+
+        // Valid single-region fractions.
+        let mut ok = assignment();
+        ok.regions[0] = fraction_region("frac", &[[0, 0, 0], [1, 1, 1]], &[0.5, 1.0]);
+        ok.validate(&geo).unwrap();
+        assert_eq!(ok.regions[0].voxel_count(), 2);
+        assert!(!ok.regions[0].is_axis_aligned_box());
+
+        // Length mismatch is malformed.
+        let mut mismatch = assignment();
+        mismatch.regions[0] = fraction_region("frac", &[[0, 0, 0], [1, 0, 0]], &[0.5]);
+        assert!(matches!(
+            mismatch.validate(&geo),
+            Err(TransportModelError::MalformedMaterialRegion(_))
+        ));
+
+        // Empty is still the empty-region error.
+        let mut empty = assignment();
+        empty.regions[0] = fraction_region("frac", &[], &[]);
+        assert_eq!(
+            empty.validate(&geo),
+            Err(TransportModelError::EmptyMaterialRegion("frac".into()))
+        );
+
+        // Out-of-grid and duplicate voxels are rejected.
+        let mut outside = assignment();
+        outside.regions[0] = fraction_region("frac", &[[4, 0, 0]], &[0.5]);
+        assert_eq!(
+            outside.validate(&geo),
+            Err(TransportModelError::MaterialRegionOutsideGrid(
+                "frac".into()
+            ))
+        );
+        let mut duplicated = assignment();
+        duplicated.regions[0] = fraction_region("frac", &[[0, 0, 0], [0, 0, 0]], &[0.3, 0.4]);
+        assert_eq!(
+            duplicated.validate(&geo),
+            Err(TransportModelError::DuplicateVoxelInRegion("frac".into()))
+        );
+
+        // Fractions must be finite and in (0, 1].
+        for bad in [0.0, -0.2, 1.5, f64::NAN, f64::INFINITY] {
+            let mut a = assignment();
+            a.regions[0] = fraction_region("frac", &[[0, 0, 0]], &[bad]);
+            assert!(
+                matches!(
+                    a.validate(&geo),
+                    Err(TransportModelError::MalformedMaterialRegion(_))
+                ),
+                "fraction {bad} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn voxel_fractions_share_voxels_but_never_exceed_one() {
+        let geo = geometry();
+
+        // Two fraction regions summing to exactly 1 in one voxel —
+        // a valid two-material mixture.
+        let mut mixture = assignment();
+        mixture.regions[0] = fraction_region("skin", &[[0, 0, 0], [1, 0, 0]], &[0.3, 0.25]);
+        mixture
+            .regions
+            .push(fraction_region("tumor", &[[0, 0, 0]], &[0.7]));
+        mixture.validate(&geo).unwrap();
+
+        // Three-way mixtures are equally valid — a 0.2/0.5/0.3 split.
+        let mut tri = assignment();
+        tri.regions[0] = fraction_region("skin", &[[0, 0, 0]], &[0.2]);
+        tri.regions
+            .push(fraction_region("tumor", &[[0, 0, 0]], &[0.5]));
+        tri.regions.push(fraction_region(
+            "bone",
+            &[[0, 0, 0], [2, 2, 2]],
+            &[0.3, 0.9],
+        ));
+        tri.validate(&geo).unwrap();
+
+        // Sum exceeding 1 is rejected and names both regions.
+        let mut over = assignment();
+        over.regions[0] = fraction_region("skin", &[[0, 0, 0]], &[0.6]);
+        over.regions
+            .push(fraction_region("tumor", &[[0, 0, 0]], &[0.6]));
+        assert_eq!(
+            over.validate(&geo),
+            Err(TransportModelError::VoxelFractionOverflow {
+                first: "skin".into(),
+                second: "tumor".into(),
+            })
+        );
+
+        // A full box/set region may not share a voxel with any
+        // fraction occupancy — in either declaration order.
+        let mut frac_first = assignment();
+        frac_first.regions[0] = fraction_region("frac", &[[0, 0, 0]], &[0.5]);
+        frac_first.regions.push(MaterialRegion {
+            name: "full".into(),
+            material: material(),
+            shape: MaterialRegionShape::VoxelSet {
+                indices: vec![[0, 0, 0]],
+            },
+        });
+        assert_eq!(
+            frac_first.validate(&geo),
+            Err(TransportModelError::OverlappingMaterialRegions {
+                first: "frac".into(),
+                second: "full".into(),
+            })
+        );
+
+        let mut full_first = assignment();
+        full_first.regions[0].name = "full".into();
+        full_first.regions[0].shape = MaterialRegionShape::VoxelSet {
+            indices: vec![[0, 0, 0]],
+        };
+        full_first
+            .regions
+            .push(fraction_region("frac", &[[0, 0, 0]], &[0.5]));
+        assert_eq!(
+            full_first.validate(&geo),
+            Err(TransportModelError::OverlappingMaterialRegions {
+                first: "full".into(),
+                second: "frac".into(),
+            })
+        );
+    }
+
+    #[test]
+    fn boron_microdistribution_validates_and_factors() {
+        let mut micro = BoronMicrodistribution {
+            nucleus_fraction: 0.4,
+            cytoplasm_fraction: 0.5,
+            membrane_fraction: 0.1,
+            cell_radius_um: 6.0,
+            nucleus_radius_um: 4.0,
+        };
+        micro.validate().unwrap();
+        // Uniform-in-cell boron (all cytoplasm+nucleus) → the volume
+        // chord factor; membrane-bound boron escapes more (smaller
+        // chord → smaller factor).
+        let uniform = BoronMicrodistribution {
+            membrane_fraction: 0.0,
+            cytoplasm_fraction: 1.0 - 0.4,
+            ..micro.clone()
+        };
+        let membrane_heavy = BoronMicrodistribution {
+            nucleus_fraction: 0.1,
+            cytoplasm_fraction: 0.2,
+            membrane_fraction: 0.7,
+            ..micro.clone()
+        };
+        assert!(uniform.compound_factor() > membrane_heavy.compound_factor());
+        assert!(micro.compound_factor() > 0.0 && micro.compound_factor() <= 1.0);
+
+        // Fractions not summing to one / non-finite are malformed.
+        micro.membrane_fraction = 0.5;
+        assert!(matches!(
+            micro.validate(),
+            Err(TransportModelError::MalformedMaterialRegion(_))
+        ));
+        micro.membrane_fraction = f64::NAN;
+        assert!(matches!(
+            micro.validate(),
+            Err(TransportModelError::MalformedMaterialRegion(_))
+        ));
+        micro.membrane_fraction = 0.1;
+        micro.nucleus_radius_um = 9.0; // nucleus larger than cell
+        assert!(matches!(
+            micro.validate(),
+            Err(TransportModelError::MalformedMaterialRegion(_))
+        ));
+
+        // A material carrying a malformed microdistribution is rejected.
+        let mut mat = material();
+        mat.boron_microdistribution = Some(micro.clone());
+        assert!(matches!(
+            mat.validate(),
+            Err(TransportModelError::MalformedMaterialRegion(_))
+        ));
+        mat.boron_microdistribution = None;
+        assert_eq!(mat.validate(), Ok(()));
     }
 
     #[test]

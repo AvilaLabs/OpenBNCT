@@ -846,6 +846,7 @@ mod tests {
                 },
             ],
             neutron_thermal_treatment: NeutronThermalTreatment::FreeGas,
+            boron_microdistribution: None,
         };
         let assignment = materialize_field(&field, &base, "case-1", 4, "test".into()).unwrap();
         assignment.validate(&field.geometry).unwrap();

@@ -1657,6 +1657,20 @@ enum SnCommand {
         /// applies).
         #[arg(long)]
         p1: bool,
+        /// Highest Legendre order l carried by the in-scatter kernel
+        /// beyond P1 (2–5; requires `--p1` and
+        /// `scatter_legendre_moments_per_cm` on every scattering
+        /// material — emitted by `sn collapse` v2+ data). The discrete
+        /// P_l kernel is eigendecomposed once per quadrature, so the
+        /// source carries the exact addition theorem per ordinate set.
+        #[arg(long, default_value_t = 0)]
+        anisotropy: u32,
+        /// Anderson acceleration depth for the outer iteration
+        /// (0 = plain sweeps). ≥1 mixes the last N outer iterates
+        /// per symmetric cycle — accelerates the slow energy-coupling
+        /// mode bound-atom S(α,β) upscatter introduces.
+        #[arg(long, default_value_t = 0)]
+        anderson: usize,
         /// Also write a folded `openbnct.physical-dose-bundle/0.2.0` to
         /// this path (the data must declare `dose_response_gy_cm2` and a
         /// `component_profile` binding).
@@ -1717,6 +1731,13 @@ enum SnCommand {
         /// nearest tabulated temperature on each tape is used.
         #[arg(long, default_value_t = 293.6)]
         tsl_temperature: f64,
+        /// Apply Bondarenko heterogeneous-dilution self-shielding:
+        /// each nuclide's collapse weight ×σ₀/(σ_t+σ₀), with σ₀
+        /// supplied by the other nuclides in the material (no free
+        /// parameter). Suppresses resonance-dip weighting — the
+        /// correct first-order treatment for absorber-rich spectra.
+        #[arg(long)]
+        self_shielding: bool,
         /// Material definition artifact (openbnct.material/0.1.0) —
         /// repeat for every material the solve requires.
         #[arg(long, required = true)]
@@ -1738,6 +1759,104 @@ enum SnCommand {
         /// Artifact path; printed to stdout when omitted.
         #[arg(long)]
         output: Option<PathBuf>,
+    },
+    /// Collapse photon-atomic HDF5 tables plus neutron-evaluation
+    /// photon products into a coupled `openbnct.multigroup-photon-data/0.1.0`
+    /// artifact — photon σt, Klein–Nishina transfer, coherent diagonal,
+    /// pair→annihilation source, kerma response, and the n→γ
+    /// production matrix bound to the neutron group structure.
+    PhotonCollapse {
+        /// Directory of `photo_<Elem>.h5` photon-atomic tables.
+        #[arg(long)]
+        photon_library: PathBuf,
+        /// Directory of `<Nuclide>.h5` neutron tables (for n→γ production).
+        #[arg(long)]
+        neutron_library: PathBuf,
+        /// Material definition artifact (openbnct.material/0.1.0) —
+        /// repeat for every material the solve requires.
+        #[arg(long, required = true)]
+        material: Vec<PathBuf>,
+        /// Photon energy boundaries in eV, strictly descending —
+        /// must contain a bin covering 511 keV for pair annihilation.
+        #[arg(long, value_delimiter = ',', required = true)]
+        photon_boundaries: Vec<f64>,
+        /// The `openbnct.multigroup-data/0.1.0` the neutron flux is
+        /// solved against — its group structure pins the production
+        /// matrix's neutron axis.
+        #[arg(long)]
+        neutron_data: PathBuf,
+        /// Artifact id for the emitted photon-data artifact.
+        #[arg(long)]
+        id: String,
+        /// Component-definition-profile JSON to content-bind; required
+        /// for `--dose` folding at photon-solve time.
+        #[arg(long)]
+        component_profile: Option<PathBuf>,
+        /// Free-text appended to the collapse declaration.
+        #[arg(long)]
+        note: Option<String>,
+        /// Artifact path; printed to stdout when omitted.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Solve the coupled photon problem: builds the volumetric n→γ
+    /// source from a converged neutron flux and the photon data's
+    /// production matrix, sweeps the photon tables through the same
+    /// S_N solver, and optionally folds photon dose. One-way coupled —
+    /// the neutron flux is an input, not iterated.
+    PhotonSolve {
+        /// `openbnct.transport-case/0.1.0` case JSON.
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-photon-data/0.1.0` photon data JSON.
+        #[arg(long)]
+        photon_data: PathBuf,
+        /// `openbnct.multigroup-flux/0.1.0` converged neutron flux —
+        /// must carry the neutron group structure the production
+        /// matrix maps from.
+        #[arg(long)]
+        neutron_flux: PathBuf,
+        /// Optional `openbnct.material-assignment/0.2.0` for
+        /// heterogeneous geometry.
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// S_N quadrature order (even, 2–16).
+        #[arg(long, default_value_t = 4)]
+        order: u32,
+        /// Relative scalar-flux convergence target.
+        #[arg(long, default_value_t = 1e-6)]
+        convergence: f64,
+        /// Within-group iterations per group pass.
+        #[arg(long, default_value_t = 64)]
+        max_inner: u32,
+        /// Outer sweeps (downscatter-only: converges in one pass).
+        #[arg(long, default_value_t = 8)]
+        max_outer: u32,
+        /// Axis treated as periodic; repeatable or comma-separated.
+        #[arg(long, value_delimiter = ',')]
+        periodic: Vec<String>,
+        /// Disable the extended transport correction on the sweep —
+        /// applies when the data declares `transport_mu_bar`.
+        #[arg(long)]
+        no_transport_correction: bool,
+        /// Enable P1 anisotropic scattering — requires the photon
+        /// data's P1 moments (the Klein–Nishina collapse supplies
+        /// them via `transport_mu_bar`; in-group P1 needs a P1 matrix).
+        #[arg(long)]
+        p1: bool,
+        /// Higher-order Legendre scattering l = 2..=5 — requires
+        /// `--p1` and l-moment tables in the photon data (the
+        /// Klein–Nishina collapse emits l = 2 moments).
+        #[arg(long, default_value_t = 0)]
+        anisotropy: u32,
+        /// Also write a folded `openbnct.physical-dose-bundle/0.2.0`
+        /// photon dose to this path (the data must declare
+        /// `dose_response_gy_cm2` and a `component_profile` binding).
+        #[arg(long)]
+        dose: Option<PathBuf>,
+        /// Output path for the photon multigroup-flux JSON.
+        #[arg(long)]
+        output: PathBuf,
     },
 }
 
@@ -3188,6 +3307,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                                 format!("box {lower:?}..{upper:?}"),
                             openbnct_transport::MaterialRegionShape::VoxelSet { .. } =>
                                 "voxel set".to_owned(),
+                            openbnct_transport::MaterialRegionShape::VoxelFractions { .. } =>
+                                "voxel fractions".to_owned(),
                         },
                         region.material.id
                     );
@@ -7052,6 +7173,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 no_uncollided_split,
                 no_transport_correction,
                 p1,
+                anisotropy,
+                anderson,
                 dose,
                 output,
             } => {
@@ -7091,6 +7214,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     beam_uncollided_split: !no_uncollided_split,
                     transport_correction: !no_transport_correction,
                     p1_anisotropic: p1,
+                    anisotropy_order: anisotropy,
+                    anderson_depth: anderson,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: mg_data.id.clone(),
@@ -7193,6 +7318,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 endf,
                 tsl,
                 tsl_temperature,
+                self_shielding,
                 material,
                 boundaries,
                 id,
@@ -7243,6 +7369,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     endf_paths,
                     tsl_paths,
                     tsl_temperature_k: tsl_temperature,
+                    self_shielding,
                     materials: material_models,
                     energy_boundaries_ev: boundaries,
                     weighting:
@@ -7267,6 +7394,187 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         );
                     }
                     None => println!("{json}"),
+                }
+            }
+            SnCommand::PhotonCollapse {
+                photon_library,
+                neutron_library,
+                material,
+                photon_boundaries,
+                neutron_data,
+                id,
+                component_profile,
+                note,
+                output,
+            } => {
+                let mut material_models = Vec::with_capacity(material.len());
+                for path in &material {
+                    material_models.push(serde_json::from_slice::<
+                        openbnct_transport::MaterialDefinition,
+                    >(&fs::read(path)?)?);
+                }
+                let neutron_mg: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&fs::read(&neutron_data)?)?;
+                let profile_ref = match &component_profile {
+                    Some(path) => {
+                        let bytes = fs::read(path)?;
+                        let profile: serde_json::Value = serde_json::from_slice(&bytes)?;
+                        let profile_id = profile
+                            .get("id")
+                            .and_then(|v| v.as_str())
+                            .ok_or_else(|| {
+                                io::Error::other("component profile JSON has no string `id` field")
+                            })?
+                            .to_string();
+                        Some(openbnct_core::ContentReference {
+                            id: profile_id,
+                            sha256: openbnct_evidence::sha256_hex(&bytes),
+                        })
+                    }
+                    None => None,
+                };
+                let options = openbnct_openmc::PhotonCollapseOptions {
+                    photon_library_dir: photon_library.clone(),
+                    neutron_library_dir: neutron_library.clone(),
+                    materials: material_models,
+                    photon_boundaries_ev: photon_boundaries,
+                    neutron_boundaries_ev: neutron_mg.energy_boundaries_ev.clone(),
+                    weighting:
+                        openbnct_openmc::WeightingSpectrum::ThermalMaxwellianEpithermalFlat {
+                            cut_ev: 0.5,
+                        },
+                    id: id.clone(),
+                    component_profile: profile_ref,
+                    note: note.unwrap_or_default(),
+                };
+                let data = openbnct_openmc::collapse_photon(&options)
+                    .map_err(|error| io::Error::other(format!("photon collapse: {error}")))?;
+                let json = serde_json::to_string_pretty(&data)?;
+                match &output {
+                    Some(path) => {
+                        write_new_json(path, &data)?;
+                        println!(
+                            "multigroup photon data at {} ({} photon groups, {} neutron groups, {} materials)",
+                            path.display(),
+                            data.energy_boundaries_ev.len() - 1,
+                            data.neutron_energy_boundaries_ev.len() - 1,
+                            data.materials.len()
+                        );
+                    }
+                    None => println!("{json}"),
+                }
+            }
+            SnCommand::PhotonSolve {
+                case,
+                photon_data,
+                neutron_flux,
+                assignment,
+                order,
+                convergence,
+                max_inner,
+                max_outer,
+                periodic,
+                no_transport_correction,
+                p1,
+                anisotropy,
+                dose,
+                output,
+            } => {
+                let case_bytes = fs::read(&case)?;
+                let transport_case: TransportCase = serde_json::from_slice(&case_bytes)?;
+                let data_bytes = fs::read(&photon_data)?;
+                let ph_data: openbnct_transport::MultigroupPhotonData =
+                    serde_json::from_slice(&data_bytes)?;
+                let neutron_flux_model: openbnct_transport::MultigroupFlux =
+                    serde_json::from_slice(&fs::read(&neutron_flux)?)?;
+                let assignment_model = match &assignment {
+                    Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
+                        path,
+                    )?)?),
+                    None => None,
+                };
+                let mut periodic_axes = [false; 3];
+                for axis in &periodic {
+                    let index = match axis.as_str() {
+                        "x" => 0,
+                        "y" => 1,
+                        "z" => 2,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "periodic axis {other:?} must be x, y, or z"
+                            ))
+                            .into());
+                        }
+                    };
+                    periodic_axes[index] = true;
+                }
+                let options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    convergence,
+                    max_inner_iterations: max_inner,
+                    max_outer_iterations: max_outer,
+                    assignment: assignment_model.clone(),
+                    periodic: periodic_axes,
+                    beam_uncollided_split: false,
+                    transport_correction: !no_transport_correction,
+                    p1_anisotropic: p1,
+                    anisotropy_order: anisotropy,
+                    anderson_depth: 0,
+                };
+                let data_ref = openbnct_core::ContentReference {
+                    id: ph_data.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                };
+                let case_ref = openbnct_core::ContentReference {
+                    id: transport_case.case_id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                };
+                let flux = openbnct_transport::solve_photon(
+                    &transport_case,
+                    &ph_data,
+                    &neutron_flux_model,
+                    &options,
+                    data_ref,
+                    case_ref,
+                )
+                .map_err(|error| io::Error::other(format!("photon solve: {error}")))?;
+                if !flux.converged {
+                    return Err(io::Error::other(format!(
+                        "photon solve did not converge (residual {:.3e} after {} outer iterations)",
+                        flux.residual, flux.outer_iterations
+                    ))
+                    .into());
+                }
+                write_new_json(&output, &flux)?;
+                println!(
+                    "photon flux at {} (S{}, {} groups, {} outer iterations, residual {:.2e})",
+                    output.display(),
+                    flux.quadrature_order,
+                    flux.energy_boundaries_ev.len().saturating_sub(1),
+                    flux.outer_iterations,
+                    flux.residual
+                );
+                if let Some(dose_path) = dose {
+                    let profile = ph_data.component_profile.clone().ok_or_else(|| {
+                        io::Error::other(
+                            "--dose requires the photon data to declare component_profile",
+                        )
+                    })?;
+                    let response_ref = openbnct_core::ContentReference {
+                        id: ph_data.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                    };
+                    let bundle = openbnct_transport::fold_photon_dose(
+                        &transport_case,
+                        &ph_data,
+                        &flux,
+                        assignment_model.as_ref(),
+                        profile,
+                        response_ref,
+                    )
+                    .map_err(|error| io::Error::other(format!("photon dose fold: {error}")))?;
+                    write_new_json(&dose_path, &bundle)?;
+                    println!("folded photon dose bundle at {}", dose_path.display());
                 }
             }
         },
@@ -8084,6 +8392,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     beam_uncollided_split: !no_uncollided_split,
                     transport_correction: true,
                     p1_anisotropic: false,
+                    anisotropy_order: 0,
+                    anderson_depth: 0,
                 };
                 let nominal_flux =
                     match &forward_flux {
@@ -8222,6 +8532,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     beam_uncollided_split: !no_uncollided_split,
                     transport_correction: true,
                     p1_anisotropic: false,
+                    anisotropy_order: 0,
+                    anderson_depth: 0,
                 };
                 let report = openbnct_transport::run_screening(
                     &transport_case,
@@ -8668,6 +8980,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     beam_uncollided_split: true,
                     transport_correction: true,
                     p1_anisotropic: false,
+                    anisotropy_order: 0,
+                    anderson_depth: 0,
                 };
                 let forward = forward_flux
                     .as_ref()

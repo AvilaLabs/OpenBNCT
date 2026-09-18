@@ -57,7 +57,7 @@ pub enum CollapseError {
     Model(String),
 }
 
-fn invalid(msg: impl Into<String>) -> CollapseError {
+pub(crate) fn invalid(msg: impl Into<String>) -> CollapseError {
     CollapseError::Invalid(msg.into())
 }
 
@@ -97,7 +97,7 @@ impl WeightingSpectrum {
 
 /// Atomic mass (g/mol) and integer mass number for the nuclides the
 /// phantom materials use. ENDF-loaded nuclides fall back to their AWR.
-fn nuclide_mass(name: &str) -> Option<(f64, u32)> {
+pub(crate) fn nuclide_mass(name: &str) -> Option<(f64, u32)> {
     Some(match name {
         "H1" => (1.007_825, 1),
         "H2" => (2.014_102, 2),
@@ -168,7 +168,7 @@ struct NuclideTable {
     other: Vec<f64>,
 }
 
-fn read_attr_f64(
+pub(crate) fn read_attr_f64(
     attrs: &std::collections::HashMap<String, hdf5_pure::AttrValue>,
     key: &str,
 ) -> f64 {
@@ -180,7 +180,7 @@ fn read_attr_f64(
     }
 }
 
-fn read_attr_i64(
+pub(crate) fn read_attr_i64(
     attrs: &std::collections::HashMap<String, hdf5_pure::AttrValue>,
     key: &str,
 ) -> i64 {
@@ -332,7 +332,7 @@ fn load_nuclide_endf(path: &Path, name: &str) -> Result<NuclideTable, CollapseEr
 /// shared with [`integrate_grid`]. Cross sections follow power-law
 /// shapes (1/v tails, thresholds) where log-log interpolation is far
 /// more faithful than linear-in-E.
-fn log_interp(energy: &[f64], f: &[f64], e: f64) -> f64 {
+pub(crate) fn log_interp(energy: &[f64], f: &[f64], e: f64) -> f64 {
     if e <= energy[0] {
         return f[0];
     }
@@ -352,7 +352,7 @@ fn log_interp(energy: &[f64], f: &[f64], e: f64) -> f64 {
 
 /// Integrate `f(E)` over `[lo, hi]` by trapezoid on the nuclide's own
 /// grid points plus boundary samples from [`log_interp`].
-fn integrate_grid(energy: &[f64], f: &[f64], lo: f64, hi: f64) -> f64 {
+pub(crate) fn integrate_grid(energy: &[f64], f: &[f64], lo: f64, hi: f64) -> f64 {
     let interp = |e: f64| log_interp(energy, f, e);
     let mut pts: Vec<(f64, f64)> = vec![(lo, interp(lo))];
     for (i, &e) in energy.iter().enumerate() {
@@ -390,6 +390,35 @@ fn elastic_transfer_p(e: f64, alpha: f64, lo: f64, hi: f64) -> f64 {
 /// destination group. For A = 1 this reduces analytically to the known
 /// `⟨μ⟩ = 2/3` over the full outgoing range.
 fn elastic_transfer_p1(e: f64, alpha: f64, mass_number: f64, lo: f64, hi: f64) -> f64 {
+    elastic_transfer_pl(e, alpha, mass_number, 1, lo, hi)
+}
+
+/// Legendre polynomial P_l(x) via the three-term recurrence (local
+/// copy — the collapse cannot reach into the transport crate).
+fn legendre_p(l: u32, x: f64) -> f64 {
+    match l {
+        0 => 1.0,
+        1 => x,
+        _ => {
+            let (mut p0, mut p1) = (1.0, x);
+            for n in 2..=l {
+                let nf = n as f64;
+                let p = ((2.0 * nf - 1.0) * x * p1 - (nf - 1.0) * p0) / nf;
+                p0 = p1;
+                p1 = p;
+            }
+            p1
+        }
+    }
+}
+
+/// l-th Legendre moment of the iso-CM elastic transfer restricted to
+/// `[lo, hi]` — the generalization of [`elastic_transfer_p1`]: the
+/// outgoing lab cosine raised through P_l instead of μ_lab itself.
+/// ∫_{lo}^{hi} P_l(μ_lab(E,E'))/(E(1−α)) dE′ over the reachable
+/// window; `pl(g→g')/p0(g→g')` is the l-th kernel moment of transfers
+/// into the destination group.
+fn elastic_transfer_pl(e: f64, alpha: f64, mass_number: f64, l: u32, lo: f64, hi: f64) -> f64 {
     if e <= 0.0 {
         return 0.0;
     }
@@ -399,7 +428,8 @@ fn elastic_transfer_p1(e: f64, alpha: f64, mass_number: f64, lo: f64, hi: f64) -
     if hi_c <= lo_c {
         return 0.0;
     }
-    // Midpoint quadrature over the overlap — μ_lab is smooth in E'.
+    // Midpoint quadrature over the overlap — P_l(μ_lab) is smooth in
+    // E′ for l ≤ 5 at this resolution.
     const N: usize = 64;
     let step = (hi_c - lo_c) / N as f64;
     let a = mass_number;
@@ -414,7 +444,7 @@ fn elastic_transfer_p1(e: f64, alpha: f64, mass_number: f64, lo: f64, hi: f64) -
         } else {
             0.0
         };
-        acc += mu_lab;
+        acc += legendre_p(l, mu_lab);
     }
     acc * step / ((1.0 - alpha) * e)
 }
@@ -443,6 +473,15 @@ pub struct CollapseOptions {
     /// Material temperature for the S(α,β) evaluation — the nearest
     /// tabulated temperature on each tape is used.
     pub tsl_temperature_k: f64,
+    /// Bondarenko heterogeneous-dilution self-shielding. When set, each
+    /// nuclide's collapse weight becomes
+    /// `w(E)·σ₀_n(E)/(σ_t,n(E)+σ₀_n(E))` with the per-atom background
+    /// `σ₀_n(E) = Σ_{m≠n} (n_m/n_n)·σ_t,m(E)` — the other nuclides in
+    /// the same material supply the dilution automatically (no free
+    /// parameter). Resonance dips in σ_t,n then suppress that
+    /// nuclide's effective weighting locally — the correct first-order
+    /// self-shielding treatment. Recorded in the declaration.
+    pub self_shielding: bool,
     /// Artifact id.
     pub id: String,
     /// Component-profile reference for the dose-response vectors.
@@ -520,6 +559,14 @@ pub fn collapse_multigroup(opts: &CollapseOptions) -> Result<MultigroupData, Col
                 .join(", "),
         )
     };
+    let shield_note = if opts.self_shielding {
+        " Bondarenko heterogeneous-dilution self-shielding applied: \
+         each nuclide's weighting ×σ₀_n(E)/(σ_t,n(E)+σ₀_n(E)) with \
+         σ₀_n = Σ_{m≠n}(n_m/n_n)σ_t,m from the material's own \
+         composition."
+    } else {
+        ""
+    };
     let mut declaration = format!(
         "Collapsed from the processed ENDF/B-VIII.1 294 K OpenMC HDF5 \
          tables in {} by `openbnct sn collapse` at {groups} groups. \
@@ -540,10 +587,11 @@ pub fn collapse_multigroup(opts: &CollapseOptions) -> Result<MultigroupData, Col
          all depositing locally — no photon transport. Other \
          charged-particle channels (e.g. 17O(n,α)) remain in σt \
          removal but are not folded into a named component. \
-         Weighting: {}.{}{}",
+         Weighting: {}.{}{}{}",
         opts.library_dir.display(),
         opts.weighting.describe(),
         endf_note,
+        shield_note,
         if opts.note.is_empty() {
             String::new()
         } else {
@@ -652,6 +700,17 @@ fn collapse_material(
     let mut sigma_t = vec![0.0; groups];
     let mut transfer = vec![0.0; groups * groups];
     let mut transfer_p1 = vec![0.0; groups * groups];
+    // l = 2..=5 Legendre transfer moments — the free-gas iso-CM kernel
+    // supplies them analytically for every nuclide (for TSL-treated
+    // nuclides the bound-atom kernel currently exports only s0/s1/kj,
+    // so l ≥ 2 carries the free-gas moment — a declared approximation
+    // whose error sits at thermal energies where anisotropy is weak).
+    let mut transfer_pl: [Vec<f64>; 4] = [
+        vec![0.0; groups * groups],
+        vec![0.0; groups * groups],
+        vec![0.0; groups * groups],
+        vec![0.0; groups * groups],
+    ];
     let mut dose_boron = vec![0.0; groups];
     let mut dose_nitrogen = vec![0.0; groups];
     let mut dose_hydrogen = vec![0.0; groups];
@@ -662,10 +721,47 @@ fn collapse_material(
     let mut mu_num = vec![0.0; groups];
     let mut mu_den = vec![0.0; groups];
 
-    for (table, &n_density) in tables.iter().zip(&densities) {
+    // Bondarenko pre-pass: per-nuclide total XS (barns) on its own
+    // grid — the dilution background for every other nuclide.
+    let total_xs: Vec<Vec<f64>> = tables
+        .iter()
+        .map(|t| {
+            (0..t.energy.len())
+                .map(|i| t.elastic[i] + t.capture.0[i] + t.np.0[i] + t.na.0[i] + t.other[i])
+                .collect()
+        })
+        .collect();
+    // σ₀_n(E) in macroscopic /cm: Σ_{m≠n} n_m·σ_t,m(E). The shield
+    // factor σ₀/(σ_t,n·n_n + σ₀) is dimensionless and recovers the
+    // per-atom Bondarenko weight automatically.
+    let sigma0_macro = |skip: usize, e: f64| -> f64 {
+        tables
+            .iter()
+            .enumerate()
+            .zip(&densities)
+            .filter(|((m, _), _)| *m != skip)
+            .map(|((m, t), &n)| n * log_interp(&t.energy, &total_xs[m], e))
+            .sum()
+    };
+
+    for (n_idx, (table, &n_density)) in tables.iter().zip(&densities).enumerate() {
         let alpha = ((table.mass_number as f64 - 1.0) / (table.mass_number as f64 + 1.0)).powi(2);
         let e = &table.energy;
-        let weight: Vec<f64> = e.iter().map(|&x| opts.weighting.w(x)).collect();
+        // Bondarenko shield factor at e: σ₀/(σ_t,n·n_n + σ₀) — 1.0 when
+        // self-shielding is off. Applied to every weighting integral
+        // below (grid weights and the TSL explicit quadrature alike).
+        let shield_factor = |e: f64| -> f64 {
+            if !opts.self_shielding {
+                return 1.0;
+            }
+            let s0 = sigma0_macro(n_idx, e);
+            let st = log_interp(&table.energy, &total_xs[n_idx], e) * n_density;
+            if s0 + st > 0.0 { s0 / (s0 + st) } else { 1.0 }
+        };
+        let weight: Vec<f64> = e
+            .iter()
+            .map(|&x| opts.weighting.w(x) * shield_factor(x))
+            .collect();
         let sw = |xs: &[f64]| -> Vec<f64> { xs.iter().zip(&weight).map(|(s, w)| s * w).collect() };
         let absorption: Vec<f64> = (0..e.len())
             .map(|i| table.capture.0[i] + table.np.0[i] + table.na.0[i] + table.other[i])
@@ -686,6 +782,12 @@ fn collapse_material(
             // P varies within g, so integrate the product numerically.
             let mut row = vec![0.0; groups];
             let mut row_p1 = vec![0.0; groups];
+            let mut row_pl = [
+                vec![0.0; groups],
+                vec![0.0; groups],
+                vec![0.0; groups],
+                vec![0.0; groups],
+            ];
             let a = table.mass_number as f64;
             let tsl = tsl_kernels.get(&table.name);
             // σ_s and the recoil-kerma σ·⟨E−E'⟩ depend on which kernel
@@ -701,7 +803,7 @@ fn collapse_material(
                 let mut k_acc = 0.0;
                 for j in 0..NE {
                     let e_j = lo + (j as f64 + 0.5) * (hi - lo) / NE as f64;
-                    let w_j = opts.weighting.w(e_j);
+                    let w_j = opts.weighting.w(e_j) * shield_factor(e_j);
                     let sig_f = log_interp(e, &table.elastic, e_j);
                     let mut s0tot = 0.0;
                     for gp in 0..groups {
@@ -757,11 +859,43 @@ fn collapse_material(
                 ) / sigma_s.max(f64::MIN_POSITIVE);
                 recoil_sigma = sigma_s * ebar * (1.0 - alpha) / 2.0;
             }
+            // Higher Legendre moments (l = 2..=5) from the free-gas
+            // iso-CM kernel for every nuclide; for TSL-treated nuclides
+            // the free-gas row is scaled by σ_s,bound/σ_s,free so the
+            // moment magnitude tracks the bound-atom scatter strength
+            // (declared approximation — the TSL kernel exports no
+            // l ≥ 2 moments).
+            let sigma_s_free = collapse(&sw(&table.elastic));
+            let scale_pl = if tsl.is_some() && sigma_s_free > 0.0 {
+                sigma_s / sigma_s_free
+            } else {
+                1.0
+            };
+            let elastic_weighted_pl = sw(&table.elastic);
+            for gp in 0..groups {
+                for (li, row_l) in row_pl.iter_mut().enumerate() {
+                    let l = li as u32 + 2;
+                    let integrand: Vec<f64> = e
+                        .iter()
+                        .enumerate()
+                        .map(|(i, &x)| {
+                            elastic_weighted_pl[i]
+                                * elastic_transfer_pl(x, alpha, a, l, b[gp + 1], b[gp])
+                        })
+                        .collect();
+                    row_l[gp] = collapse(&integrand) * scale_pl;
+                }
+            }
             for (gp, val) in row.iter().enumerate() {
                 transfer[g * groups + gp] += n_density * val;
             }
             for (gp, val) in row_p1.iter().enumerate() {
                 transfer_p1[g * groups + gp] += n_density * val;
+            }
+            for (li, mat) in transfer_pl.iter_mut().enumerate() {
+                for (gp, val) in row_pl[li].iter().enumerate() {
+                    mat[g * groups + gp] += n_density * val;
+                }
             }
             sigma_t[g] += n_density * (sigma_s + sigma_a);
             // Scatter-weighted mean lab cosine: analytic 2/(3A) for
@@ -813,6 +947,7 @@ fn collapse_material(
         sigma_total_per_cm: sigma_t,
         scatter_matrix_per_cm: transfer,
         scatter_p1_matrix_per_cm: Some(transfer_p1),
+        scatter_legendre_moments_per_cm: Some(transfer_pl.into()),
         dose_response_gy_cm2,
         transport_mu_bar: Some(
             mu_num

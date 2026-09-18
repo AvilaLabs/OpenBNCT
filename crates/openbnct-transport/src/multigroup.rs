@@ -71,6 +71,15 @@ pub struct MultigroupMaterial {
     /// `p1_anisotropic`. Absent on pre-P1 artifacts.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scatter_p1_matrix_per_cm: Option<Vec<f64>>,
+    /// Optional higher Legendre transfer moments for l = 2..=5, cm⁻¹.
+    /// Layout `moments[l − 2][g_from × G + g_to]` — the l-th Legendre
+    /// moment of the double-differential kernel per (source,
+    /// destination) group pair. When the solve requests
+    /// `anisotropy_order ≥ 2` these feed the exact discrete
+    /// addition-theorem source; an absent moment at a requested l is
+    /// an error at solve time, not a silent isotropic downgrade.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scatter_legendre_moments_per_cm: Option<Vec<Vec<f64>>>,
     /// Optional per-component flux→dose response vectors `[G]` in
     /// `Gy·cm²` — folding scalar flux by these reproduces the component
     /// dose convention of the component profile the data declares.
@@ -202,6 +211,36 @@ impl MultigroupData {
                              |Σ_s1| ≤ Σ_s0",
                             material.material_id
                         )));
+                    }
+                }
+            }
+            if let Some(moments) = &material.scatter_legendre_moments_per_cm {
+                // The l-th moment satisfies |Σ_sl| ≤ Σ_s0 — the same
+                // mean-cosine bound generalized (|P_l| ≤ 1).
+                if moments.len() > 4 {
+                    return Err(invalid(format!(
+                        "material {:?} legendre moments support l = 2..=5 ({} provided)",
+                        material.material_id,
+                        moments.len()
+                    )));
+                }
+                for (l, mat) in moments.iter().enumerate() {
+                    if mat.len() != groups * groups {
+                        return Err(invalid(format!(
+                            "material {:?} legendre moment l={} must be {groups}x{groups}",
+                            material.material_id,
+                            l + 2
+                        )));
+                    }
+                    for (i, v) in mat.iter().enumerate() {
+                        if !v.is_finite() || v.abs() > material.scatter_matrix_per_cm[i] + 1e-12 {
+                            return Err(invalid(format!(
+                                "material {:?} legendre l={} entry {i} must be finite and \
+                                 |Σ_sl| ≤ Σ_s0",
+                                material.material_id,
+                                l + 2
+                            )));
+                        }
                     }
                 }
             }
@@ -345,6 +384,25 @@ pub struct SnOptions {
     /// treat the same anisotropy — combining them double-counts the
     /// forward peak). Physical σ_t applies when this is set.
     pub p1_anisotropic: bool,
+    /// Highest Legendre order l carried by the in-scatter kernel
+    /// beyond P1 — 0 or 1 leaves the sweep on the scalar/P1 source
+    /// path; 2..=5 activates the higher-moment source for l = 2..=N
+    /// via `scatter_legendre_moments_per_cm`. The discrete P_l kernel
+    /// is eigendecomposed once per quadrature (exact addition theorem
+    /// for the ordinate set) and the source is evaluated as
+    /// Σ_l(2l+1)σ_l Σ_k u_k(Ω_d)·M_k — moment tracking without a
+    /// direction² inner loop. Requires P1 (`p1_anisotropic`) plus the
+    /// moment tables on every scattering material.
+    pub anisotropy_order: u32,
+    /// Anderson acceleration depth for the outer fixed-point iteration.
+    /// 0 (default) runs plain symmetric sweeps; ≥1 mixes the last
+    /// `anderson_depth` outer iterates via type-II Anderson (GMRES-
+    /// equivalent on this linear map) — applied once per symmetric
+    /// down+up cycle, which is the consistent composed operator.
+    /// Accelerates exactly the slow energy-coupling mode that
+    /// bound-atom S(α,β) upscatter introduces (plain sweeps decay
+    /// ~0.85–0.9 per pass there).
+    pub anderson_depth: usize,
 }
 
 impl Default for SnOptions {
@@ -359,8 +417,133 @@ impl Default for SnOptions {
             beam_uncollided_split: true,
             transport_correction: true,
             p1_anisotropic: false,
+            anisotropy_order: 0,
+            anderson_depth: 0,
         }
     }
+}
+
+/// Type-II Anderson acceleration state for the outer fixed-point
+/// iteration: mixes the last `depth` map iterates by minimizing the
+/// residual combination. On the linear sweep map this is
+/// GMRES-equivalent — it accelerates whichever modes the plain sweep
+/// contracts slowly (energy-space upscatter coupling for TSL data),
+/// not just spatial diffusion modes as DSA would.
+struct AndersonState {
+    depth: usize,
+    /// Post-sweep iterates f_i (flattened cell×group), oldest first.
+    iterates: Vec<Vec<f64>>,
+    /// Fixed-point residuals r_i = f_i − x_i at each iterate.
+    residuals: Vec<Vec<f64>>,
+}
+
+impl AndersonState {
+    fn new(depth: usize) -> Self {
+        Self {
+            depth,
+            iterates: Vec::new(),
+            residuals: Vec::new(),
+        }
+    }
+
+    /// Record the map application `f = F(x)` and return the
+    /// accelerated iterate (the plain `f` while history is
+    /// insufficient or the least-squares system is singular).
+    fn mix(&mut self, f: &[Vec<f64>], x: &[Vec<f64>]) -> Vec<Vec<f64>> {
+        let flat: Vec<f64> = f.iter().flat_map(|r| r.iter().copied()).collect();
+        let resid: Vec<f64> = f
+            .iter()
+            .zip(x.iter())
+            .flat_map(|(a, b)| a.iter().zip(b.iter()).map(|(u, v)| u - v))
+            .collect();
+        self.iterates.push(flat);
+        self.residuals.push(resid);
+        while self.iterates.len() > self.depth + 1 {
+            self.iterates.remove(0);
+            self.residuals.remove(0);
+        }
+        let n = self.residuals.len();
+        if n < 2 {
+            return f.to_vec();
+        }
+        // Difference columns Δr_i = r_{i+1} − r_i over the last
+        // `m ≤ depth` consecutive pairs, and the matching Δf_i.
+        let m = (n - 1).min(self.depth);
+        let base = n - 1 - m; // index of the oldest retained pair
+        let dr: Vec<Vec<f64>> = (0..m)
+            .map(|i| {
+                self.residuals[base + i + 1]
+                    .iter()
+                    .zip(self.residuals[base + i].iter())
+                    .map(|(a, b)| a - b)
+                    .collect()
+            })
+            .collect();
+        let df: Vec<Vec<f64>> = (0..m)
+            .map(|i| {
+                self.iterates[base + i + 1]
+                    .iter()
+                    .zip(self.iterates[base + i].iter())
+                    .map(|(a, b)| a - b)
+                    .collect()
+            })
+            .collect();
+        // Normal equations for min ||r_k − Σ γ_i·Δr_i||².
+        let rk = &self.residuals[n - 1];
+        let mut gram = vec![vec![0.0_f64; m]; m];
+        let mut rhs = vec![0.0_f64; m];
+        for i in 0..m {
+            for j in 0..=i {
+                let dot: f64 = dr[i].iter().zip(dr[j].iter()).map(|(a, b)| a * b).sum();
+                gram[i][j] = dot;
+                gram[j][i] = dot;
+            }
+            rhs[i] = dr[i].iter().zip(rk.iter()).map(|(a, b)| a * b).sum();
+        }
+        let Some(gamma) = solve_dense(&mut gram, &mut rhs) else {
+            return f.to_vec();
+        };
+        // x_new = f_k − Σ γ_i·Δf_i, mapped back onto the nested grid.
+        let mut out = f.to_vec();
+        let mut idx = 0;
+        for row in out.iter_mut() {
+            for v in row.iter_mut() {
+                for i in 0..m {
+                    *v -= gamma[i] * df[i][idx];
+                }
+                idx += 1;
+            }
+        }
+        out
+    }
+}
+
+/// Dense Gaussian elimination with partial pivoting for the small
+/// (≤ depth) normal-equations system; `None` on singularity.
+fn solve_dense(a: &mut [Vec<f64>], b: &mut [f64]) -> Option<Vec<f64>> {
+    let n = a.len();
+    for col in 0..n {
+        let pivot = (col..n).max_by(|&i, &j| a[i][col].abs().total_cmp(&a[j][col].abs()))?;
+        if a[pivot][col].abs() < 1e-14 {
+            return None;
+        }
+        a.swap(col, pivot);
+        b.swap(col, pivot);
+        let pivot_row: Vec<f64> = a[col][col..n].to_vec();
+        for row in (col + 1)..n {
+            let factor = a[row][col] / pivot_row[0];
+            for (a_rc, &a_pc) in a[row][col..n].iter_mut().zip(pivot_row.iter()) {
+                *a_rc -= factor * a_pc;
+            }
+            b[row] -= factor * b[col];
+        }
+    }
+    let mut x = vec![0.0_f64; n];
+    for row in (0..n).rev() {
+        let s: f64 = (row + 1..n).map(|c| a[row][c] * x[c]).sum();
+        x[row] = (b[row] - s) / a[row][row];
+    }
+    Some(x)
 }
 
 /// Solve output: cell-averaged scalar flux per voxel per group.
@@ -935,6 +1118,112 @@ fn uncollided_beam_flux(
     Ok(Some(unc))
 }
 
+/// Legendre polynomial P_l(x) by the three-term recurrence.
+fn legendre_p(l: u32, x: f64) -> f64 {
+    match l {
+        0 => 1.0,
+        1 => x,
+        _ => {
+            let (mut p0, mut p1) = (1.0, x);
+            for n in 2..=l {
+                let n = n as f64;
+                let p = ((2.0 * n - 1.0) * x * p1 - (n - 1.0) * p0) / n;
+                p0 = p1;
+                p1 = p;
+            }
+            p1
+        }
+    }
+}
+
+/// Jacobi eigendecomposition of a symmetric dense matrix (row-major
+/// `n×n`). Returns `(eigenvalue, eigenvector)` pairs sorted by
+/// descending |λ|. Classical cyclic Jacobi rotations — adequate for
+/// the ≤288-direction quadrature kernels this feeds, and exact
+/// enough that the discrete addition theorem holds to ~1e-12.
+fn symmetric_jacobi_eigen(mut a: Vec<f64>, n: usize) -> Vec<(f64, Vec<f64>)> {
+    let mut v = vec![0.0; n * n];
+    for i in 0..n {
+        v[i * n + i] = 1.0;
+    }
+    for _sweep in 0..100 {
+        let mut off = 0.0;
+        for i in 0..n {
+            for j in i + 1..n {
+                off += a[i * n + j] * a[i * n + j];
+            }
+        }
+        if off < 1e-24 * n as f64 {
+            break;
+        }
+        for p in 0..n {
+            for q in p + 1..n {
+                let apq = a[p * n + q];
+                if apq.abs() < 1e-30 {
+                    continue;
+                }
+                let app = a[p * n + p];
+                let aqq = a[q * n + q];
+                let theta = (aqq - app) / (2.0 * apq);
+                let t = theta.signum() / (theta.abs() + (theta * theta + 1.0).sqrt());
+                let c = 1.0 / (t * t + 1.0).sqrt();
+                let s = t * c;
+                for i in 0..n {
+                    let aip = a[i * n + p];
+                    let aiq = a[i * n + q];
+                    a[i * n + p] = c * aip - s * aiq;
+                    a[i * n + q] = s * aip + c * aiq;
+                }
+                for j in 0..n {
+                    let apj = a[p * n + j];
+                    let aqj = a[q * n + j];
+                    a[p * n + j] = c * apj - s * aqj;
+                    a[q * n + j] = s * apj + c * aqj;
+                }
+                for i in 0..n {
+                    let vip = v[i * n + p];
+                    let viq = v[i * n + q];
+                    v[i * n + p] = c * vip - s * viq;
+                    v[i * n + q] = s * vip + c * viq;
+                }
+            }
+        }
+    }
+    let mut pairs: Vec<(f64, Vec<f64>)> = (0..n)
+        .map(|k| {
+            (
+                a[k * n + k],
+                (0..n).map(|i| v[i * n + k]).collect::<Vec<f64>>(),
+            )
+        })
+        .collect();
+    pairs.sort_by(|x, y| y.0.abs().total_cmp(&x.0.abs()));
+    pairs
+}
+
+/// Eigendecompose the discrete addition-theorem kernel
+/// `K_ab = P_l(Ω_a·Ω_b)` over the quadrature set. P_l has exactly
+/// 2l+1 nonzero eigenvalues on the continuous sphere; keeping the
+/// eigenpairs with |λ| > tol·λ_max yields the exact discrete moment
+/// basis — in-scatter source Σ_l(2l+1)σ_l·Σ_k u_k(a)·M_k with
+/// M_k = λ_k·Σ_b w_b u_k(b)ψ_b, no direction² inner loop needed.
+fn kernel_eigenbasis(quadrature: &[([f64; 3], f64)], l: u32) -> Vec<(f64, Vec<f64>)> {
+    let n = quadrature.len();
+    let mut k = vec![0.0; n * n];
+    for a in 0..n {
+        for b in 0..n {
+            let da = quadrature[a].0;
+            let db = quadrature[b].0;
+            k[a * n + b] = legendre_p(l, da[0] * db[0] + da[1] * db[1] + da[2] * db[2]);
+        }
+    }
+    let mut pairs = symmetric_jacobi_eigen(k, n);
+    let lam_max = pairs.first().map(|p| p.0.abs()).unwrap_or(0.0);
+    pairs.retain(|(lam, _)| lam.abs() > lam_max * 1e-9);
+    pairs.truncate(2 * l as usize + 1);
+    pairs
+}
+
 /// One diamond-difference sweep of group `g`: fills `psi` with
 /// cell-average angular flux per direction. `flux` supplies the scatter
 /// source from the current iterate (Jacobi across groups and
@@ -948,6 +1237,9 @@ fn uncollided_beam_flux(
 /// diagonal under the transport correction.
 /// `p1_source[cell][axis]` is the P1 anisotropic source for group `g`
 /// (Σ_gp Σ_s1(gp→g)·J_{a,gp}) when the P1 mode is on — `None` under P0.
+/// `kernel_source[cell][dir]` is the higher-Legendre in-scatter
+/// (Σ_{l≥2}(2l+1)Σ_gp σ_l(gp→g)·Σ_k u_k(d)M_k) when `anisotropy_order
+/// ≥ 2` is active — `None` otherwise.
 #[allow(clippy::too_many_arguments)]
 fn sweep_group(
     g: usize,
@@ -959,6 +1251,7 @@ fn sweep_group(
     sigma_eff: &[Vec<f64>],
     scatter_eff: &[Vec<f64>],
     p1_source: Option<&[[f64; 3]]>,
+    kernel_source: Option<&[Vec<f64>]>,
     data: &MultigroupData,
     geometry: &GridGeometry,
     quadrature: &[([f64; 3], f64)],
@@ -1060,7 +1353,8 @@ fn sweep_group(
                             .sum::<f64>()
                         + p1_source.map_or(0.0, |s| {
                             3.0 * (dir[0] * s[cell][0] + dir[1] * s[cell][1] + dir[2] * s[cell][2])
-                        });
+                        })
+                        + kernel_source.map_or(0.0, |s| s[cell][d]);
                     let (ax, ay, az) = (
                         dir[0].abs() * face_area[0],
                         dir[1].abs() * face_area[1],
@@ -1100,7 +1394,9 @@ pub fn solve_multigroup(
     let n_cells = geometry.voxel_count()?;
     let groups = data.group_count();
     let quadrature = level_symmetric_quadrature(options.quadrature_order)?;
-    let case_material = cell_materials(case, data, options.assignment.as_ref())?;
+    let (data_eff, case_material) =
+        material_composition_map(case, data, options.assignment.as_ref())?;
+    let data = &data_eff;
 
     // Uncollided beam split or the discrete boundary-flux path.
     let uncollided = if options.beam_uncollided_split {
@@ -1201,7 +1497,8 @@ pub fn solve_multigroup_adjoint(
         // functions for weight windows do not need the P1 fidelity.
         material.scatter_p1_matrix_per_cm = None;
     }
-    let case_material = cell_materials(case, &adjoint_data, options.assignment.as_ref())?;
+    let (adjoint_data, case_material) =
+        material_composition_map(case, &adjoint_data, options.assignment.as_ref())?;
     let quadrature = level_symmetric_quadrature(options.quadrature_order)?;
     let mut adjoint_options = options.clone();
     adjoint_options.p1_anisotropic = false;
@@ -1266,10 +1563,250 @@ pub fn cell_materials(
                             idx;
                     }
                 }
+                MaterialRegionShape::VoxelFractions { .. } => {
+                    return Err(invalid(
+                        "cell_materials cannot express partial-cell fractions — use \
+                         material_composition_map which synthesizes the blended tables"
+                            .into(),
+                    ));
+                }
             }
         }
     }
     Ok(case_material)
+}
+
+/// Volume-weighted blend of macroscopic material tables: each
+/// component contributes `fraction·table` to σ_t, the scatter
+/// matrices (P0/P1/l≥2 moments), and the dose responses; `μ̄` blends
+/// scatter-weighted. The first-order sub-voxel mixture rule — exact
+/// when the components' optical thicknesses are small.
+fn blend_material(
+    signature: &[(usize, f64)],
+    materials: &[MultigroupMaterial],
+) -> MultigroupMaterial {
+    let groups = materials[signature[0].0].sigma_total_per_cm.len();
+    let gg = groups * groups;
+    fn weighted(
+        signature: &[(usize, f64)],
+        materials: &[MultigroupMaterial],
+        pick: impl Fn(&MultigroupMaterial) -> Option<&[f64]>,
+        size: usize,
+    ) -> Option<Vec<f64>> {
+        let mut out = vec![0.0; size];
+        let mut any = false;
+        for &(mi, f) in signature {
+            if let Some(v) = pick(&materials[mi]) {
+                for (o, &x) in out.iter_mut().zip(v.iter()) {
+                    *o += f * x;
+                }
+                any = true;
+            }
+        }
+        any.then_some(out)
+    }
+    let sigma_t = weighted(
+        signature,
+        materials,
+        |m| Some(&m.sigma_total_per_cm),
+        groups,
+    )
+    .unwrap();
+    let scatter = weighted(signature, materials, |m| Some(&m.scatter_matrix_per_cm), gg).unwrap();
+    let p1 = weighted(
+        signature,
+        materials,
+        |m| m.scatter_p1_matrix_per_cm.as_deref(),
+        gg,
+    );
+    // μ̄ blends scatter-row-weighted — not volume-weighted.
+    let mut mu_num = vec![0.0; groups];
+    let mut mu_den = vec![0.0; groups];
+    for &(mi, f) in signature {
+        let m = &materials[mi];
+        if let Some(mu) = &m.transport_mu_bar {
+            for g in 0..groups {
+                let ss: f64 = (0..groups)
+                    .map(|gp| m.scatter_matrix_per_cm[g * groups + gp])
+                    .sum();
+                mu_num[g] += f * ss * mu[g];
+                mu_den[g] += f * ss;
+            }
+        }
+    }
+    let mu_bar = (mu_den.iter().any(|&d| d > 0.0)).then(|| {
+        mu_num
+            .iter()
+            .zip(&mu_den)
+            .map(|(&n, &d)| if d > 0.0 { n / d } else { 0.0 })
+            .collect()
+    });
+    // Dose responses blend by volume fraction — the first-order rule;
+    // exact when the components share a density (BNCT tissues do to
+    // within ~10%).
+    let mut dose_keys = std::collections::BTreeSet::new();
+    for &(mi, _) in signature {
+        dose_keys.extend(materials[mi].dose_response_gy_cm2.keys().cloned());
+    }
+    let dose: std::collections::BTreeMap<String, Vec<f64>> = dose_keys
+        .into_iter()
+        .map(|k| {
+            let mut v = vec![0.0; groups];
+            for &(mi, f) in signature {
+                if let Some(r) = materials[mi].dose_response_gy_cm2.get(&k) {
+                    for (o, &x) in v.iter_mut().zip(r.iter()) {
+                        *o += f * x;
+                    }
+                }
+            }
+            (k, v)
+        })
+        .collect();
+    MultigroupMaterial {
+        material_id: signature
+            .iter()
+            .map(|&(mi, f)| format!("{}@{:.3}", materials[mi].material_id, f))
+            .collect::<Vec<_>>()
+            .join("+"),
+        sigma_total_per_cm: sigma_t,
+        scatter_matrix_per_cm: scatter,
+        scatter_p1_matrix_per_cm: p1,
+        scatter_legendre_moments_per_cm: (0..4)
+            .map(|li| {
+                weighted(
+                    signature,
+                    materials,
+                    |m| {
+                        m.scatter_legendre_moments_per_cm
+                            .as_ref()
+                            .and_then(|v| v.get(li))
+                            .map(Vec::as_slice)
+                    },
+                    gg,
+                )
+            })
+            .collect::<Option<Vec<_>>>(),
+        dose_response_gy_cm2: dose,
+        transport_mu_bar: mu_bar,
+    }
+}
+
+/// Per-cell material composition: `composition[cell]` is the cell's
+/// `(material_index, volume_fraction)` signature — `[(base, 1.0)]` for
+/// unblended cells, the merged region+base mixture for fraction
+/// cells. Indices are into `data.materials` (never synthesized rows),
+/// so callers can blend any material-attached quantity (production
+/// matrices, photon tables) with the same rule.
+pub fn cell_compositions(
+    case: &TransportCase,
+    data: &MultigroupData,
+    assignment: Option<&MaterialAssignment>,
+) -> Result<Vec<Vec<(usize, f64)>>, MultigroupError> {
+    let invalid = |m: String| MultigroupError::Solve(m);
+    let geometry = &case.geometry;
+    let n_cells = geometry.voxel_count()?;
+    let material_index = |material_id: &str| -> Result<usize, MultigroupError> {
+        data.materials
+            .iter()
+            .position(|m| m.material_id == material_id)
+            .ok_or_else(|| {
+                invalid(format!(
+                    "multigroup data has no entry for material {material_id:?}"
+                ))
+            })
+    };
+    let base_idx = material_index(&case.material.id)?;
+    let mut case_material = vec![base_idx; n_cells];
+    let mut fractions: Vec<Vec<(usize, f64)>> = vec![Vec::new(); n_cells];
+    if let Some(assignment) = assignment {
+        assignment.validate(geometry)?;
+        let [nx, ny, _] = geometry.shape.map(|d| d as usize);
+        for region in &assignment.regions {
+            let idx = material_index(&region.material.id)?;
+            match &region.shape {
+                MaterialRegionShape::VoxelBox { lower, upper } => {
+                    for k in lower[2]..=upper[2] {
+                        for j in lower[1]..=upper[1] {
+                            for i in lower[0]..=upper[0] {
+                                case_material
+                                    [i as usize + nx * j as usize + nx * ny * k as usize] = idx;
+                            }
+                        }
+                    }
+                }
+                MaterialRegionShape::VoxelSet { indices } => {
+                    for vox in indices {
+                        case_material
+                            [vox[0] as usize + nx * vox[1] as usize + nx * ny * vox[2] as usize] =
+                            idx;
+                    }
+                }
+                MaterialRegionShape::VoxelFractions {
+                    indices,
+                    fractions: fs,
+                } => {
+                    for (vox, f) in indices.iter().zip(fs.iter()) {
+                        let flat =
+                            vox[0] as usize + nx * vox[1] as usize + nx * ny * vox[2] as usize;
+                        fractions[flat].push((idx, *f));
+                    }
+                }
+            }
+        }
+    }
+    Ok((0..n_cells)
+        .map(|cell| {
+            if fractions[cell].is_empty() {
+                return vec![(case_material[cell], 1.0)];
+            }
+            let remainder = 1.0 - fractions[cell].iter().map(|&(_, f)| f).sum::<f64>();
+            let mut merged: std::collections::BTreeMap<usize, f64> =
+                std::collections::BTreeMap::new();
+            for &(m, f) in &fractions[cell] {
+                *merged.entry(m).or_insert(0.0) += f;
+            }
+            *merged.entry(case_material[cell]).or_insert(0.0) += remainder;
+            merged.into_iter().collect()
+        })
+        .collect())
+}
+
+/// Effective material list + per-cell material index with
+/// partial-cell volume fractions applied: `voxel_fractions` regions
+/// contribute `f` of the region material and `1 − Σf` of the base
+/// material to each listed voxel. Cells sharing an identical
+/// composition signature share one synthesized blend material, so the
+/// solver sees a plain index map. Returns `(effective_data,
+/// case_material)` where `effective_data` carries the declared
+/// materials plus one synthetic row per distinct blend signature —
+/// indices may therefore exceed `data.materials.len()` and must index
+/// `effective_data.materials`.
+pub fn material_composition_map(
+    case: &TransportCase,
+    data: &MultigroupData,
+    assignment: Option<&MaterialAssignment>,
+) -> Result<(MultigroupData, Vec<usize>), MultigroupError> {
+    let n_cells = case.geometry.voxel_count()?;
+    let compositions = cell_compositions(case, data, assignment)?;
+    let mut effective = data.clone();
+    let mut case_material = vec![0usize; n_cells];
+    let mut signatures: std::collections::BTreeMap<Vec<(usize, u64)>, usize> =
+        std::collections::BTreeMap::new();
+    for (cell, signature) in compositions.iter().enumerate() {
+        if signature.len() == 1 && signature[0].1 == 1.0 {
+            case_material[cell] = signature[0].0;
+            continue;
+        }
+        let key: Vec<(usize, u64)> = signature.iter().map(|&(m, f)| (m, f.to_bits())).collect();
+        let idx = *signatures.entry(key).or_insert_with(|| {
+            effective
+                .materials
+                .push(blend_material(signature, &data.materials));
+            effective.materials.len() - 1
+        });
+        case_material[cell] = idx;
+    }
+    Ok((effective, case_material))
 }
 
 /// Shared iteration core for the forward and adjoint solves: source
@@ -1313,6 +1850,39 @@ pub(crate) fn solve_sn_problem(
     // table — an absent table would silently downgrade that material
     // to isotropic.
     let p1 = options.p1_anisotropic;
+    let lmax = options.anisotropy_order.min(5);
+    if lmax >= 2 {
+        if !p1 {
+            return Err(invalid(
+                "anisotropy_order ≥ 2 requires p1_anisotropic (the l = 1 term)".into(),
+            ));
+        }
+        for material in &data.materials {
+            let scatters = material.scatter_matrix_per_cm.iter().any(|&v| v > 0.0);
+            if !scatters {
+                continue;
+            }
+            let provided = material
+                .scatter_legendre_moments_per_cm
+                .as_ref()
+                .map_or(0, |m| m.len());
+            if provided < (lmax - 1) as usize {
+                return Err(invalid(format!(
+                    "anisotropy_order {lmax} requires legendre moments l = 2..={lmax} on \
+                     every scattering material; {:?} provides l = 2..={}",
+                    material.material_id,
+                    provided + 1
+                )));
+            }
+        }
+    }
+    // Discrete addition-theorem eigenbasis per l = 2..=lmax — built
+    // once; the 2l+1 significant eigenpairs of K_ab = P_l(Ω_a·Ω_b)
+    // carry that l's exact discrete kernel.
+    let eigen: Vec<Vec<(f64, Vec<f64>)>> = (2..=lmax)
+        .map(|l| kernel_eigenbasis(quadrature, l))
+        .collect();
+    let n_kernel_moments: usize = eigen.iter().map(|e| e.len()).sum();
     if p1 {
         for material in &data.materials {
             let scatters = material.scatter_matrix_per_cm.iter().any(|&v| v > 0.0);
@@ -1371,14 +1941,27 @@ pub(crate) fn solve_sn_problem(
     // J_a = (1/4π)·Σ_d w_d·Ω_{d,a}·ψ_d, iterated Jacobi-style with the
     // scalar flux.
     let mut current = vec![vec![[0.0_f64; 3]; groups]; n_cells];
+    // Higher-Legendre kernel moments M_k[cell][group][kk] with
+    // M_k = λ_k·Σ_d w_d·u_k(d)·ψ_d — the discrete addition-theorem
+    // moments for l = 2..=lmax, iterated Jacobi-style alongside the
+    // currents.
+    let mut kernel_moments = vec![vec![vec![0.0_f64; n_kernel_moments]; groups]; n_cells];
     let mut psi = vec![vec![0.0; n_dirs]; n_cells];
     let mut psi_prev = vec![vec![0.0; n_dirs]; n_cells];
     let mut converged = false;
     let mut residual = f64::MAX;
     let mut outer_done = 0;
+    let mut anderson =
+        (options.anderson_depth > 0).then(|| AndersonState::new(options.anderson_depth));
+    // Origin of the current symmetric down+up cycle — the residual
+    // Anderson minimizes is against this point, not the up-pass input.
+    let mut cycle_origin: Vec<Vec<f64>> = Vec::new();
 
     for outer in 0..options.max_outer_iterations {
         let previous = flux.clone();
+        if anderson.is_some() && outer % 2 == 0 {
+            cycle_origin = previous.clone();
+        }
         // Symmetric Gauss-Seidel over the group structure: alternate the
         // sweep direction each outer iteration. Downscatter-only
         // ordering converges one-coupling-per-sweep under bound-atom
@@ -1409,6 +1992,52 @@ pub(crate) fn solve_sn_problem(
                 } else {
                     None
                 };
+                // Higher-Legendre in-scatter for group g:
+                // q[cell][d] = Σ_l(2l+1)·Σ_k u_k(d)·W_k(cell),
+                // W_k = Σ_gp σ_l(gp→g)·M_k(cell,gp). Folded over the
+                // l-blocks of the flattened moment vector.
+                let kernel_source: Option<Vec<Vec<f64>>> = if lmax >= 2 {
+                    let mut weighted = vec![vec![0.0_f64; n_kernel_moments]; n_cells];
+                    let mut kk = 0;
+                    for (li, eigs) in eigen.iter().enumerate() {
+                        let l = li as u32 + 2;
+                        let two_l1 = (2 * l + 1) as f64;
+                        for cell in 0..n_cells {
+                            let mi = case_material[cell];
+                            let moments = &data.materials[mi]
+                                .scatter_legendre_moments_per_cm
+                                .as_deref()
+                                .unwrap();
+                            for (k, _) in eigs.iter().enumerate() {
+                                let mut w_k = 0.0;
+                                for gp in 0..groups {
+                                    w_k += moments[li][gp * groups + g]
+                                        * kernel_moments[cell][gp][kk + k];
+                                }
+                                weighted[cell][kk + k] = two_l1 * w_k;
+                            }
+                        }
+                        kk += eigs.len();
+                    }
+                    let mut src = vec![vec![0.0_f64; n_dirs]; n_cells];
+                    let mut kk = 0;
+                    for eigs in eigen.iter() {
+                        for (k, (_, u)) in eigs.iter().enumerate() {
+                            for cell in 0..n_cells {
+                                let w = weighted[cell][kk + k];
+                                if w != 0.0 {
+                                    for d in 0..n_dirs {
+                                        src[cell][d] += u[d] * w;
+                                    }
+                                }
+                            }
+                        }
+                        kk += eigs.len();
+                    }
+                    Some(src)
+                } else {
+                    None
+                };
                 std::mem::swap(&mut psi, &mut psi_prev);
                 sweep_group(
                     g,
@@ -1420,6 +2049,7 @@ pub(crate) fn solve_sn_problem(
                     &sigma_eff,
                     &scatter_eff,
                     p1_source.as_deref(),
+                    kernel_source.as_deref(),
                     data,
                     geometry,
                     quadrature,
@@ -1446,6 +2076,21 @@ pub(crate) fn solve_sn_problem(
                         }
                         current[cell][g] = j;
                     }
+                    if lmax >= 2 {
+                        // M_k = λ_k·Σ_d w_d u_k(d)ψ_d — eigenbasis
+                        // moments of the refreshed angular flux.
+                        let mut kk = 0;
+                        for eigs in eigen.iter() {
+                            for (k, (lam, u)) in eigs.iter().enumerate() {
+                                let mut m = 0.0;
+                                for d in 0..n_dirs {
+                                    m += quadrature[d].1 * u[d] * psi[cell][d];
+                                }
+                                kernel_moments[cell][g][kk + k] = lam * m;
+                            }
+                            kk += eigs.len();
+                        }
+                    }
                     change =
                         change.max((new_flux - flux[cell][g]).abs() / new_flux.abs().max(1e-30));
                     flux[cell][g] = new_flux;
@@ -1465,6 +2110,16 @@ pub(crate) fn solve_sn_problem(
         if residual < options.convergence {
             converged = true;
             break;
+        }
+        // Anderson mix once per symmetric down+up cycle (the composed
+        // map is the consistent operator the accelerator applies to).
+        // The convergence check above already used the true map
+        // residual r_k = F(x_k) − x_k, so the accelerated iterate only
+        // reseeds the next cycle.
+        if let Some(acc) = &mut anderson
+            && outer % 2 == 1
+        {
+            flux = acc.mix(&flux, &cycle_origin);
         }
         if std::env::var_os("OPENBNCT_SOLVE_PROGRESS").is_some() {
             eprintln!("[sn-solve] outer {} residual {:.4e}", outer + 1, residual);
@@ -1520,36 +2175,42 @@ pub fn fold_multigroup_dose(
     let n_cells = geometry.voxel_count()?;
     let groups = data.group_count();
 
-    // Per-voxel material id (assignment overrides base).
-    let [nx, ny, _] = geometry.shape.map(|d| d as usize);
-    let mut ids: Vec<&str> = vec![case.material.id.as_str(); n_cells];
+    // Per-voxel material index — partial-cell fractions synthesize
+    // blend rows in the effective data, so dose folding sees the same
+    // volume-weighted response the sweep used.
+    let (data_eff, case_material) = material_composition_map(case, data, assignment)?;
+    let material_of = |cell: usize| -> Result<&MultigroupMaterial, MultigroupError> {
+        data_eff
+            .materials
+            .get(case_material[cell])
+            .ok_or_else(|| invalid("material index out of range".into()))
+    };
+    // Material definitions by id — the boron microdistribution lives
+    // on the declared material, not the collapsed table.
+    let mut definitions: std::collections::BTreeMap<&str, &crate::MaterialDefinition> =
+        std::collections::BTreeMap::new();
+    definitions.insert(case.material.id.as_str(), &case.material);
     if let Some(a) = assignment {
+        definitions.insert(a.base_material.id.as_str(), &a.base_material);
         for region in &a.regions {
-            match &region.shape {
-                MaterialRegionShape::VoxelBox { lower, upper } => {
-                    for k in lower[2]..=upper[2] {
-                        for j in lower[1]..=upper[1] {
-                            for i in lower[0]..=upper[0] {
-                                ids[i as usize + nx * j as usize + nx * ny * k as usize] =
-                                    region.material.id.as_str();
-                            }
-                        }
-                    }
-                }
-                MaterialRegionShape::VoxelSet { indices } => {
-                    for vox in indices {
-                        ids[vox[0] as usize + nx * vox[1] as usize + nx * ny * vox[2] as usize] =
-                            region.material.id.as_str();
-                    }
-                }
-            }
+            definitions.insert(region.material.id.as_str(), &region.material);
         }
     }
-    let material_of = |cell: usize| -> Result<&MultigroupMaterial, MultigroupError> {
-        data.materials
+    // Compound factor per material id — 1.0 when no microdistribution
+    // is declared. Per-cell factors weight through the same volume
+    // fractions the response blends by.
+    let compound_factor = |material_id: &str| -> f64 {
+        definitions
+            .get(material_id)
+            .and_then(|d| d.boron_microdistribution.as_ref())
+            .map_or(1.0, |m| m.compound_factor())
+    };
+    let compositions = cell_compositions(case, data, assignment)?;
+    let cell_factor = |cell: usize| -> f64 {
+        compositions[cell]
             .iter()
-            .find(|m| m.material_id == ids[cell])
-            .ok_or_else(|| invalid(format!("no multigroup data for material {:?}", ids[cell])))
+            .map(|&(mi, f)| f * compound_factor(&data.materials[mi].material_id))
+            .sum()
     };
 
     // Component set = intersection over all materials in use.
@@ -1575,6 +2236,12 @@ pub fn fold_multigroup_dose(
         for (cell, value) in values.iter_mut().enumerate() {
             let response = &material_of(cell)?.dose_response_gy_cm2[component];
             *value = (0..groups).map(|g| flux.flux[cell][g] * response[g]).sum();
+            // The boron component carries the declared microdistribution
+            // compound factor — the effective (target-weighted) boron
+            // dose, the standard TPS convention.
+            if component == "component:boron" {
+                *value *= cell_factor(cell);
+            }
         }
         let name = component.strip_prefix("component:").unwrap_or(component);
         let dc = match name.to_ascii_lowercase().as_str() {
@@ -1623,8 +2290,8 @@ pub fn fold_multigroup_dose(
 pub(crate) mod tests {
     use super::*;
     use crate::model::{
-        FixedSourceDefinition, MaterialDefinition, NeutronThermalTreatment, NuclideMassFraction,
-        ParticleType, PlaneAxis,
+        FixedSourceDefinition, MATERIAL_ASSIGNMENT_SCHEMA, MaterialDefinition, MaterialRegion,
+        NeutronThermalTreatment, NuclideMassFraction, ParticleType, PlaneAxis,
     };
 
     const IDENTITY: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
@@ -1647,6 +2314,7 @@ pub(crate) mod tests {
                 mass_fraction: 1.0,
             }],
             neutron_thermal_treatment: NeutronThermalTreatment::FreeGas,
+            boron_microdistribution: None,
         }
     }
 
@@ -1703,6 +2371,7 @@ pub(crate) mod tests {
                 sigma_total_per_cm: sigma_t.to_vec(),
                 scatter_matrix_per_cm: scatter,
                 scatter_p1_matrix_per_cm: None,
+                scatter_legendre_moments_per_cm: None,
                 dose_response_gy_cm2: Default::default(),
                 transport_mu_bar: None,
             }],
@@ -1722,7 +2391,115 @@ pub(crate) mod tests {
             beam_uncollided_split: true,
             transport_correction: true,
             p1_anisotropic: false,
+            anisotropy_order: 0,
+            anderson_depth: 0,
         }
+    }
+
+    /// Two-material data for the fraction-blend tests: "a" is the
+    /// base, "b" the region material — distinguishable σ_t, scatter,
+    /// and boron response so the blend is checkable.
+    fn two_material_data() -> MultigroupData {
+        let mut d = data(&[1.0, 0.5], vec![0.2, 0.0, 0.0, 0.1]);
+        d.materials[0].material_id = "a".into();
+        d.materials[0].dose_response_gy_cm2 =
+            std::collections::BTreeMap::from([("component:boron".into(), vec![0.1, 0.2])]);
+        d.materials[0].transport_mu_bar = Some(vec![0.4, 0.4]);
+        d.materials.push(MultigroupMaterial {
+            material_id: "b".into(),
+            sigma_total_per_cm: vec![3.0, 1.5],
+            scatter_matrix_per_cm: vec![0.4, 0.0, 0.0, 0.3],
+            scatter_p1_matrix_per_cm: Some(vec![0.1, 0.0, 0.0, 0.1]),
+            scatter_legendre_moments_per_cm: None,
+            dose_response_gy_cm2: std::collections::BTreeMap::from([(
+                "component:boron".into(),
+                vec![0.5, 0.9],
+            )]),
+            transport_mu_bar: Some(vec![0.6, 0.6]),
+        });
+        d
+    }
+
+    fn fraction_assignment(case: &TransportCase) -> MaterialAssignment {
+        MaterialAssignment {
+            schema_version: MATERIAL_ASSIGNMENT_SCHEMA.into(),
+            case_id: case.case_id.clone(),
+            base_material: material("a"),
+            regions: vec![MaterialRegion {
+                name: "partial".into(),
+                material: material("b"),
+                shape: MaterialRegionShape::VoxelFractions {
+                    indices: vec![[0, 0, 10], [1, 0, 10]],
+                    fractions: vec![0.25, 0.5],
+                },
+            }],
+            provenance_id: "test".into(),
+        }
+    }
+
+    #[test]
+    fn cell_compositions_blends_fractions_with_base_remainder() {
+        let case = slab_case();
+        let mut case = case;
+        case.material = material("a");
+        let data = two_material_data();
+        let assignment = fraction_assignment(&case);
+        let comps = cell_compositions(&case, &data, Some(&assignment)).unwrap();
+        // Voxel [i,j,k] flattens as i + 4j + 16k → [0,0,10] = 160,
+        // [1,0,10] = 161.
+        let mut sig = comps[160].clone();
+        sig.sort_by_key(|x| x.0);
+        assert_eq!(sig, vec![(0, 0.75), (1, 0.25)]);
+        assert_eq!(comps[161], vec![(0, 0.5), (1, 0.5)]);
+        // Untouched cells are pure base.
+        assert_eq!(comps[0], vec![(0, 1.0)]);
+    }
+
+    #[test]
+    fn composition_map_synthesizes_blend_rows_with_weighted_tables() {
+        let mut case = slab_case();
+        case.material = material("a");
+        let data = two_material_data();
+        let assignment = fraction_assignment(&case);
+        let (eff, case_material) =
+            material_composition_map(&case, &data, Some(&assignment)).unwrap();
+        // Two distinct blends → two appended materials.
+        assert_eq!(eff.materials.len(), 4);
+        // [1,0,10] is the 50/50 blend: σ_t = 0.5·[1,0.5] + 0.5·[3,1.5].
+        let mi = case_material[161];
+        let blend = &eff.materials[mi];
+        assert!((blend.sigma_total_per_cm[0] - 2.0).abs() < 1e-12);
+        assert!((blend.sigma_total_per_cm[1] - 1.0).abs() < 1e-12);
+        // Scatter blends the same way.
+        assert!((blend.scatter_matrix_per_cm[0] - 0.3).abs() < 1e-12);
+        // Boron dose response: 0.5·0.1 + 0.5·0.5 = 0.3.
+        let response = &blend.dose_response_gy_cm2["component:boron"];
+        assert!((response[0] - 0.3).abs() < 1e-12);
+        assert!((response[1] - 0.55).abs() < 1e-12);
+        // μ̄ blends scatter-row-weighted: a's row sum = 0.2+0 = 0.2,
+        // b's = 0.4+0 = 0.4 → (0.5·0.2·0.4 + 0.5·0.4·0.6)/(0.5·0.6).
+        let mu = blend.transport_mu_bar.as_ref().unwrap()[0];
+        let expected = (0.5 * 0.2 * 0.4 + 0.5 * 0.4 * 0.6) / (0.5 * 0.2 + 0.5 * 0.4);
+        assert!((mu - expected).abs() < 1e-12);
+        // The P1 matrix blends where present (a lacks it — absent
+        // components contribute zero, matching the volume rule).
+        assert!(blend.scatter_p1_matrix_per_cm.is_some());
+        // The blend id is a deterministic signature.
+        assert_eq!(blend.material_id, "a@0.500+b@0.500");
+        // The 0.25 blend differs and is the other appended row.
+        let mi25 = case_material[160];
+        assert_ne!(mi25, mi);
+        assert_eq!(eff.materials[mi25].material_id, "a@0.750+b@0.250");
+    }
+
+    #[test]
+    fn composition_map_is_identity_without_fractions() {
+        let mut case = slab_case();
+        case.material = material("absorber");
+        let data = data(&[1.0], vec![0.0]);
+        let (eff, map) = material_composition_map(&case, &data, None).unwrap();
+        assert_eq!(eff.materials.len(), 1);
+        assert!(map.iter().all(|&m| m == 0));
     }
 
     #[test]
@@ -2077,6 +2854,122 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn anderson_accelerates_upscatter_convergence() {
+        let case = slab_case();
+        // Strongly-coupled 2-group system: most of each group's scatter
+        // crosses the boundary in both directions — the
+        // weakly-contractive regime S(α,β) data creates. Plain sweeps
+        // converge slowly; Anderson should need far fewer cycles.
+        let mg = data(
+            &[0.5, 0.5],
+            vec![
+                0.05, 0.35, // g0: self + down to g1
+                0.35, 0.05, // g1: up to g0
+            ],
+        );
+        let mut plain = options();
+        plain.max_outer_iterations = 60;
+        let slow = solve_multigroup(&case, &mg, &plain, cref("mg"), cref("case")).unwrap();
+        let mut accel = plain.clone();
+        accel.anderson_depth = 3;
+        let fast = solve_multigroup(&case, &mg, &accel, cref("mg"), cref("case")).unwrap();
+        assert!(slow.converged && fast.converged);
+        assert!(
+            fast.outer_iterations <= slow.outer_iterations,
+            "anderson should not be slower: {} vs {}",
+            fast.outer_iterations,
+            slow.outer_iterations
+        );
+        // Same fixed point: accelerated flux matches the plain solve.
+        for (a, b) in fast.flux.iter().flatten().zip(slow.flux.iter().flatten()) {
+            assert!(
+                (a - b).abs() <= b.abs().max(1e-30) * 1e-5 + 1e-12,
+                "accelerated flux diverged: {a} vs {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn legendre_polynomial_values_and_orthogonality() {
+        // Spot values.
+        assert!((legendre_p(0, 0.7) - 1.0).abs() < 1e-15);
+        assert!((legendre_p(1, 0.7) - 0.7).abs() < 1e-15);
+        assert!((legendre_p(2, 0.5) - (3.0 * 0.25 - 1.0) / 2.0).abs() < 1e-15);
+        // P3(1) = 1, P4(0) = 3/8.
+        assert!((legendre_p(3, 1.0) - 1.0).abs() < 1e-15);
+        assert!((legendre_p(4, 0.0) - 0.375).abs() < 1e-15);
+        // Parity: P_l(−x) = (−1)^l P_l(x).
+        for l in 1..=5 {
+            assert!(
+                (legendre_p(l, -0.3) - (-1.0f64).powi(l as i32) * legendre_p(l, 0.3)).abs() < 1e-14
+            );
+        }
+    }
+
+    #[test]
+    fn kernel_eigenbasis_recovers_2l_plus_1_modes() {
+        let quad = level_symmetric_quadrature(4).unwrap();
+        for l in 1..=5u32 {
+            let basis = kernel_eigenbasis(&quad, l);
+            // The continuous P_l kernel has 2l+1 modes; the discrete
+            // quadrature resolves at most that many — high-l modes may
+            // fall below the quadrature's polynomial coverage and drop
+            // to numerically-zero eigenvalues (the basis never invents
+            // modes the quadrature cannot represent).
+            assert!(
+                basis.len() <= 2 * l as usize + 1,
+                "P_{l} kernel carried {} modes — exceeds 2l+1",
+                basis.len()
+            );
+            assert!(
+                basis.iter().all(|(lam, _)| *lam != 0.0),
+                "P_{l} basis carries a zero-eigenvalue mode"
+            );
+            // Eigenvalues sum to the kernel trace = n·P_l(1) = n.
+            let trace: f64 = basis.iter().map(|(lam, _)| lam).sum();
+            assert!(
+                (trace - quad.len() as f64).abs() < 1e-8,
+                "P_{l} eigenvalue sum {trace} != n"
+            );
+        }
+    }
+
+    #[test]
+    fn anisotropy_order_requires_p1_and_moments() {
+        let mut case = slab_case();
+        case.material = material("absorber");
+        let mut mg = data(&[0.5, 0.5], vec![0.1, 0.05, 0.05, 0.1]);
+        // l = 2 requested without P1 → error.
+        let mut opts = options();
+        opts.anisotropy_order = 2;
+        let err = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap_err();
+        assert!(err.to_string().contains("p1"), "{err}");
+        // With P1 but no moment tables → error naming the requirement.
+        opts.p1_anisotropic = true;
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(vec![0.0; 4]);
+        let err = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap_err();
+        assert!(err.to_string().contains("legendre"), "{err}");
+        // Supplying l = 2..=5 moments passes validation and solves.
+        mg.materials[0].scatter_legendre_moments_per_cm =
+            Some(vec![vec![0.0; 4], vec![0.0; 4], vec![0.0; 4], vec![0.0; 4]]);
+        opts.anisotropy_order = 3;
+        let flux = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap();
+        assert!(flux.converged);
+    }
+
+    #[test]
+    fn anderson_depth_zero_is_plain() {
+        let case = slab_case();
+        let mg = data(&[0.3, 0.4], vec![0.05, 0.1, 0.1, 0.1]);
+        let plain = solve_multigroup(&case, &mg, &options(), cref("mg"), cref("case")).unwrap();
+        let mut opts = options();
+        opts.anderson_depth = 0;
+        let same = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap();
+        assert_eq!(plain.outer_iterations, same.outer_iterations);
+        assert_eq!(plain.flux, same.flux);
+    }
+
+    #[test]
     fn vacuum_boundaries_leak() {
         // Partial disk coverage + scattering: flux must spread laterally
         // but leak freely — no artificial containment.
@@ -2161,6 +3054,7 @@ mod heterogeneous_tests {
                 mass_fraction: 1.0,
             }],
             neutron_thermal_treatment: NeutronThermalTreatment::FreeGas,
+            boron_microdistribution: None,
         }
     }
 
@@ -2181,6 +3075,7 @@ mod heterogeneous_tests {
                     sigma_total_per_cm: vec![0.1],
                     scatter_matrix_per_cm: vec![0.0],
                     scatter_p1_matrix_per_cm: None,
+                    scatter_legendre_moments_per_cm: None,
                     dose_response_gy_cm2: Default::default(),
                     transport_mu_bar: None,
                 },
@@ -2189,6 +3084,7 @@ mod heterogeneous_tests {
                     sigma_total_per_cm: vec![1.0],
                     scatter_matrix_per_cm: vec![0.0],
                     scatter_p1_matrix_per_cm: None,
+                    scatter_legendre_moments_per_cm: None,
                     dose_response_gy_cm2: Default::default(),
                     transport_mu_bar: None,
                 },

@@ -38,9 +38,10 @@ use openbnct_core::{ContentReference, ValidationError};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+use crate::model::MaterialAssignment;
 use crate::model::{SourceSpatialDistribution, TransportCase};
 use crate::multigroup::{
-    MultigroupData, MultigroupFlux, SnOptions, cell_materials, solve_multigroup,
+    MultigroupData, MultigroupFlux, SnOptions, material_composition_map, solve_multigroup,
 };
 
 pub const SENSITIVITY_SPEC_SCHEMA: &str = "openbnct.sensitivity-spec/0.1.0";
@@ -107,6 +108,16 @@ pub enum ScreeningTarget {
     /// to the fixed world-frame beam. `axis` is 0, 1, or 2 (x, y, z).
     /// Millimetres.
     GeometryOriginShiftMm { axis: u32 },
+    /// Multiplicative scale on one boron-microdistribution compartment
+    /// fraction (`nucleus` | `cytoplasm` | `membrane`) of the material
+    /// carrying that declared model — the other fractions renormalize
+    /// to keep the sum at one. The perturbed compound factor flows into
+    /// the boron dose response, so Morris/Sobol ranks compartment-
+    /// fraction uncertainty on the effective boron dose.
+    MicrodistributionUptakeScale {
+        material_id: String,
+        compartment: String,
+    },
 }
 
 /// Declared screening design over a transport case + multigroup data.
@@ -189,6 +200,14 @@ impl SensitivitySpec {
                 ScreeningTarget::GeometryOriginShiftMm { axis } if *axis > 2 => {
                     return Err(invalid(format!(
                         "parameter {:?} axis must be 0, 1, or 2",
+                        p.name
+                    )));
+                }
+                ScreeningTarget::MicrodistributionUptakeScale { compartment, .. }
+                    if !matches!(compartment.as_str(), "nucleus" | "cytoplasm" | "membrane") =>
+                {
+                    return Err(invalid(format!(
+                        "parameter {:?} compartment must be nucleus, cytoplasm, or membrane",
                         p.name
                     )));
                 }
@@ -332,6 +351,7 @@ impl XorShift64 {
 fn apply_parameter(
     case: &mut TransportCase,
     data: &mut MultigroupData,
+    assignment: &mut Option<MaterialAssignment>,
     parameter: &ScreeningParameter,
     x: f64,
 ) -> Result<(), ScreeningError> {
@@ -394,6 +414,64 @@ fn apply_parameter(
         ScreeningTarget::GeometryOriginShiftMm { axis } => {
             case.geometry.origin_mm[*axis as usize] += theta;
         }
+        ScreeningTarget::MicrodistributionUptakeScale {
+            material_id,
+            compartment,
+        } => {
+            // The declared microdistribution lives on the material
+            // definition — the case base material or an assignment
+            // region/base material.
+            let definition: &mut crate::MaterialDefinition = if case.material.id == *material_id {
+                &mut case.material
+            } else if let Some(a) = assignment {
+                if a.base_material.id == *material_id {
+                    &mut a.base_material
+                } else {
+                    a.regions
+                        .iter_mut()
+                        .find(|r| r.material.id == *material_id)
+                        .map(|r| &mut r.material)
+                        .ok_or_else(|| {
+                            ScreeningError::UnknownTarget(format!(
+                                "microdistribution material {material_id:?}"
+                            ))
+                        })?
+                }
+            } else {
+                return Err(ScreeningError::UnknownTarget(format!(
+                    "microdistribution material {material_id:?}"
+                )));
+            };
+            let micro = definition.boron_microdistribution.as_mut().ok_or_else(|| {
+                ScreeningError::UnknownTarget(format!(
+                    "material {material_id:?} declares no boron_microdistribution"
+                ))
+            })?;
+            let (target, others): (&mut f64, [&mut f64; 2]) = match compartment.as_str() {
+                "nucleus" => (
+                    &mut micro.nucleus_fraction,
+                    [&mut micro.cytoplasm_fraction, &mut micro.membrane_fraction],
+                ),
+                "cytoplasm" => (
+                    &mut micro.cytoplasm_fraction,
+                    [&mut micro.nucleus_fraction, &mut micro.membrane_fraction],
+                ),
+                _ => (
+                    &mut micro.membrane_fraction,
+                    [&mut micro.nucleus_fraction, &mut micro.cytoplasm_fraction],
+                ),
+            };
+            *target *= theta;
+            // Renormalize: the other fractions scale to preserve the
+            // unit sum (proportional-share convention).
+            let rest: f64 = others.iter().map(|o| **o).sum();
+            let keep = (1.0 - *target).max(0.0);
+            if rest > 0.0 {
+                for o in others {
+                    *o *= keep / rest;
+                }
+            }
+        }
     }
     Ok(())
 }
@@ -404,7 +482,6 @@ fn evaluate(
     case: &TransportCase,
     data: &MultigroupData,
     options: &SnOptions,
-    case_material: &[usize],
     cell_volume_cm3: f64,
     groups: usize,
     component: &str,
@@ -415,12 +492,16 @@ fn evaluate(
 ) -> Result<f64, ScreeningError> {
     let mut case_p = case.clone();
     let mut data_p = data.clone();
+    let mut assignment_p = options.assignment.clone();
     for (parameter, &xi) in parameters.iter().zip(x.iter()) {
-        apply_parameter(&mut case_p, &mut data_p, parameter, xi)?;
+        apply_parameter(&mut case_p, &mut data_p, &mut assignment_p, parameter, xi)?;
     }
-    // The case material map is unchanged by data-only perturbations;
-    // geometry shifts and source perturbations leave it unchanged too,
-    // so the precomputed map is reused.
+    // The composition map re-synthesizes fraction blends from the
+    // perturbed tables — a precomputed map would carry unperturbed
+    // blend rows.
+    let (data_eff, case_material) =
+        material_composition_map(&case_p, &data_p, assignment_p.as_ref())
+            .map_err(|e| ScreeningError::Invalid(format!("compositions: {e}")))?;
     let flux: MultigroupFlux = solve_multigroup(
         &case_p,
         &data_p,
@@ -428,17 +509,54 @@ fn evaluate(
         data_ref.clone(),
         case_ref.clone(),
     )?;
+    // Boron microdistribution: material_id → definition, from the
+    // perturbed case + assignment. The boron response scales by the
+    // declared compound factor per cell (volume-fraction blended).
+    let boron_factor = if component == "component:boron" {
+        let mut defs: std::collections::BTreeMap<&str, &crate::MaterialDefinition> =
+            std::collections::BTreeMap::new();
+        defs.insert(case_p.material.id.as_str(), &case_p.material);
+        if let Some(a) = &assignment_p {
+            defs.insert(a.base_material.id.as_str(), &a.base_material);
+            for r in &a.regions {
+                defs.insert(r.material.id.as_str(), &r.material);
+            }
+        }
+        let comps = crate::cell_compositions(&case_p, &data_p, assignment_p.as_ref())
+            .map_err(|e| ScreeningError::Invalid(format!("compositions: {e}")))?;
+        Some(
+            comps
+                .iter()
+                .map(|sig| {
+                    sig.iter()
+                        .map(|&(mi, f)| {
+                            f * defs
+                                .get(data_p.materials[mi].material_id.as_str())
+                                .and_then(|d| d.boron_microdistribution.as_ref())
+                                .map_or(1.0, |m| m.compound_factor())
+                        })
+                        .sum::<f64>()
+                })
+                .collect::<Vec<f64>>(),
+        )
+    } else {
+        None
+    };
+    // Responses index the effective data — fraction cells carry
+    // synthesized blend rows beyond `data_p.materials.len()`.
     let response_at = |m: usize, g: usize| -> f64 {
-        data_p.materials[m]
+        data_eff.materials[m]
             .dose_response_gy_cm2
             .get(component)
             .map_or(0.0, |r| r[g])
     };
     let mut r = 0.0;
     for (cell, &m) in case_material.iter().enumerate() {
+        let mut cell_r = 0.0;
         for g in 0..groups {
-            r += cell_volume_cm3 * response_at(m, g) * flux.flux[cell][g];
+            cell_r += cell_volume_cm3 * response_at(m, g) * flux.flux[cell][g];
         }
+        r += boron_factor.as_ref().map_or(cell_r, |f| cell_r * f[cell]);
     }
     Ok(r)
 }
@@ -474,7 +592,9 @@ pub fn run_screening(
     }
     let _n_cells = case.geometry.voxel_count()?;
     let groups = data.group_count();
-    let case_material = cell_materials(case, data, options.assignment.as_ref())?;
+    let (data_eff, case_material) =
+        material_composition_map(case, data, options.assignment.as_ref())?;
+    let data = &data_eff;
     let cell_volume_cm3 = case.geometry.spacing_mm.iter().product::<f64>() / 1000.0;
     if !case_material.iter().any(|&m| {
         data.materials[m]
@@ -500,7 +620,6 @@ pub fn run_screening(
         case,
         data,
         options,
-        &case_material,
         cell_volume_cm3,
         groups,
         &spec.response_component,
@@ -531,7 +650,6 @@ pub fn run_screening(
                     case,
                     data,
                     options,
-                    &case_material,
                     cell_volume_cm3,
                     groups,
                     &spec.response_component,
@@ -548,7 +666,6 @@ pub fn run_screening(
                         case,
                         data,
                         options,
-                        &case_material,
                         cell_volume_cm3,
                         groups,
                         &spec.response_component,
@@ -625,7 +742,6 @@ pub fn run_screening(
                         case,
                         data,
                         options,
-                        &case_material,
                         cell_volume_cm3,
                         groups,
                         &spec.response_component,
@@ -641,7 +757,6 @@ pub fn run_screening(
                         case,
                         data,
                         options,
-                        &case_material,
                         cell_volume_cm3,
                         groups,
                         &spec.response_component,
@@ -662,7 +777,6 @@ pub fn run_screening(
                             case,
                             data,
                             options,
-                            &case_material,
                             cell_volume_cm3,
                             groups,
                             &spec.response_component,

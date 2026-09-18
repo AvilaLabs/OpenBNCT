@@ -519,6 +519,7 @@ mod tests {
                 mass_fraction: 1.0,
             }],
             neutron_thermal_treatment: NeutronThermalTreatment::FreeGas,
+            boron_microdistribution: None,
         }
     }
 

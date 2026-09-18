@@ -15,6 +15,7 @@ mod cadis;
 mod measurement;
 mod model;
 mod multigroup;
+mod photon;
 mod positioning;
 mod response;
 mod screening;
@@ -52,17 +53,23 @@ pub use measurement::{
     beam_quality_metric, compare_measurement_record, compare_with_beam_quality,
 };
 pub use model::{
-    AngularDistribution, EnergyDistribution, FixedSourceDefinition, IntervalConvention,
-    MATERIAL_ASSIGNMENT_SCHEMA, MaterialAssignment, MaterialDefinition, MaterialRegion,
-    MaterialRegionShape, NeutronThermalTreatment, NuclideMassFraction, ParticleType, PlaneAxis,
-    SourceSpatialDistribution, TransportCase, TransportModelError,
+    AngularDistribution, BORON_TRACK_RANGE_UM, BoronMicrodistribution, EnergyDistribution,
+    FixedSourceDefinition, IntervalConvention, MATERIAL_ASSIGNMENT_SCHEMA, MaterialAssignment,
+    MaterialDefinition, MaterialRegion, MaterialRegionShape, NeutronThermalTreatment,
+    NuclideMassFraction, ParticleType, PlaneAxis, SourceSpatialDistribution, TransportCase,
+    TransportModelError,
 };
 pub use multigroup::{
     MULTIGROUP_DATA_SCHEMA, MULTIGROUP_FLUX_SCHEMA, MultigroupData, MultigroupError,
-    MultigroupFlux, MultigroupMaterial, SnOptions, cell_materials, fold_multigroup_dose,
-    level_symmetric_quadrature, solve_multigroup, solve_multigroup_adjoint,
+    MultigroupFlux, MultigroupMaterial, SnOptions, cell_compositions, cell_materials,
+    fold_multigroup_dose, level_symmetric_quadrature, material_composition_map, solve_multigroup,
+    solve_multigroup_adjoint,
 };
 pub use openbnct_core::ContentReference;
+pub use photon::{
+    MULTIGROUP_PHOTON_DATA_SCHEMA, MultigroupPhotonData, PHOTON_DOSE_COMPONENT, PhotonMaterial,
+    fold_photon_dose, solve_photon,
+};
 pub use positioning::{
     AxisApproach, EntrySide, POSITION_REPORT_SCHEMA, PositionReport, PositioningError,
     aim_source_at_centroid, rotate_source,

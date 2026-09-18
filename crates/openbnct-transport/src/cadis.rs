@@ -33,7 +33,7 @@ use thiserror::Error;
 
 use crate::model::{ParticleType, TransportCase};
 use crate::multigroup::{
-    MultigroupData, MultigroupError, MultigroupFlux, SnOptions, cell_materials,
+    MultigroupData, MultigroupError, MultigroupFlux, SnOptions, material_composition_map,
     solve_multigroup_adjoint, source_coverage,
 };
 use crate::variance_reduction::{
@@ -112,7 +112,9 @@ pub fn resolve_adjoint_windows(
     let geometry = &case.geometry;
     let n_cells = geometry.voxel_count()?;
     let groups = data.group_count();
-    let case_material = cell_materials(case, data, options.assignment.as_ref())?;
+    let (data_eff, case_material) =
+        material_composition_map(case, data, options.assignment.as_ref())?;
+    let data = &data_eff;
     // Source birth cells and group weights — the w_ref normalization.
     let coverage = source_coverage(case, data)?;
     let src_linear = face_cells_linear(geometry, coverage.face, &coverage.cells);
@@ -590,7 +592,7 @@ mod tests {
         // voxel (1,2,18) → 1 + 4·2 + 16·18.
         q_adj[297][1] = 1.0;
         let quadrature = level_symmetric_quadrature(opts.quadrature_order).unwrap();
-        let case_material = cell_materials(&case, &mg, None).unwrap();
+        let (_, case_material) = material_composition_map(&case, &mg, None).unwrap();
         let forward = solve_sn_problem(
             &case,
             &mg,

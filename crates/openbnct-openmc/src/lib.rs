@@ -19,6 +19,7 @@ pub mod endf_mf7;
 mod evaluated;
 mod input;
 mod mgcollapse;
+mod photoncollapse;
 mod statepoint;
 mod variance_reduction;
 
@@ -66,6 +67,7 @@ pub use input::{
     OpenMcTallyContract, OpenMcTallyQuantity, OpenMcTallyScope, OpenMcTemperatureMethod,
 };
 pub use mgcollapse::{CollapseError, CollapseOptions, WeightingSpectrum, collapse_multigroup};
+pub use photoncollapse::{PhotonCollapseOptions, collapse_photon};
 pub use statepoint::{
     CollectedDose, OPENMC_INPUT_MANIFEST_FILE, OpenMcCollectError, OpenMcEnergyFunction,
     OpenMcStatepoint, OpenMcStatepointTally, collect_completed, collect_statepoint,
