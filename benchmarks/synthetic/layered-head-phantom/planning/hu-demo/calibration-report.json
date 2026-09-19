@@ -1,0 +1,35 @@
+{
+  "anchor_coverage": [
+    {
+      "hu": -1000.0,
+      "material_id": "openbnct.layered-head.void.v1",
+      "voxels": 7408,
+      "volume_fraction_total": 7408.0
+    },
+    {
+      "hu": 35.0,
+      "material_id": "openbnct.layered-head.brain.v1",
+      "voxels": 3695,
+      "volume_fraction_total": 3695.0
+    },
+    {
+      "hu": 60.0,
+      "material_id": "openbnct.layered-head.skin.v1",
+      "voxels": 3272,
+      "volume_fraction_total": 3272.0
+    },
+    {
+      "hu": 900.0,
+      "material_id": "openbnct.layered-head.skull.v1",
+      "voxels": 1250,
+      "volume_fraction_total": 1250.0
+    }
+  ],
+  "clamped_low": 0,
+  "clamped_high": 0,
+  "interpolated": 0,
+  "hu_range": [
+    -1000.0,
+    900.0
+  ]
+}

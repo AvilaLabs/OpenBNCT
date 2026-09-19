@@ -1,0 +1,85 @@
+{
+  "schema_version": "openbnct.material-definition/0.1.0",
+  "id": "openbnct.layered-head.skin.v1",
+  "density_g_cm3": 1.09,
+  "temperature_k": 293.6,
+  "nuclides": [
+    {
+      "name": "H1",
+      "mass_fraction": 0.09998850000000001
+    },
+    {
+      "name": "H2",
+      "mass_fraction": 0.000011500000000000002
+    },
+    {
+      "name": "C12",
+      "mass_fraction": 0.20181719999999997
+    },
+    {
+      "name": "C13",
+      "mass_fraction": 0.0021828
+    },
+    {
+      "name": "N14",
+      "mass_fraction": 0.04184712
+    },
+    {
+      "name": "N15",
+      "mass_fraction": 0.00015288
+    },
+    {
+      "name": "O16",
+      "mass_fraction": 0.6434328500000001
+    },
+    {
+      "name": "O17",
+      "mass_fraction": 0.0002451
+    },
+    {
+      "name": "O18",
+      "mass_fraction": 0.00132225
+    },
+    {
+      "name": "Na23",
+      "mass_fraction": 0.002
+    },
+    {
+      "name": "P31",
+      "mass_fraction": 0.001
+    },
+    {
+      "name": "S32",
+      "mass_fraction": 0.0018997999999999999
+    },
+    {
+      "name": "S33",
+      "mass_fraction": 0.000015
+    },
+    {
+      "name": "S34",
+      "mass_fraction": 0.000085
+    },
+    {
+      "name": "Cl35",
+      "mass_fraction": 0.0022734
+    },
+    {
+      "name": "Cl37",
+      "mass_fraction": 0.0007266
+    },
+    {
+      "name": "K39",
+      "mass_fraction": 0.000932581
+    },
+    {
+      "name": "K40",
+      "mass_fraction": 1.17e-7
+    },
+    {
+      "name": "K41",
+      "mass_fraction": 0.000067302
+    }
+  ],
+  "neutron_thermal_treatment": "free_gas"
+}

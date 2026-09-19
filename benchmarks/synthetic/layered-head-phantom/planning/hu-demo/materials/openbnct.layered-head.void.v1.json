@@ -1,0 +1,17 @@
+{
+  "schema_version": "openbnct.material-definition/0.1.0",
+  "id": "openbnct.layered-head.void.v1",
+  "density_g_cm3": 1e-9,
+  "temperature_k": 293.6,
+  "nuclides": [
+    {
+      "name": "H1",
+      "mass_fraction": 0.999885
+    },
+    {
+      "name": "H2",
+      "mass_fraction": 0.000115
+    }
+  ],
+  "neutron_thermal_treatment": "free_gas"
+}

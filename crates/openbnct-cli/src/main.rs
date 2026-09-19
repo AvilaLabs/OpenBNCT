@@ -1159,6 +1159,38 @@ enum DicomCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Apply an `openbnct.hu-calibration` anchor table to a CT HU
+    /// volume, emitting an `openbnct.material-assignment` whose
+    /// per-voxel two-component anchor mixtures the solver blends.
+    /// Research calibration — the anchor artifact is a declared
+    /// convention, not a site-validated stoichiometric fit.
+    Calibrate {
+        /// `openbnct.hu-calibration` JSON document.
+        #[arg(long)]
+        calibration: PathBuf,
+        /// CT slice `.dcm` files (HU via RescaleSlope/Intercept).
+        /// Mutually exclusive with `--hu-nifti`.
+        #[arg(long)]
+        slices: Vec<PathBuf>,
+        /// HU-valued NIfTI (`.nii`/`.nii.gz`) already resliced onto the
+        /// case grid — mutually exclusive with `--slices`.
+        #[arg(long)]
+        hu_nifti: Option<PathBuf>,
+        /// `openbnct.transport-case` the assignment binds to; its grid
+        /// shape must match the HU volume's.
+        #[arg(long)]
+        case: PathBuf,
+        /// New output path for the `openbnct.material-assignment` JSON.
+        #[arg(long)]
+        output: PathBuf,
+        /// Directory receiving one `MaterialDefinition` JSON per
+        /// calibration anchor — the `sn collapse --material` inputs.
+        #[arg(long)]
+        materials_out_dir: Option<PathBuf>,
+        /// Optional output path for the calibration coverage report.
+        #[arg(long)]
+        report: Option<PathBuf>,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -4149,6 +4181,78 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     volume.delta_t_s,
                     volume.radionuclide_half_life_s,
                     volume.clamped_negative_voxels
+                );
+            }
+            DicomCommand::Calibrate {
+                calibration,
+                slices,
+                hu_nifti,
+                case,
+                output,
+                materials_out_dir,
+                report,
+            } => {
+                if slices.is_empty() == hu_nifti.is_none() {
+                    return Err(io::Error::other(
+                        "exactly one of --slices or --hu-nifti is required",
+                    )
+                    .into());
+                }
+                let cal: openbnct_transport::HuCalibration =
+                    serde_json::from_slice(&fs::read(&calibration)?)?;
+                let case_doc: TransportCase = serde_json::from_slice(&fs::read(&case)?)?;
+                let (hu_values, hu_geometry) = if !slices.is_empty() {
+                    let ct = openbnct_dicom::import_ct_series(&slices)
+                        .map_err(|error| io::Error::other(format!("ct import: {error}")))?;
+                    let values = ct
+                        .stored_pixels
+                        .iter()
+                        .map(|&px| ct.modality_value(px))
+                        .collect();
+                    (values, ct.geometry.clone())
+                } else {
+                    let image = read_nifti_file(hu_nifti.as_ref().unwrap())
+                        .map_err(|error| io::Error::other(format!("hu nifti: {error}")))?;
+                    (image.values, image.geometry)
+                };
+                if hu_geometry.shape != case_doc.geometry.shape {
+                    return Err(io::Error::other(format!(
+                        "hu volume shape {:?} does not match the case grid {:?} — \
+                         reslice the CT onto the case grid first",
+                        hu_geometry.shape, case_doc.geometry.shape
+                    ))
+                    .into());
+                }
+                let provenance = format!("hu-calibration:{}", cal.id);
+                let (assignment, cal_report) = cal
+                    .apply(
+                        &hu_values,
+                        &case_doc.geometry,
+                        &case_doc.case_id,
+                        &provenance,
+                    )
+                    .map_err(|error| io::Error::other(format!("calibration: {error}")))?;
+                assignment
+                    .validate(&case_doc.geometry)
+                    .map_err(|error| io::Error::other(format!("assignment: {error}")))?;
+                write_new_json(&output, &assignment)?;
+                if let Some(dir) = materials_out_dir {
+                    fs::create_dir_all(&dir)?;
+                    for material in cal.materials() {
+                        write_new_json(&dir.join(format!("{}.json", material.id)), material)?;
+                    }
+                }
+                if let Some(path) = report {
+                    write_new_json(&path, &cal_report)?;
+                }
+                println!(
+                    "calibrate: {} voxels -> {} | anchors {} | interpolated {} | clamped +{}/-{}",
+                    hu_values.len(),
+                    output.display(),
+                    cal.anchors.len(),
+                    cal_report.interpolated,
+                    cal_report.clamped_high,
+                    cal_report.clamped_low
                 );
             }
         },

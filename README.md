@@ -206,7 +206,11 @@ bundling those systems.
   rtplan-info`/`export-rtplan` read and write minimal RTPLAN beam
   sequences, and `dicom import-pet` converts a native PET series to a
   body-weight SUV volume (BQML + decay correction, radiopharmaceutical
-  record validated) feeding the boron uptake model.
+  record validated) feeding the boron uptake model. `dicom calibrate`
+  applies a versioned `openbnct.hu-calibration` anchor table
+  (Schneider-method two-component mixing) to CT HU volumes and emits a
+  material assignment — the imaging→phantom hop, demonstrated
+  voxel-exact on the layered-head round-trip.
 - **Three surfaces, one implementation** — CLI (`openbnct`), a native egui
   workbench (integrity-gated tri-planar viewer, dose wash, DVH/metrics,
   plan workspace, source positioning), and a bounded Python package —

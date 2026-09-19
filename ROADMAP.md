@@ -1240,6 +1240,16 @@ other and of R8 ordering unless noted.
   solves and folds a unit-weight dose bundle per beam, and emits a
   `openbnct.beam-field-set/0.1.0` manifest binding every aimed case,
   position report, and bundle to the shared inputs by hash.
+- **R9-09 — HU-to-material calibration.** `openbnct.hu-calibration/0.1.0`
+  carries a versioned anchor table — a declared `MaterialDefinition` per
+  Hounsfield value — and `openbnct dicom calibrate` maps a CT series (or
+  an HU NIfTI already resliced onto the case grid) to a
+  `material-assignment` of per-voxel two-component anchor mixtures, the
+  Schneider-method structure parameterized by the artifact rather than a
+  hard-coded fit. The committed layered-head round-trip recovers the
+  phantom assignment voxel-exact at the anchors and solves
+  bit-identically; anchor tables are declared conventions, and a real
+  deployment substitutes its scanner's stoichiometric fit.
 
 Nothing in R8/R9 changes the deferred list below or adds any clinical
 claim; plan optimization involving Avify Dose patent subject matter

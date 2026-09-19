@@ -1,0 +1,313 @@
+{
+ "schema_version": "openbnct.hu-calibration/0.1.0",
+ "id": "openbnct.layered-head.hu-calibration.v1",
+ "anchors": [
+  {
+   "hu": -1000.0,
+   "material": {
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "openbnct.layered-head.void.v1",
+    "density_g_cm3": 1e-09,
+    "temperature_k": 293.6,
+    "nuclides": [
+     {
+      "name": "H1",
+      "mass_fraction": 0.999885
+     },
+     {
+      "name": "H2",
+      "mass_fraction": 0.000115
+     }
+    ],
+    "neutron_thermal_treatment": "free_gas"
+   }
+  },
+  {
+   "hu": 35.0,
+   "material": {
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "openbnct.layered-head.brain.v1",
+    "density_g_cm3": 1.04,
+    "temperature_k": 293.6,
+    "nuclides": [
+     {
+      "name": "H1",
+      "mass_fraction": 0.1069876843012305
+     },
+     {
+      "name": "H2",
+      "mass_fraction": 1.2304998769500001e-05
+     },
+     {
+      "name": "C12",
+      "mass_fraction": 0.14344848565515
+     },
+     {
+      "name": "C13",
+      "mass_fraction": 0.00155149984485
+     },
+     {
+      "name": "N14",
+      "mass_fraction": 0.021919917808008
+     },
+     {
+      "name": "N15",
+      "mass_fraction": 8.007999199200001e-05
+     },
+     {
+      "name": "O16",
+      "mass_fraction": 0.710269968972996
+     },
+     {
+      "name": "O17",
+      "mass_fraction": 0.000270559972944
+     },
+     {
+      "name": "O18",
+      "mass_fraction": 0.00145959985404
+     },
+     {
+      "name": "Na23",
+      "mass_fraction": 0.0019999998
+     },
+     {
+      "name": "P31",
+      "mass_fraction": 0.0039999996
+     },
+     {
+      "name": "S32",
+      "mass_fraction": 0.0018997998100199998
+     },
+     {
+      "name": "S33",
+      "mass_fraction": 1.49999985e-05
+     },
+     {
+      "name": "S34",
+      "mass_fraction": 8.49999915e-05
+     },
+     {
+      "name": "Cl35",
+      "mass_fraction": 0.0022733997726600004
+     },
+     {
+      "name": "Cl37",
+      "mass_fraction": 0.0007265999273400001
+     },
+     {
+      "name": "K39",
+      "mass_fraction": 0.0027977427202257005
+     },
+     {
+      "name": "K40",
+      "mass_fraction": 3.509999649e-07
+     },
+     {
+      "name": "K41",
+      "mass_fraction": 0.00020190597980940004
+     },
+     {
+      "name": "B10",
+      "mass_fraction": 1e-07
+     }
+    ],
+    "neutron_thermal_treatment": "free_gas"
+   }
+  },
+  {
+   "hu": 60.0,
+   "material": {
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "openbnct.layered-head.skin.v1",
+    "density_g_cm3": 1.09,
+    "temperature_k": 293.6,
+    "nuclides": [
+     {
+      "name": "H1",
+      "mass_fraction": 0.09998850000000001
+     },
+     {
+      "name": "H2",
+      "mass_fraction": 1.1500000000000002e-05
+     },
+     {
+      "name": "C12",
+      "mass_fraction": 0.20181719999999997
+     },
+     {
+      "name": "C13",
+      "mass_fraction": 0.0021828
+     },
+     {
+      "name": "N14",
+      "mass_fraction": 0.04184712
+     },
+     {
+      "name": "N15",
+      "mass_fraction": 0.00015288
+     },
+     {
+      "name": "O16",
+      "mass_fraction": 0.6434328500000001
+     },
+     {
+      "name": "O17",
+      "mass_fraction": 0.0002451
+     },
+     {
+      "name": "O18",
+      "mass_fraction": 0.00132225
+     },
+     {
+      "name": "Na23",
+      "mass_fraction": 0.002
+     },
+     {
+      "name": "P31",
+      "mass_fraction": 0.001
+     },
+     {
+      "name": "S32",
+      "mass_fraction": 0.0018997999999999999
+     },
+     {
+      "name": "S33",
+      "mass_fraction": 1.5e-05
+     },
+     {
+      "name": "S34",
+      "mass_fraction": 8.5e-05
+     },
+     {
+      "name": "Cl35",
+      "mass_fraction": 0.0022734
+     },
+     {
+      "name": "Cl37",
+      "mass_fraction": 0.0007266
+     },
+     {
+      "name": "K39",
+      "mass_fraction": 0.000932581
+     },
+     {
+      "name": "K40",
+      "mass_fraction": 1.17e-07
+     },
+     {
+      "name": "K41",
+      "mass_fraction": 6.7302e-05
+     }
+    ],
+    "neutron_thermal_treatment": "free_gas"
+   }
+  },
+  {
+   "hu": 900.0,
+   "material": {
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "openbnct.layered-head.skull.v1",
+    "density_g_cm3": 1.92,
+    "temperature_k": 293.6,
+    "nuclides": [
+     {
+      "name": "H1",
+      "mass_fraction": 0.03399609000000001
+     },
+     {
+      "name": "H2",
+      "mass_fraction": 3.910000000000001e-06
+     },
+     {
+      "name": "C12",
+      "mass_fraction": 0.1533415
+     },
+     {
+      "name": "C13",
+      "mass_fraction": 0.0016584999999999998
+     },
+     {
+      "name": "N14",
+      "mass_fraction": 0.04184712
+     },
+     {
+      "name": "N15",
+      "mass_fraction": 0.00015288
+     },
+     {
+      "name": "O16",
+      "mass_fraction": 0.43394324999999995
+     },
+     {
+      "name": "O17",
+      "mass_fraction": 0.0001653
+     },
+     {
+      "name": "O18",
+      "mass_fraction": 0.0008917500000000001
+     },
+     {
+      "name": "Na23",
+      "mass_fraction": 0.001
+     },
+     {
+      "name": "Mg24",
+      "mass_fraction": 0.0015798000000000001
+     },
+     {
+      "name": "Mg25",
+      "mass_fraction": 0.0002
+     },
+     {
+      "name": "Mg26",
+      "mass_fraction": 0.0002202
+     },
+     {
+      "name": "P31",
+      "mass_fraction": 0.103
+     },
+     {
+      "name": "S32",
+      "mass_fraction": 0.0028497
+     },
+     {
+      "name": "S33",
+      "mass_fraction": 2.2499999999999998e-05
+     },
+     {
+      "name": "S34",
+      "mass_fraction": 0.0001275
+     },
+     {
+      "name": "Ca40",
+      "mass_fraction": 0.21811725
+     },
+     {
+      "name": "Ca42",
+      "mass_fraction": 0.00145575
+     },
+     {
+      "name": "Ca43",
+      "mass_fraction": 0.00030375000000000004
+     },
+     {
+      "name": "Ca44",
+      "mass_fraction": 0.0046935
+     },
+     {
+      "name": "Ca46",
+      "mass_fraction": 9e-06
+     },
+     {
+      "name": "Ca48",
+      "mass_fraction": 0.00042075
+     }
+    ],
+    "neutron_thermal_treatment": "free_gas"
+   }
+  }
+ ],
+ "derivation": null,
+ "validity_domain": "Declared demonstration calibration for the layered-head synthetic phantom: ICRU-44 void/brain/skin/skull anchor compositions at conventional head-CT HU positions. NOT a scanner stoichiometric fit \u2014 real deployments substitute a site-derived anchor table. Anchors cover air(-1000)/soft(~+35/+60)/cortical(+900); spongy-bone and intermediate tissues are intentionally absent \u2014 the phantom has none.",
+ "provenance_id": "benchmarks/synthetic/layered-head-phantom/materials"
+}

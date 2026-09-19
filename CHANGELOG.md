@@ -35,6 +35,13 @@ own versions independent of the crate version.
   the weights as an `openbnct.exposure-plan`
   (`source_strength_scaling` basis) consumable by `plan
   validate`/`plan export`.
+- `openbnct dicom calibrate` / `openbnct.hu-calibration/0.1.0`:
+  HU-to-material calibration — a versioned anchor table (declared
+  `MaterialDefinition` per Hounsfield value, Schneider-method
+  two-component mixing between anchors) applied to CT slices or an
+  HU NIfTI, emitting a `material-assignment` the solver blends
+  per-voxel; committed layered-head round-trip recovers the phantom
+  assignment voxel-exact and solves bit-identically.
 - Isoeffective objectives: `dose_quantity: "isoeffective"` embeds an
   `openbnct-bio` `BiologicalModel` in the objective document (content-
   bound component weights, per-mask `region_weights` overrides) and

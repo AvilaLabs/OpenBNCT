@@ -863,6 +863,10 @@ pub enum TransportModelError {
     MalformedMaterialRegion(String),
     #[error("voxel-fraction regions {first:?} and {second:?} exceed a full voxel (sum > 1)")]
     VoxelFractionOverflow { first: String, second: String },
+    #[error("unsupported HU-calibration schema {0:?}")]
+    UnsupportedHuCalibrationSchema(String),
+    #[error("HU calibration malformed: {0}")]
+    MalformedHuCalibration(String),
     #[error(
         "material assignment requires an axis-aligned grid (identity direction); \
          rotated or permuted voxel axes are not representable by box surfaces or rectilinear lattices"

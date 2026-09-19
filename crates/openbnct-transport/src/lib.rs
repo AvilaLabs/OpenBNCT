@@ -12,6 +12,7 @@ mod beam;
 mod beam_quality;
 mod bsa;
 mod cadis;
+mod hu_calibration;
 mod measurement;
 mod model;
 mod multigroup;
@@ -45,6 +46,9 @@ pub use bsa::{
 pub use cadis::{
     AdjointDerivation, CadisError, CadisSummary, DEFAULT_TARGET_CAP, resolve_adjoint_windows,
     summarize as summarize_adjoint_derivation,
+};
+pub use hu_calibration::{
+    HU_CALIBRATION_SCHEMA, HuAnchor, HuAnchorCoverage, HuCalibration, HuCalibrationReport,
 };
 pub use measurement::{
     ComparisonSummary, MEASUREMENT_COMPARISON_SCHEMA, MEASUREMENT_RECORD_SCHEMA, Measurement,

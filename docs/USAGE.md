@@ -452,6 +452,45 @@ openbnct dicom export-rtplan --plan-label RESEARCH-1 --fractions 2 \
 Both directions are research interop, not commissioned treatment
 planning.
 
+### HU-to-material calibration
+
+`openbnct dicom calibrate` closes the imaging→phantom hop: it applies an
+`openbnct.hu-calibration/0.1.0` anchor table to a CT HU volume and emits
+an `openbnct.material-assignment`. Each anchor declares a
+`MaterialDefinition` at a Hounsfield value; a voxel between anchors
+becomes the two-component volume mixture `(1−t)·A_i + t·A_{i+1}` — the
+stoichiometric-calibration structure (Schneider, Bortfeld & Schlegel,
+*Phys. Med. Biol.* 45 (2000) 459) parameterized by the declared anchors
+rather than a hard-coded fit, because the calibration is scanner- and
+protocol-dependent in real use. The artifact's content hash binds the
+exact table used.
+
+```text
+openbnct dicom calibrate \
+  --calibration hu-calibration.json \
+  --slices CT-001.dcm CT-002.dcm ... \
+  --case case.json \
+  --output NEW-ASSIGNMENT.json \
+  [--materials-out-dir NEW-MATERIALS-DIR] \
+  [--report NEW-REPORT.json]
+```
+
+`--hu-nifti VOLUME.nii[.gz]` replaces `--slices` for an HU volume
+already resliced onto the case grid (3D Slicer, plastimatch); the grid
+shape must match the case's — `calibrate` refuses a mismatch rather
+than silently resampling. `--materials-out-dir` writes one
+`MaterialDefinition` per anchor for `sn collapse --material`, and
+`--report` records per-anchor coverage, interpolated/clamped voxel
+counts, and the observed HU range.
+
+The committed example
+`benchmarks/synthetic/layered-head-phantom/materials/hu-calibration.json`
+is a **declared demonstration table** (ICRU-44 void/brain/skin/skull at
+conventional head-CT HU positions), not a site calibration — see the
+round-trip artifact under `planning/hu-demo/`, where a synthetic
+HU volume at the anchors recovers the phantom's assignment voxel-exact
+and its solve is bit-identical to the ground-truth solve.
+
 ### OpenMC input generation
 
 With the sealed response set in place, generate the deterministic OpenMC deck
