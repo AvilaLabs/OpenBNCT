@@ -268,7 +268,14 @@ fn face_cells_linear(
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
     let shape = [nx, ny, nz];
     let along = if high { shape[axis] - 1 } else { 0 };
-    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+    // Canonical (u, v) in-plane order — the same ordering
+    // `source_coverage` stores its (ju, jv) cell keys in (Y beams
+    // key (x, z), not (z, x)).
+    let (u, v) = match axis {
+        0 => (1, 2),
+        1 => (0, 2),
+        _ => (0, 1),
+    };
     cells
         .iter()
         .map(|(ju, jv)| {

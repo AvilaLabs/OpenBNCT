@@ -35,6 +35,13 @@ own versions independent of the crate version.
   the weights as an `openbnct.exposure-plan`
   (`source_strength_scaling` basis) consumable by `plan
   validate`/`plan export`.
+- Fixed a silent-dose bug for Y-axis disk sources: the boundary-flux
+  source map and the uncollided ray-trace built their transverse
+  `(u, v)` keys as `((axis+1)%3, (axis+2)%3)` — `(z, x)` for Y — while
+  the sweep looks them up in canonical order `(x, z)`, so a Y-face beam
+  never landed on its cells and delivered ~zero dose. All three sites
+  now share `PlaneAxis::in_plane_axes()` ordering; regression test
+  `y_axis_disk_source_deposits_in_the_right_column` covers it.
 - `openbnct dicom calibrate` / `openbnct.hu-calibration/0.1.0`:
   HU-to-material calibration — a versioned anchor table (declared
   `MaterialDefinition` per Hounsfield value, Schneider-method

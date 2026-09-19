@@ -646,8 +646,10 @@ pub(crate) fn source_coverage(
     };
 
     // Cells whose transverse centers fall inside the disk — cell-center
-    // coverage is the declared boundary resolution.
-    let (u, v) = ((axis + 1) % 3, (axis + 2) % 3);
+    // coverage is the declared boundary resolution. `in_plane_axes` is
+    // the canonical (u, v) order (Y spans (x, z), not (z, x)) — the same
+    // order the sweep uses for its `(uu, vv)` boundary lookup.
+    let (u, v) = source.space.axis().in_plane_axes();
     let mut cells: Vec<(u32, u32)> = Vec::new();
     match &source.space {
         SourceSpatialDistribution::UniformDisk {
@@ -1055,7 +1057,10 @@ fn uncollided_beam_flux(
         ));
     }
 
-    let (u, v) = ((a + 1) % 3, (a + 2) % 3);
+    // Canonical (u, v) order — Y planes span (x, z), so the disk's
+    // `center_uv_cm` and the back-ray exit point must use the same
+    // ordering (see `PlaneAxis::in_plane_axes`).
+    let (u, v) = axis.in_plane_axes();
     let rate = source.statistical_weight_per_site * source.source_sites_per_history as f64;
     let disk_area_cm2 = std::f64::consts::PI * radius_cm * radius_cm;
     // Scalar fluence at the face per unit current: J/μ̄ with J = R/A.
@@ -2619,6 +2624,40 @@ pub(crate) mod tests {
             (slope - sigma).abs() / sigma < 1e-9,
             "slope {slope} vs analytic {sigma}"
         );
+    }
+
+    #[test]
+    fn y_axis_disk_source_deposits_in_the_right_column() {
+        // Regression: the boundary-source map and sweep must share the
+        // canonical (u, v) order — for a Y-axis beam that is (x, z).
+        // An off-diagonal disk center makes a transposed map land on
+        // cells outside the beam instead of merely masking the error.
+        let mut case = slab_case();
+        case.source.space = SourceSpatialDistribution::UniformDisk {
+            axis: PlaneAxis::Y,
+            offset_cm: -0.2,             // y-low face
+            center_uv_cm: [0.05, -0.05], // (x, z) — exactly cell (i=2, k=9)
+            radius_cm: 0.05,
+        };
+        case.source.angle = AngularDistribution::Monodirectional {
+            unit_vector: [0.0, 1.0, 0.0],
+        };
+        let mg = data(&[0.05_f64], vec![0.0]);
+        mg.validate().unwrap();
+        let flux = solve_multigroup(&case, &mg, &options(), cref("mg"), cref("case")).unwrap();
+        assert!(flux.converged);
+        // Beam column: cells (2, j, 9) for j = 0..3 carry the whole
+        // pencil — and it must attenuate monotonically with depth.
+        let column = |j: usize| flux.flux[2 + 4 * j + 16 * 9][0];
+        for j in 0..4 {
+            assert!(column(j) > 0.0, "beam cell j={j} carries no flux");
+            if j > 0 {
+                assert!(column(j) < column(j - 1), "beam must attenuate with depth");
+            }
+        }
+        // A cell transverse to the beam — (0, j, 9) — sees no uncollided
+        // flux: the disk center is at x = +0.05, x = −0.15 is outside.
+        assert!(flux.flux[16 * 9][0] == 0.0);
     }
 
     #[test]

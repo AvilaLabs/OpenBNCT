@@ -96,6 +96,34 @@ openbnct plan optimize \
   --output planning/result-isoeffective.json
 ```
 
+## Beam-direction search (`fields6/` + `result-direction-search.json`)
+
+A six-direction candidate set — `ap`, `pa`, `sup`, `inf`, `lat`, `obl`
+— swept by `plan fields` and optimized under the same isoeffective
+objective (`objective-direction-search.json`, `max_iterations` 6000).
+The phantom's off-center tumor (y = +3 cm) makes the candidates
+genuinely different: `sup` enters the +y face 7.4 cm from the tumor,
+`inf` crosses 12.6 cm from −y.
+
+Per-beam unit-weight isoeffective dose (tumor mask boron weight 3.8):
+
+| Beam | Tumor EUD | Brain mean | Shell D1% |
+|---|---|---|---|
+| sup | 3.4765e-8 | 4.50e-9 | 1.72e-7 |
+| ap | 2.3641e-8 | 3.92e-9 | 4.62e-7 |
+| lat | 2.3641e-8 | 3.92e-9 | 4.62e-7 |
+| pa | 2.0785e-8 | 3.69e-9 | 4.10e-7 |
+| inf | 1.5224e-8 | 5.34e-9 | 2.02e-7 |
+| obl | 1.4015e-8 | 1.87e-9 | 4.81e-7 |
+
+Result (converged, 4788 iterations): **sup alone**, weight 0.6901 —
+the analytic vertex `bound / sup_EUD = 2.4e-8 / 3.4765e-8 = 0.6904`.
+Every other candidate drains to exactly 0; tumor EUD lands 0.03% inside
+the bound at the regularization equilibrium, and the emitted
+`exposure-plan-direction-search.json` validates under `plan validate`.
+
+## Scope
+
 ## Scope
 
 Declared research demonstration. The phantom boron loading is dilute
