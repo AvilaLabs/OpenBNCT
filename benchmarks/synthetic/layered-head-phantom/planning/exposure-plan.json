@@ -1,0 +1,44 @@
+{
+  "schema_version": "openbnct.exposure-plan/0.1.0",
+  "id": "openbnct.inverse-plan-result.exposure-plan",
+  "case_id": "openbnct.layered-head-phantom.v1",
+  "covariance": "independent_exposures",
+  "exposures": [
+    {
+      "name": "ap.dose",
+      "dose_bundle": {
+        "id": "ap.dose.dose-bundle",
+        "sha256": "17252a9e6d9649154b77ee34a7dab16a1e87412a20e26f192e5f2d4c7386e1d4",
+        "path": "benchmarks/synthetic/layered-head-phantom/planning/fields/ap.dose.json"
+      },
+      "weight": 0.8746529221534729,
+      "weight_basis": "source_strength_scaling",
+      "duration_s": null,
+      "boron_assumption": null
+    },
+    {
+      "name": "lat.dose",
+      "dose_bundle": {
+        "id": "lat.dose.dose-bundle",
+        "sha256": "fce978d18e0fc8173ead28122994f5008232884485607b9c200bc6fb0be8d74f",
+        "path": "benchmarks/synthetic/layered-head-phantom/planning/fields/lat.dose.json"
+      },
+      "weight": 0.1400356274098158,
+      "weight_basis": "source_strength_scaling",
+      "duration_s": null,
+      "boron_assumption": null
+    },
+    {
+      "name": "obl.dose",
+      "dose_bundle": {
+        "id": "obl.dose.dose-bundle",
+        "sha256": "aec8eb7638740fbc0a053c252ca7f14a31606029c3ba2ddaf1ee7b6d70b64f8c",
+        "path": "benchmarks/synthetic/layered-head-phantom/planning/fields/obl.dose.json"
+      },
+      "weight": 0.0,
+      "weight_basis": "source_strength_scaling",
+      "duration_s": null,
+      "boron_assumption": null
+    }
+  ]
+}

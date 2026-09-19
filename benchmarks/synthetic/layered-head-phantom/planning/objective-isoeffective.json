@@ -1,0 +1,55 @@
+{
+  "schema_version": "openbnct.inverse-plan-objective/0.1.0",
+  "id": "openbnct.planning.layered-head-isoeff.v1",
+  "case_id": "openbnct.layered-head-phantom.v1",
+  "dose_quantity": "isoeffective",
+  "bio_model": {
+    "schema_version": "openbnct.biological-model/0.2.0",
+    "id": "openbnct.biological-model.cbe-protocol-layered.v1",
+    "weight_semantics": "photon_isoeffective",
+    "input_unit": "gray_per_source_particle",
+    "component_weights": {
+      "boron": 1.0,
+      "nitrogen": 3.2,
+      "hydrogen": 3.2,
+      "photon": 1.0
+    },
+    "region_weights": {
+      "tumor": {
+        "boron": 3.8,
+        "nitrogen": 3.2,
+        "hydrogen": 3.2,
+        "photon": 1.0
+      }
+    },
+    "validity_domain": "TECDOC-convention CBE/RBE weights (RBE 3.2 nitrogen capture and hydrogen recoil, CBE_boron 3.8 in the 'tumor' region, 1.0 elsewhere, photon 1.0 by the photon-isoeffective definition) applied to trace-loaded phantom dosimetry as a weighting convention only."
+  },
+  "objectives": [
+    {
+      "kind": "min_eud",
+      "mask": "tumor",
+      "target": 2.4e-08,
+      "eud_a": 1.0,
+      "weight": 1.0
+    },
+    {
+      "kind": "max_mean",
+      "mask": "brain-oar",
+      "limit": 4.5e-09,
+      "weight": 1.0
+    },
+    {
+      "kind": "max_dose_at_volume",
+      "mask": "shell-oar",
+      "volume_fraction": 0.01,
+      "limit": 1.35e-06,
+      "weight": 1.0
+    }
+  ],
+  "max_iterations": 2000,
+  "gradient_tolerance": 1e-08,
+  "weight_bound": 4.0,
+  "weight_regularization": 0.001,
+  "validity_domain": "Research demonstration of isoeffective multi-field weight optimization on the layered-head synthetic phantom: meet a tumor EUD floor while bounding brain mean dose and the hottest 1% of the skin+skull shell, under TECDOC-convention photon-isoeffective component weights. Trace boron loading \u2014 weights are a convention, not a treatment-representative model.",
+  "provenance_id": "benchmarks/synthetic/layered-head-phantom/planning"
+}

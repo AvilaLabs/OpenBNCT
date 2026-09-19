@@ -1,0 +1,32 @@
+{
+  "schema_version": "openbnct.position-report/0.1.0",
+  "case_id": "openbnct.layered-head-phantom.v1-lat",
+  "target_region": "tumor",
+  "beam_direction_lps": [
+    1.0,
+    0.0,
+    0.0
+  ],
+  "target_centroid_lps_mm": [
+    -4.0,
+    25.428571428571427,
+    96.0
+  ],
+  "entry_axis": "x",
+  "entry_side": "low",
+  "entry_point_lps_mm": [
+    -100.0,
+    25.428571428571427,
+    96.0
+  ],
+  "source_plane_point_lps_mm": [
+    -100.0,
+    25.428571428571427,
+    96.0
+  ],
+  "source_to_centroid_mm": 96.0,
+  "aperture_half_widths_cm": [
+    2.4,
+    2.4
+  ]
+}

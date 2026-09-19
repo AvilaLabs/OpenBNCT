@@ -1125,11 +1125,20 @@ openbnct plan optimize \
   --dose BEAM-AP-DOSE.json --dose BEAM-PA-DOSE.json \
   --mask TUMOR-MASK.json --mask OAR-MASK.json \
   [--initial 1.0 --initial 1.0] \
+  [--emit-plan NEW-EXPOSURE-PLAN.json] \
   --output NEW-RESULT.json
 ```
 
-The solver is deterministic — same inputs, byte-identical weights. It is
-a research optimizer over linear dose superposition, not a commissioned
+The solver is deterministic — same inputs, byte-identical weights.
+Violations are normalized by their objective bounds inside the penalty,
+so `weight_regularization` and `gradient_tolerance` are O(1) knobs at
+any dose magnitude; with `weight_regularization` on, the converged plan
+sits a fraction `≈ λ·bound/(2·slope)` inside a binding minimum-dose
+bound (the minimum-weight trade-off — raise the objective's `weight`
+or drop λ to tighten). `--emit-plan` writes the optimized weights as an
+`openbnct.exposure-plan` (`source_strength_scaling` basis, dose bundles
+hash-bound) for `plan validate`/`plan export`. It is a research
+optimizer over linear dose superposition, not a commissioned
 treatment-planning product; see `docs/IP_BOUNDARY.md` for the
 optimization-adjacent scope boundary.
 

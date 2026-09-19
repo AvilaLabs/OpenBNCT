@@ -1,0 +1,111 @@
+{
+  "schema_version": "openbnct.beam-field-set/0.1.0",
+  "id": "openbnct.layered-head-phantom.v1.beam-field-set",
+  "case_id": "openbnct.layered-head-phantom.v1",
+  "case": {
+    "id": "openbnct.layered-head-phantom.v1",
+    "sha256": "25cf2057a0a3abe402bbc3910956dcec163fb7c99747c211e3f6d16fb5367f3b"
+  },
+  "data": {
+    "id": "openbnct.layered-head-phantom.multigroup-28g.v1",
+    "sha256": "5bff9258d8773f25f1a0e282a2789e5c644be1096f1b2d56e36263f3e16c6fed"
+  },
+  "assignment": {
+    "id": "assignment",
+    "sha256": "798ca06eb7ce38889d316c382ecaf154a51a79b44b810bf6ef8cacb892a2da67"
+  },
+  "aim_mask": {
+    "id": "tumor",
+    "sha256": "650b48090aff1caf3c0039a9cbfe412f56eebc957213a8199ccb1cbc13411f17"
+  },
+  "aperture_radius_cm": 2.4,
+  "solver": {
+    "quadrature_order": 8,
+    "convergence": 0.0001,
+    "max_inner_iterations": 40,
+    "max_outer_iterations": 400,
+    "periodic": [
+      false,
+      false,
+      false
+    ],
+    "beam_uncollided_split": true,
+    "transport_correction": true,
+    "p1_anisotropic": false,
+    "anisotropy_order": 0,
+    "anderson_depth": 5
+  },
+  "beams": [
+    {
+      "name": "ap",
+      "direction_lps": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "case": {
+        "id": "openbnct.layered-head-phantom.v1-ap",
+        "sha256": "98f43c95e08484f5dd28abf2894ddb392a01c6060ff8f8d6cf275a5821572fd6"
+      },
+      "position_report": {
+        "id": "ap.position-report",
+        "sha256": "7aa82ff99849a7960c0d6b2e62959221aa96a92ea796a9f098b658101d385bdb"
+      },
+      "dose": {
+        "id": "ap.dose",
+        "sha256": "17252a9e6d9649154b77ee34a7dab16a1e87412a20e26f192e5f2d4c7386e1d4"
+      },
+      "converged": true,
+      "outer_iterations": 4,
+      "residual": 0.00008846409414149457
+    },
+    {
+      "name": "lat",
+      "direction_lps": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "case": {
+        "id": "openbnct.layered-head-phantom.v1-lat",
+        "sha256": "8916ee7276506f7d52f370289f284bb1126b7b232b39cdcdfe720a8bea544b84"
+      },
+      "position_report": {
+        "id": "lat.position-report",
+        "sha256": "1ae3cc9106243d959a5b04825bfa8fb438676c8c7fb25b133ad5fd54defa9884"
+      },
+      "dose": {
+        "id": "lat.dose",
+        "sha256": "fce978d18e0fc8173ead28122994f5008232884485607b9c200bc6fb0be8d74f"
+      },
+      "converged": true,
+      "outer_iterations": 4,
+      "residual": 0.0000884640941416616
+    },
+    {
+      "name": "obl",
+      "direction_lps": [
+        1.0,
+        0.0,
+        1.0
+      ],
+      "case": {
+        "id": "openbnct.layered-head-phantom.v1-obl",
+        "sha256": "e167764aeffb01615e76b30510a9888f80edf145c21c2469a489f2b3f454cd9b"
+      },
+      "position_report": {
+        "id": "obl.position-report",
+        "sha256": "f6af35717b17c5b0b31e7ee108149e68643814b48ddf1e6fbba461e5064b1b0d"
+      },
+      "dose": {
+        "id": "obl.dose",
+        "sha256": "aec8eb7638740fbc0a053c252ca7f14a31606029c3ba2ddaf1ee7b6d70b64f8c"
+      },
+      "converged": true,
+      "outer_iterations": 4,
+      "residual": 0.00008825879599746873
+    }
+  ],
+  "provenance_id": "plan-fields:25cf2057a0a3",
+  "qualification": "beam_field_sweep_research_only_not_clinical"
+}

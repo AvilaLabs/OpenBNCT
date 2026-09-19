@@ -27,9 +27,14 @@ own versions independent of the crate version.
   (EUD, mean, dose-at-volume quantiles on named masks over
   `physical_total`, a component, or `isoeffective`) — cyclic coordinate
   descent with analytic gradients and per-coordinate Armijo line search,
-  weight regularization selecting the minimum-weight feasible plan;
-  results emitted as `openbnct.inverse-plan-result/0.1.0` qualified
-  `inverse_planning_research_only_not_clinical`.
+  bound-normalized violations making the penalty scale-free at any dose
+  magnitude, weight regularization selecting the minimum-weight
+  feasible plan; results emitted as
+  `openbnct.inverse-plan-result/0.1.0` qualified
+  `inverse_planning_research_only_not_clinical`. `--emit-plan` writes
+  the weights as an `openbnct.exposure-plan`
+  (`source_strength_scaling` basis) consumable by `plan
+  validate`/`plan export`.
 - Isoeffective objectives: `dose_quantity: "isoeffective"` embeds an
   `openbnct-bio` `BiologicalModel` in the objective document (content-
   bound component weights, per-mask `region_weights` overrides) and

@@ -115,10 +115,12 @@ pub struct InversePlanObjective {
     /// Which accumulated quantity the objectives evaluate.
     pub dose_quantity: DoseQuantity,
     pub objectives: Vec<DoseObjective>,
-    /// Iteration cap for the projected-gradient solver.
+    /// Iteration cap for the coordinate-descent solver.
     #[serde(default = "default_max_iterations")]
     pub max_iterations: u32,
-    /// Infinity-norm convergence threshold on the projected gradient.
+    /// Infinity-norm convergence threshold on the projected gradient —
+    /// O(1) scale: violations are normalized by their bounds inside the
+    /// penalty, so the same tolerance works at any dose magnitude.
     #[serde(default = "default_gradient_tolerance")]
     pub gradient_tolerance: f64,
     /// Optional upper bound applied to every weight (a delivery limit).
@@ -129,6 +131,8 @@ pub struct InversePlanObjective {
     /// minimum-total-weight plan among feasible ones and pins the
     /// iterates to the constraint boundaries rather than overshooting
     /// into slack. `0` (the default) keeps pure feasibility semantics.
+    /// The pull competes with bound-normalized violation gradients, so
+    /// values ~1e-4–1e-1 are meaningful at any dose scale.
     #[serde(default)]
     pub weight_regularization: f64,
     /// Embedded biological model — required when `dose_quantity` is
@@ -516,8 +520,10 @@ fn objective_view<'a>(
     (std::borrow::Cow::Owned(dose), effective)
 }
 
-/// The composite penalty `Σ_k weight_k·violation_k²` and its gradient
-/// in weight space.
+/// The composite penalty `Σ_k weight_k·(violation_k/bound_k)²` and its
+/// gradient in weight space. Violations are bound-normalized so the
+/// penalty is scale-free — the same `weight_regularization` and
+/// `gradient_tolerance` apply at any dose magnitude.
 fn penalty_and_gradient(
     fields: &[BeamDoseField],
     weights: &[f64],
@@ -534,18 +540,26 @@ fn penalty_and_gradient(
     for (objective, voxels) in spec.objectives.iter().zip(mask_voxels) {
         let (odose, ofields) = objective_view(fields, weights, dose, spec, objective);
         let (metric, dmetric_dd) = objective_metric(objective, &odose, voxels);
-        let (violation, sense) = match objective {
+        // Violations are normalized by the objective bound so the
+        // composite penalty is O(1) regardless of the dose units or
+        // per-source scale — an absolute quadratic penalty forces
+        // `weight_regularization` and `gradient_tolerance` to be
+        // re-tuned per problem. A nonpositive bound falls back to the
+        // absolute violation (relative is undefined there).
+        let (violation, sense, scale) = match objective {
             DoseObjective::MinEud { target, weight, .. }
             | DoseObjective::MinDoseAtVolume { target, weight, .. } => {
                 let v = (target - metric).max(0.0);
-                penalty += weight * v * v;
-                (v, -1.0_f64)
+                let s = if *target > 0.0 { 1.0 / *target } else { 1.0 };
+                penalty += weight * v * v * s * s;
+                (v, -1.0_f64, s)
             }
             DoseObjective::MaxMean { limit, weight, .. }
             | DoseObjective::MaxDoseAtVolume { limit, weight, .. } => {
                 let v = (metric - limit).max(0.0);
-                penalty += weight * v * v;
-                (v, 1.0_f64)
+                let s = if *limit > 0.0 { 1.0 / *limit } else { 1.0 };
+                penalty += weight * v * v * s * s;
+                (v, 1.0_f64, s)
             }
         };
         let weight = match objective {
@@ -555,12 +569,13 @@ fn penalty_and_gradient(
             | DoseObjective::MaxDoseAtVolume { weight, .. } => *weight,
         };
         if violation > 0.0 {
-            // d(penalty)/dw_i = 2·weight·violation·sense·Σ_v dm/dd_v·D_i(v)
-            // — under isoeffective, D_i(v) is beam i's effective field
-            // Σ_c w_c(mask)·d_ic(v) for this objective.
+            // d(penalty)/dw_i = 2·weight·violation·scale²·sense·
+            // Σ_v dm/dd_v·D_i(v) — under isoeffective, D_i(v) is beam
+            // i's effective field Σ_c w_c(mask)·d_ic(v) for this
+            // objective.
             for (i, field) in ofields.iter().enumerate() {
                 let dm_dwi: f64 = voxels.iter().map(|&v| dmetric_dd[v] * field[v]).sum();
-                grad[i] += 2.0 * weight * violation * sense * dm_dwi;
+                grad[i] += 2.0 * weight * violation * scale * scale * sense * dm_dwi;
             }
         }
     }
@@ -881,7 +896,7 @@ mod tests {
             max_iterations: 500,
             gradient_tolerance: 1e-10,
             weight_bound: None,
-            weight_regularization: 1e-4,
+            weight_regularization: 1e-5,
             bio_model: None,
             validity_domain: "unit test".into(),
             provenance_id: "test".into(),

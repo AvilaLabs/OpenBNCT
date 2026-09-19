@@ -1608,6 +1608,11 @@ enum PlanCommand {
         /// Output path for the result JSON.
         #[arg(long)]
         output: PathBuf,
+        /// Optionally also write an `openbnct.exposure-plan` binding the
+        /// optimized weights to their dose bundles (consumable by
+        /// `plan validate`/`plan export` and the GUI Plan workspace).
+        #[arg(long)]
+        emit_plan: Option<PathBuf>,
     },
     /// Aim and solve a beam per direction through a target mask —
     /// emits a unit-weight dose bundle per beam plus a
@@ -7776,6 +7781,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 id,
                 provenance_id,
                 output,
+                emit_plan,
             } => {
                 use openbnct_plan::optimize::{
                     BeamDoseField, DoseQuantity, InversePlanObjective, ResultProvenance,
@@ -7880,6 +7886,49 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     );
                 }
                 println!("result: {}", output.display());
+                if let Some(plan_path) = emit_plan {
+                    let exposures: Vec<openbnct_core::Exposure> = result
+                        .weights
+                        .iter()
+                        .zip(&dose)
+                        .map(|(w, path)| {
+                            let bytes = fs::read(path).map_err(|error| {
+                                io::Error::other(format!(
+                                    "{}: re-read for plan hash: {error}",
+                                    path.display()
+                                ))
+                            })?;
+                            Ok(openbnct_core::Exposure {
+                                name: w.name.clone(),
+                                dose_bundle: openbnct_core::BoundFileReference {
+                                    id: format!("{}.dose-bundle", w.name),
+                                    sha256: openbnct_evidence::sha256_hex(&bytes),
+                                    path: path.display().to_string(),
+                                },
+                                weight: w.weight,
+                                weight_basis: openbnct_core::WeightBasis::SourceStrengthScaling,
+                                duration_s: None,
+                                boron_assumption: None,
+                            })
+                        })
+                        .collect::<Result<_, io::Error>>()?;
+                    let plan = openbnct_core::ExposurePlan {
+                        schema_version: openbnct_core::EXPOSURE_PLAN_SCHEMA.into(),
+                        id: format!("{}.exposure-plan", result.id),
+                        case_id: spec.case_id.clone(),
+                        covariance: openbnct_core::ExposureCovariance::IndependentExposures,
+                        exposures,
+                    };
+                    let issues = plan.validate_diagnostics();
+                    if !issues.is_empty() {
+                        return Err(io::Error::other(format!(
+                            "emitted exposure plan fails validation: {issues:?}"
+                        ))
+                        .into());
+                    }
+                    write_new_json(&plan_path, &plan)?;
+                    println!("exposure plan: {}", plan_path.display());
+                }
             }
             PlanCommand::Fields {
                 case,

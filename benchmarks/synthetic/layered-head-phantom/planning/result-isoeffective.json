@@ -1,0 +1,58 @@
+{
+  "schema_version": "openbnct.inverse-plan-result/0.1.0",
+  "id": "openbnct.inverse-plan-result",
+  "case_id": "openbnct.layered-head-phantom.v1",
+  "objective": {
+    "id": "openbnct.planning.layered-head-isoeff.v1",
+    "sha256": "sha256:b88f33bd8ffb86635901daf1fc1be85ee99cc711e08f513ce4a503d43b57a61c"
+  },
+  "dose_quantity": "isoeffective",
+  "weights": [
+    {
+      "name": "ap.dose",
+      "weight": 0.8746529221534729
+    },
+    {
+      "name": "lat.dose",
+      "weight": 0.1400356274098158
+    },
+    {
+      "name": "obl.dose",
+      "weight": 0.0
+    }
+  ],
+  "outcomes": [
+    {
+      "kind": "min_eud",
+      "mask": "tumor",
+      "achieved": 2.3987817543788618e-8,
+      "bound": 2.4e-8,
+      "satisfied": false,
+      "violation": 1.218245621138174e-11,
+      "weight": 1.0
+    },
+    {
+      "kind": "max_mean",
+      "mask": "brain-oar",
+      "achieved": 3.972583808268948e-9,
+      "bound": 4.5e-9,
+      "satisfied": true,
+      "violation": 0.0,
+      "weight": 1.0
+    },
+    {
+      "kind": "max_dose_at_volume",
+      "mask": "shell-oar",
+      "achieved": 9.926887360518036e-8,
+      "bound": 1.35e-6,
+      "satisfied": true,
+      "violation": 0.0,
+      "weight": 1.0
+    }
+  ],
+  "penalty": 0.0010149462097010357,
+  "iterations": 1200,
+  "converged": true,
+  "qualification": "inverse_planning_research_only_not_clinical",
+  "provenance_id": "inverse-plan-run:b88f33bd8ffb"
+}
