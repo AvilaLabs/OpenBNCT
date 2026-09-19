@@ -1208,13 +1208,14 @@ other and of R8 ordering unless noted.
   IP-boundary note below.* `openbnct.inverse-plan-objective/0.1.0`
   declares dose-volume objectives — `min_eud`, `max_mean`,
   `min_dose_at_volume`, `max_dose_at_volume` on named masks over
-  `physical_total` or a named component — and
+  `physical_total`, a named component, or `isoeffective` — and
   `openbnct.inverse-plan-result/0.1.0` records the outcome.
   `openbnct plan optimize` solves the non-negative weight assignment by
-  projected-gradient descent with analytic metric gradients and an
-  Armijo line search; a `weight_regularization` term selects the
-  minimum-total-weight feasible plan. Deterministic (no sampling),
-  content-bound to the objective document, qualified
+  deterministic cyclic coordinate descent with analytic metric
+  gradients and per-coordinate Armijo line search; a
+  `weight_regularization` term selects the minimum-total-weight
+  feasible plan. Deterministic (no sampling), content-bound to the
+  objective document, qualified
   `inverse_planning_research_only_not_clinical`. **Boundary note:**
   dose superposition over per-beam dose fields is standard
   radiotherapy-planning mathematics, but weighted recombination of
@@ -1222,6 +1223,23 @@ other and of R8 ordering unless noted.
   recomposition" item in `docs/IP_BOUNDARY.md` — the feature ships
   provisionally under the same recorded-review requirement until the
   boundary review confirms scope.
+
+- **R9-08 — isoeffective objectives and multi-field sweeps
+  (provisional, same boundary note).** `dose_quantity: "isoeffective"`
+  embeds an `openbnct.bio` `BiologicalModel` in the objective document
+  — its component weights are content-bound with the spec — and folds
+  each beam's four component fields into an effective
+  `Σ_c w_c·D_c` dose per objective, applying the model's
+  `region_weights` override for that objective's mask. The effective
+  quantity stays linear in beam weights, so every metric keeps its
+  analytic gradient; `microdosimetric_kinetic` semantics and
+  fractionation schedules are refused as non-linear. `openbnct plan
+  fields` is the multi-field front end: it aims a disk source per beam
+  direction through an aim mask (`aim_disk_source_at_centroid` — the
+  on-face `UniformDisk` the solver's boundary/uncollided paths accept),
+  solves and folds a unit-weight dose bundle per beam, and emits a
+  `openbnct.beam-field-set/0.1.0` manifest binding every aimed case,
+  position report, and bundle to the shared inputs by hash.
 
 Nothing in R8/R9 changes the deferred list below or adds any clinical
 claim; plan optimization involving Avify Dose patent subject matter

@@ -37,6 +37,7 @@ use openbnct_core::{
 };
 use thiserror::Error;
 
+pub mod fields;
 pub mod optimize;
 
 /// Format token written into exported tables and required on import when

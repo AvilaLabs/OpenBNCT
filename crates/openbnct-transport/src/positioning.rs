@@ -258,6 +258,103 @@ pub fn aim_source_at_centroid(
     Ok((source, report))
 }
 
+/// Aim a monodirectional **disk** source at a mask's centroid — the
+/// on-face `UniformDisk` form the deterministic multigroup solver
+/// consumes.
+///
+/// Same entry geometry as [`aim_source_at_centroid`]: the beam axis
+/// walks backward from the centroid to the bounding-box face it enters,
+/// and the disk is centered on the axis's intersection with that face
+/// (offset exactly on the face — the boundary-flux and uncollided-split
+/// source paths require it). `radius_cm` is the circular aperture.
+#[allow(clippy::too_many_arguments)]
+pub fn aim_disk_source_at_centroid(
+    template: &FixedSourceDefinition,
+    geometry: &GridGeometry,
+    mask: &RegionMask,
+    direction_lps: [f64; 3],
+    radius_cm: f64,
+) -> Result<(FixedSourceDefinition, PositionReport), PositioningError> {
+    let direction = normalize(direction_lps)?;
+    if !radius_cm.is_finite() || radius_cm <= 0.0 {
+        return Err(PositioningError::InvalidAperture);
+    }
+    let centroid = mask.centroid_lps_mm(geometry)?;
+    let (minimum, maximum) = geometry.bounding_box_lps_mm()?;
+
+    // Walk the beam axis backward from the centroid until it leaves the
+    // bounding box: entry face = the slab hit first traveling upstream.
+    let mut best_t = f64::INFINITY;
+    let mut entry_axis = PlaneAxis::Z;
+    let mut entry_side = EntrySide::Low;
+    for axis in 0..3 {
+        let d = direction[axis];
+        if d.abs() < f64::EPSILON {
+            continue;
+        }
+        // Upstream direction is -d; the entry face = the box face on the
+        // side opposite the propagation: for d>0 the low face, d<0 high.
+        let face = if d > 0.0 {
+            minimum[axis]
+        } else {
+            maximum[axis]
+        };
+        let t = (centroid[axis] - face) / d;
+        if t >= 0.0 && t < best_t {
+            best_t = t;
+            entry_axis = match axis {
+                0 => PlaneAxis::X,
+                1 => PlaneAxis::Y,
+                _ => PlaneAxis::Z,
+            };
+            entry_side = if d > 0.0 {
+                EntrySide::Low
+            } else {
+                EntrySide::High
+            };
+        }
+    }
+    if !best_t.is_finite() {
+        return Err(PositioningError::BeamMissesVolume);
+    }
+    let entry_point = add(centroid, scale(direction, -best_t));
+
+    // Disk centered on the axis's entry-point intersection, offset
+    // exactly on the entry face.
+    let axis_index = entry_axis.index();
+    let face_coordinate_mm = match entry_side {
+        EntrySide::Low => minimum[axis_index],
+        EntrySide::High => maximum[axis_index],
+    };
+    let (u_axis, v_axis) = entry_axis.in_plane_axes();
+
+    let mut source = template.clone();
+    source.space = SourceSpatialDistribution::UniformDisk {
+        axis: entry_axis,
+        offset_cm: face_coordinate_mm / 10.0,
+        center_uv_cm: [entry_point[u_axis] / 10.0, entry_point[v_axis] / 10.0],
+        radius_cm,
+    };
+    source.angle = AngularDistribution::Monodirectional {
+        unit_vector: direction,
+    };
+
+    let report = PositionReport {
+        schema_version: POSITION_REPORT_SCHEMA.into(),
+        case_id: String::new(),
+        target_region: mask.name.clone(),
+        beam_direction_lps: direction,
+        target_centroid_lps_mm: centroid,
+        entry_axis,
+        entry_side,
+        entry_point_lps_mm: entry_point,
+        source_plane_point_lps_mm: entry_point,
+        source_to_centroid_mm: best_t.abs(),
+        aperture_half_widths_cm: [radius_cm, radius_cm],
+    };
+    Ok((source, report))
+}
+
 /// Rotate a source's plane, aperture, and beam direction about a world
 /// axis through `center_lps_mm` by `degrees`, which must be a multiple of
 /// 90 so the aperture stays world-axis-aligned. The result is emitted as
@@ -465,6 +562,65 @@ mod tests {
         assert_eq!(offset, -1.9);
         assert_eq!(u, [-0.5, 1.5]);
         assert_eq!(v, [-0.5, 1.5]);
+    }
+
+    #[test]
+    fn aims_disk_z_beam_on_face() {
+        // The disk variant the deterministic solver consumes: offset
+        // exactly on the entry face, centered on the beam axis.
+        let tumor = mask(&[[2, 2, 2]]);
+        let (source, report) =
+            aim_disk_source_at_centroid(&template(), &geometry(), &tumor, [0.0, 0.0, 1.0], 0.8)
+                .unwrap();
+
+        assert_eq!(report.entry_axis, PlaneAxis::Z);
+        assert_eq!(report.entry_side, EntrySide::Low);
+        assert_eq!(report.entry_point_lps_mm, [5.0, 5.0, -20.0]);
+        assert!((report.source_to_centroid_mm - 25.0).abs() < 1.0e-9);
+        match source.space {
+            SourceSpatialDistribution::UniformDisk {
+                axis,
+                offset_cm,
+                center_uv_cm,
+                radius_cm,
+            } => {
+                assert_eq!(axis, PlaneAxis::Z);
+                assert_eq!(offset_cm, -2.0);
+                assert_eq!(center_uv_cm, [0.5, 0.5]);
+                assert_eq!(radius_cm, 0.8);
+            }
+            other => panic!("expected UniformDisk, got {other:?}"),
+        }
+        match source.angle {
+            AngularDistribution::Monodirectional { unit_vector } => {
+                assert_eq!(unit_vector, [0.0, 0.0, 1.0]);
+            }
+            other => panic!("expected Monodirectional, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn aims_disk_negative_x_beam() {
+        let tumor = mask(&[[2, 2, 2]]);
+        let (source, report) =
+            aim_disk_source_at_centroid(&template(), &geometry(), &tumor, [-1.0, 0.0, 0.0], 0.5)
+                .unwrap();
+
+        assert_eq!(report.entry_axis, PlaneAxis::X);
+        assert_eq!(report.entry_side, EntrySide::High);
+        match source.space {
+            SourceSpatialDistribution::UniformDisk {
+                axis,
+                offset_cm,
+                center_uv_cm,
+                ..
+            } => {
+                assert_eq!(axis, PlaneAxis::X);
+                assert_eq!(offset_cm, 2.0);
+                assert_eq!(center_uv_cm, [0.5, 0.5]);
+            }
+            other => panic!("expected UniformDisk, got {other:?}"),
+        }
     }
 
     #[test]

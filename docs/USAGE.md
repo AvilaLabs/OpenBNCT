@@ -1105,17 +1105,18 @@ displays the exposure table alongside every detected issue.
 `plan optimize` closes the loop the exposure plan leaves open: given a
 `openbnct.inverse-plan-objective/0.1.0` document — dose-volume
 objectives (`min_eud`, `max_mean`, `min_dose_at_volume`,
-`max_dose_at_volume`) on named region masks over `physical_total` or a
-named component — it solves the non-negative weight assignment across
-per-beam dose bundles by projected-gradient descent with analytic metric
-gradients and an Armijo line search. A `weight_regularization` term
-selects the minimum-total-weight feasible plan (feasibility alone is a
-plateau). Each `--dose` bundle is one beam's unit-weight dose field,
-named by file stem; each `--mask` is a `RegionMask` JSON
-(`{"name", "voxels"}`) that every objective mask must resolve against.
-The result is `openbnct.inverse-plan-result/0.1.0` — per-beam weights,
-per-objective achieved/violation, iteration count, and convergence,
-content-bound to the hashed objective document and qualified
+`max_dose_at_volume`) on named region masks over `physical_total`, a
+named component, or `isoeffective` — it solves the non-negative weight
+assignment across per-beam dose bundles by deterministic cyclic
+coordinate descent with analytic metric gradients and per-coordinate
+Armijo line search. A `weight_regularization` term selects the
+minimum-total-weight feasible plan (feasibility alone is a plateau).
+Each `--dose` bundle is one beam's unit-weight dose field, named by
+file stem; each `--mask` is a `RegionMask` JSON (`{"name", "voxels"}`)
+that every objective mask must resolve against. The result is
+`openbnct.inverse-plan-result/0.1.0` — per-beam weights, per-objective
+achieved/violation, iteration count, and convergence, content-bound to
+the hashed objective document and qualified
 `inverse_planning_research_only_not_clinical`:
 
 ```text
@@ -1131,6 +1132,46 @@ The solver is deterministic — same inputs, byte-identical weights. It is
 a research optimizer over linear dose superposition, not a commissioned
 treatment-planning product; see `docs/IP_BOUNDARY.md` for the
 optimization-adjacent scope boundary.
+
+`dose_quantity: "isoeffective"` makes the objectives BNCT-native: the
+objective document embeds a `bio_model` (`openbnct-bio`'s
+`BiologicalModel`), each `--dose` bundle supplies its four component
+fields, and the optimizer evaluates every objective against the
+effective dose `Σ_c w_c·D_c` — the model's default component weights,
+or its `region_weights` override for that objective's mask. The fold is
+linear in the beam weights so every metric gradient stays analytic.
+`microdosimetric_kinetic` semantics and `fractionation` schedules are
+refused (non-linear — not expressible as component weights), a
+`bio_model` on a physical quantity is rejected, and every
+`region_weights` key must resolve to a supplied mask.
+
+`plan fields` produces those per-beam dose bundles end to end: it aims
+an on-face disk source per beam direction through an aim mask, solves
+each field with the deterministic multigroup solver, folds a unit-weight
+`openbnct.physical-dose-bundle` per beam, and emits a
+`openbnct.beam-field-set/0.1.0` manifest content-binding every aimed
+case, position report, and bundle to the shared inputs:
+
+```text
+openbnct plan fields \
+  --case CASE.json --data MULTIGROUP-DATA.json \
+  [--assignment ASSIGNMENT.json] \
+  --aim-mask TARGET-MASK.json \
+  --beam ap,0,0,1 --beam pa,0,0,-1 \
+  --radius-cm 1.0 [--order 8 --anderson 5 …sn-solve options] \
+  --output-dir NEW-DIR/
+# → NEW-DIR/{beam}.{case,position-report,dose}.json + fields.json
+openbnct plan optimize \
+  --objective OBJECTIVE.json \
+  --dose NEW-DIR/ap.dose.json --dose NEW-DIR/pa.dose.json \
+  --mask TARGET-MASK.json --output NEW-RESULT.json
+```
+
+The aim emits `UniformDisk` on the grid face — the only source shape the
+solver's boundary-flux and uncollided-split paths currently accept (the
+rectangular `position aim` plane is not consumable by `sn solve`). A
+beam that fails to converge aborts the sweep rather than emitting a
+non-converged field.
 
 ### Dose-volume metrics and endpoint response models
 

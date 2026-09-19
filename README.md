@@ -188,10 +188,17 @@ bundling those systems.
 - **Inverse planning** — `openbnct plan optimize` solves non-negative
   exposure-weight assignments against `openbnct.inverse-plan-objective/
   0.1.0` dose-volume objectives (EUD, mean, and dose-at-volume quantile
-  targets on named masks over `physical_total` or a component) by
-  projected-gradient descent with analytic gradients and a weight
-  regularizer selecting the minimum-weight feasible plan — a research
-  optimizer, not a commissioned treatment-planning product.
+  targets on named masks over `physical_total`, a component, or the
+  BNCT-native `isoeffective` quantity — a `Σ_c w_c·D_c` fold under an
+  embedded `BiologicalModel` with per-mask `region_weights` overrides)
+  by deterministic cyclic coordinate descent with analytic gradients
+  and a weight regularizer selecting the minimum-weight feasible plan —
+  a research optimizer, not a commissioned treatment-planning product.
+- **Multi-field sweeps** — `openbnct plan fields` aims a disk source per
+  beam direction through a target mask, solves and folds a unit-weight
+  dose bundle per beam (the optimizer's `--dose` inputs), and binds
+  every aimed case, position report, and bundle to the shared inputs in
+  a `openbnct.beam-field-set/0.1.0` manifest.
 - **Bidirectional interop** — `openbnct nifti export-components` writes
   the four-component NIfTI set with a hash-bound manifest (re-importable
   through `openbnct import nifti`); `--pint` switches filenames to the

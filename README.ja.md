@@ -57,8 +57,12 @@ OpenBNCT は、ホウ素中性子捕捉療法（BNCT）の研究および独立�
   （`accelerator`／`bsa`）、ホウ素細胞内分布モデル
   （`boron microdistribution`）、OpenPINT 形式エクスポートと RTPLAN
   読み書き、ネイティブ PET DICOM の SUVbw 取り込み（`dicom import-pet`）、
-  非負ビーム重みの決定論的最適化（`plan optimize`）、および S_N
-  ordinate sweep の rayon 並列化まで含みます。
+  非負ビーム重みの決定論的最適化（`plan optimize`、
+  `isoeffective` 目的量では埋め込み `BiologicalModel` による
+  成分重み付き実効線量 `Σ_c w_c·D_c` を使用）、ビーム方向ごとの
+  照野 sweep（`plan fields`、aim → ソルブ → 線量折り畳み →
+  `openbnct.beam-field-set` マニフェスト）、および S_N ordinate
+  sweep の rayon 並列化まで含みます。
 
 開発段階と合格条件については [ロードマップ（英語）](ROADMAP.md) を参照してください。
 

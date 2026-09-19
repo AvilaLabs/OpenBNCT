@@ -25,11 +25,23 @@ own versions independent of the crate version.
   non-negative beam-weight optimization against
   `openbnct.inverse-plan-objective/0.1.0` dose-volume objectives
   (EUD, mean, dose-at-volume quantiles on named masks over
-  `physical_total` or a component) — projected-gradient descent,
-  analytic gradients, Armijo line search, weight regularization
-  selecting the minimum-weight feasible plan; results emitted as
-  `openbnct.inverse-plan-result/0.1.0` qualified
+  `physical_total`, a component, or `isoeffective`) — cyclic coordinate
+  descent with analytic gradients and per-coordinate Armijo line search,
+  weight regularization selecting the minimum-weight feasible plan;
+  results emitted as `openbnct.inverse-plan-result/0.1.0` qualified
   `inverse_planning_research_only_not_clinical`.
+- Isoeffective objectives: `dose_quantity: "isoeffective"` embeds an
+  `openbnct-bio` `BiologicalModel` in the objective document (content-
+  bound component weights, per-mask `region_weights` overrides) and
+  folds each beam's four component fields into an effective
+  `Σ_c w_c·D_c` dose — linear in beam weights so every metric keeps
+  its analytic gradient. `microdosimetric_kinetic` semantics and
+  `fractionation` are refused as non-linear.
+- `openbnct plan fields` / `aim_disk_source_at_centroid`: multi-field
+  driver aiming an on-face `UniformDisk` per beam direction through an
+  aim mask, solving and folding a unit-weight dose bundle per beam, and
+  emitting a `openbnct.beam-field-set/0.1.0` manifest binding every
+  aimed case, position report, and bundle to the shared inputs.
 
 ## [0.1.1] — 2026-09-16
 

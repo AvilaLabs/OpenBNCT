@@ -1609,6 +1609,69 @@ enum PlanCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Aim and solve a beam per direction through a target mask —
+    /// emits a unit-weight dose bundle per beam plus a
+    /// `openbnct.beam-field-set/0.1.0` manifest. The deterministic
+    /// multi-field front end to `plan optimize`.
+    Fields {
+        /// `openbnct.transport-case` JSON whose `source` is the aim
+        /// template (its space/angle are repositioned per beam).
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-data` JSON; must declare
+        /// `component_profile` for dose folding.
+        #[arg(long)]
+        data: PathBuf,
+        /// `openbnct.material-assignment` JSON.
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// `RegionMask` JSON every beam axis passes through.
+        #[arg(long)]
+        aim_mask: PathBuf,
+        /// Beam spec `name,dx,dy,dz`; repeatable. Direction is the
+        /// propagation vector in LPS (normalized internally).
+        #[arg(long, required = true)]
+        beam: Vec<String>,
+        /// Circular aperture radius in cm applied to every beam — the
+        /// deterministic solver's on-face disk source.
+        #[arg(long, required = true)]
+        radius_cm: f64,
+        /// S_N quadrature order (per `sn solve`).
+        #[arg(long, default_value = "8")]
+        order: u32,
+        /// Outer-iteration convergence target.
+        #[arg(long, default_value = "1e-4")]
+        convergence: f64,
+        #[arg(long, default_value = "40")]
+        max_inner: u32,
+        #[arg(long, default_value = "400")]
+        max_outer: u32,
+        /// Periodic boundary axes; repeatable (x, y, z).
+        #[arg(long)]
+        periodic: Vec<String>,
+        /// Disable the analytic uncollided-beam split.
+        #[arg(long)]
+        no_uncollided_split: bool,
+        /// Disable the extended transport correction.
+        #[arg(long)]
+        no_transport_correction: bool,
+        /// P1 anisotropy fast path (as `sn solve --p1`).
+        #[arg(long)]
+        p1: bool,
+        /// Explicit anisotropy order 2–5 (requires --p1 and
+        /// scatter Legendre moments on the data; as `sn solve
+        /// --anisotropy`).
+        #[arg(long, default_value_t = 0)]
+        anisotropy: u32,
+        /// Anderson acceleration depth (0 = plain sweeps; as
+        /// `sn solve --anderson`).
+        #[arg(long, default_value_t = 0)]
+        anderson: usize,
+        /// Output directory for per-beam artifacts and the manifest;
+        /// created if absent, must not already contain files.
+        #[arg(long)]
+        output_dir: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -7726,21 +7789,40 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let mut fields = Vec::with_capacity(dose.len());
                 for path in &dose {
                     let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)?;
-                    let values = match spec.dose_quantity {
-                        DoseQuantity::PhysicalTotal => bundle.physical_total.values.clone(),
-                        DoseQuantity::Component(component) => bundle
-                            .components
-                            .iter()
-                            .find(|volume| volume.component == component)
-                            .ok_or_else(|| {
-                                io::Error::other(format!(
-                                    "{}: no {:?} component",
-                                    path.display(),
-                                    component
-                                ))
-                            })?
-                            .values
-                            .clone(),
+                    let (values, components) = match spec.dose_quantity {
+                        DoseQuantity::PhysicalTotal => (bundle.physical_total.values.clone(), None),
+                        DoseQuantity::Component(component) => (
+                            bundle
+                                .components
+                                .iter()
+                                .find(|volume| volume.component == component)
+                                .ok_or_else(|| {
+                                    io::Error::other(format!(
+                                        "{}: no {:?} component",
+                                        path.display(),
+                                        component
+                                    ))
+                                })?
+                                .values
+                                .clone(),
+                            None,
+                        ),
+                        DoseQuantity::Isoeffective => {
+                            let name = |c: openbnct_core::DoseComponent| match c {
+                                openbnct_core::DoseComponent::Boron => "boron",
+                                openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                                openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                                openbnct_core::DoseComponent::Photon => "photon",
+                            };
+                            let components: std::collections::BTreeMap<String, Vec<f64>> = bundle
+                                .components
+                                .iter()
+                                .map(|volume| {
+                                    (name(volume.component).to_string(), volume.values.clone())
+                                })
+                                .collect();
+                            (bundle.physical_total.values.clone(), Some(components))
+                        }
                     };
                     fields.push(BeamDoseField {
                         name: path
@@ -7748,6 +7830,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                             .map(|s| s.to_string_lossy().into_owned())
                             .unwrap_or_else(|| path.display().to_string()),
                         values,
+                        components,
                     });
                 }
                 let masks: Vec<RegionMask> = mask
@@ -7797,6 +7880,239 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     );
                 }
                 println!("result: {}", output.display());
+            }
+            PlanCommand::Fields {
+                case,
+                data,
+                assignment,
+                aim_mask,
+                beam,
+                radius_cm,
+                order,
+                convergence,
+                max_inner,
+                max_outer,
+                periodic,
+                no_uncollided_split,
+                no_transport_correction,
+                p1,
+                anisotropy,
+                anderson,
+                output_dir,
+            } => {
+                use openbnct_plan::fields::{
+                    BEAM_FIELD_SET_QUALIFICATION, BEAM_FIELD_SET_SCHEMA, BeamFieldArtifacts,
+                    BeamFieldSet, FieldSweepOptions,
+                };
+                let case_bytes = fs::read(&case)?;
+                let transport_case: TransportCase = serde_json::from_slice(&case_bytes)?;
+                let data_bytes = fs::read(&data)?;
+                let mg_data: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&data_bytes)?;
+                let assignment_model = match &assignment {
+                    Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
+                        path,
+                    )?)?),
+                    None => None,
+                };
+                let mask = read_region_mask(&aim_mask)?;
+                if !radius_cm.is_finite() || radius_cm <= 0.0 {
+                    return Err(io::Error::other("--radius-cm must be positive").into());
+                }
+                let beams: Vec<(String, [f64; 3])> = beam
+                    .iter()
+                    .map(|text| {
+                        let mut parts = text.splitn(2, ',');
+                        let name = parts.next().unwrap_or_default().trim().to_string();
+                        let dir: Vec<f64> = parts
+                            .next()
+                            .unwrap_or_default()
+                            .split(',')
+                            .map(|part| {
+                                part.trim().parse().map_err(|_| {
+                                    io::Error::other(format!(
+                                        "--beam direction component {part:?} is not a number"
+                                    ))
+                                })
+                            })
+                            .collect::<Result<_, _>>()?;
+                        if name.is_empty() || dir.len() != 3 {
+                            return Err(io::Error::other(format!(
+                                "--beam {text:?} must be name,dx,dy,dz"
+                            ))
+                            .into());
+                        }
+                        Ok((name, [dir[0], dir[1], dir[2]]))
+                    })
+                    .collect::<Result<_, Box<dyn Error>>>()?;
+                let mut periodic_axes = [false; 3];
+                for axis in &periodic {
+                    let index = match axis.as_str() {
+                        "x" => 0,
+                        "y" => 1,
+                        "z" => 2,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "periodic axis {other:?} must be x, y, or z"
+                            ))
+                            .into());
+                        }
+                    };
+                    periodic_axes[index] = true;
+                }
+                let options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    convergence,
+                    max_inner_iterations: max_inner,
+                    max_outer_iterations: max_outer,
+                    assignment: assignment_model.clone(),
+                    periodic: periodic_axes,
+                    beam_uncollided_split: !no_uncollided_split,
+                    transport_correction: !no_transport_correction,
+                    p1_anisotropic: p1,
+                    anisotropy_order: anisotropy,
+                    anderson_depth: anderson,
+                };
+                let profile = mg_data.component_profile.clone().ok_or_else(|| {
+                    io::Error::other(
+                        "plan fields requires the multigroup data to declare component_profile",
+                    )
+                })?;
+                let data_ref = openbnct_core::ContentReference {
+                    id: mg_data.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                };
+                if output_dir.exists() && fs::read_dir(&output_dir)?.next().is_some() {
+                    return Err(io::Error::other(format!(
+                        "{}: output directory is not empty",
+                        output_dir.display()
+                    ))
+                    .into());
+                }
+                fs::create_dir_all(&output_dir)?;
+
+                let mut artifacts = Vec::with_capacity(beams.len());
+                for (name, direction) in &beams {
+                    let (positioned, mut report) = openbnct_transport::aim_disk_source_at_centroid(
+                        &transport_case.source,
+                        &transport_case.geometry,
+                        &mask,
+                        *direction,
+                        radius_cm,
+                    )
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                    report.case_id = format!("{}-{}", transport_case.case_id, name);
+                    let mut aimed = transport_case.clone();
+                    aimed.case_id = report.case_id.clone();
+                    aimed.source = positioned;
+
+                    let case_path = output_dir.join(format!("{name}.case.json"));
+                    write_new_json(&case_path, &aimed)?;
+                    let case_bytes = fs::read(&case_path)?;
+                    let report_path = output_dir.join(format!("{name}.position-report.json"));
+                    write_new_json(&report_path, &report)?;
+                    let case_ref = openbnct_core::ContentReference {
+                        id: aimed.case_id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                    };
+                    let flux = openbnct_transport::solve_multigroup(
+                        &aimed,
+                        &mg_data,
+                        &options,
+                        data_ref.clone(),
+                        case_ref.clone(),
+                    )
+                    .map_err(|error| io::Error::other(format!("{name}: multigroup: {error}")))?;
+                    if !flux.converged {
+                        return Err(io::Error::other(format!(
+                            "{name}: solve did not converge (residual {:.3e} after {} outer iterations)",
+                            flux.residual, flux.outer_iterations
+                        ))
+                        .into());
+                    }
+                    let bundle = openbnct_transport::fold_multigroup_dose(
+                        &aimed,
+                        &mg_data,
+                        &flux,
+                        assignment_model.as_ref(),
+                        profile.clone(),
+                        data_ref.clone(),
+                    )
+                    .map_err(|error| io::Error::other(format!("{name}: dose fold: {error}")))?;
+                    let dose_path = output_dir.join(format!("{name}.dose.json"));
+                    write_new_json(&dose_path, &bundle)?;
+                    artifacts.push(BeamFieldArtifacts {
+                        name: name.clone(),
+                        direction_lps: *direction,
+                        case: case_ref,
+                        position_report: openbnct_core::ContentReference {
+                            id: format!("{name}.position-report"),
+                            sha256: openbnct_evidence::sha256_hex(&fs::read(&report_path)?),
+                        },
+                        dose: openbnct_core::ContentReference {
+                            id: format!("{name}.dose"),
+                            sha256: openbnct_evidence::sha256_hex(&fs::read(&dose_path)?),
+                        },
+                        converged: flux.converged,
+                        outer_iterations: flux.outer_iterations,
+                        residual: flux.residual,
+                    });
+                    println!(
+                        "{name}: converged ({} outers, residual {:.2e}) → {}",
+                        flux.outer_iterations,
+                        flux.residual,
+                        dose_path.display()
+                    );
+                }
+                let manifest = BeamFieldSet {
+                    schema_version: BEAM_FIELD_SET_SCHEMA.into(),
+                    id: format!("{}.beam-field-set", transport_case.case_id),
+                    case_id: transport_case.case_id.clone(),
+                    case: openbnct_core::ContentReference {
+                        id: transport_case.case_id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                    },
+                    data: data_ref,
+                    assignment: match &assignment {
+                        Some(path) => Some(openbnct_core::ContentReference {
+                            id: path
+                                .file_stem()
+                                .map(|s| s.to_string_lossy().into_owned())
+                                .unwrap_or_default(),
+                            sha256: openbnct_evidence::sha256_hex(&fs::read(path)?),
+                        }),
+                        None => None,
+                    },
+                    aim_mask: openbnct_core::ContentReference {
+                        id: mask.name.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&fs::read(&aim_mask)?),
+                    },
+                    aperture_radius_cm: radius_cm,
+                    solver: FieldSweepOptions {
+                        quadrature_order: order,
+                        convergence,
+                        max_inner_iterations: max_inner,
+                        max_outer_iterations: max_outer,
+                        periodic: periodic_axes,
+                        beam_uncollided_split: !no_uncollided_split,
+                        transport_correction: !no_transport_correction,
+                        p1_anisotropic: p1,
+                        anisotropy_order: anisotropy,
+                        anderson_depth: anderson,
+                    },
+                    beams: artifacts,
+                    provenance_id: format!(
+                        "plan-fields:{}",
+                        &openbnct_evidence::sha256_hex(&case_bytes)[..12]
+                    ),
+                    qualification: BEAM_FIELD_SET_QUALIFICATION.into(),
+                };
+                manifest
+                    .validate()
+                    .map_err(|error| io::Error::other(format!("field-set: {error}")))?;
+                let manifest_path = output_dir.join("fields.json");
+                write_new_json(&manifest_path, &manifest)?;
+                println!("field-set manifest: {}", manifest_path.display());
             }
         },
         Some(Command::Evidence(args)) => match args.command {

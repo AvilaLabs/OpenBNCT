@@ -26,6 +26,9 @@
 //!   penalty, per-objective satisfaction, and the research-only
 //!   qualification.
 
+use std::collections::BTreeMap;
+
+use openbnct_bio::{BiologicalModel, WeightSemantics};
 use openbnct_core::{ContentReference, DoseComponent, RegionMask};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -43,13 +46,20 @@ const BACKTRACK_FACTOR: f64 = 0.5;
 const MAX_BACKTRACKS: u32 = 40;
 
 /// Which accumulated dose quantity the objectives evaluate.
-#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum DoseQuantity {
     /// The bundle's dedicated physical total.
     PhysicalTotal,
     /// One named dose component (boron, nitrogen, hydrogen, photon).
     Component(DoseComponent),
+    /// Biologically weighted dose — the `Σ_c w_c·D_c` sum under the
+    /// spec's embedded [`BiologicalModel`], with per-mask
+    /// `region_weights` overrides applied to each objective's mask.
+    /// Linear in the beam weights, so all objectives keep their analytic
+    /// gradients. Requires `bio_model` on the document and
+    /// component-resolved beam fields.
+    Isoeffective,
 }
 
 /// One dose-volume objective. `weight` is the penalty weight in the
@@ -121,6 +131,14 @@ pub struct InversePlanObjective {
     /// into slack. `0` (the default) keeps pure feasibility semantics.
     #[serde(default)]
     pub weight_regularization: f64,
+    /// Embedded biological model — required when `dose_quantity` is
+    /// `isoeffective`, rejected otherwise. The whole model is embedded so
+    /// the objective document's own content hash covers the weight
+    /// values the optimizer used. `microdosimetric_kinetic` semantics
+    /// and any `fractionation` schedule are refused: per-voxel metrics
+    /// need the linear weighted sum.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bio_model: Option<BiologicalModel>,
     /// Free-text validity note — what the objectives encode and for
     /// which research scenario. Required and non-empty.
     pub validity_domain: String,
@@ -153,13 +171,19 @@ pub enum OptimizeError {
     InitialLengthMismatch(usize, usize),
 }
 
-/// One beam's unit-weight dose field (the selected `dose_quantity`
-/// values of its dose bundle).
+/// One beam's unit-weight dose field.
 #[derive(Debug, Clone)]
 pub struct BeamDoseField {
     pub name: String,
-    /// Voxel values in grid order `i + nx·j + nx·ny·k`.
+    /// Voxel values in grid order `i + nx·j + nx·ny·k` — the selected
+    /// `dose_quantity` values for `physical_total` and `component`
+    /// quantities (unused under `isoeffective`; may be empty then).
     pub values: Vec<f64>,
+    /// Component-resolved voxel values keyed by component name —
+    /// required under `dose_quantity: isoeffective`, where the effective
+    /// field per objective is `Σ_c w_c(mask)·d_c`. Exactly the four
+    /// [`DoseComponent::REQUIRED`] names are expected.
+    pub components: Option<BTreeMap<String, Vec<f64>>>,
 }
 
 /// Achieved metric and bound for one objective at the optimized weights.
@@ -262,6 +286,34 @@ impl InversePlanObjective {
             return Err(OptimizeError::InvalidObjective(
                 "weight_regularization must be finite and non-negative".into(),
             ));
+        }
+        match (self.dose_quantity, &self.bio_model) {
+            (DoseQuantity::Isoeffective, None) => {
+                return Err(OptimizeError::InvalidObjective(
+                    "dose_quantity isoeffective requires an embedded bio_model".into(),
+                ));
+            }
+            (DoseQuantity::Isoeffective, Some(model)) => {
+                model.validate().map_err(|error| {
+                    OptimizeError::InvalidObjective(format!("bio_model: {error}"))
+                })?;
+                if model.weight_semantics == WeightSemantics::MicrodosimetricKinetic {
+                    return Err(OptimizeError::InvalidObjective(
+                        "microdosimetric_kinetic models are nonlinear; the optimizer needs component weights".into(),
+                    ));
+                }
+                if model.fractionation.is_some() {
+                    return Err(OptimizeError::InvalidObjective(
+                        "fractionation transforms the bundle total, not per-voxel objectives — omit it for isoeffective planning".into(),
+                    ));
+                }
+            }
+            (_, Some(_)) => {
+                return Err(OptimizeError::InvalidObjective(
+                    "bio_model is only meaningful with dose_quantity isoeffective".into(),
+                ));
+            }
+            _ => {}
         }
         for objective in &self.objectives {
             let (mask, bound, weight) = match objective {
@@ -396,6 +448,74 @@ fn accumulate(fields: &[BeamDoseField], weights: &[f64], dose: &mut [f64]) {
     }
 }
 
+/// The name under which a [`DoseComponent`] appears in
+/// [`BeamDoseField::components`] — the serde `snake_case` token.
+fn component_name(component: DoseComponent) -> &'static str {
+    match component {
+        DoseComponent::Boron => "boron",
+        DoseComponent::Nitrogen => "nitrogen",
+        DoseComponent::Hydrogen => "hydrogen",
+        DoseComponent::Photon => "photon",
+    }
+}
+
+fn objective_mask(objective: &DoseObjective) -> &str {
+    match objective {
+        DoseObjective::MinEud { mask, .. }
+        | DoseObjective::MaxMean { mask, .. }
+        | DoseObjective::MinDoseAtVolume { mask, .. }
+        | DoseObjective::MaxDoseAtVolume { mask, .. } => mask,
+    }
+}
+
+/// The dose array and per-beam fields one objective evaluates.
+///
+/// Physical quantities share the accumulated `Σ w_i·D_i` and each
+/// beam's `values`. `Isoeffective` folds the embedded model's component
+/// weights — with the objective mask's `region_weights` override when
+/// declared — into per-beam effective fields `E_i(v) = Σ_c w_c·D_ic(v)`
+/// and the accumulated `Σ_i w_i·E_i(v)`, both linear in `w`.
+fn objective_view<'a>(
+    fields: &'a [BeamDoseField],
+    weights: &[f64],
+    shared_dose: &'a [f64],
+    spec: &InversePlanObjective,
+    objective: &DoseObjective,
+) -> (
+    std::borrow::Cow<'a, [f64]>,
+    Vec<std::borrow::Cow<'a, [f64]>>,
+) {
+    if spec.dose_quantity != DoseQuantity::Isoeffective {
+        return (
+            std::borrow::Cow::Borrowed(shared_dose),
+            fields
+                .iter()
+                .map(|f| std::borrow::Cow::Borrowed(&f.values[..]))
+                .collect(),
+        );
+    }
+    let model = spec.bio_model.as_ref().expect("validated");
+    let weights_map = model
+        .region_weights
+        .get(objective_mask(objective))
+        .unwrap_or(&model.component_weights);
+    let n = shared_dose.len();
+    let mut dose = vec![0.0; n];
+    let mut effective = Vec::with_capacity(fields.len());
+    for (field, &wi) in fields.iter().zip(weights) {
+        let comps = field.components.as_ref().expect("validated");
+        let mut eff = vec![0.0; n];
+        for (name, &wc) in weights_map {
+            for (v, &cd) in comps[name].iter().enumerate() {
+                eff[v] += wc * cd;
+                dose[v] += wi * wc * cd;
+            }
+        }
+        effective.push(std::borrow::Cow::Owned(eff));
+    }
+    (std::borrow::Cow::Owned(dose), effective)
+}
+
 /// The composite penalty `Σ_k weight_k·violation_k²` and its gradient
 /// in weight space.
 fn penalty_and_gradient(
@@ -406,11 +526,14 @@ fn penalty_and_gradient(
     dose: &mut [f64],
 ) -> (f64, Vec<f64>) {
     dose.fill(0.0);
-    accumulate(fields, weights, dose);
+    if spec.dose_quantity != DoseQuantity::Isoeffective {
+        accumulate(fields, weights, dose);
+    }
     let mut penalty = 0.0;
     let mut grad = vec![0.0; fields.len()];
     for (objective, voxels) in spec.objectives.iter().zip(mask_voxels) {
-        let (metric, dmetric_dd) = objective_metric(objective, dose, voxels);
+        let (odose, ofields) = objective_view(fields, weights, dose, spec, objective);
+        let (metric, dmetric_dd) = objective_metric(objective, &odose, voxels);
         let (violation, sense) = match objective {
             DoseObjective::MinEud { target, weight, .. }
             | DoseObjective::MinDoseAtVolume { target, weight, .. } => {
@@ -433,11 +556,10 @@ fn penalty_and_gradient(
         };
         if violation > 0.0 {
             // d(penalty)/dw_i = 2·weight·violation·sense·Σ_v dm/dd_v·D_i(v)
-            for (i, field) in fields.iter().enumerate() {
-                let dm_dwi: f64 = voxels
-                    .iter()
-                    .map(|&v| dmetric_dd[v] * field.values[v])
-                    .sum();
+            // — under isoeffective, D_i(v) is beam i's effective field
+            // Σ_c w_c(mask)·d_ic(v) for this objective.
+            for (i, field) in ofields.iter().enumerate() {
+                let dm_dwi: f64 = voxels.iter().map(|&v| dmetric_dd[v] * field[v]).sum();
                 grad[i] += 2.0 * weight * violation * sense * dm_dwi;
             }
         }
@@ -470,16 +592,58 @@ pub fn optimize_weights(
             "at least one beam dose field is required".into(),
         ));
     }
-    let n_voxels = fields[0].values.len();
+    let isoeffective = spec.dose_quantity == DoseQuantity::Isoeffective;
+    // Voxel count comes from `values` for physical quantities, from any
+    // component volume under isoeffective (where `values` may be empty).
+    let n_voxels = {
+        let n = fields[0].values.len();
+        if n > 0 {
+            n
+        } else {
+            fields[0]
+                .components
+                .as_ref()
+                .and_then(|c| c.values().next())
+                .map_or(0, Vec::len)
+        }
+    };
     if n_voxels == 0 {
         return Err(OptimizeError::EmptyField(fields[0].name.clone()));
     }
     for field in fields {
-        if field.values.len() != n_voxels {
+        if !field.values.is_empty() && field.values.len() != n_voxels {
             return Err(OptimizeError::FieldLengthMismatch(
                 field.values.len(),
                 n_voxels,
             ));
+        }
+        if !isoeffective && field.values.is_empty() {
+            return Err(OptimizeError::EmptyField(field.name.clone()));
+        }
+        if isoeffective {
+            let comps = field.components.as_ref().ok_or_else(|| {
+                OptimizeError::InvalidObjective(format!(
+                    "beam field {:?} lacks component-resolved doses required by isoeffective",
+                    field.name
+                ))
+            })?;
+            let present: std::collections::BTreeSet<&str> =
+                comps.keys().map(String::as_str).collect();
+            let required: std::collections::BTreeSet<&str> = DoseComponent::REQUIRED
+                .iter()
+                .map(|c| component_name(*c))
+                .collect();
+            if present != required {
+                return Err(OptimizeError::InvalidObjective(format!(
+                    "beam field {:?} components must be exactly {required:?}; observed {present:?}",
+                    field.name
+                )));
+            }
+            for values in comps.values() {
+                if values.len() != n_voxels {
+                    return Err(OptimizeError::FieldLengthMismatch(values.len(), n_voxels));
+                }
+            }
         }
     }
     if initial.len() != fields.len() {
@@ -517,6 +681,17 @@ pub fn optimize_weights(
         })
         .collect::<Result<_, OptimizeError>>()?;
 
+    // A bio_model's region overrides apply by mask name — every key
+    // must resolve to a supplied mask or the weight would silently
+    // never fire.
+    if let Some(model) = &spec.bio_model {
+        for region in model.region_weights.keys() {
+            if !masks.iter().any(|m| m.name == *region) {
+                return Err(OptimizeError::UnknownMask(region.clone()));
+            }
+        }
+    }
+
     let upper = spec.weight_bound.unwrap_or(f64::INFINITY);
     let project = |w: &mut [f64]| {
         for wi in w.iter_mut() {
@@ -551,58 +726,57 @@ pub fn optimize_weights(
             converged = true;
             break;
         }
-        // Armijo backtracking on the projected step — accept the first
-        // strictly decreasing iterate. The trial step is normalized by
-        // the weight/gradient scales so a huge constraint gradient and
-        // a tiny regularization gradient both take O(‖w‖) steps rather
-        // than overshooting the box or stalling on the plateau.
+        // Cyclic coordinate descent — one pass over the weights per
+        // iteration. Each coordinate takes its own Armijo-bounded
+        // projected step (normalized so the trial move is O(‖w‖)) and
+        // the gradient is refreshed after every acceptance. A joint
+        // step would let a weight pinned at a sharp feasible minimum
+        // veto the whole update — the shared step either overshoots
+        // that minimum or shrinks until every coordinate crawls.
         let w_scale = w.iter().fold(1.0_f64, |m, &x| m.max(x));
-        let g_scale = grad.iter().fold(0.0_f64, |m, &g| m.max(g.abs()));
-        let mut step = if g_scale > 0.0 {
-            w_scale / g_scale
-        } else {
-            1.0
-        };
-        let mut w_new = w.clone();
-        let mut new_penalty = penalty;
-        let mut new_grad = grad.clone();
-        let mut accepted = false;
-        for _ in 0..MAX_BACKTRACKS {
-            for (wn, (wi, gi)) in w_new.iter_mut().zip(w.iter().zip(&grad)) {
-                *wn = wi - step * gi;
+        let mut improved = false;
+        for i in 0..fields.len() {
+            let gi = grad[i];
+            if !gi.is_finite() || gi == 0.0 {
+                continue;
             }
-            project(&mut w_new);
-            let (p2, g2) = penalty_and_gradient(fields, &w_new, spec, &mask_voxels, &mut dose);
-            if p2 < penalty {
-                new_penalty = p2;
-                new_grad = g2;
-                accepted = true;
-                break;
+            let mut step_i = w_scale / gi.abs();
+            for _ in 0..MAX_BACKTRACKS {
+                let mut trial = w.clone();
+                trial[i] = w[i] - step_i * gi;
+                project(&mut trial);
+                let (p2, g2) = penalty_and_gradient(fields, &trial, spec, &mask_voxels, &mut dose);
+                if p2 < penalty {
+                    w = trial;
+                    penalty = p2;
+                    grad = g2;
+                    improved = true;
+                    break;
+                }
+                step_i *= BACKTRACK_FACTOR;
             }
-            step *= BACKTRACK_FACTOR;
         }
-        if !accepted {
+        if !improved {
+            // No coordinate has a strictly-improving move within
+            // backtrack resolution — the coordinate-wise local minimum.
+            converged = true;
             break;
         }
-        let stalled = penalty - new_penalty < f64::EPSILON * penalty.max(1.0);
-        w = w_new;
-        penalty = new_penalty;
-        grad = new_grad;
         iterations += 1;
-        if stalled {
-            break;
-        }
     }
 
     // Final outcomes at the optimized weights.
     dose.fill(0.0);
-    accumulate(fields, &w, &mut dose);
+    if spec.dose_quantity != DoseQuantity::Isoeffective {
+        accumulate(fields, &w, &mut dose);
+    }
     let outcomes: Vec<ObjectiveOutcome> = spec
         .objectives
         .iter()
         .zip(&mask_voxels)
         .map(|(objective, voxels)| {
-            let (metric, _) = objective_metric(objective, &dose, voxels);
+            let (odose, _) = objective_view(fields, &w, &dose, spec, objective);
+            let (metric, _) = objective_metric(objective, &odose, voxels);
             let (kind, bound, satisfied, violation, weight) = match objective {
                 DoseObjective::MinEud {
                     mask: _,
@@ -708,6 +882,7 @@ mod tests {
             gradient_tolerance: 1e-10,
             weight_bound: None,
             weight_regularization: 1e-4,
+            bio_model: None,
             validity_domain: "unit test".into(),
             provenance_id: "test".into(),
         }
@@ -739,10 +914,12 @@ mod tests {
             BeamDoseField {
                 name: "A".into(),
                 values: vec![10.0, 5.0, 0.0, 0.0],
+                components: None,
             },
             BeamDoseField {
                 name: "B".into(),
                 values: vec![0.0, 0.0, 10.0, 10.0],
+                components: None,
             },
         ];
         let masks = vec![
@@ -842,6 +1019,176 @@ mod tests {
         let spec = objective(vec![]);
         assert!(matches!(
             spec.validate(),
+            Err(OptimizeError::InvalidObjective(_))
+        ));
+    }
+
+    fn bio_model(region_weights: BTreeMap<String, openbnct_bio::WeightMap>) -> BiologicalModel {
+        BiologicalModel {
+            schema_version: openbnct_bio::BIOLOGICAL_MODEL_SCHEMA.into(),
+            id: "cbe-model".into(),
+            weight_semantics: WeightSemantics::PhotonIsoeffective,
+            input_unit: openbnct_core::DoseUnit::GrayPerSourceParticle,
+            component_weights: [
+                ("boron".into(), 3.0),
+                ("nitrogen".into(), 1.0),
+                ("hydrogen".into(), 1.0),
+                ("photon".into(), 1.0),
+            ]
+            .into_iter()
+            .collect(),
+            region_weights,
+            derivation: None,
+            validity_domain: Some("unit test".into()),
+            fractionation: None,
+        }
+    }
+
+    fn component_field(name: &str, boron: &[f64], photon: &[f64]) -> BeamDoseField {
+        let zeros = vec![0.0; boron.len()];
+        BeamDoseField {
+            name: name.into(),
+            values: boron.iter().zip(photon).map(|(&b, &p)| b + p).collect(),
+            components: Some(
+                [
+                    ("boron".into(), boron.to_vec()),
+                    ("nitrogen".into(), zeros.clone()),
+                    ("hydrogen".into(), zeros),
+                    ("photon".into(), photon.to_vec()),
+                ]
+                .into_iter()
+                .collect(),
+            ),
+        }
+    }
+
+    #[test]
+    fn isoeffective_fold_uses_component_and_region_weights() {
+        // Beam A: boron 9 + photon 1 on tumor voxel 0, photon 5 on
+        // voxel 1 → default eff [28,5] (boron weight 3). Tumor-region
+        // override boron=5 → eff [46,5], EUD(a=1) = 25.5·w_A.
+        let fields = vec![
+            component_field("A", &[9.0, 0.0, 0.0, 0.0], &[1.0, 5.0, 0.0, 0.0]),
+            component_field("B", &[0.0, 0.0, 0.0, 0.0], &[0.0, 0.0, 4.0, 4.0]),
+        ];
+        let masks = vec![
+            mask("tumor", &[true, true, false, false]),
+            mask("oar", &[false, false, true, true]),
+        ];
+        let mut spec = objective(vec![
+            DoseObjective::MinEud {
+                mask: "tumor".into(),
+                target: 51.0,
+                eud_a: 1.0,
+                weight: 1.0,
+            },
+            DoseObjective::MaxMean {
+                mask: "oar".into(),
+                limit: 8.0,
+                weight: 1.0,
+            },
+        ]);
+        spec.dose_quantity = DoseQuantity::Isoeffective;
+        spec.bio_model = Some(bio_model(
+            [(
+                "tumor".into(),
+                [
+                    ("boron".into(), 5.0),
+                    ("nitrogen".into(), 1.0),
+                    ("hydrogen".into(), 1.0),
+                    ("photon".into(), 1.0),
+                ]
+                .into_iter()
+                .collect(),
+            )]
+            .into_iter()
+            .collect(),
+        ));
+        spec.validate().unwrap();
+
+        let result = optimize_weights(&fields, &masks, &spec, &[1.0, 1.0], provenance()).unwrap();
+        // Tumor sees eff [46,5] → EUD 25.5·w_A = 51 → w_A = 2.
+        // OAR sees defaults → mean 4·w_B ≤ 8; regularization turns the
+        // useless beam off.
+        assert!((result.weights[0].weight - 2.0).abs() < 1e-2);
+        assert!(
+            result.weights[1].weight < 1e-2,
+            "w_B = {}",
+            result.weights[1].weight
+        );
+        assert!(result.outcomes.iter().all(|o| o.violation < 1e-3));
+    }
+
+    #[test]
+    fn isoeffective_validation_is_strict() {
+        let (_fields, masks) = two_beam();
+        let fields = vec![
+            component_field("A", &[9.0, 0.0, 0.0, 0.0], &[1.0, 5.0, 0.0, 0.0]),
+            component_field("B", &[0.0, 0.0, 0.0, 0.0], &[0.0, 0.0, 4.0, 4.0]),
+        ];
+        let mut spec = objective(vec![DoseObjective::MaxMean {
+            mask: "oar".into(),
+            limit: 5.0,
+            weight: 1.0,
+        }]);
+
+        // Isoeffective without a model is rejected.
+        spec.dose_quantity = DoseQuantity::Isoeffective;
+        assert!(matches!(
+            spec.validate(),
+            Err(OptimizeError::InvalidObjective(_))
+        ));
+
+        // A model on a physical quantity is rejected.
+        spec.dose_quantity = DoseQuantity::PhysicalTotal;
+        spec.bio_model = Some(bio_model(BTreeMap::new()));
+        assert!(matches!(
+            spec.validate(),
+            Err(OptimizeError::InvalidObjective(_))
+        ));
+
+        // MKM semantics rejected; fractionation rejected.
+        spec.dose_quantity = DoseQuantity::Isoeffective;
+        let mut model = bio_model(BTreeMap::new());
+        model.weight_semantics = WeightSemantics::MicrodosimetricKinetic;
+        spec.bio_model = Some(model);
+        assert!(matches!(
+            spec.validate(),
+            Err(OptimizeError::InvalidObjective(_))
+        ));
+        let mut model = bio_model(BTreeMap::new());
+        model.fractionation = Some(openbnct_bio::Fractionation {
+            fraction_count: 5,
+            source_particles_per_fraction: 1e12,
+            default_alpha_beta: 10.0,
+            region_alpha_beta: BTreeMap::new(),
+        });
+        spec.bio_model = Some(model);
+        assert!(matches!(
+            spec.validate(),
+            Err(OptimizeError::InvalidObjective(_))
+        ));
+
+        // Region names must resolve against supplied masks.
+        spec.bio_model = Some(bio_model(
+            [(
+                "unknown".into(),
+                bio_model(BTreeMap::new()).component_weights,
+            )]
+            .into_iter()
+            .collect(),
+        ));
+        spec.validate().unwrap();
+        assert!(matches!(
+            optimize_weights(&fields, &masks, &spec, &[1.0, 1.0], provenance()),
+            Err(OptimizeError::UnknownMask(_))
+        ));
+
+        // Component-resolved fields are mandatory.
+        spec.bio_model = Some(bio_model(BTreeMap::new()));
+        let (plain_fields, _) = two_beam();
+        assert!(matches!(
+            optimize_weights(&plain_fields, &masks, &spec, &[1.0, 1.0], provenance()),
             Err(OptimizeError::InvalidObjective(_))
         ));
     }

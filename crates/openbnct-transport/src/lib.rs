@@ -72,7 +72,7 @@ pub use photon::{
 };
 pub use positioning::{
     AxisApproach, EntrySide, POSITION_REPORT_SCHEMA, PositionReport, PositioningError,
-    aim_source_at_centroid, rotate_source,
+    aim_disk_source_at_centroid, aim_source_at_centroid, rotate_source,
 };
 pub use response::{
     AtomDensityBasis, ComponentDefinitionProfile, ComponentEstimator, ComponentRule,

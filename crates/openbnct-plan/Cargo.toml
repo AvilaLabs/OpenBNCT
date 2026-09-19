@@ -13,6 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+openbnct-bio = { path = "../openbnct-bio", version = "0.1.1" }
 openbnct-core = { path = "../openbnct-core", version = "0.1.1" }
 calamine = { version = "0.34", default-features = false }
 csv = "1.3"
