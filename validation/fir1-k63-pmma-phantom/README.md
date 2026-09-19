@@ -61,6 +61,34 @@ measured FiR 1 spectrum); the deep tail beyond ~9 cm still falls to
 0.2–0.4× measured. Cross-composition consistency: the TSL+P1 normalized
 χ² is essentially identical on water (18.8) and PMMA (18.8).
 
+## Coupled photon transport (photon-data-12g/27g, photon-dose-12g/27g)
+
+The water phantom's n→γ comparison established that transported photons
+undershoot the OpenMC heating tally more than local kerma does
+(transport ≈ 0.47× MC deposited integral vs local kerma ≈ 0.83×):
+capture γs escape the phantom and the residual deficit is the upstream
+neutron field, not photon treatment. This directory adds the second
+phantom and the mesh-sensitivity check that question leaves open.
+
+| Artifact | Contents |
+|---|---|
+| `photon-data-27g.json` / `photon-data-12g.json` | `openbnct.multigroup-photon-data/0.1.0` — coupled Klein–Nishina + n→γ production collapse for the PMMA and void materials, bound to `multigroup-data-28g.json`'s neutron group structure (27-group and 12-group log meshes over 10 keV–11 MeV). |
+| `photon-dose-27g.json` / `photon-dose-12g.json` | `sn photon-solve` at S₈ on the committed `multigroup-flux-28g-1e.json` — one-way coupled, converged in 2 outers. |
+
+Findings on this 24 cm PMMA cylinder:
+
+- Transported photon dose ≈ **0.21×** the local-kerma integral — most
+  capture γ is produced at the beam face and escapes; the transported
+  profile redistributes deposit downstream (ratio 0.15 at z = 0, > 1
+  near the far boundary before the cylinder ends).
+- **Mesh is not the deficit driver**: 12-group vs 27-group solutions
+  differ by a uniform ~13% (median ratio 1.13, 90% spread 1.09–1.16).
+  Photon group resolution contributes a small systematic, well inside
+  the neutron-field and source-normalization deficits documented above.
+  The gap vs OpenMC-class transport is physical redistribution +
+  upstream neutron deficit, not discretization — consistent with the
+  water-phantom conclusion.
+
 ## Scope
 
 Research-grade cross-check only; declared three-group fixture data and a

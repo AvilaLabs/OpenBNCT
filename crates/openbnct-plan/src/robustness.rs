@@ -311,9 +311,7 @@ pub(crate) fn cdf(x: f64) -> f64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::optimize::{
-        BeamDoseField, BeamWeight, DoseQuantity, InversePlanResult,
-    };
+    use crate::optimize::{BeamDoseField, BeamWeight, DoseQuantity, InversePlanResult};
     use openbnct_bio::{BiologicalModel, WeightMap};
 
     fn component_field(name: &str, boron: &[f64], photon: &[f64]) -> BeamDoseField {

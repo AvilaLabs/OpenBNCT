@@ -42,6 +42,16 @@ own versions independent of the crate version.
   never landed on its cells and delivered ~zero dose. All three sites
   now share `PlaneAxis::in_plane_axes()` ordering; regression test
   `y_axis_disk_source_deposits_in_the_right_column` covers it.
+- Coupled-photon verification, second phantom + mesh sensitivity: PMMA
+  `sn photon-collapse`/`photon-solve` artifacts at 27- and 12-group
+  meshes (`validation/fir1-k63-pmma-phantom/photon-{data,dose}-{12,27}g`).
+  Transported dose ≈ 0.21× local-kerma integral (escape-dominated), and
+  the 12↔27 group spread is a uniform ~13% — photon discretization is
+  not the n→γ deficit driver; the residual is physical redistribution
+  plus the upstream neutron-field deficit, consistent with the
+  water-phantom comparison. A calibrated-tissue OpenMC cross-check
+  remains data-blocked: the local HDF5 library carries no Ca/Cl/K/Mg/Na/
+  P/S tables and no `openmc.data` conversion path is installed.
 - `openbnct plan robustness` / `openbnct.plan-robustness/0.1.0`: plan-level
   systematic-uncertainty propagation — declared per-component σ sources
   (`--relative`, `--positioning-sigma-mm`, `--boron-field`) fold through
