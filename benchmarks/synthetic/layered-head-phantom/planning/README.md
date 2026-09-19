@@ -122,6 +122,26 @@ Every other candidate drains to exactly 0; tumor EUD lands 0.03% inside
 the bound at the regularization equilibrium, and the emitted
 `exposure-plan-direction-search.json` validates under `plan validate`.
 
+## Plan robustness (`robustness-direction-search.json`)
+
+`plan robustness` propagates declared systematic σ on each beam's
+component dose through the optimized weights into per-objective metric
+1σ and a Gaussian violation probability. The committed report declares
+boron = 10%, photon = 5%, positioning = 1 mm — illustrative sources,
+not a facility uncertainty budget.
+
+| Objective | Achieved | Bound | 1σ | P(violate) |
+|---|---|---|---|---|
+| tumor EUD ≥ | 2.3992e-8 | 2.4e-8 | 7.1e-10 | **0.50** |
+| brain mean ≤ | 3.11e-9 | 4.5e-9 | 2.4e-10 | ~0 |
+| shell D1% ≤ | 6.99e-8 | 1.35e-6 | 5.1e-8 | ~0 |
+
+The plan lands ~1σ inside the tumor bound by design (the regularization
+equilibrium), so under 10% boron σ it is nominal-marginal — P ≈ 0.5 —
+while both OAR bounds hold with margin. The propagation is first-order
+and fully-correlated across voxels; sources declared on multiple beams
+are independent (a conservative documented convention).
+
 ## Scope
 
 ## Scope

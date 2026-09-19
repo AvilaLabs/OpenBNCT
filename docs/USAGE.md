@@ -1221,6 +1221,34 @@ rectangular `position aim` plane is not consumable by `sn solve`). A
 beam that fails to converge aborts the sweep rather than emitting a
 non-converged field.
 
+`plan robustness` answers the follow-up question a weight vector leaves
+open: under declared systematic σ on each beam's component dose, how
+uncertain is each objective's achieved metric, and what is the
+one-sided Gaussian probability of violating its bound? Declared sources
+mirror `uq apply` (`--relative component=σ`, `--positioning-sigma-mm`,
+`--boron-field`); component σ maps fold with each objective's
+isoeffective weights, beam weights fold as independent contributions,
+and the metric σ propagates first-order through the analytic gradient:
+
+```text
+openbnct plan robustness \
+  --result RESULT.json --objective OBJECTIVE.json \
+  --dose DIR/ap.dose.json --dose DIR/pa.dose.json … `# optimize order` \
+  --mask TARGET-MASK.json --mask OAR-MASK.json \
+  --relative boron=0.10 --positioning-sigma-mm 1.0 \
+  --output NEW-ROBUSTNESS.json
+# → openbnct.plan-robustness/0.1.0: per objective
+#   {achieved, bound, sigma_1sigma, violation_probability}
+```
+
+The supplied objective is hash-verified against the one the result
+recorded, and beam order must match the result's weight order — both
+guards refuse a silently-mismatched propagation. Sources declared on
+multiple beams are treated as independent (documented convention;
+correlated cross-beam systematics are a known limitation). A worked
+report lives in
+`benchmarks/synthetic/layered-head-phantom/planning/`.
+
 ### Dose-volume metrics and endpoint response models
 
 `openbnct metrics` computes exact dose-volume readings over a region mask

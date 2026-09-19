@@ -42,6 +42,14 @@ own versions independent of the crate version.
   never landed on its cells and delivered ~zero dose. All three sites
   now share `PlaneAxis::in_plane_axes()` ordering; regression test
   `y_axis_disk_source_deposits_in_the_right_column` covers it.
+- `openbnct plan robustness` / `openbnct.plan-robustness/0.1.0`: plan-level
+  systematic-uncertainty propagation — declared per-component σ sources
+  (`--relative`, `--positioning-sigma-mm`, `--boron-field`) fold through
+  each objective's isoeffective weights and the optimized beam weights
+  into a first-order fully-correlated metric 1σ and a one-sided Gaussian
+  violation probability per objective. The supplied objective document is
+  hash-verified against the result; worked report on the layered-head
+  direction search (`planning/robustness-direction-search.json`).
 - `openbnct dicom calibrate` / `openbnct.hu-calibration/0.1.0`:
   HU-to-material calibration — a versioned anchor table (declared
   `MaterialDefinition` per Hounsfield value, Schneider-method

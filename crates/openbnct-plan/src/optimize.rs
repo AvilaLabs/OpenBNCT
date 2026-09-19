@@ -393,7 +393,7 @@ impl InversePlanObjective {
 /// Evaluate one objective's metric against an accumulated dose field.
 /// Returns `(metric, gradient)` — `gradient[v]` is `d(metric)/d(d_v)`
 /// for mask voxels, zero elsewhere.
-fn objective_metric(
+pub(crate) fn objective_metric(
     objective: &DoseObjective,
     dose: &[f64],
     mask_voxels: &[usize],
@@ -454,7 +454,7 @@ fn accumulate(fields: &[BeamDoseField], weights: &[f64], dose: &mut [f64]) {
 
 /// The name under which a [`DoseComponent`] appears in
 /// [`BeamDoseField::components`] — the serde `snake_case` token.
-fn component_name(component: DoseComponent) -> &'static str {
+pub(crate) fn component_name(component: DoseComponent) -> &'static str {
     match component {
         DoseComponent::Boron => "boron",
         DoseComponent::Nitrogen => "nitrogen",
@@ -463,7 +463,7 @@ fn component_name(component: DoseComponent) -> &'static str {
     }
 }
 
-fn objective_mask(objective: &DoseObjective) -> &str {
+pub(crate) fn objective_mask(objective: &DoseObjective) -> &str {
     match objective {
         DoseObjective::MinEud { mask, .. }
         | DoseObjective::MaxMean { mask, .. }
@@ -479,7 +479,7 @@ fn objective_mask(objective: &DoseObjective) -> &str {
 /// weights — with the objective mask's `region_weights` override when
 /// declared — into per-beam effective fields `E_i(v) = Σ_c w_c·D_ic(v)`
 /// and the accumulated `Σ_i w_i·E_i(v)`, both linear in `w`.
-fn objective_view<'a>(
+pub(crate) fn objective_view<'a>(
     fields: &'a [BeamDoseField],
     weights: &[f64],
     shared_dose: &'a [f64],

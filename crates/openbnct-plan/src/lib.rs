@@ -39,6 +39,7 @@ use thiserror::Error;
 
 pub mod fields;
 pub mod optimize;
+pub mod robustness;
 
 /// Format token written into exported tables and required on import when
 /// metadata is present.

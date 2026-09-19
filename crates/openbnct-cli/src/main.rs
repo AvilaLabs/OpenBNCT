@@ -1646,6 +1646,45 @@ enum PlanCommand {
         #[arg(long)]
         emit_plan: Option<PathBuf>,
     },
+    /// Propagate declared systematic σ on each beam's component dose
+    /// through the optimized weights: per-objective metric 1σ and the
+    /// Gaussian violation probability against its bound. Emits
+    /// `openbnct.plan-robustness/0.1.0`.
+    Robustness {
+        /// `openbnct.inverse-plan-result` JSON from `plan optimize`.
+        #[arg(long)]
+        result: PathBuf,
+        /// The `openbnct.inverse-plan-objective` JSON the result was
+        /// optimized under (its hash is verified against the result).
+        #[arg(long)]
+        objective: PathBuf,
+        /// Per-beam `openbnct.physical-dose-bundle` JSON in the same
+        /// order `plan optimize` consumed them; repeatable.
+        #[arg(long, required = true)]
+        dose: Vec<PathBuf>,
+        /// `RegionMask` JSON; repeatable — every mask the objectives
+        /// name must be supplied.
+        #[arg(long, required = true)]
+        mask: Vec<PathBuf>,
+        /// Declared relative 1σ on a component as `name=sigma`;
+        /// repeatable.
+        #[arg(long)]
+        relative: Vec<String>,
+        /// Positioning 1σ in millimetres — contributes `|∇D_c|·σ_mm`
+        /// per component per beam.
+        #[arg(long)]
+        positioning_sigma_mm: Option<f64>,
+        /// `openbnct.boron-field` JSON whose per-voxel concentration σ
+        /// scales the boron component of every beam.
+        #[arg(long)]
+        boron_field: Option<PathBuf>,
+        /// Report identifier.
+        #[arg(long, default_value = "openbnct.plan-robustness")]
+        id: String,
+        /// Output path for the robustness JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Aim and solve a beam per direction through a target mask —
     /// emits a unit-weight dose bundle per beam plus a
     /// `openbnct.beam-field-set/0.1.0` manifest. The deterministic
@@ -8033,6 +8072,281 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     write_new_json(&plan_path, &plan)?;
                     println!("exposure plan: {}", plan_path.display());
                 }
+            }
+            PlanCommand::Robustness {
+                result,
+                objective,
+                dose,
+                mask,
+                relative,
+                positioning_sigma_mm,
+                boron_field,
+                id,
+                output,
+            } => {
+                use openbnct_plan::optimize::{InversePlanObjective, InversePlanResult};
+                use openbnct_plan::robustness::{
+                    BeamSigmaField, PLAN_ROBUSTNESS_SCHEMA, PlanRobustnessReport, plan_robustness,
+                };
+                let result_bytes = fs::read(&result)?;
+                let plan_result: InversePlanResult = serde_json::from_slice(&result_bytes)
+                    .map_err(|error| io::Error::other(format!("inverse-plan result: {error}")))?;
+                let spec_bytes = fs::read(&objective)?;
+                let spec: InversePlanObjective =
+                    serde_json::from_slice(&spec_bytes).map_err(|error| {
+                        io::Error::other(format!("inverse-plan objective: {error}"))
+                    })?;
+                // The objective the caller supplies must be the one the
+                // result recorded — otherwise the σ reports describe a
+                // different optimization.
+                let spec_sha = openbnct_evidence::sha256_hex(&spec_bytes);
+                if plan_result.objective.sha256 != format!("sha256:{spec_sha}") {
+                    return Err(io::Error::other(format!(
+                        "objective hash mismatch: result binds {}, supplied file hashes {}",
+                        plan_result.objective.sha256, spec_sha
+                    ))
+                    .into());
+                }
+
+                // Component name helper — the same tokens the dose
+                // bundles use.
+                let comp_name = |c: openbnct_core::DoseComponent| match c {
+                    openbnct_core::DoseComponent::Boron => "boron",
+                    openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                    openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                    openbnct_core::DoseComponent::Photon => "photon",
+                };
+                let parse_component = |name: &str| match name {
+                    "boron" => Some(openbnct_core::DoseComponent::Boron),
+                    "nitrogen" => Some(openbnct_core::DoseComponent::Nitrogen),
+                    "hydrogen" => Some(openbnct_core::DoseComponent::Hydrogen),
+                    "photon" => Some(openbnct_core::DoseComponent::Photon),
+                    _ => None,
+                };
+
+                // Declared sources → (component, σ-spec) pairs evaluated
+                // per beam below.
+                let mut rel_specs: Vec<(openbnct_core::DoseComponent, f64)> = Vec::new();
+                let mut sources: Vec<openbnct_core::UncertaintySource> = Vec::new();
+                for spec_text in &relative {
+                    let (name, sigma_text) = spec_text.split_once('=').ok_or_else(|| {
+                        io::Error::other(format!(
+                            "--relative {spec_text:?} must be written as component=sigma"
+                        ))
+                    })?;
+                    let component = parse_component(name).ok_or_else(|| {
+                        io::Error::other(format!("--relative: unknown component {name:?}"))
+                    })?;
+                    let sigma: f64 = sigma_text.parse().map_err(|_| {
+                        io::Error::other(format!("--relative {spec_text:?}: sigma is not a number"))
+                    })?;
+                    if !sigma.is_finite() || sigma < 0.0 {
+                        return Err(io::Error::other(format!(
+                            "--relative {spec_text:?}: sigma must be a non-negative finite value"
+                        ))
+                        .into());
+                    }
+                    rel_specs.push((component, sigma));
+                    sources.push(openbnct_core::UncertaintySource::RelativeComponent {
+                        component: name.to_string(),
+                        relative_1sigma: sigma,
+                    });
+                }
+                if let Some(sigma_mm) = positioning_sigma_mm {
+                    if !sigma_mm.is_finite() || sigma_mm < 0.0 {
+                        return Err(io::Error::other(
+                            "--positioning-sigma-mm must be a non-negative finite value",
+                        )
+                        .into());
+                    }
+                    sources.push(openbnct_core::UncertaintySource::Positioning {
+                        sigma_mm,
+                        registration: None,
+                    });
+                }
+                let field = boron_field
+                    .map(|path| -> Result<_, Box<dyn Error>> {
+                        let field: openbnct_boron::BoronField =
+                            serde_json::from_slice(&fs::read(&path)?)?;
+                        field
+                            .validate()
+                            .map_err(|e| io::Error::other(e.to_string()))?;
+                        Ok((path, field))
+                    })
+                    .transpose()?;
+                if let Some((path, _)) = &field {
+                    sources.push(openbnct_core::UncertaintySource::BoronConcentration {
+                        field: openbnct_core::ContentReference {
+                            id: "boron-field".into(),
+                            sha256: openbnct_evidence::sha256_file(path)?,
+                        },
+                    });
+                }
+                if sources.is_empty() {
+                    return Err(io::Error::other(
+                        "no systematic sources declared (--relative, --positioning-sigma-mm, --boron-field)",
+                    )
+                    .into());
+                }
+
+                // Per-beam fields + σ maps, in --dose order — the same
+                // order the optimizer consumed and the result records.
+                let mut fields = Vec::with_capacity(dose.len());
+                let mut sigmas = Vec::with_capacity(dose.len());
+                let mut dose_references = Vec::with_capacity(dose.len());
+                for path in &dose {
+                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)?;
+                    bundle
+                        .validate()
+                        .map_err(|error| io::Error::other(error.to_string()))?;
+                    let component_values = |c: openbnct_core::DoseComponent| {
+                        bundle
+                            .components
+                            .iter()
+                            .find(|v| v.component == c)
+                            .map(|v| v.values.as_slice())
+                    };
+                    let mut sigma_components: std::collections::BTreeMap<String, Vec<f64>> =
+                        std::collections::BTreeMap::new();
+                    for component in [
+                        openbnct_core::DoseComponent::Boron,
+                        openbnct_core::DoseComponent::Nitrogen,
+                        openbnct_core::DoseComponent::Hydrogen,
+                        openbnct_core::DoseComponent::Photon,
+                    ] {
+                        let Some(dose_values) = component_values(component) else {
+                            continue;
+                        };
+                        let mut maps: Vec<Vec<f64>> = Vec::new();
+                        for (rel_component, sigma) in &rel_specs {
+                            if *rel_component == component {
+                                maps.push(openbnct_core::relative_component_sigma(
+                                    dose_values,
+                                    *sigma,
+                                ));
+                            }
+                        }
+                        if let Some(sigma_mm) = positioning_sigma_mm {
+                            maps.push(openbnct_core::positioning_sigma(
+                                dose_values,
+                                &bundle.geometry,
+                                sigma_mm,
+                            ));
+                        }
+                        if component == openbnct_core::DoseComponent::Boron
+                            && let Some((_, boron)) = &field
+                        {
+                            if boron.geometry != bundle.geometry {
+                                return Err(io::Error::other(
+                                    "boron field geometry does not match the dose bundle grid",
+                                )
+                                .into());
+                            }
+                            let (map, _) = openbnct_core::boron_field_sigma(
+                                dose_values,
+                                &boron.values,
+                                &boron.uncertainty_1sigma,
+                            );
+                            maps.push(map);
+                        }
+                        if !maps.is_empty() {
+                            sigma_components.insert(
+                                comp_name(component).to_string(),
+                                openbnct_core::combine_voxel_sigma(&maps),
+                            );
+                        }
+                    }
+                    let components: std::collections::BTreeMap<String, Vec<f64>> = bundle
+                        .components
+                        .iter()
+                        .map(|volume| {
+                            (
+                                comp_name(volume.component).to_string(),
+                                volume.values.clone(),
+                            )
+                        })
+                        .collect();
+                    fields.push(openbnct_plan::optimize::BeamDoseField {
+                        name: path
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| path.display().to_string()),
+                        values: bundle.physical_total.values.clone(),
+                        components: Some(components),
+                    });
+                    sigmas.push(BeamSigmaField {
+                        beam: path.display().to_string(),
+                        components: sigma_components,
+                    });
+                    dose_references.push(openbnct_core::ContentReference {
+                        id: format!("{}.dose-bundle", fields.last().expect("just pushed").name),
+                        sha256: openbnct_evidence::sha256_file(path)?,
+                    });
+                }
+                // Beam order must match the recorded weight order —
+                // names come from file stems, exactly as `plan optimize`
+                // assigned them.
+                for (weight, field) in plan_result.weights.iter().zip(&fields) {
+                    if weight.name != field.name {
+                        return Err(io::Error::other(format!(
+                            "beam order mismatch: result beam {:?} vs supplied field {:?} — pass --dose in optimize order",
+                            weight.name, field.name
+                        ))
+                        .into());
+                    }
+                }
+
+                let masks: Vec<RegionMask> = mask
+                    .iter()
+                    .map(|path| {
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("{}: {error}", path.display())).into()
+                        })
+                    })
+                    .collect::<Result<_, Box<dyn Error>>>()?;
+                let mut mask_voxels: std::collections::BTreeMap<String, Vec<usize>> =
+                    std::collections::BTreeMap::new();
+                for region in &masks {
+                    let voxels: Vec<usize> = region
+                        .voxels
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(v, &on)| on.then_some(v))
+                        .collect();
+                    mask_voxels.insert(region.name.clone(), voxels);
+                }
+
+                let outcomes = plan_robustness(&plan_result, &spec, &fields, &sigmas, &mask_voxels)
+                    .map_err(|error| io::Error::other(format!("robustness: {error}")))?;
+                let result_sha = openbnct_evidence::sha256_hex(&result_bytes);
+                let report = PlanRobustnessReport {
+                    schema_version: PLAN_ROBUSTNESS_SCHEMA.into(),
+                    id,
+                    result: openbnct_core::ContentReference {
+                        id: plan_result.id.clone(),
+                        sha256: format!("sha256:{result_sha}"),
+                    },
+                    objective: plan_result.objective.clone(),
+                    dose_references,
+                    sources,
+                    objectives: outcomes,
+                    method: "first_order_gaussian_fully_correlated".into(),
+                    qualification: "inverse_plan_robustness_research_only_not_clinical".into(),
+                    provenance_id: format!("plan-robustness:{}", &result_sha[..12]),
+                };
+                write_new_json(&output, &report)?;
+                for o in &report.objectives {
+                    println!(
+                        "  {} {}: achieved {:.6e} ± {:.3e} vs bound {:.6e} — P(violate) = {:.4}",
+                        o.kind,
+                        o.mask,
+                        o.achieved,
+                        o.sigma_1sigma,
+                        o.bound,
+                        o.violation_probability
+                    );
+                }
+                println!("robustness: {}", output.display());
             }
             PlanCommand::Fields {
                 case,
