@@ -1662,6 +1662,7 @@ pub(crate) struct OpenBnctApp {
     display: DisplaySettings,
     workspace: WorkspaceTab,
     dark_mode: bool,
+    reduce_motion: bool,
     template_status: Option<String>,
     /// Loose case members accumulated across a multi-file drop — a full
     /// NF-BNCT-001 set (case.json + rtstruct.dcm + 40 ct slices) loads.
@@ -1705,6 +1706,7 @@ impl OpenBnctApp {
                 WorkspaceTab::Overview
             },
             dark_mode: false,
+            reduce_motion: false,
             template_status: None,
             pending_case_files: Vec::new(),
             case_drop_note: None,
@@ -1870,6 +1872,15 @@ impl OpenBnctApp {
             ui.menu_button(t!(self.language, "View", "表示"), |ui| {
                 let lang = self.language;
                 ui.checkbox(&mut self.dark_mode, t!(lang, "Dark mode", "ダークモード"));
+                if ui
+                    .checkbox(
+                        &mut self.reduce_motion,
+                        t!(lang, "Reduce motion", "アニメーションを減らす"),
+                    )
+                    .changed()
+                {
+                    self.apply_motion(ui.ctx());
+                }
                 ui.separator();
                 ui.label(
                     egui::RichText::new(t!(lang, "Language / 言語", "言語 / Language")).small(),
@@ -1943,6 +1954,14 @@ impl OpenBnctApp {
                 }
             });
             tour_targets.set(TourTarget::HelpButton, help.response.rect);
+        });
+    }
+
+    /// Zero egui's animation time for vestibular-sensitive users —
+    /// instant transitions instead of the default 0.2 s tweens.
+    fn apply_motion(&self, context: &egui::Context) {
+        context.global_style_mut(|style| {
+            style.animation_time = if self.reduce_motion { 0.0 } else { 0.2 };
         });
     }
 
@@ -3118,8 +3137,14 @@ fn show_geometry_workspace(
                     ui.set_width(ui.available_width());
                     if let Some(texture) = &case.textures[index]
                         && let Ok(view) = case.grid.slice(plane, case.crosshair)
-                        && let Some(voxel) =
-                            show_slice_view(ui, texture, view, case.crosshair, image_height)
+                        && let Some(voxel) = show_slice_view(
+                            ui,
+                            texture,
+                            view,
+                            case.crosshair,
+                            image_height,
+                            language,
+                        )
                     {
                         selected_voxel = Some(voxel);
                     }
@@ -3200,8 +3225,19 @@ fn show_spectrum(ui: &mut egui::Ui, spectrum: &mut SpectrumView, language: Langu
 
         let (response, painter) = ui.allocate_painter(
             egui::vec2(ui.available_width(), 220.0),
-            egui::Sense::hover(),
+            egui::Sense::focusable_noninteractive(),
         );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Other,
+                true,
+                t!(
+                    language,
+                    "Energy spectrum plot — thermal, epithermal, and fast regions",
+                    "エネルギースペクトルプロット — 熱・エピサーマル・高速領域"
+                ),
+            )
+        });
         let rect = response.rect.shrink2(egui::vec2(56.0, 30.0));
         let axis_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 82, 99));
         painter.rect_stroke(rect, 4.0, axis_stroke, egui::StrokeKind::Inside);
@@ -3448,7 +3484,14 @@ fn show_transport_workspace(
         {
             ui.horizontal(|ui| {
                 ui.monospace(format!("{:02}", index + 1));
-                ui.colored_label(gate.state.color(ui.visuals().dark_mode), "●");
+                ui.colored_label(gate.state.color(ui.visuals().dark_mode), "●")
+                    .widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::WidgetType::Label,
+                            true,
+                            gate.state.localized_label(language),
+                        )
+                    });
                 ui.strong(gate.title);
                 ui.label("—");
                 ui.label(gate.detail);
@@ -4139,7 +4182,8 @@ fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, language: Language, t
                 columns.iter_mut().zip(planes.iter().zip(textures.iter()))
             {
                 if let Ok(view) = grid.slice(*plane, crosshair)
-                    && let Some(target) = show_slice_view(column, texture, view, crosshair, 220.0)
+                    && let Some(target) =
+                        show_slice_view(column, texture, view, crosshair, 220.0, language)
                 {
                     let _ = crosshair.set_voxel(&grid, target);
                 }
@@ -4276,8 +4320,19 @@ fn show_depth_profile(ui: &mut egui::Ui, panel: &mut DosePanel, language: Langua
 
         let (response, painter) = ui.allocate_painter(
             egui::vec2(ui.available_width(), 200.0),
-            egui::Sense::hover(),
+            egui::Sense::focusable_noninteractive(),
         );
+        response.widget_info(|| {
+            egui::WidgetInfo::labeled(
+                egui::WidgetType::Other,
+                true,
+                t!(
+                    language,
+                    "Line profile plot along the selected axis",
+                    "選択軸に沿ったラインプロファイル"
+                ),
+            )
+        });
         let rect = response.rect.shrink2(egui::vec2(50.0, 26.0));
         painter.rect_stroke(
             rect,
@@ -4612,7 +4667,7 @@ fn show_dose_compare(ui: &mut egui::Ui, panel: &mut DosePanel, language: Languag
                 {
                     if let Ok(view) = grid.slice(*plane, crosshair)
                         && let Some(target) =
-                            show_slice_view(column, texture, view, crosshair, 220.0)
+                            show_slice_view(column, texture, view, crosshair, 220.0, language)
                     {
                         let _ = crosshair.set_voxel(&grid, target);
                     }
@@ -4835,7 +4890,7 @@ fn show_dose_workspace(
                 histogram.region_volume_mm3,
                 histogram.unit
             ));
-            show_dvh_curve(ui, histogram, theme);
+            show_dvh_curve(ui, histogram, language, theme);
         }
     });
 
@@ -5037,11 +5092,27 @@ fn show_dose_workspace(
 }
 
 /// Draw the cumulative V(d) curve directly — no plotting dependency.
-fn show_dvh_curve(ui: &mut egui::Ui, histogram: &DoseVolumeHistogram, theme: Theme) {
+fn show_dvh_curve(
+    ui: &mut egui::Ui,
+    histogram: &DoseVolumeHistogram,
+    language: Language,
+    theme: Theme,
+) {
     let (response, painter) = ui.allocate_painter(
         egui::vec2(ui.available_width(), 180.0),
-        egui::Sense::hover(),
+        egui::Sense::focusable_noninteractive(),
     );
+    response.widget_info(|| {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Other,
+            true,
+            t!(
+                language,
+                "Dose-volume histogram — cumulative volume fraction vs dose",
+                "線量-体積ヒストグラム — 線量対累積体積割合"
+            ),
+        )
+    });
     let rect = response.rect.shrink2(egui::vec2(46.0, 12.0));
     painter.rect_stroke(
         rect,
@@ -5263,7 +5334,14 @@ fn show_evidence_row(
 ) {
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.colored_label(state.color(ui.visuals().dark_mode), "●");
+            ui.colored_label(state.color(ui.visuals().dark_mode), "●")
+                .widget_info(|| {
+                    egui::WidgetInfo::labeled(
+                        egui::WidgetType::Label,
+                        true,
+                        state.localized_label(language),
+                    )
+                });
             ui.vertical(|ui| {
                 ui.strong(title);
                 ui.label(detail);
@@ -5499,6 +5577,7 @@ fn show_slice_view(
     view: SliceView,
     crosshair: Crosshair,
     max_height: f32,
+    language: Language,
 ) -> Option<[u32; 3]> {
     ui.strong(format!(
         "{} — index {}",
@@ -5519,6 +5598,25 @@ fn show_slice_view(
         ui.id().with(view.plane().name()),
         egui::Sense::click_and_drag(),
     );
+    // The image is painted, so the a11y tree gets an explicit summary;
+    // focusable for the keyboard crosshair below.
+    let plane_name = view.plane().name();
+    let index = view.fixed_index();
+    response.widget_info(move || {
+        egui::WidgetInfo::labeled(
+            egui::WidgetType::Image,
+            true,
+            format!(
+                "{} — {} {}",
+                match language {
+                    Language::Japanese => "スライス",
+                    Language::English => "slice",
+                },
+                plane_name,
+                index
+            ),
+        )
+    });
     egui::Image::from_texture(texture).paint_at(ui, rect);
     paint_orientation_and_crosshair(ui, rect, view, crosshair);
 
@@ -5531,6 +5629,45 @@ fn show_slice_view(
             (position.y - rect.top()) / rect.height(),
         ];
         return view.voxel_at_fraction(fraction).ok();
+    }
+    if response.has_focus() {
+        // Arrow keys move the in-plane crosshair pixel; PageUp/PageDown
+        // step along the fixed axis. Returns the stepped voxel so the
+        // shared crosshair updates identically to a pointer click.
+        let input = ui.input(|input| {
+            (
+                input.key_pressed(egui::Key::ArrowLeft),
+                input.key_pressed(egui::Key::ArrowRight),
+                input.key_pressed(egui::Key::ArrowUp),
+                input.key_pressed(egui::Key::ArrowDown),
+                input.key_pressed(egui::Key::PageUp),
+                input.key_pressed(egui::Key::PageDown),
+            )
+        });
+        let (left, right, up, down, page_up, page_down) = input;
+        if (left || right || up || down)
+            && let Ok(pixel) = view.pixel_for_voxel(crosshair.voxel())
+        {
+            let step = [right as i32 - left as i32, down as i32 - up as i32];
+            let target = [
+                (pixel[0] as i32 + step[0]).clamp(0, dimensions[0] as i32 - 1) as u32,
+                (pixel[1] as i32 + step[1]).clamp(0, dimensions[1] as i32 - 1) as u32,
+            ];
+            if let Ok(voxel) = view.voxel_at(target) {
+                return Some(voxel);
+            }
+        }
+        if page_up || page_down {
+            let axis = view.plane().fixed_axis();
+            let extent = view.volume_shape()[axis];
+            let mut voxel = crosshair.voxel();
+            let current = voxel[axis] as i32;
+            voxel[axis] =
+                (current + page_up as i32 - page_down as i32).clamp(0, extent as i32 - 1) as u32;
+            if voxel != crosshair.voxel() {
+                return Some(voxel);
+            }
+        }
     }
     None
 }

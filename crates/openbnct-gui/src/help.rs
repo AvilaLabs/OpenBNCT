@@ -762,7 +762,7 @@ struct FaqEntry {
     answer: &'static str,
 }
 
-const FAQ: [FaqEntry; 19] = [
+const FAQ: [FaqEntry; 20] = [
     FaqEntry {
         question: "What is a case, and how do I get one?",
         keywords: &["case", "what", "get", "obtain", "have", "start", "first"],
@@ -904,6 +904,19 @@ const FAQ: [FaqEntry; 19] = [
         question: "How do I save a picture of the screen?",
         keywords: &["screenshot", "capture", "png", "export", "image", "picture"],
         answer: "View → Screenshot captures the current frame. On the desktop it asks for a save path; in the browser it downloads a PNG. The View menu also carries zoom presets and a reset that recenters crosshairs without unloading artifacts.",
+    },
+    FaqEntry {
+        question: "Is the workbench keyboard- and screen-reader accessible?",
+        keywords: &[
+            "keyboard",
+            "screen reader",
+            "accessibility",
+            "tab",
+            "arrows",
+            "focus",
+            "motion",
+        ],
+        answer: "Standard widgets publish to the platform accessibility tree (AccessKit). Painted canvases carry text summaries for screen readers. Tab focuses a slice view; arrow keys move the crosshair in-plane and PageUp/PageDown step slices. View → Reduce motion disables UI animation. A 2D dose map cannot be fully conveyed aurally — the summary announces plane, index, and crosshair state.",
     },
 ];
 
@@ -1450,7 +1463,7 @@ const SOURCE_RUN_STEPS_JA: [TourStep; 4] = [
     },
 ];
 
-const FAQ_JA: [FaqEntry; 19] = [
+const FAQ_JA: [FaqEntry; 20] = [
     FaqEntry {
         question: "症例とは何ですか?どうやって入手しますか?",
         keywords: &["症例", "ケース", "入手", "最初", "始め方", "case"],
@@ -1582,6 +1595,19 @@ const FAQ_JA: [FaqEntry; 19] = [
         question: "画面の画像を保存するには?",
         keywords: &["スクリーンショット", "キャプチャ", "png", "画像", "保存"],
         answer: "表示 → スクリーンショット で現在のフレームを保存。デスクトップは保存先を選択、ブラウザは PNG ダウンロード。表示メニューにはズームプリセットと、読み込み済みアーティファクトを保持したままクロスヘアを中央に戻すリセットもあります。",
+    },
+    FaqEntry {
+        question: "キーボードやスクリーンリーダーで使えますか?",
+        keywords: &[
+            "キーボード",
+            "スクリーンリーダー",
+            "アクセシビリティ",
+            "タブ",
+            "矢印",
+            "フォーカス",
+            "モーション",
+        ],
+        answer: "標準ウィジェットはプラットフォームのアクセシビリティツリー(AccessKit)に公開されます。描画キャンバスはスクリーンリーダー向けのテキスト要約を持ちます。Tab でスライスビューにフォーカスし、矢印キーでクロスヘアを面内移動、PageUp/PageDown でスライス移動。表示 → アニメーションを減らす で UI アニメーションを無効化。2D 線量マップは聴覚で完全には伝えられません — 要約は面・インデックス・クロスヘア状態を読み上げます。",
     },
 ];
 

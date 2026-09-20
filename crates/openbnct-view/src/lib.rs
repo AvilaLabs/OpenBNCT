@@ -57,7 +57,10 @@ impl AnatomicalPlane {
         }
     }
 
-    const fn fixed_axis(self) -> usize {
+    /// The volume axis this plane slices along — axial fixes z,
+    /// coronal fixes y, sagittal fixes x.
+    #[must_use]
+    pub const fn fixed_axis(self) -> usize {
         match self {
             Self::Axial => 2,
             Self::Coronal => 1,
@@ -216,6 +219,12 @@ impl SliceView {
     #[must_use]
     pub const fn dimensions(self) -> [u32; 2] {
         self.dimensions
+    }
+
+    /// Full volume extent — for stepping the fixed axis (PageUp/PageDown).
+    #[must_use]
+    pub const fn volume_shape(self) -> [u32; 3] {
+        self.volume_shape
     }
 
     #[must_use]
