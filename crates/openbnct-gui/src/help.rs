@@ -635,11 +635,16 @@ struct FaqEntry {
     answer: &'static str,
 }
 
-const FAQ: [FaqEntry; 17] = [
+const FAQ: [FaqEntry; 19] = [
+    FaqEntry {
+        question: "What is a case, and how do I get one?",
+        keywords: &["case", "what", "get", "obtain", "have", "start", "first"],
+        answer: "A case is the spatial substrate everything anchors to: a CT series for patient geometry plus an RTSTRUCT for contours, hash-bound so downstream artifacts can prove they belong to it. Two kinds load: the frozen NF-BNCT-001 benchmark (generate it with `openbnct dicom generate` — nobody needs external files) and any research study you already have (a CT series + RTSTRUCT export from a TPS or archive). Research imports are verified against themselves at load — parsed strictly, hash-bound — rather than against a fixture.",
+    },
     FaqEntry {
         question: "How do I load a case?",
         keywords: &["load", "case", "directory", "dicom", "generate"],
-        answer: "Generate NF-BNCT-001 with the CLI, enter its directory in the CASE field, and press Load & verify. OpenBNCT rejects modified artifacts or ambiguous DICOM geometry before rendering.",
+        answer: "NF-BNCT-001: generate it with the CLI, enter its directory in the CASE field, and press Load & verify. A research study: File → \"Import DICOM study…\" and pick the export folder, or just drop the DICOM files — members are bucketed by SOP class, then Import as research case finishes the load.",
     },
     FaqEntry {
         question: "Why are the transport buttons disabled?",
@@ -702,7 +707,14 @@ const FAQ: [FaqEntry; 17] = [
     FaqEntry {
         question: "How do I open a case in the web app?",
         keywords: &["web", "browser", "open", "case", "zip", "upload"],
-        answer: "Browsers cannot hand the app a folder path. Either File → \"Open case archive (.zip)…\" and pick a zip of the case directory, or drop the .zip anywhere — or drop all 42 members (case.json, rtstruct.dcm, ct-000…039.dcm) in one selection. Every member is hashed against case.json's manifest before the case renders.",
+        answer: "Browsers cannot hand the app a folder path — everything is bytes. Use File → \"Open case or study files…\" (or the header's Pick files) to multi-select: a case .zip, the 42 NF-BNCT-001 members, or a DICOM study's files all route correctly. Drops work the same way.",
+    },
+    FaqEntry {
+        question: "How do I import my own DICOM study?",
+        keywords: &[
+            "import", "study", "research", "own", "dicom", "patient", "export",
+        ],
+        answer: "Drop the study's DICOM files anywhere (or pick them). Each file is bucketed by SOP class — exactly one CT series and one RTSTRUCT are required, a PET series is optional, and everything else is listed as ignored. Click \"Import as research case\" when the set is complete. The import generates its own hash binding — research cases are not checked against the frozen benchmark, and vice versa.",
     },
     FaqEntry {
         question: "What is the σ map?",
@@ -776,7 +788,7 @@ struct UseCase {
     watch_for: Option<&'static str>,
 }
 
-const USE_CASES: [UseCase; 14] = [
+const USE_CASES: [UseCase; 15] = [
     UseCase {
         title: "Inspect the frozen NF-BNCT-001 benchmark",
         workspace: "Overview → Geometry",
@@ -803,6 +815,21 @@ const USE_CASES: [UseCase; 14] = [
         ],
         watch_for: Some(
             "drop is additive — a stray file mid-drop goes to the artifact panels, not the case set",
+        ),
+    },
+    UseCase {
+        title: "Import your own DICOM study",
+        workspace: "Geometry",
+        goal: "Turn a real CT + RTSTRUCT export (from a TPS, PACS pull, or archive) into a working case — the answer to 'how do I get a case' when you don't want the synthetic phantom.",
+        steps: &[
+            "Collect the study's DICOM files — CT slices plus the RTSTRUCT file (a PET series is optional).",
+            "Drop them anywhere in the window, or use File → \"Import DICOM study…\" (native) / \"Open case or study files…\" (web).",
+            "The header counts collected members; click \"Import as research case\".",
+            "Files are bucketed by SOP class: exactly one CT series and one RTSTRUCT are required — a second series is rejected by name rather than merged.",
+            "Geometry opens on the imported study; the header shows its hash-bound provenance.",
+        ],
+        watch_for: Some(
+            "research imports bind their own content — they are NOT checked against the frozen benchmark, and an empty-ROI contour reports a NaN centroid instead of failing",
         ),
     },
     UseCase {
@@ -1037,9 +1064,12 @@ mod tests {
 
     #[test]
     fn bundled_questions_match_relevant_answers() {
-        assert_eq!(best_answer("Why can't I execute OpenMC?"), Some(1));
-        assert_eq!(best_answer("Is there a pip install?"), Some(5));
-        assert_eq!(best_answer("Can I treat a patient with this?"), Some(6));
+        let transport = best_answer("Why can't I execute OpenMC?").expect("transport answer");
+        assert!(FAQ[transport].answer.contains("transport"));
+        let pip = best_answer("Is there a pip install?").expect("pip answer");
+        assert!(FAQ[pip].answer.contains("PyPI") || FAQ[pip].answer.contains("pip"));
+        let clinical = best_answer("Can I treat a patient with this?").expect("clinical answer");
+        assert!(FAQ[clinical].answer.contains("must not"));
         assert_eq!(best_answer("completely unrelated words"), None);
     }
 

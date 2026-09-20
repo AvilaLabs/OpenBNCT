@@ -36,6 +36,8 @@ pub enum DicomError {
     StructureSet(String),
     #[error("NF-BNCT-001 verification failed: {0}")]
     Benchmark(String),
+    #[error("study import failed: {0}")]
+    StudyImport(String),
     #[error(transparent)]
     Manifest(#[from] openbnct_evidence::ManifestError),
     #[error("benchmark output path already exists: {0}")]

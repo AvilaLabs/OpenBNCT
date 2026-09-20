@@ -11,6 +11,7 @@ mod pet;
 mod rtdose;
 mod rtplan;
 mod rtstruct;
+mod study;
 pub mod synthetic;
 
 pub use benchmark::{
@@ -26,3 +27,6 @@ pub use rtplan::{
     RtPlanExportOptions, RtPlanFractionGroup, RtPlanSummary, export_rt_plan, summarize_rt_plan,
 };
 pub use rtstruct::{RoiMask, StructureSet, import_rtstruct, import_rtstruct_bytes};
+pub use study::{
+    ImportedStudy, collect_study_paths, import_study_from_files, import_study_from_paths,
+};

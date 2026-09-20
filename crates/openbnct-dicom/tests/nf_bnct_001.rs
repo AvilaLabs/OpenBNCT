@@ -12,7 +12,8 @@ use openbnct_dicom::synthetic::{
     generate_nf_bnct_001, validate_part10_files,
 };
 use openbnct_dicom::{
-    DicomError, import_ct_series, import_rtstruct, load_nf_bnct_001_from_files, verify_nf_bnct_001,
+    DicomError, import_ct_series, import_rtstruct, import_study_from_files,
+    load_nf_bnct_001_from_files, verify_nf_bnct_001,
 };
 use tempfile::tempdir;
 
@@ -121,6 +122,50 @@ fn generated_case_verifies_from_in_memory_files() {
     // Missing members are named, not guessed at.
     let incomplete = files[..files.len() - 1].to_vec();
     assert!(load_nf_bnct_001_from_files(&incomplete).is_err());
+}
+
+#[test]
+fn generated_study_imports_through_the_research_path() {
+    let temp = tempdir().expect("temporary directory");
+    let output = temp.path().join("nf-bnct-001");
+    let generated = generate_nf_bnct_001(&output).expect("generate benchmark");
+
+    // A research drop has no manifest — the importer must bucket members
+    // by SOP class and bind its own content.
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    for path in &generated.ct_files {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("slice file name");
+        files.push((name.to_owned(), std::fs::read(path).expect("read slice")));
+    }
+    files.push((
+        "rtstruct.dcm".to_owned(),
+        std::fs::read(&generated.rtstruct_file).expect("read rtstruct"),
+    ));
+    // A stray non-DICOM member is ignored, not fatal.
+    files.push(("notes.txt".to_owned(), b"operator notes".to_vec()));
+
+    let study = import_study_from_files(&files).expect("study import");
+    assert_eq!(
+        study.ct.geometry.shape,
+        [COLUMNS as u32, ROWS as u32, SLICES as u32]
+    );
+    assert_eq!(study.structures.rois.len(), 5);
+    assert_eq!(study.rois.len(), 5);
+    assert!(study.pet.is_none());
+    assert!(study.case_id.starts_with("study-"));
+    assert_eq!(study.ignored, vec!["notes.txt".to_owned()]);
+    assert_eq!(study.member_count, files.len() - 1);
+
+    // Without the RTSTRUCT there is no case — refuse, not guess.
+    let ct_only: Vec<_> = files
+        .iter()
+        .filter(|(name, _)| name.starts_with("ct-"))
+        .cloned()
+        .collect();
+    assert!(import_study_from_files(&ct_only).is_err());
 }
 
 #[test]

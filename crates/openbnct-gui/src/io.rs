@@ -7,7 +7,10 @@
 //! therefore always hold bytes, never file handles — the same
 //! render path serves both targets.
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
+
+#[cfg(not(target_arch = "wasm32"))]
+use std::path::PathBuf;
 
 /// Read an artifact by path. Web builds have no filesystem — callers
 /// must route bytes through `dropped_bytes` instead.
@@ -41,29 +44,19 @@ pub fn write_bytes(path: &Path, _contents: &[u8]) -> Result<(), String> {
     ))
 }
 
-/// Native folder picker. Web builds return `None` — the button that
-/// calls this is hidden on the web target.
+/// Native folder picker — only compiled on native; web callers use
+/// `pick_files_into_drops` / the drop channel instead.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn pick_folder() -> Option<PathBuf> {
     rfd::FileDialog::new().pick_folder()
 }
 
-#[cfg(target_arch = "wasm32")]
-pub fn pick_folder() -> Option<PathBuf> {
-    None
-}
-
-/// Native file picker with a filter. Web builds return `None`.
+/// Native file picker with a filter — native only.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn pick_file(filter_name: &str, extensions: &[&str]) -> Option<PathBuf> {
     rfd::FileDialog::new()
         .add_filter(filter_name, extensions)
         .pick_file()
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn pick_file(_filter_name: &str, _extensions: &[&str]) -> Option<PathBuf> {
-    None
 }
 
 /// Map a dropped/picked file name to its manifest-relative case path.
