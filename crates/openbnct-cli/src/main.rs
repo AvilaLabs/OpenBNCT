@@ -2173,6 +2173,32 @@ struct OpenMcArgs {
 enum OpenMcCommand {
     /// Probe or acquire externally published nuclear data.
     Data(OpenMcDataArgs),
+    /// Collapse an ENDF MF33 covariance block onto multigroup
+    /// boundaries into an `openbnct.multigroup-covariance` artifact —
+    /// the nuclear-data uncertainty source `uq propagate` consumes.
+    /// NI LB ∈ {0,1,5} sub-subsections are read; anything else is
+    /// reported as skipped, never silently dropped.
+    CovEndf {
+        /// ENDF-6 tape (`.endf`) carrying MF33.
+        #[arg(long)]
+        tape: PathBuf,
+        /// `openbnct.multigroup-data` JSON supplying the group
+        /// boundaries and material names.
+        #[arg(long)]
+        data: PathBuf,
+        /// Material id in the multigroup data to bind the covariance to.
+        #[arg(long)]
+        material: String,
+        /// Reaction MT whose section to read; default 1 (total).
+        #[arg(long, default_value = "1")]
+        mt: i32,
+        /// Free-text provenance note (evaluation, source, reviewer).
+        #[arg(long)]
+        note: Option<String>,
+        /// Output path for the covariance JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Generate a deterministic OpenMC input deck bound to a reviewed response set.
     Generate {
         /// Transport-case JSON embedding the frozen geometry, material, and source.
@@ -4824,6 +4850,91 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 println!("case: {}", bundle.case_id);
                 println!("components: {}", bundle.components.len());
                 println!("provenance: {}", bundle.provenance_id);
+            }
+            OpenMcCommand::CovEndf {
+                tape,
+                data,
+                material,
+                mt,
+                note,
+                output,
+            } => {
+                let tape_bytes = fs::read(&tape)?;
+                let tape_text = String::from_utf8_lossy(&tape_bytes);
+                let parsed = openbnct_openmc::endf_mf33::parse_mf33(&tape_text, Some(mt))
+                    .map_err(|e| io::Error::other(format!("mf33: {e}")))?;
+                let data_bytes = fs::read(&data)?;
+                let mg: openbnct_transport::MultigroupData = serde_json::from_slice(&data_bytes)
+                    .map_err(|error| {
+                        io::Error::other(format!("data {}: {error}", data.display()))
+                    })?;
+                let boundaries = &mg.energy_boundaries_ev;
+                let groups = mg.group_count();
+                let diagonal = Vec::new();
+                let mut blocks = Vec::new();
+                for cov in &parsed.covariances {
+                    let Some(collapsed) =
+                        openbnct_openmc::endf_mf33::collapse_covariance_to_groups(cov, boundaries)
+                    else {
+                        continue;
+                    };
+                    let rel: Vec<f64> = (0..groups)
+                        .map(|g| collapsed[g * groups + g].max(0.0).sqrt())
+                        .collect();
+                    let mut corr = vec![0.0; groups * groups];
+                    for g in 0..groups {
+                        for h in 0..groups {
+                            let denom = rel[g] * rel[h];
+                            corr[g * groups + h] = if denom > 0.0 {
+                                (collapsed[g * groups + h] / denom).clamp(-1.0, 1.0)
+                            } else {
+                                if g == h { 1.0 } else { 0.0 }
+                            };
+                        }
+                    }
+                    if rel.iter().all(|r| *r == 0.0) {
+                        continue;
+                    }
+                    blocks.push(openbnct_transport::CovarianceBlock {
+                        material_id: material.clone(),
+                        parameter: openbnct_transport::CovarianceParameter::SigmaTotal,
+                        component: None,
+                        relative_std_dev: rel,
+                        correlation: corr,
+                    });
+                }
+                let mut note_text = note.unwrap_or_else(|| {
+                    format!(
+                        "ENDF MF33 collapse of {} (MT{}) — NI LB∈{{0,1,5}} only; {} sub-blocks parsed, {} skipped",
+                        tape.display(),
+                        mt,
+                        parsed.covariances.len(),
+                        parsed.skipped.len()
+                    )
+                });
+                if !parsed.skipped.is_empty() {
+                    note_text.push_str(&format!(" | skipped: {}", parsed.skipped.join("; ")));
+                }
+                let covariance = openbnct_transport::MultigroupCovariance {
+                    schema_version: openbnct_transport::MULTIGROUP_COVARIANCE_SCHEMA.into(),
+                    id: format!("openbnct.covariance.{}.mt{}", material, mt),
+                    multigroup_data: openbnct_core::ContentReference {
+                        id: format!("multigroup-data:{}", mg.id),
+                        sha256: format!("sha256:{}", openbnct_evidence::sha256_hex(&data_bytes)),
+                    },
+                    diagonal,
+                    blocks,
+                    provenance_note: note_text,
+                    qualification: "nuclear_data_covariance_research_only_not_clinical".into(),
+                };
+                write_new_json(&output, &covariance)?;
+                println!("covariance artifact at {}", output.display());
+                println!(
+                    "blocks: {} ({} parsed, {} skipped)",
+                    covariance.blocks.len(),
+                    parsed.covariances.len(),
+                    parsed.skipped.len()
+                );
             }
             OpenMcCommand::Evaluate {
                 runs,

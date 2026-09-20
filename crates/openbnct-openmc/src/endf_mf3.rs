@@ -13,20 +13,20 @@
 use std::collections::BTreeMap;
 
 /// One parsed fixed-format record.
-struct Record {
-    c1: f64,
-    c2: f64,
-    l1: i64,
-    l2: i64,
-    n1: i64,
-    n2: i64,
-    mf: i32,
-    mt: i32,
+pub(crate) struct Record {
+    pub c1: f64,
+    pub c2: f64,
+    pub l1: i64,
+    pub l2: i64,
+    pub n1: i64,
+    pub n2: i64,
+    pub mf: i32,
+    pub mt: i32,
 }
 
 /// ENDF FORTRAN real: fields may drop the `E` (" 1.234567-03") or use
 /// `D`/`d` exponents.
-fn endf_float(s: &str) -> f64 {
+pub(crate) fn endf_float(s: &str) -> f64 {
     let t = s.trim();
     if t.is_empty() {
         return 0.0;
@@ -51,7 +51,7 @@ fn endf_int(s: &str) -> i64 {
     s.trim().parse().unwrap_or(0)
 }
 
-fn parse_record(line: &str) -> Record {
+pub(crate) fn parse_record(line: &str) -> Record {
     let f = |a: usize, b: usize| endf_float(line.get(a..b).unwrap_or(""));
     let i = |a: usize, b: usize| endf_int(line.get(a..b).unwrap_or(""));
     Record {
