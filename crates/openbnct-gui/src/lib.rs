@@ -548,6 +548,18 @@ struct DoseMapView {
     cache_key: Option<String>,
 }
 
+/// Line-profile state: which grid axis the profile runs along, an
+/// optional measurement-record overlay, and display options.
+#[derive(Default)]
+struct ProfileView {
+    axis: usize,
+    log_y: bool,
+    measurement: Option<openbnct_transport::MeasurementRecord>,
+    measurement_error: Option<String>,
+    /// Which histogram-valued measurement inside the record is plotted.
+    measurement_pick: usize,
+}
+
 /// UI state for the dose workspace: the loaded bundle plus the region mask
 /// and quantity chosen for the DVH panel.
 struct DosePanel {
@@ -555,6 +567,7 @@ struct DosePanel {
     bundle: Option<LoadedDose>,
     bundle_error: Option<String>,
     map: DoseMapView,
+    profile: ProfileView,
     mask_path: String,
     quantity: String,
     histogram: Option<DoseVolumeHistogram>,
@@ -575,6 +588,7 @@ impl Default for DosePanel {
             bundle: None,
             bundle_error: None,
             map: DoseMapView::default(),
+            profile: ProfileView::default(),
             mask_path: String::new(),
             quantity: String::new(),
             histogram: None,
@@ -626,7 +640,45 @@ impl DosePanel {
         self.map = DoseMapView::default();
         self.map.quantity = self.quantity.clone();
         self.map.voxel = Some(bundle.artifact.geometry().shape.map(|extent| extent / 2));
+        // Default profile axis: the longest physical extent — the beam
+        // direction for the phantom geometries this workbench handles.
+        let geometry = bundle.artifact.geometry();
+        self.profile.axis = (0..3)
+            .max_by(|&a, &b| {
+                (f64::from(geometry.shape[a]) * geometry.spacing_mm[a])
+                    .total_cmp(&(f64::from(geometry.shape[b]) * geometry.spacing_mm[b]))
+            })
+            .unwrap_or(2);
         self.bundle = Some(bundle);
+    }
+
+    /// Load a measurement-record JSON (bytes — drop-compatible on web)
+    /// as the profile overlay. Keeps the first histogram-valued
+    /// measurement selected.
+    fn load_measurement_bytes(&mut self, bytes: &[u8]) {
+        let outcome = serde_json::from_slice::<openbnct_transport::MeasurementRecord>(bytes)
+            .map_err(|error| error.to_string())
+            .and_then(|record| record.validate().map(|_| record).map_err(|e| e.to_string()));
+        match outcome {
+            Ok(record) => {
+                self.profile.measurement_error = None;
+                self.profile.measurement_pick = record
+                    .measurements
+                    .iter()
+                    .position(|m| {
+                        matches!(
+                            m.value,
+                            openbnct_transport::MeasurementValue::Histogram { .. }
+                        )
+                    })
+                    .unwrap_or(0);
+                self.profile.measurement = Some(record);
+            }
+            Err(error) => {
+                self.profile.measurement = None;
+                self.profile.measurement_error = Some(error);
+            }
+        }
     }
 
     /// Resolve the mask + quantity row selection shared by the DVH and
@@ -1181,6 +1233,7 @@ enum DropTarget {
     DoseBundle,
     Plan,
     NiftiVolume,
+    Measurement,
     Unsupported,
 }
 
@@ -1223,6 +1276,11 @@ fn classify_dropped_json(bytes: &[u8]) -> DropTarget {
         .unwrap_or_default()
     {
         s if s.starts_with("openbnct.exposure-plan/") => DropTarget::Plan,
+        s if s.starts_with("nctforge.measurement-record/")
+            || s.starts_with("openbnct.measurement-record/") =>
+        {
+            DropTarget::Measurement
+        }
         _ => DropTarget::DoseBundle,
     }
 }
@@ -1394,6 +1452,13 @@ impl OpenBnctApp {
                 Ok(b) => self.panels.nifti.inspect_bytes(&b),
                 Err(error) => self.panels.nifti.error = Some(error),
             },
+            DropTarget::Measurement => {
+                match bytes {
+                    Ok(b) => self.panels.dose.load_measurement_bytes(&b),
+                    Err(error) => self.panels.dose.profile.measurement_error = Some(error),
+                }
+                self.workspace = WorkspaceTab::Dose;
+            }
             DropTarget::Unsupported => {
                 self.load_error = Some(format!("unsupported drop {name}"));
             }
@@ -2561,6 +2626,195 @@ fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
     });
 }
 
+/// Line profile of the selected quantity along one grid axis, through
+/// the dose-map crosshair. An optional measurement-record histogram is
+/// overlaid peak-normalized — a shape comparison, never a units mix.
+fn show_depth_profile(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
+    use openbnct_transport::MeasurementValue;
+
+    let Some(bundle) = &panel.bundle else {
+        return;
+    };
+    let artifact = &bundle.artifact;
+    let geometry = artifact.geometry();
+    let rows = artifact.rows();
+    let Some((_, values, _)) = rows.iter().find(|(name, ..)| *name == panel.map.quantity) else {
+        return;
+    };
+    let shape = geometry.shape;
+    let axis = panel.profile.axis.min(2);
+    let voxel = panel
+        .map
+        .voxel
+        .unwrap_or_else(|| shape.map(|extent| extent / 2));
+    let index_of = |voxel: [u32; 3]| -> usize {
+        (voxel[2] as usize * shape[1] as usize + voxel[1] as usize) * shape[0] as usize
+            + voxel[0] as usize
+    };
+    let count = shape[axis] as usize;
+    let profile: Vec<(f64, f64)> = (0..count)
+        .map(|i| {
+            let mut v = voxel;
+            v[axis] = i as u32;
+            (
+                (geometry.origin_mm[axis] + (i as f64 + 0.5) * geometry.spacing_mm[axis]) / 10.0,
+                values[index_of(v)],
+            )
+        })
+        .collect();
+    let max = profile.iter().map(|point| point.1).fold(0.0_f64, f64::max);
+    if !max.is_finite() || max <= 0.0 {
+        ui.label("no positive values along this profile");
+        return;
+    }
+
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Axis");
+            for (candidate, label) in [(0_usize, "X"), (1, "Y"), (2, "Z")] {
+                ui.selectable_value(&mut panel.profile.axis, candidate, label);
+            }
+            ui.checkbox(&mut panel.profile.log_y, "log y");
+            ui.separator();
+            ui.label("Measurement overlay — drop a measurement-record .json");
+            if let Some(record) = &panel.profile.measurement {
+                egui::ComboBox::from_id_salt("profile-measurement")
+                    .selected_text(
+                        record
+                            .measurements
+                            .get(panel.profile.measurement_pick)
+                            .map(|m| m.id.as_str())
+                            .unwrap_or("—"),
+                    )
+                    .show_ui(ui, |ui| {
+                        for (i, m) in record.measurements.iter().enumerate() {
+                            if matches!(m.value, MeasurementValue::Histogram { .. }) {
+                                ui.selectable_value(&mut panel.profile.measurement_pick, i, &m.id);
+                            }
+                        }
+                    });
+                if ui.button("clear").clicked() {
+                    panel.profile.measurement = None;
+                }
+            }
+        });
+        if let Some(error) = &panel.profile.measurement_error {
+            ui.colored_label(theme.error, format!("measurement rejected: {error}"));
+        }
+
+        // Overlay: peak-normalize the measured histogram onto the
+        // computed profile — both series drawn on the computed scale.
+        let overlay = panel.profile.measurement.as_ref().and_then(|record| {
+            record
+                .measurements
+                .get(panel.profile.measurement_pick)
+                .and_then(|m| match &m.value {
+                    MeasurementValue::Histogram {
+                        bin_edges,
+                        bin_values,
+                        bin_uncertainties_1sigma,
+                    } => Some((
+                        m.id.as_str(),
+                        m.unit.as_str(),
+                        bin_edges.as_slice(),
+                        bin_values.as_slice(),
+                        bin_uncertainties_1sigma.as_deref(),
+                    )),
+                    _ => None,
+                })
+        });
+        let overlay_scale = overlay.and_then(|(_, _, _, values, _)| {
+            values
+                .iter()
+                .copied()
+                .fold(0.0_f64, f64::max)
+                .gt(&0.0)
+                .then(|| max / values.iter().copied().fold(0.0_f64, f64::max))
+        });
+
+        let (response, painter) = ui.allocate_painter(
+            egui::vec2(ui.available_width(), 200.0),
+            egui::Sense::hover(),
+        );
+        let rect = response.rect.shrink2(egui::vec2(50.0, 26.0));
+        painter.rect_stroke(
+            rect,
+            4.0,
+            egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 82, 99)),
+            egui::StrokeKind::Inside,
+        );
+        let x_min = profile.first().map(|point| point.0).unwrap_or(0.0);
+        let x_max = profile.last().map(|point| point.0).unwrap_or(0.0);
+        let x_span = (x_max - x_min).max(f64::EPSILON);
+        let y_of = |value: f64| -> f32 {
+            if panel.profile.log_y {
+                let floor = max * 1e-4;
+                let t = (value.max(floor).ln() - floor.ln()) / (max.ln() - floor.ln());
+                rect.bottom() - (t as f32) * rect.height()
+            } else {
+                rect.bottom() - ((value / max) as f32) * rect.height()
+            }
+        };
+        let x_of = |cm: f64| rect.left() + ((cm - x_min) / x_span) as f32 * rect.width();
+        let points: Vec<egui::Pos2> = profile
+            .iter()
+            .map(|(cm, value)| egui::pos2(x_of(*cm), y_of(*value)))
+            .collect();
+        painter.add(egui::Shape::line(
+            points,
+            egui::Stroke::new(2.0, theme.brand),
+        ));
+        if let (Some((id, unit, edges, values, sigmas)), Some(scale)) = (overlay, overlay_scale) {
+            let point_color = egui::Color32::from_rgb(255, 220, 80);
+            for (i, &value) in values.iter().enumerate() {
+                let cm = (edges[i] + edges[i + 1]) / 2.0;
+                let x = x_of(cm);
+                let y = y_of(value * scale);
+                painter.circle_filled(egui::pos2(x, y), 3.0, point_color);
+                if let Some(sigmas) = sigmas {
+                    let sigma = sigmas[i] * scale;
+                    painter.line_segment(
+                        [
+                            egui::pos2(x, y_of(value * scale + sigma)),
+                            egui::pos2(x, y_of(value * scale - sigma)),
+                        ],
+                        egui::Stroke::new(1.0, point_color),
+                    );
+                }
+            }
+            painter.text(
+                rect.right_top() + egui::vec2(-4.0, 4.0),
+                egui::Align2::RIGHT_TOP,
+                format!("◦ {id} ({unit}) — peak-normalized overlay"),
+                egui::FontId::monospace(10.0),
+                point_color,
+            );
+        }
+        painter.text(
+            egui::pos2(rect.left() - 8.0, rect.top()),
+            egui::Align2::RIGHT_CENTER,
+            format!("{max:.2e}"),
+            egui::FontId::monospace(10.0),
+            theme.text_dim,
+        );
+        painter.text(
+            egui::pos2(rect.right(), rect.bottom() + 4.0),
+            egui::Align2::RIGHT_TOP,
+            format!(
+                "position along {}-axis [cm] · {}",
+                "XYZ".chars().nth(axis).unwrap_or('Z'),
+                artifact.unit()
+            ),
+            egui::FontId::monospace(10.0),
+            theme.text_dim,
+        );
+        ui.monospace(format!(
+            "profile through crosshair voxel {:?} — move it in the dose map above",
+            voxel
+        ));
+    });
+}
+
 fn show_dose_workspace(
     ui: &mut egui::Ui,
     panel: &mut DosePanel,
@@ -2696,6 +2950,10 @@ fn show_dose_workspace(
     ui.add_space(14.0);
     ui.heading("Dose map");
     show_dose_map(ui, panel, theme);
+
+    ui.add_space(14.0);
+    ui.heading("Line profile");
+    show_depth_profile(ui, panel, theme);
 
     ui.add_space(14.0);
     ui.heading("Region dose-volume histogram");
