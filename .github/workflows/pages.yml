@@ -1,0 +1,71 @@
+name: Deploy web workbench
+
+# Publishes the openbnct-gui egui app as a wasm32 bundle to GitHub Pages.
+# The web build is a viewer surface — artifacts load via drag-and-drop;
+# execution paths stay in the desktop build and CLI.
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "crates/openbnct-gui/**"
+      - "crates/openbnct-view/**"
+      - "crates/openbnct-core/**"
+      - "crates/openbnct-bio/**"
+      - "crates/openbnct-evidence/**"
+      - "crates/openbnct-nifti/**"
+      - "crates/openbnct-dicom/**"
+      - "crates/openbnct-plan/**"
+      - "crates/openbnct-transport/**"
+      - "crates/openbnct-openmc/**"
+      - "Cargo.toml"
+      - "Cargo.lock"
+      - ".github/workflows/pages.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: wasm32-unknown-unknown
+
+      - name: Install trunk
+        uses: taiki-e/install-action@v2
+        with:
+          tool: trunk
+
+      - name: Install wasm-bindgen-cli
+        uses: taiki-e/install-action@v2
+        with:
+          tool: wasm-bindgen-cli
+
+      - name: Build wasm bundle
+        working-directory: crates/openbnct-gui
+        run: trunk build --release --public-url ./
+
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: crates/openbnct-gui/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

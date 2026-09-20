@@ -33,3 +33,4 @@ summary.h5
 !conformance/**/*.nii
 !conformance/**/*.nii.gz
 !conformance/**/*.h5
+crates/openbnct-gui/dist/
