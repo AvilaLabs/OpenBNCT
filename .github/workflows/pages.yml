@@ -39,8 +39,12 @@ jobs:
       - uses: actions/checkout@v4
 
       - uses: dtolnay/rust-toolchain@stable
-        with:
-          targets: wasm32-unknown-unknown
+
+      # rust-toolchain.toml pins channel 1.95.0 — the action's targets input
+      # applies to the requested toolchain, not the pin. Install the wasm
+      # target onto whichever toolchain cargo actually resolves.
+      - name: Install wasm32 target
+        run: rustup target add wasm32-unknown-unknown
 
       - name: Install trunk
         uses: taiki-e/install-action@v2
