@@ -535,12 +535,26 @@ impl DoseOverlay {
     }
 }
 
+/// Interactive dose-map state: which component row is sliced, the
+/// bundle-grid crosshair voxel, display options, and cached textures.
+#[derive(Default)]
+struct DoseMapView {
+    voxel: Option<[u32; 3]>,
+    quantity: String,
+    log_scale: bool,
+    contours: bool,
+    textures: Option<[egui::TextureHandle; 3]>,
+    /// Render inputs the textures were produced from — regenerated on change.
+    cache_key: Option<String>,
+}
+
 /// UI state for the dose workspace: the loaded bundle plus the region mask
 /// and quantity chosen for the DVH panel.
 struct DosePanel {
     bundle_path: String,
     bundle: Option<LoadedDose>,
     bundle_error: Option<String>,
+    map: DoseMapView,
     mask_path: String,
     quantity: String,
     histogram: Option<DoseVolumeHistogram>,
@@ -560,6 +574,7 @@ impl Default for DosePanel {
             bundle_path: String::new(),
             bundle: None,
             bundle_error: None,
+            map: DoseMapView::default(),
             mask_path: String::new(),
             quantity: String::new(),
             histogram: None,
@@ -608,6 +623,9 @@ impl DosePanel {
             DoseArtifact::Physical(_) => "physical_total".into(),
             DoseArtifact::Biological(_) => "biological_total".into(),
         };
+        self.map = DoseMapView::default();
+        self.map.quantity = self.quantity.clone();
+        self.map.voxel = Some(bundle.artifact.geometry().shape.map(|extent| extent / 2));
         self.bundle = Some(bundle);
     }
 
@@ -2399,6 +2417,150 @@ fn show_plan_workspace(ui: &mut egui::Ui, panel: &mut PlanPanel, theme: Theme) {
     });
 }
 
+/// Tri-planar dose/field map rendered from the loaded bundle's own grid —
+/// the standalone-inspection path that the web build also exercises.
+/// Click/drag on any pane re-centres the shared crosshair.
+fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
+    let Some(bundle) = &panel.bundle else {
+        return;
+    };
+    let artifact = &bundle.artifact;
+    let rows = artifact.rows();
+    if rows.is_empty() {
+        return;
+    }
+    if !rows.iter().any(|(name, ..)| *name == panel.map.quantity) {
+        panel.map.quantity = rows
+            .last()
+            .map(|(name, ..)| name.clone())
+            .unwrap_or_default();
+    }
+    let Some((_, values, _)) = rows.iter().find(|(name, ..)| *name == panel.map.quantity) else {
+        return;
+    };
+    let max = values.iter().copied().fold(0.0_f64, f64::max);
+    let grid = match PatientAlignedGrid::new(artifact.geometry()) {
+        Ok(grid) => grid,
+        Err(error) => {
+            ui.colored_label(
+                theme.warn_text,
+                format!("dose map needs a patient-aligned grid: {error}"),
+            );
+            return;
+        }
+    };
+    if !max.is_finite() || max <= 0.0 {
+        ui.label("selected quantity has no positive values to render");
+        return;
+    }
+    let Some(voxel) = panel.map.voxel else {
+        return;
+    };
+
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("Quantity");
+            egui::ComboBox::from_id_salt("dose-map-quantity")
+                .selected_text(panel.map.quantity.clone())
+                .show_ui(ui, |ui| {
+                    for (name, ..) in &rows {
+                        ui.selectable_value(&mut panel.map.quantity, name.clone(), name.as_str());
+                    }
+                });
+            ui.checkbox(&mut panel.map.log_scale, "log scale");
+            ui.checkbox(&mut panel.map.contours, "isodose 90/50/10%");
+        });
+
+        let Ok(mut crosshair) = Crosshair::new(&grid, voxel) else {
+            return;
+        };
+        let key = format!(
+            "{}|{}|{:?}|{}|{}",
+            bundle.sha256, panel.map.quantity, voxel, panel.map.log_scale, panel.map.contours
+        );
+        if panel.map.cache_key.as_deref() != Some(key.as_str()) {
+            let mut textures: Option<[egui::TextureHandle; 3]> = None;
+            let planes = [
+                AnatomicalPlane::Axial,
+                AnatomicalPlane::Coronal,
+                AnatomicalPlane::Sagittal,
+            ];
+            let mut rendered = Vec::with_capacity(3);
+            let mut ok = true;
+            for plane in planes {
+                match grid.slice(plane, crosshair) {
+                    Ok(view) => {
+                        match render_dose_map_slice(
+                            values,
+                            view,
+                            max,
+                            panel.map.log_scale,
+                            panel.map.contours,
+                        ) {
+                            Ok(image) => rendered.push(ui.ctx().load_texture(
+                                format!("dose-map-{plane:?}"),
+                                image,
+                                egui::TextureOptions::NEAREST,
+                            )),
+                            Err(error) => {
+                                ui.colored_label(
+                                    theme.error,
+                                    format!("{plane:?} slice failed: {error}"),
+                                );
+                                ok = false;
+                            }
+                        }
+                    }
+                    Err(error) => {
+                        ui.colored_label(theme.error, format!("{plane:?} view failed: {error}"));
+                        ok = false;
+                    }
+                }
+            }
+            if ok && rendered.len() == 3 {
+                textures = Some([
+                    rendered[0].clone(),
+                    rendered[1].clone(),
+                    rendered[2].clone(),
+                ]);
+            }
+            panel.map.textures = textures;
+            panel.map.cache_key = Some(key);
+        }
+
+        let Some(textures) = &panel.map.textures else {
+            return;
+        };
+        ui.columns(3, |columns| {
+            let planes = [
+                AnatomicalPlane::Axial,
+                AnatomicalPlane::Coronal,
+                AnatomicalPlane::Sagittal,
+            ];
+            for (column, (plane, texture)) in
+                columns.iter_mut().zip(planes.iter().zip(textures.iter()))
+            {
+                if let Ok(view) = grid.slice(*plane, crosshair)
+                    && let Some(target) = show_slice_view(column, texture, view, crosshair, 220.0)
+                {
+                    let _ = crosshair.set_voxel(&grid, target);
+                }
+            }
+        });
+        panel.map.voxel = Some(crosshair.voxel());
+
+        let crosshair_voxel = crosshair.voxel();
+        if let Ok(index) = grid.linear_index(crosshair_voxel) {
+            ui.monospace(format!(
+                "crosshair {:?} → {:.4e} {}",
+                crosshair_voxel,
+                values[index],
+                artifact.unit(),
+            ));
+        }
+    });
+}
+
 fn show_dose_workspace(
     ui: &mut egui::Ui,
     panel: &mut DosePanel,
@@ -2530,6 +2692,10 @@ fn show_dose_workspace(
         }
     });
     ui.monospace(format!("unit: {}", artifact.unit()));
+
+    ui.add_space(14.0);
+    ui.heading("Dose map");
+    show_dose_map(ui, panel, theme);
 
     ui.add_space(14.0);
     ui.heading("Region dose-volume histogram");
@@ -3299,6 +3465,62 @@ fn blend(base: egui::Color32, overlay: egui::Color32, opacity: f32) -> egui::Col
         channel(base.g(), overlay.g()),
         channel(base.b(), overlay.b()),
     )
+}
+
+/// Render one plane of a dose/field map straight from the bundle's own
+/// grid — no case image required, so the web build can show it. Optional
+/// log normalization spans four decades; isodose contours mark the
+/// 90/50/10%-of-max boundaries.
+fn render_dose_map_slice(
+    values: &[f64],
+    view: SliceView,
+    max: f64,
+    log_scale: bool,
+    contours: bool,
+) -> Result<egui::ColorImage, String> {
+    let slice = view.extract(values).map_err(|error| error.to_string())?;
+    let dimensions = view.dimensions();
+    let (width, height) = (dimensions[0] as usize, dimensions[1] as usize);
+    let floor = (max * 1e-4).max(f64::MIN_POSITIVE);
+    let log_range = (max.ln() - floor.ln()).max(f64::EPSILON);
+    let mut pixels = Vec::with_capacity(width * height);
+    for &value in &slice {
+        let t = if log_scale {
+            ((value.max(floor).ln() - floor.ln()) / log_range).clamp(0.0, 1.0)
+        } else {
+            (value / max).clamp(0.0, 1.0)
+        };
+        pixels.push(dose_wash_color(t));
+    }
+    if contours {
+        for (level, color) in [
+            (0.9_f64, egui::Color32::WHITE),
+            (0.5, egui::Color32::from_rgb(80, 200, 255)),
+            (0.1, egui::Color32::from_rgb(255, 220, 80)),
+        ] {
+            let threshold = level * max;
+            for y in 0..height {
+                for x in 0..width {
+                    let index = y * width + x;
+                    if slice[index] < threshold {
+                        continue;
+                    }
+                    let boundary = [
+                        x > 0 && slice[index - 1] < threshold,
+                        x + 1 < width && slice[index + 1] < threshold,
+                        y > 0 && slice[index - width] < threshold,
+                        y + 1 < height && slice[index + width] < threshold,
+                    ]
+                    .into_iter()
+                    .any(|crosses| crosses);
+                    if boundary {
+                        pixels[index] = color;
+                    }
+                }
+            }
+        }
+    }
+    Ok(egui::ColorImage::new([width, height], pixels))
 }
 
 /// Classic "hot" dose-wash ramp: black → red → orange → yellow → white
