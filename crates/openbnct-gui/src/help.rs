@@ -383,8 +383,12 @@ impl GuidedHelp {
             .default_width(430.0)
             .min_width(360.0)
             .max_width(560.0)
+            .max_height(context.content_rect().height() - 16.0)
             .constrain_to(context.content_rect())
             .show(context, |ui| {
+                egui::ScrollArea::vertical()
+                    .auto_shrink([false; 2])
+                    .show(ui, |ui| {
                 ui.label(
                     egui::RichText::new(t!(
                         language,
@@ -512,6 +516,7 @@ impl GuidedHelp {
                         ));
                     });
                 }
+                    });
             });
 
         self.center_open = open;
