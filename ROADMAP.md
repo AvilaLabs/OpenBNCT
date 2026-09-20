@@ -1255,6 +1255,62 @@ Nothing in R8/R9 changes the deferred list below or adds any clinical
 claim; plan optimization involving Avify Dose patent subject matter
 remains behind the IP boundary.
 
+## R10 — Field-parity gap closure (draft)
+
+Draft scope, accepted for scheduling. Gap analysis 2026-09-20 against the
+current external field (NeuMANTA/NeuPex, JCDS-II/Tsukuba Plan, SERA,
+OpenPINT, and the BNCT-SPECT/Compton-camera prompt-gamma literature).
+Each item is evidence-gated; none implies a clinical claim.
+
+- **R10-01 — prompt-gamma production source.** The workbench scores the
+  ¹⁰B(n,α)⁷Li channel everywhere a boron dose exists; the BNCT-SPECT /
+  Compton-camera community consumes spatial 478 keV production maps for
+  detector design and image-reconstruction research. Deliverable: a
+  versioned `openbnct.prompt-gamma-source` artifact derived from the
+  boron dose component (per-capture yield with the declared 93.9%
+  branching ratio, monoenergetic 478 keV emission, isotropic
+  assumption), hash-bound to its parent dose bundle, with CLI
+  derivation and GUI display. Detector modeling, collimation, and
+  reconstruction are out of scope — the artifact is the physics source
+  term, not an imaging system. *Landed:* `prompt_gamma.rs` in
+  openbnct-transport (contract + validation + linear σ propagation),
+  `openbnct prompt-gamma` CLI, a derive/export section in the GUI dose
+  workspace, the 478 keV map selectable as a dose-map quantity, and
+  drop routing for the schema.
+- **R10-02 — OpenMC parallelism controls.** *Landed:* the run receipt
+  already bound `environment_overlay`; `--env` was already
+  general-purpose. Added `--threads N` as a first-class validated alias
+  for `OMP_NUM_THREADS` so parallelism is discoverable and recorded. The runner currently
+  inherits OpenMC defaults; expose declared thread/particle parallelism
+  (OMP thread count, MPI launch where present) on run manifests and the
+  GUI run surface so runs are reproducible under resource limits.
+- **R10-03 — DICOM MR import and PET/MR-to-CT resampling.** Research
+  targeting is MRI-defined; accept MR Image Storage series for display
+  and overlay, resample PET/MR volumes onto the case CT grid by declared
+  rigid transform (frame-of-reference or explicit matrix), and record
+  the registration basis in the artifact. Deformable registration stays
+  deferred.
+- **R10-04 — beam-direction search.** Extend `plan fields`/`optimize`
+  with a discrete direction sweep — enumerate candidate beam directions
+  over a declared angular grid, score each by the fast transport path,
+  and feed survivors to the weight optimizer. Acceptance: the sweep
+  reproduces a known optimum on a synthetic case and is content-bound.
+- **R10-05 — S_N plan-iteration quality.** Grow the deterministic solver
+  from verification scope toward iteration scope: more groups, wider
+  anisotropy support, performance pass. Each increment lands with its
+  own accuracy evidence; the solver never silently claims MC-grade
+  fidelity.
+- **R10-06 — nuclear-data uncertainty propagation.** Read ENDF
+  covariance data where published and propagate perturbations through
+  the multigroup path to dose-level uncertainty surfaces — a
+  differentiator no current BNCT tool offers, matching the project's
+  provenance/uncertainty brand.
+- **R10-07 — PHITS deck emitter.** Symmetric interoperability: the
+  workbench reads PHITS outputs; emit PHITS input for supported
+  geometry/source subsets so PHITS-side users can cross-check.
+  Acceptance: emitted deck executes under PHITS and matches the
+  OpenMC/MCNP reference on a frozen case within declared tolerances.
+
 ## Deferred beyond the research platform
 
 - patient-specific clinical decisions;

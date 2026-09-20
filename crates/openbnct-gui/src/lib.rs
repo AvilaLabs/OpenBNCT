@@ -652,6 +652,10 @@ struct DosePanel {
     compare_zone: egui::Rect,
     compare_textures: Option<[egui::TextureHandle; 3]>,
     compare_cache_key: Option<String>,
+    /// 478 keV production map derived from this bundle's boron
+    /// component — also selectable as a dose-map quantity.
+    prompt_gamma: Option<openbnct_transport::PromptGammaSource>,
+    prompt_gamma_error: Option<String>,
     mask_path: String,
     quantity: String,
     histogram: Option<DoseVolumeHistogram>,
@@ -678,6 +682,8 @@ impl Default for DosePanel {
             compare_zone: egui::Rect::NOTHING,
             compare_textures: None,
             compare_cache_key: None,
+            prompt_gamma: None,
+            prompt_gamma_error: None,
             mask_path: String::new(),
             quantity: String::new(),
             histogram: None,
@@ -1516,6 +1522,9 @@ enum DropTarget {
     Measurement,
     Spectrum,
     Robustness,
+    /// A derived `openbnct.prompt-gamma-source` document — loads into the
+    /// dose panel's prompt-gamma slot and selects the map quantity.
+    PromptGamma,
     Unsupported,
 }
 
@@ -1624,6 +1633,7 @@ fn classify_dropped_json(bytes: &[u8]) -> DropTarget {
             DropTarget::Spectrum
         }
         s if s.contains("plan-robustness/") => DropTarget::Robustness,
+        s if s.contains("prompt-gamma-source/") => DropTarget::PromptGamma,
         _ => DropTarget::DoseBundle,
     }
 }
@@ -2146,6 +2156,28 @@ impl OpenBnctApp {
                     Err(error) => self.panels.plan.robustness_error = Some(error),
                 }
                 self.workspace = WorkspaceTab::Plan;
+            }
+            DropTarget::PromptGamma => {
+                match bytes
+                    .map_err(|e| e.clone())
+                    .and_then(|b| {
+                        serde_json::from_slice::<openbnct_transport::PromptGammaSource>(&b)
+                            .map_err(|e| e.to_string())
+                    })
+                    .and_then(|source| source.validate().map(|_| source).map_err(|e| e.to_string()))
+                {
+                    Ok(source) => {
+                        self.panels.dose.prompt_gamma = Some(source);
+                        self.panels.dose.prompt_gamma_error = None;
+                        self.panels.dose.map.quantity = "prompt_gamma_478kev".into();
+                        self.panels.dose.map.textures = None;
+                        self.panels.dose.map.cache_key = None;
+                    }
+                    Err(error) => {
+                        self.panels.dose.prompt_gamma_error = Some(error);
+                    }
+                }
+                self.workspace = WorkspaceTab::Dose;
             }
             DropTarget::Unsupported => {
                 self.load_error = Some(format!("unsupported drop {name}"));
@@ -4032,7 +4064,14 @@ fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, language: Language, t
         return;
     };
     let artifact = &bundle.artifact;
-    let rows = artifact.rows();
+    let mut rows = artifact.rows();
+    if let Some(source) = &panel.prompt_gamma {
+        rows.push((
+            "prompt_gamma_478kev".into(),
+            source.values.as_slice(),
+            source.absolute_standard_uncertainty.as_deref(),
+        ));
+    }
     if rows.is_empty() {
         return;
     }
@@ -4682,6 +4721,108 @@ fn show_dose_compare(ui: &mut egui::Ui, panel: &mut DosePanel, language: Languag
     });
 }
 
+/// Prompt-gamma derivation section: turns the loaded bundle's boron
+/// dose into the 478 keV production map that BNCT-SPECT/Compton-camera
+/// research consumes — a physics source term, not an image. The derived
+/// map is selectable as a dose-map quantity and exportable as the
+/// versioned `prompt-gamma-source` artifact.
+fn show_prompt_gamma(ui: &mut egui::Ui, panel: &mut DosePanel, language: Language, theme: Theme) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        let physical = panel
+            .bundle
+            .as_ref()
+            .and_then(|loaded| match &loaded.artifact {
+                DoseArtifact::Physical(bundle) => Some(bundle),
+                DoseArtifact::Biological(_) => None,
+            });
+        ui.label(t!(
+            language,
+            "Derive the 478 keV ¹⁰B(n,α)⁷Li emission map (94% branch) — the source term for prompt-gamma imaging research.",
+            "478 keV ¹⁰B(n,α)⁷Li 放出マップを生成(94% 分枝)— 即発ガンマイメージング研究の線源項。"
+        ));
+        ui.horizontal(|ui| {
+            let enabled = physical.is_some();
+            let response = ui
+                .add_enabled(
+                    enabled,
+                    egui::Button::new(t!(
+                        language,
+                        "Derive prompt-gamma source",
+                        "即発ガンマ線源を生成"
+                    )),
+                )
+                .on_disabled_hover_text(t!(
+                    language,
+                    "requires a physical dose bundle with a boron component",
+                    "ホウ素成分を含む物理線量バンドルが必要"
+                ));
+            if response.clicked()
+                && let Some(bundle) = physical
+            {
+                let loaded = panel.bundle.as_ref().expect("bundle present");
+                let parent = openbnct_core::ContentReference {
+                    id: bundle.provenance_id.clone(),
+                    sha256: loaded.sha256.clone(),
+                };
+                let provenance = format!("prompt-gamma:{}", bundle.provenance_id);
+                match openbnct_transport::derive_prompt_gamma_source(
+                    bundle,
+                    "openbnct.prompt-gamma-source",
+                    parent,
+                    &provenance,
+                ) {
+                    Ok(source) => {
+                        panel.prompt_gamma = Some(source);
+                        panel.prompt_gamma_error = None;
+                        panel.map.quantity = "prompt_gamma_478kev".into();
+                        panel.map.textures = None;
+                        panel.map.cache_key = None;
+                    }
+                    Err(error) => {
+                        panel.prompt_gamma_error = Some(error.to_string());
+                    }
+                }
+            }
+            if let Some(source) = &panel.prompt_gamma {
+                let total: f64 = source.values.iter().sum();
+                ui.monospace(format!(
+                    "emission {:.0} keV · branch {:.2} · Σ yield {:.4e} {}",
+                    source.emission_energy_ev / 1.0e3,
+                    source.branching_ratio,
+                    total,
+                    match source.unit {
+                        openbnct_transport::PromptGammaUnit::PhotonsPerKg => "γ/kg",
+                        openbnct_transport::PromptGammaUnit::PhotonsPerKgPerSourceParticle =>
+                            "γ/kg/src",
+                    }
+                ));
+                if ui
+                    .button(t!(language, "Export JSON", "JSON を保存"))
+                    .clicked()
+                    && let Ok(json) = serde_json::to_vec_pretty(source)
+                {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    if let Some(path) = rfd::FileDialog::new()
+                        .add_filter("JSON", &["json"])
+                        .set_file_name("prompt-gamma-source.json")
+                        .save_file()
+                    {
+                        panel.prompt_gamma_error = io::write_bytes(&path, &json).err();
+                    }
+                    #[cfg(target_arch = "wasm32")]
+                    crate::web::download_bytes("prompt-gamma-source.json", &json);
+                }
+            }
+        });
+        if let Some(error) = &panel.prompt_gamma_error {
+            ui.colored_label(
+                theme.error,
+                format!("{}: {error}", t!(language, "prompt-gamma failed", "生成失敗")),
+            );
+        }
+    });
+}
+
 #[allow(clippy::too_many_arguments)] // workspace renderers are pure plumbing
 fn show_dose_workspace(
     ui: &mut egui::Ui,
@@ -4848,6 +4989,9 @@ fn show_dose_workspace(
     ui.add_space(14.0);
     ui.heading(t!(language, "A/B compare", "A/B 比較"));
     show_dose_compare(ui, panel, language, theme);
+    ui.add_space(12.0);
+    ui.heading(t!(language, "Prompt-gamma source", "即発ガンマ線源"));
+    show_prompt_gamma(ui, panel, language, theme);
     if panel.compare_zone != egui::Rect::NOTHING {
         tour_targets.set(TourTarget::CompareZone, panel.compare_zone);
     }

@@ -18,6 +18,7 @@ mod model;
 mod multigroup;
 mod photon;
 mod positioning;
+mod prompt_gamma;
 mod response;
 mod screening;
 mod uq;
@@ -77,6 +78,10 @@ pub use photon::{
 pub use positioning::{
     AxisApproach, EntrySide, POSITION_REPORT_SCHEMA, PositionReport, PositioningError,
     aim_disk_source_at_centroid, aim_source_at_centroid, rotate_source,
+};
+pub use prompt_gamma::{
+    PROMPT_GAMMA_ENERGY_EV, PROMPT_GAMMA_QUALIFICATION, PROMPT_GAMMA_SOURCE_SCHEMA,
+    PromptGammaError, PromptGammaSource, PromptGammaUnit, derive_prompt_gamma_source,
 };
 pub use response::{
     AtomDensityBasis, ComponentDefinitionProfile, ComponentEstimator, ComponentRule,

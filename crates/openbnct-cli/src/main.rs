@@ -134,6 +134,24 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Derive a 478 keV prompt-gamma production map from a dose bundle's
+    /// boron component (`openbnct.prompt-gamma-source/0.1.0`) — the
+    /// physics source term BNCT-SPECT/Compton-camera research consumes.
+    PromptGamma {
+        /// `openbnct.physical-dose-bundle` JSON.
+        #[arg(long)]
+        dose: PathBuf,
+        /// Source document identifier.
+        #[arg(long)]
+        id: String,
+        /// Provenance identifier; defaults to `prompt-gamma:` + the
+        /// parent bundle's provenance.
+        #[arg(long)]
+        provenance_id: Option<String>,
+        /// New output path for the prompt-gamma-source JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Export or verify a deterministic evidence bundle.
     Evidence(EvidenceArgs),
     /// Combine or construct RegionMask volumes (subtraction, union,
@@ -2190,6 +2208,11 @@ enum OpenMcCommand {
         /// `LD_LIBRARY_PATH=...` or `OMP_NUM_THREADS=...`).
         #[arg(long = "env")]
         environment: Vec<String>,
+        /// OpenMP thread count — a first-class alias for
+        /// `--env OMP_NUM_THREADS=N` so parallelism is discoverable and
+        /// recorded in the run receipt's environment overlay.
+        #[arg(long)]
+        threads: Option<u32>,
         /// New working directory for the run; it must not already exist.
         #[arg(long)]
         working_directory: PathBuf,
@@ -4536,6 +4559,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 nuclear_data_root,
                 openmc,
                 environment,
+                threads,
                 working_directory,
                 dose_output,
                 evidence_root,
@@ -4555,6 +4579,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     nuclear_data_root,
                 };
                 let mut backend = OpenMcBackend::new(&openmc).configured(config);
+                if let Some(threads) = threads {
+                    if threads == 0 {
+                        return Err(io::Error::other("--threads must be ≥ 1").into());
+                    }
+                    backend = backend.with_env("OMP_NUM_THREADS", threads.to_string());
+                }
                 for pair in &environment {
                     let (key, value) = pair.split_once('=').ok_or_else(|| {
                         io::Error::other(format!(
@@ -6997,6 +7027,40 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 println!("wrote {}", output.display());
             }
         },
+        Some(Command::PromptGamma {
+            dose,
+            id,
+            provenance_id,
+            output,
+        }) => {
+            let bytes = fs::read(&dose)?;
+            let bundle: PhysicalDoseBundle = serde_json::from_slice(&bytes)
+                .map_err(|error| io::Error::other(format!("dose {}: {error}", dose.display())))?;
+            bundle
+                .validate()
+                .map_err(|error| io::Error::other(format!("dose {}: {error}", dose.display())))?;
+            let parent = openbnct_core::ContentReference {
+                id: bundle.provenance_id.clone(),
+                sha256: format!("sha256:{}", openbnct_evidence::sha256_hex(&bytes)),
+            };
+            let source = openbnct_transport::derive_prompt_gamma_source(
+                &bundle,
+                &id,
+                parent,
+                provenance_id
+                    .as_deref()
+                    .unwrap_or(&format!("prompt-gamma:{}", bundle.provenance_id)),
+            )
+            .map_err(|error| io::Error::other(format!("prompt-gamma: {error}")))?;
+            write_new_json(&output, &source)?;
+            println!("prompt-gamma source at {}", output.display());
+            println!(
+                "emission {:.0} keV · branch {:.2} · {} voxels",
+                source.emission_energy_ev / 1.0e3,
+                source.branching_ratio,
+                source.values.len()
+            );
+        }
         Some(Command::Accumulate { plan, output }) => {
             let accumulated = openbnct_plan::accumulate_plan_file(&plan)
                 .map_err(|error| io::Error::other(format!("accumulation: {error}")))?;
