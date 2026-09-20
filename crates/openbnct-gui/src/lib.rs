@@ -4,6 +4,7 @@
 
 mod brand;
 mod help;
+mod i18n;
 mod io;
 mod run;
 #[cfg(target_arch = "wasm32")]
@@ -27,6 +28,7 @@ use openbnct_transport::TransportBackend;
 use openbnct_view::{AnatomicalPlane, Crosshair, PatientAlignedGrid, SliceView, ViewError};
 
 use help::{GuidedHelp, HelpWorkspace, TourTarget, TourTargets};
+use i18n::Language;
 
 // Vendored copies of the frozen NF-BNCT-001 benchmark artifacts so the crate
 // packages standalone; the canonical versions live in benchmarks/synthetic.
@@ -129,6 +131,24 @@ impl WorkspaceTab {
         }
     }
 
+    const fn label_ja(self) -> &'static str {
+        match self {
+            Self::Overview => "概要",
+            Self::Geometry => "ジオメトリ",
+            Self::Transport => "輸送",
+            Self::Plan => "計画",
+            Self::Dose => "線量成分",
+            Self::Evidence => "エビデンス",
+        }
+    }
+
+    fn localized_label(self, language: Language) -> &'static str {
+        match language {
+            Language::Japanese => self.label_ja(),
+            Language::English => self.label(),
+        }
+    }
+
     const fn marker(self) -> &'static str {
         match self {
             Self::Overview => "01",
@@ -184,6 +204,23 @@ impl GateState {
             Self::Blocked => "BLOCKED",
             Self::Pending => "PENDING",
             Self::InputRequired => "INPUT REQUIRED",
+        }
+    }
+
+    const fn label_ja(self) -> &'static str {
+        match self {
+            Self::Verified => "検証済み",
+            Self::Frozen => "凍結",
+            Self::Blocked => "ブロック",
+            Self::Pending => "保留",
+            Self::InputRequired => "入力待ち",
+        }
+    }
+
+    fn localized_label(self, language: Language) -> &'static str {
+        match language {
+            Language::Japanese => self.label_ja(),
+            Language::English => self.label(),
         }
     }
 
@@ -259,14 +296,22 @@ struct ReadinessGate {
     state: GateState,
 }
 
-fn readiness_gates(case_loaded: bool) -> [ReadinessGate; 5] {
+fn readiness_gates(case_loaded: bool, language: Language) -> [ReadinessGate; 5] {
     [
         ReadinessGate {
-            title: "DICOM geometry",
+            title: t!(language, "DICOM geometry", "DICOM ジオメトリ"),
             detail: if case_loaded {
-                "Case artifacts and patient-space geometry passed the runtime gate."
+                t!(
+                    language,
+                    "Case artifacts and patient-space geometry passed the runtime gate.",
+                    "症例アーティファクトと患者空間ジオメトリが実行時ゲートを通過。"
+                )
             } else {
-                "Load NF-BNCT-001 to run the DICOM and integrity gate."
+                t!(
+                    language,
+                    "Load NF-BNCT-001 to run the DICOM and integrity gate.",
+                    "NF-BNCT-001 を読み込むと DICOM・完全性ゲートが実行されます。"
+                )
             },
             state: if case_loaded {
                 GateState::Verified
@@ -275,23 +320,39 @@ fn readiness_gates(case_loaded: bool) -> [ReadinessGate; 5] {
             },
         },
         ReadinessGate {
-            title: "Material and source",
-            detail: "Versioned NF-BNCT-001 benchmark contracts are checked in.",
+            title: t!(language, "Material and source", "材料と線源"),
+            detail: t!(
+                language,
+                "Versioned NF-BNCT-001 benchmark contracts are checked in.",
+                "バージョン管理された NF-BNCT-001 ベンチマーク契約はコミット済み。"
+            ),
             state: GateState::Frozen,
         },
         ReadinessGate {
-            title: "OpenMC nuclear data",
-            detail: "Official case selection and 16 artifact identities are frozen.",
+            title: t!(language, "OpenMC nuclear data", "OpenMC 核データ"),
+            detail: t!(
+                language,
+                "Official case selection and 16 artifact identities are frozen.",
+                "公式ケース選択と16件のアーティファクト同一性が凍結済み。"
+            ),
             state: GateState::Frozen,
         },
         ReadinessGate {
-            title: "Component responses",
-            detail: "O-17/O-18 transported-photon treatment requires independent review.",
+            title: t!(language, "Component responses", "成分応答"),
+            detail: t!(
+                language,
+                "O-17/O-18 transported-photon treatment requires independent review.",
+                "O-17/O-18 輸送済み光子の取り扱いは独立レビューが必要。"
+            ),
             state: GateState::Blocked,
         },
         ReadinessGate {
-            title: "Controlled transport run",
-            detail: "Disabled until every upstream scientific gate passes.",
+            title: t!(language, "Controlled transport run", "制御付き輸送実行"),
+            detail: t!(
+                language,
+                "Disabled until every upstream scientific gate passes.",
+                "上流の科学的ゲートがすべて通過するまで無効。"
+            ),
             state: GateState::Pending,
         },
     ]
@@ -1503,8 +1564,9 @@ fn browse_file_button(
     sender: Option<&DropSender>,
     filter_name: &str,
     extensions: &[&str],
+    language: Language,
 ) -> Option<PathBuf> {
-    let clicked = ui.button("Browse…").clicked();
+    let clicked = ui.button(t!(language, "Browse…", "参照…")).clicked();
     #[cfg(not(target_arch = "wasm32"))]
     {
         let _ = sender;
@@ -1571,6 +1633,28 @@ fn classify_dropped_json(bytes: &[u8]) -> DropTarget {
 type DropMessage = (String, Option<egui::Pos2>, Result<Vec<u8>, String>);
 type DropSender = std::sync::mpsc::Sender<DropMessage>;
 
+/// Register the CJK fallback face (subset to the glyphs the Japanese UI
+/// actually uses — regen via assets/regen-cjk-font.sh) so 日本語 renders on both
+/// targets. Appended to both families: Latin keeps its crisp primary
+/// font, CJK falls through.
+fn install_cjk_fonts(context: &egui::Context) {
+    let mut fonts = egui::FontDefinitions::default();
+    fonts.font_data.insert(
+        "noto-cjk-jp".to_owned(),
+        std::sync::Arc::new(egui::FontData::from_static(include_bytes!(
+            "../assets/NotoSansCJKjp-UI.otf"
+        ))),
+    );
+    for family in [egui::FontFamily::Proportional, egui::FontFamily::Monospace] {
+        fonts
+            .families
+            .entry(family)
+            .or_default()
+            .push("noto-cjk-jp".to_owned());
+    }
+    context.set_fonts(fonts);
+}
+
 pub(crate) struct OpenBnctApp {
     case_path: String,
     load_error: Option<String>,
@@ -1598,10 +1682,13 @@ pub(crate) struct OpenBnctApp {
     drop_sender: DropSender,
     #[cfg(target_arch = "wasm32")]
     drop_receiver: std::sync::mpsc::Receiver<DropMessage>,
+    /// UI language — English authoring with Japanese localization.
+    language: Language,
 }
 
 impl OpenBnctApp {
     fn new(initial_case: Option<PathBuf>, context: &egui::Context) -> Self {
+        install_cjk_fonts(context);
         let has_initial_case = initial_case.is_some();
         #[cfg(target_arch = "wasm32")]
         let (drop_sender, drop_receiver) = std::sync::mpsc::channel();
@@ -1630,6 +1717,7 @@ impl OpenBnctApp {
             drop_sender,
             #[cfg(target_arch = "wasm32")]
             drop_receiver,
+            language: Language::detect(),
         };
         if has_initial_case {
             app.load_case();
@@ -1673,18 +1761,29 @@ impl OpenBnctApp {
     /// View owns the theme toggle, Help owns the help center.
     fn show_menu_bar(&mut self, ui: &mut egui::Ui, tour_targets: &mut TourTargets) {
         egui::MenuBar::new().ui(ui, |ui| {
-            ui.menu_button("File", |ui| {
+            let lang = self.language;
+            ui.menu_button(t!(lang, "File", "ファイル"), |ui| {
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    if ui.button("Open case…").clicked() {
+                    if ui
+                        .button(t!(lang, "Open case…", "症例を開く…"))
+                        .clicked()
+                    {
                         if let Some(dir) = io::pick_folder() {
                             self.case_path = dir.display().to_string();
                             self.load_case();
                         }
                         ui.close();
                     }
-                    ui.small("the frozen NF-BNCT-001 case directory — or drop it anywhere.");
-                    if ui.button("Import DICOM study…").clicked() {
+                    ui.small(t!(
+                        lang,
+                        "the frozen NF-BNCT-001 case directory — or drop it anywhere.",
+                        "凍結済み NF-BNCT-001 症例フォルダ — どこかにドロップしても可。"
+                    ));
+                    if ui
+                        .button(t!(lang, "Import DICOM study…", "DICOM スタディを取り込む…"))
+                        .clicked()
+                    {
                         if let Some(dir) = io::pick_folder() {
                             let paths = openbnct_dicom::collect_study_paths(&dir);
                             match openbnct_dicom::import_study_from_paths(&paths)
@@ -1697,53 +1796,94 @@ impl OpenBnctApp {
                                     self.workspace = WorkspaceTab::Geometry;
                                 }
                                 Err(error) => {
-                                    self.load_error =
-                                        Some(format!("study import rejected: {error}"));
+                                    self.load_error = Some(format!(
+                                        "{}: {error}",
+                                        t!(lang, "study import rejected", "スタディ取り込み拒否")
+                                    ));
                                 }
                             }
                         }
                         ui.close();
                     }
-                    ui.small("any CT + RTSTRUCT export — bucketed by SOP class, hash-bound.");
+                    ui.small(t!(
+                        lang,
+                        "any CT + RTSTRUCT export — bucketed by SOP class, hash-bound.",
+                        "任意の CT + RTSTRUCT エクスポート — SOP クラスで仕分け、ハッシュで紐付け。"
+                    ));
                 }
                 #[cfg(target_arch = "wasm32")]
                 {
-                    if ui.button("Open case or study files…").clicked() {
+                    if ui
+                        .button(t!(lang, "Open case or study files…", "症例/スタディを開く…"))
+                        .clicked()
+                    {
                         // Browsers cannot hand us a folder path — picked
                         // files arrive on the drop channel and route like
                         // drops (zip → archive, .dcm → study accumulator).
                         self.pick_files_into_drops(ui.ctx());
                         ui.close();
                     }
-                    ui.small(
+                    ui.small(t!(
+                        lang,
                         "…or drop them: a case .zip, the 42 NF-BNCT-001 members, \
                          or a DICOM study's files.",
-                    );
+                        "…またはドロップ: 症例 .zip、NF-BNCT-001 の全42ファイル、または DICOM スタディのファイル群。"
+                    ));
                 }
                 #[cfg(not(target_arch = "wasm32"))]
                 {
-                    if ui.button("Export case template…").clicked() {
+                    if ui
+                        .button(t!(
+                            lang,
+                            "Export case template…",
+                            "症例テンプレートを出力…"
+                        ))
+                        .clicked()
+                    {
                         if let Some(dir) = io::pick_folder() {
                             self.template_status = Some(match export_case_template(&dir) {
                                 Ok(count) => format!(
-                                    "template written to {} ({count} files — edit before use)",
-                                    dir.display()
+                                    "{} {} ({})",
+                                    t!(lang, "template written to", "テンプレート出力先:"),
+                                    dir.display(),
+                                    t!(
+                                        lang,
+                                        "{count} files — edit before use",
+                                        "{count} ファイル — 使用前に編集してください"
+                                    )
+                                    .replace("{count}", &count.to_string())
                                 ),
-                                Err(error) => format!("template export failed: {error}"),
+                                Err(error) => format!(
+                                    "{}: {error}",
+                                    t!(lang, "template export failed", "テンプレート出力失敗")
+                                ),
                             });
                         }
                         ui.close();
                     }
                     ui.separator();
-                    if ui.button("Quit").clicked() {
+                    if ui.button(t!(lang, "Quit", "終了")).clicked() {
                         ui.send_viewport_cmd(egui::ViewportCommand::Close);
                     }
                 }
             });
-            ui.menu_button("View", |ui| {
-                ui.checkbox(&mut self.dark_mode, "Dark mode");
+            ui.menu_button(t!(self.language, "View", "表示"), |ui| {
+                let lang = self.language;
+                ui.checkbox(&mut self.dark_mode, t!(lang, "Dark mode", "ダークモード"));
                 ui.separator();
-                ui.label(egui::RichText::new("Interface scale").small());
+                ui.label(
+                    egui::RichText::new(t!(lang, "Language / 言語", "言語 / Language")).small(),
+                );
+                for candidate in Language::ALL {
+                    if ui
+                        .selectable_label(self.language == candidate, candidate.label())
+                        .clicked()
+                    {
+                        self.language = candidate;
+                    }
+                }
+                ui.separator();
+                ui.label(egui::RichText::new(t!(lang, "Interface scale", "表示倍率")).small());
                 ui.horizontal(|ui| {
                     for (label, factor) in [
                         ("75%", 0.75_f32),
@@ -1758,11 +1898,17 @@ impl OpenBnctApp {
                     }
                 });
                 ui.separator();
-                if ui.button("Reset views").clicked() {
+                if ui
+                    .button(t!(lang, "Reset views", "ビューをリセット"))
+                    .clicked()
+                {
                     self.reset_views();
                     ui.close();
                 }
-                if ui.button("Screenshot…").clicked() {
+                if ui
+                    .button(t!(lang, "Screenshot…", "スクリーンショット…"))
+                    .clicked()
+                {
                     self.want_screenshot = true;
                     ui.send_viewport_cmd(egui::ViewportCommand::Screenshot(
                         egui::UserData::default(),
@@ -1772,7 +1918,10 @@ impl OpenBnctApp {
                 #[cfg(not(target_arch = "wasm32"))]
                 {
                     ui.separator();
-                    if ui.button("Toggle fullscreen").clicked() {
+                    if ui
+                        .button(t!(lang, "Toggle fullscreen", "全画面表示の切替"))
+                        .clicked()
+                    {
                         ui.send_viewport_cmd(egui::ViewportCommand::Fullscreen(
                             !ui.input(|i| i.viewport().fullscreen.unwrap_or(false)),
                         ));
@@ -1780,8 +1929,15 @@ impl OpenBnctApp {
                     }
                 }
             });
-            let help = ui.menu_button("Help", |ui| {
-                if ui.button("Help and guided tours").clicked() {
+            let help = ui.menu_button(t!(self.language, "Help", "ヘルプ"), |ui| {
+                if ui
+                    .button(t!(
+                        self.language,
+                        "Help and guided tours",
+                        "ヘルプとガイドツアー"
+                    ))
+                    .clicked()
+                {
                     self.help.toggle_center();
                     ui.close();
                 }
@@ -2120,7 +2276,7 @@ impl eframe::App for OpenBnctApp {
         if ui.input(|input| input.key_pressed(egui::Key::F1)) {
             self.help.toggle_center();
         }
-        if let Some(workspace) = self.help.requested_workspace() {
+        if let Some(workspace) = self.help.requested_workspace(self.language) {
             self.workspace = workspace.into();
         }
 
@@ -2181,6 +2337,7 @@ impl eframe::App for OpenBnctApp {
                     ui,
                     self.case.as_ref(),
                     self.brand_logo.as_ref(),
+                    self.language,
                     theme,
                     &mut tour_targets,
                 );
@@ -2191,6 +2348,7 @@ impl eframe::App for OpenBnctApp {
                     &mut self.case_path,
                     self.case.as_ref(),
                     enter_pressed,
+                    self.language,
                     &mut tour_targets,
                     &mut self.template_status,
                 ) {
@@ -2199,12 +2357,21 @@ impl eframe::App for OpenBnctApp {
                     LoaderRequest::None => {}
                 }
                 if let Some(error) = &self.load_error {
-                    ui.colored_label(theme.error, format!("Load rejected: {error}"));
+                    ui.colored_label(
+                        theme.error,
+                        format!(
+                            "{}: {error}",
+                            t!(self.language, "Load rejected", "読込拒否")
+                        ),
+                    );
                 }
                 if let Some(note) = self.case_drop_note.clone() {
                     ui.horizontal(|ui| {
                         ui.colored_label(theme.warn_text, &note);
-                        if ui.small_button("discard").clicked() {
+                        if ui
+                            .small_button(t!(self.language, "discard", "破棄"))
+                            .clicked()
+                        {
                             self.pending_case_files.clear();
                             self.case_drop_note = None;
                         }
@@ -2215,12 +2382,27 @@ impl eframe::App for OpenBnctApp {
                     ui.horizontal(|ui| {
                         ui.colored_label(
                             theme.warn_text,
-                            format!("{count} DICOM file(s) collected for study import"),
+                            t!(
+                                self.language,
+                                "{count} DICOM file(s) collected for study import",
+                                "スタディ取り込み用に {count} 件の DICOM ファイルを収集済み"
+                            )
+                            .replace("{count}", &count.to_string()),
                         );
-                        if ui.small_button("Import as research case").clicked() {
+                        if ui
+                            .small_button(t!(
+                                self.language,
+                                "Import as research case",
+                                "研究用症例として取り込む"
+                            ))
+                            .clicked()
+                        {
                             self.import_pending_study();
                         }
-                        if ui.small_button("discard").clicked() {
+                        if ui
+                            .small_button(t!(self.language, "discard", "破棄"))
+                            .clicked()
+                        {
                             self.pending_study_files.clear();
                         }
                     });
@@ -2232,9 +2414,13 @@ impl eframe::App for OpenBnctApp {
         egui::Panel::bottom("workbench-status").show(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.label(
-                    egui::RichText::new("Research use only · Not for clinical decision-making")
-                        .small()
-                        .color(theme.text_dim),
+                    egui::RichText::new(t!(
+                        self.language,
+                        "Research use only · Not for clinical decision-making",
+                        "研究専用 · 臨床判断には使用不可"
+                    ))
+                    .small()
+                    .color(theme.text_dim),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
@@ -2256,12 +2442,19 @@ impl eframe::App for OpenBnctApp {
             &mut self.display,
             &mut self.panels,
             drop_sender,
+            self.language,
             &mut tour_targets,
             theme,
         );
+        self.help.show_center(
+            ui.ctx(),
+            self.workspace.into(),
+            self.case.is_some(),
+            self.language,
+            theme,
+        );
         self.help
-            .show_center(ui.ctx(), self.workspace.into(), self.case.is_some(), theme);
-        self.help.show_tour(ui.ctx(), &tour_targets, theme);
+            .show_tour(ui.ctx(), &tour_targets, self.language, theme);
     }
 }
 
@@ -2321,6 +2514,7 @@ fn show_app_header(
     ui: &mut egui::Ui,
     case: Option<&ViewerCase>,
     brand_logo: Option<&egui::TextureHandle>,
+    language: Language,
     theme: Theme,
     tour_targets: &mut TourTargets,
 ) {
@@ -2338,11 +2532,18 @@ fn show_app_header(
         }
         ui.label(egui::RichText::new("OpenBNCT").size(21.0).strong());
         ui.separator();
-        ui.label(egui::RichText::new("Research workbench").color(theme.text_dim));
+        ui.label(
+            egui::RichText::new(t!(language, "Research workbench", "研究ワークベンチ"))
+                .color(theme.text_dim),
+        );
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.label(
-                egui::RichText::new(case.map_or("No case open", |c| c.data.case_id.as_str()))
-                    .color(theme.text_dim),
+                egui::RichText::new(
+                    case.map_or(t!(language, "No case open", "症例なし"), |c| {
+                        c.data.case_id.as_str()
+                    }),
+                )
+                .color(theme.text_dim),
             );
         });
     });
@@ -2408,6 +2609,7 @@ fn show_case_loader(
     case_path: &mut String,
     case: Option<&ViewerCase>,
     enter_pressed: bool,
+    language: Language,
     tour_targets: &mut TourTargets,
     template_status: &mut Option<String>,
 ) -> LoaderRequest {
@@ -2416,17 +2618,24 @@ fn show_case_loader(
     let response = ui.horizontal(|ui| {
         #[cfg(not(target_arch = "wasm32"))]
         {
-            ui.label("Case folder");
+            ui.label(t!(language, "Case folder", "症例フォルダ"));
             let path_response = ui.add(
                 egui::TextEdit::singleline(case_path)
                     .desired_width((ui.available_width() - 220.0).max(180.0))
-                    .hint_text("Open a verified case folder, or drop it here"),
+                    .hint_text(t!(
+                        language,
+                        "Open a verified case folder, or drop it here",
+                        "検証済み症例フォルダを開く、またはここにドロップ"
+                    )),
             );
-            if ui.button("Load & verify").clicked() || (path_response.lost_focus() && enter_pressed)
+            if ui
+                .button(t!(language, "Load & verify", "読込・検証"))
+                .clicked()
+                || (path_response.lost_focus() && enter_pressed)
             {
                 request = LoaderRequest::LoadPath;
             }
-            if ui.button("Browse…").clicked()
+            if ui.button(t!(language, "Browse…", "参照…")).clicked()
                 && let Some(dir) = io::pick_folder()
             {
                 *case_path = dir.display().to_string();
@@ -2436,11 +2645,18 @@ fn show_case_loader(
         #[cfg(target_arch = "wasm32")]
         {
             let _ = (case_path, enter_pressed);
-            ui.label("Case");
-            if ui.button("Pick files…").clicked() {
+            ui.label(t!(language, "Case", "症例"));
+            if ui
+                .button(t!(language, "Pick files…", "ファイルを選択…"))
+                .clicked()
+            {
                 request = LoaderRequest::PickFiles;
             }
-            ui.small("a case .zip, the 42 NF-BNCT-001 members, or a DICOM study — or drop them");
+            ui.small(t!(
+                language,
+                "a case .zip, the 42 NF-BNCT-001 members, or a DICOM study — or drop them",
+                "症例 .zip、NF-BNCT-001 の全42ファイル、または DICOM スタディ — ドロップでも可"
+            ));
         }
     });
     tour_targets.set(TourTarget::CaseLoader, response.response.rect);
@@ -2455,6 +2671,7 @@ fn show_workbench(
     display: &mut DisplaySettings,
     panels: &mut WorkbenchPanels,
     drop_sender: Option<&DropSender>,
+    language: Language,
     tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
@@ -2468,7 +2685,7 @@ fn show_workbench(
         )
         .show(ui, |ui| {
             ui.label(
-                egui::RichText::new("WORKBENCH")
+                egui::RichText::new(t!(language, "WORKBENCH", "ワークベンチ"))
                     .size(11.0)
                     .strong()
                     .color(theme.text_dim),
@@ -2481,11 +2698,12 @@ fn show_workbench(
                     ui.add_space(6.0);
                 }
                 let selected = *workspace == candidate;
-                let label = egui::RichText::new(candidate.label()).color(if selected {
-                    theme.brand
-                } else {
-                    ui.visuals().text_color()
-                });
+                let label =
+                    egui::RichText::new(candidate.localized_label(language)).color(if selected {
+                        theme.brand
+                    } else {
+                        ui.visuals().text_color()
+                    });
                 if ui
                     .add_sized(
                         [ui.available_width(), 38.0],
@@ -2501,7 +2719,7 @@ fn show_workbench(
             }
             ui.add_space(30.0);
             ui.label(
-                egui::RichText::new("ACTIVE CASE")
+                egui::RichText::new(t!(language, "ACTIVE CASE", "開いている症例"))
                     .size(11.0)
                     .strong()
                     .color(theme.text_dim),
@@ -2511,8 +2729,15 @@ fn show_workbench(
                 ui.strong(&case.data.case_id);
                 ui.small(&case.data.provenance);
             } else {
-                ui.label(egui::RichText::new("No case loaded").color(theme.text_dim));
-                ui.small("Open a case above to inspect its geometry.");
+                ui.label(
+                    egui::RichText::new(t!(language, "No case loaded", "症例なし"))
+                        .color(theme.text_dim),
+                );
+                ui.small(t!(
+                    language,
+                    "Open a case above to inspect its geometry.",
+                    "上で症例を開くとジオメトリを確認できます。"
+                ));
             }
         });
     tour_targets.set(TourTarget::WorkspaceNavigation, navigation.response.rect);
@@ -2528,19 +2753,37 @@ fn show_workbench(
                 .auto_shrink([false, false])
                 .show(ui, |ui| match *workspace {
                     WorkspaceTab::Overview => {
-                        show_overview(ui, case.as_deref(), workspace, tour_targets, theme);
+                        show_overview(
+                            ui,
+                            case.as_deref(),
+                            workspace,
+                            language,
+                            tour_targets,
+                            theme,
+                        );
                     }
                     WorkspaceTab::Geometry => {
                         if let Some(case) = case {
-                            show_geometry_workspace(ui, case, display, tour_targets, theme);
+                            show_geometry_workspace(
+                                ui,
+                                case,
+                                display,
+                                language,
+                                tour_targets,
+                                theme,
+                            );
                         } else {
                             show_workspace_heading(
                                 ui,
                                 theme,
-                                "Geometry",
-                                "Patient-space DICOM truth before transport.",
+                                t!(language, "Geometry", "ジオメトリ"),
+                                t!(
+                                    language,
+                                    "Patient-space DICOM truth before transport.",
+                                    "輸送計算の前段となる患者空間の DICOM 実データ。"
+                                ),
                             );
-                            show_empty_state(ui);
+                            show_empty_state(ui, language);
                         }
                     }
                     WorkspaceTab::Transport => show_transport_workspace(
@@ -2549,18 +2792,25 @@ fn show_workbench(
                         &mut panels.position,
                         &mut panels.spectrum,
                         &mut panels.run,
+                        language,
                         tour_targets,
                         theme,
                     ),
-                    WorkspaceTab::Plan => {
-                        show_plan_workspace(ui, &mut panels.plan, drop_sender, tour_targets, theme)
-                    }
+                    WorkspaceTab::Plan => show_plan_workspace(
+                        ui,
+                        &mut panels.plan,
+                        drop_sender,
+                        language,
+                        tour_targets,
+                        theme,
+                    ),
                     WorkspaceTab::Dose => {
                         show_dose_workspace(
                             ui,
                             &mut panels.dose,
                             &mut panels.nifti,
                             drop_sender,
+                            language,
                             tour_targets,
                             theme,
                         );
@@ -2569,6 +2819,7 @@ fn show_workbench(
                         ui,
                         case.as_deref(),
                         &mut panels.evidence,
+                        language,
                         tour_targets,
                         theme,
                     ),
@@ -2586,43 +2837,67 @@ fn show_overview(
     ui: &mut egui::Ui,
     case: Option<&ViewerCase>,
     workspace: &mut WorkspaceTab,
+    language: Language,
     tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
     show_workspace_heading(
         ui,
         theme,
-        "Your research workspace",
-        "Inspect the case. Explore dose. Follow the evidence.",
+        t!(language, "Your research workspace", "研究ワークベンチ"),
+        t!(
+            language,
+            "Inspect the case. Explore dose. Follow the evidence.",
+            "症例を確認し、線量を探索し、エビデンスを追跡する。"
+        ),
     );
     ui.add_space(12.0);
     egui::Frame::new().fill(theme.card_fill).corner_radius(10)
         .inner_margin(egui::Margin::same(24)).show(ui, |ui| {
             ui.set_width(ui.available_width());
-            ui.label(egui::RichText::new("CASE STUDY  /  SYNTHETIC BENCHMARK").size(11.0).strong().color(theme.brand));
+            ui.label(egui::RichText::new(t!(language, "CASE STUDY  /  SYNTHETIC BENCHMARK", "症例 / 合成ベンチマーク")).size(11.0).strong().color(theme.brand));
             ui.add_space(6.0);
-            ui.label(egui::RichText::new(case.map_or("Start with a verified case", |c| c.data.case_id.as_str())).size(26.0).strong());
+            ui.label(egui::RichText::new(case.map_or(t!(language, "Start with a verified case", "検証済み症例から開始"), |c| c.data.case_id.as_str())).size(26.0).strong());
             ui.label(egui::RichText::new(if case.is_some() {
-                "Patient-space geometry and artifact integrity verified. Ready to inspect."
+                t!(language,
+                    "Patient-space geometry and artifact integrity verified. Ready to inspect.",
+                    "患者空間ジオメトリとアーティファクト完全性を検証済み。確認の準備ができています。")
             } else {
-                "Open an NF-BNCT-001 case folder above. Geometry is verified before it is displayed."
+                t!(language,
+                    "Open an NF-BNCT-001 case folder above. Geometry is verified before it is displayed.",
+                    "上で NF-BNCT-001 症例フォルダを開いてください。ジオメトリは表示前に検証されます。")
             }).color(theme.text_dim));
             ui.add_space(12.0);
             ui.horizontal(|ui| {
-                if ui.add_enabled(case.is_some(), egui::Button::new("Inspect geometry")).clicked() {
+                if ui.add_enabled(case.is_some(), egui::Button::new(t!(language, "Inspect geometry", "ジオメトリを確認"))).clicked() {
                     *workspace = WorkspaceTab::Geometry;
                 }
-                if ui.button("Review evidence").clicked() { *workspace = WorkspaceTab::Evidence; }
+                if ui.button(t!(language, "Review evidence", "エビデンスを確認")).clicked() { *workspace = WorkspaceTab::Evidence; }
             });
         });
     ui.add_space(20.0);
-    ui.heading("Explore the workbench");
+    ui.heading(t!(language, "Explore the workbench", "ワークベンチを探索"));
     ui.add_space(6.0);
     ui.columns(3, |columns| {
         for (column, (tab, title, detail, action)) in columns.iter_mut().zip([
-            (WorkspaceTab::Transport, "01  Prepare", "Inspect material and source contracts, position the beam, and review transport readiness.", "Open transport"),
-            (WorkspaceTab::Plan, "02  Evaluate", "Load a plan, inspect fields and weights, and review its calculated result.", "Open planning"),
-            (WorkspaceTab::Dose, "03  Understand", "Explore physical and biological dose, region metrics, DVHs, and NIfTI volumes.", "Explore dose"),
+            (WorkspaceTab::Transport,
+                t!(language, "01  Prepare", "01  準備"),
+                t!(language,
+                    "Inspect material and source contracts, position the beam, and review transport readiness.",
+                    "材料・線源の契約を確認し、ビームを位置決めし、輸送レディネスをレビュー。"),
+                t!(language, "Open transport", "輸送を開く")),
+            (WorkspaceTab::Plan,
+                t!(language, "02  Evaluate", "02  評価"),
+                t!(language,
+                    "Load a plan, inspect fields and weights, and review its calculated result.",
+                    "計画を読み込み、フィールドと重みを確認し、計算結果をレビュー。"),
+                t!(language, "Open planning", "計画を開く")),
+            (WorkspaceTab::Dose,
+                t!(language, "03  Understand", "03  理解"),
+                t!(language,
+                    "Explore physical and biological dose, region metrics, DVHs, and NIfTI volumes.",
+                    "物理・生物学的線量、領域指標、DVH、NIfTI ボリュームを探索。"),
+                t!(language, "Explore dose", "線量を探索")),
         ]) {
             egui::Frame::new().fill(theme.card_fill).corner_radius(8)
                 .inner_margin(egui::Margin::same(18)).show(column, |ui| {
@@ -2639,20 +2914,22 @@ fn show_overview(
     });
     ui.add_space(24.0);
     let gates = ui.scope(|ui| {
-        ui.heading("Benchmark readiness");
-        ui.label(egui::RichText::new("Qualification of the frozen reference workflow; imported artifacts have their own validation.").color(theme.text_dim));
+        ui.heading(t!(language, "Benchmark readiness", "ベンチマークレディネス"));
+        ui.label(egui::RichText::new(t!(language,
+            "Qualification of the frozen reference workflow; imported artifacts have their own validation.",
+            "凍結参照ワークフローの適格性。取り込み済みアーティファクトは独自の検証を持ちます。")).color(theme.text_dim));
         ui.add_space(8.0);
         egui::Frame::new().fill(theme.card_fill).corner_radius(8)
             .inner_margin(egui::Margin::same(18)).show(ui, |ui| {
                 ui.set_width(ui.available_width());
-                for (index, gate) in readiness_gates(case.is_some()).iter().enumerate() {
+                for (index, gate) in readiness_gates(case.is_some(), language).iter().enumerate() {
                     if index > 0 { ui.separator(); }
                     ui.horizontal(|ui| {
                         ui.allocate_ui(egui::vec2(180.0, 28.0), |ui| { ui.strong(gate.title); });
                         ui.allocate_ui(egui::vec2((ui.available_width() - 130.0).max(150.0), 28.0), |ui| {
                             ui.label(egui::RichText::new(gate.detail).small().color(theme.text_dim));
                         });
-                        status_badge(ui, gate.state, gate.state.label());
+                        status_badge(ui, gate.state, gate.state.localized_label(language));
                     });
                 }
             });
@@ -2810,14 +3087,19 @@ fn show_geometry_workspace(
     ui: &mut egui::Ui,
     case: &mut ViewerCase,
     display: &mut DisplaySettings,
+    language: Language,
     tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
     show_workspace_heading(
         ui,
         theme,
-        "Geometry",
-        "Integrity-gated, linked patient-space views of the frozen synthetic case.",
+        t!(language, "Geometry", "ジオメトリ"),
+        t!(
+            language,
+            "Integrity-gated, linked patient-space views of the frozen synthetic case.",
+            "完全性ゲート済みの患者空間ビュー — 凍結ベンチマークまたは取り込み済みスタディ。"
+        ),
     );
     if let Err(error) = case.refresh_textures(ui.ctx(), display) {
         ui.colored_label(theme.error, format!("Render rejected: {error}"));
@@ -2854,17 +3136,22 @@ fn show_geometry_workspace(
                     .id_salt("geometry-inspector")
                     .max_height(image_height + 30.0)
                     .show(ui, |ui| {
-                        ui.heading("Image inspector");
+                        ui.heading(t!(language, "Image inspector", "画像インスペクタ"));
                         ui.label(
-                            egui::RichText::new(
+                            egui::RichText::new(t!(
+                                language,
                                 "Click or drag an image to move the linked crosshair.",
-                            )
+                                "画像をクリック/ドラッグすると連動クロスヘアが移動します。"
+                            ))
                             .color(theme.text_dim),
                         );
-                        ui.collapsing("Case & voxel details", |ui| {
-                            show_case_summary(ui, case);
-                        });
-                        if show_display_controls(ui, case, display, theme) {
+                        ui.collapsing(
+                            t!(language, "Case & voxel details", "症例・ボクセル詳細"),
+                            |ui| {
+                                show_case_summary(ui, case, language);
+                            },
+                        );
+                        if show_display_controls(ui, case, display, language, theme) {
                             case.textures_dirty = true;
                         }
                     });
@@ -2888,17 +3175,25 @@ const SPECTRUM_EPITHERMAL_UPPER_EV: f64 = 1.0e4;
 /// staircase of bin weights with thermal/epithermal/fast region shading
 /// and region-integral labels (bins straddling a boundary split by
 /// log-interpolated weight density). Monoenergetic sources draw a marker.
-fn show_spectrum(ui: &mut egui::Ui, spectrum: &mut SpectrumView, theme: Theme) {
+fn show_spectrum(ui: &mut egui::Ui, spectrum: &mut SpectrumView, language: Language, theme: Theme) {
     use openbnct_transport::EnergyDistribution;
 
     egui::Frame::group(ui.style()).show(ui, |ui| {
         if let Some(error) = &spectrum.error {
-            ui.colored_label(theme.error, format!("spectrum rejected: {error}"));
+            ui.colored_label(
+                theme.error,
+                format!(
+                    "{}: {error}",
+                    t!(language, "spectrum rejected", "スペクトル拒否")
+                ),
+            );
         }
         let Some(source) = &spectrum.source else {
-            ui.label(
+            ui.label(t!(
+                language,
                 "No source loaded — drop a beam-description or fixed-source-definition .json.",
-            );
+                "線源未読込 — beam-description または fixed-source-definition .json をドロップ。"
+            ));
             return;
         };
         ui.monospace(&spectrum.source_label);
@@ -3084,20 +3379,26 @@ fn show_spectrum(ui: &mut egui::Ui, spectrum: &mut SpectrumView, theme: Theme) {
     });
 }
 
+#[allow(clippy::too_many_arguments)] // workspace plumbing
 fn show_transport_workspace(
     ui: &mut egui::Ui,
     case: Option<&ViewerCase>,
     panel: &mut PositionPanel,
     spectrum: &mut SpectrumView,
     run: &mut RunPanel,
+    language: Language,
     tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
     show_workspace_heading(
         ui,
         theme,
-        "Transport",
-        "Backend-neutral preparation with explicit scientific and execution gates.",
+        t!(language, "Transport", "輸送"),
+        t!(
+            language,
+            "Backend-neutral preparation with explicit scientific and execution gates.",
+            "バックエンド中立の準備 — 科学的ゲートと実行ゲートを明示。"
+        ),
     );
     let backend = OpenMcBackend::default().descriptor();
 
@@ -3129,18 +3430,22 @@ fn show_transport_workspace(
     ui.add_space(12.0);
     tour_targets.set(
         TourTarget::SpectrumPanel,
-        ui.heading("Source spectrum").rect,
+        ui.heading(t!(language, "Source spectrum", "線源スペクトル"))
+            .rect,
     );
     ui.label(
         "Drop a beam-description or fixed-source-definition JSON — the energy histogram \
          renders log-log with TECDOC-1223 region shading.",
     );
-    show_spectrum(ui, spectrum, theme);
+    show_spectrum(ui, spectrum, language, theme);
 
     ui.add_space(12.0);
     let gate_chain = ui.scope(|ui| {
-        ui.heading("Run gate chain");
-        for (index, gate) in readiness_gates(case.is_some()).into_iter().enumerate() {
+        ui.heading(t!(language, "Run gate chain", "ゲートチェーンを実行"));
+        for (index, gate) in readiness_gates(case.is_some(), language)
+            .into_iter()
+            .enumerate()
+        {
             ui.horizontal(|ui| {
                 ui.monospace(format!("{:02}", index + 1));
                 ui.colored_label(gate.state.color(ui.visuals().dark_mode), "●");
@@ -3149,14 +3454,14 @@ fn show_transport_workspace(
                 ui.label(gate.detail);
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                     ui.label(
-                        egui::RichText::new(gate.state.label())
+                        egui::RichText::new(gate.state.localized_label(language))
                             .small()
                             .strong()
                             .color(gate.state.color(ui.visuals().dark_mode)),
                     );
                 });
             });
-            if index + 1 != readiness_gates(case.is_some()).len() {
+            if index + 1 != readiness_gates(case.is_some(), language).len() {
                 ui.separator();
             }
         }
@@ -3169,16 +3474,24 @@ fn show_transport_workspace(
             .on_disabled_hover_text("Blocked until the reviewed component responses pass.");
         ui.add_enabled(false, egui::Button::new("Execute transport"))
             .on_disabled_hover_text("The backend does not advertise controlled execution yet.");
-        ui.label("Disabled controls reflect real adapter capabilities.");
+        ui.label(t!(
+            language,
+            "Disabled controls reflect real adapter capabilities.",
+            "無効なコントロールは実際のアダプタ能力を反映しています。"
+        ));
     });
     tour_targets.set(TourTarget::TransportActions, actions.response.rect);
 
     ui.add_space(14.0);
-    ui.heading("Source positioning");
-    ui.label("Same aim/rotate path as `openbnct position` — reports the entry geometry without running transport.");
+    ui.heading(t!(language, "Source positioning", "線源の位置決め"));
+    ui.label(t!(language, "Same aim/rotate path as `openbnct position` — reports the entry geometry without running transport.", "`openbnct position` と同じ照準・回転パス — 輸送を実行せず入射ジオメトリのみ報告。"));
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("SOURCE").small().strong());
+            ui.label(
+                egui::RichText::new(t!(language, "SOURCE", "線源"))
+                    .small()
+                    .strong(),
+            );
             ui.add(
                 egui::TextEdit::singleline(&mut panel.source_path)
                     .desired_width(420.0)
@@ -3186,7 +3499,11 @@ fn show_transport_workspace(
             );
         });
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("TARGET").small().strong());
+            ui.label(
+                egui::RichText::new(t!(language, "TARGET", "ターゲット"))
+                    .small()
+                    .strong(),
+            );
             if let Some(case) = case {
                 let names: Vec<&str> = case
                     .data
@@ -3206,7 +3523,7 @@ fn show_transport_workspace(
                         });
                 }
             }
-            ui.label("or mask file:");
+            ui.label(t!(language, "or mask file:", "またはマスクファイル:"));
             ui.add(
                 egui::TextEdit::singleline(&mut panel.mask_path)
                     .desired_width(300.0)
@@ -3214,7 +3531,11 @@ fn show_transport_workspace(
             );
         });
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("APPROACH").small().strong());
+            ui.label(
+                egui::RichText::new(t!(language, "APPROACH", "アプローチ"))
+                    .small()
+                    .strong(),
+            );
             egui::ComboBox::from_id_salt("position-approach")
                 .selected_text(APPROACHES[panel.approach])
                 .show_ui(ui, |ui| {
@@ -3222,10 +3543,10 @@ fn show_transport_workspace(
                         ui.selectable_value(&mut panel.approach, index, *name);
                     }
                 });
-            ui.label("half-widths u/v cm:");
+            ui.label(t!(language, "half-widths u/v cm:", "半値幅 u/v cm:"));
             ui.add(egui::TextEdit::singleline(&mut panel.half_width_u_cm).desired_width(50.0));
             ui.add(egui::TextEdit::singleline(&mut panel.half_width_v_cm).desired_width(50.0));
-            ui.label("margin cm:");
+            ui.label(t!(language, "margin cm:", "マージン cm:"));
             ui.add(egui::TextEdit::singleline(&mut panel.margin_cm).desired_width(50.0));
             if ui
                 .add_enabled(case.is_some(), egui::Button::new("Aim at centroid"))
@@ -3241,7 +3562,7 @@ fn show_transport_workspace(
     if let Some(report) = &panel.report {
         egui::Frame::group(ui.style()).show(ui, |ui| {
             ui.horizontal(|ui| {
-                ui.strong("Position report");
+                ui.strong(t!(language, "Position report", "位置レポート"));
                 ui.monospace(format!("schema {}", report.schema_version));
             });
             ui.monospace(format!(
@@ -3266,7 +3587,11 @@ fn show_transport_workspace(
             ));
         });
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("ROTATE").small().strong());
+            ui.label(
+                egui::RichText::new(t!(language, "ROTATE", "回転"))
+                    .small()
+                    .strong(),
+            );
             egui::ComboBox::from_id_salt("position-rotate-axis")
                 .selected_text(ROTATE_AXES[panel.rotate_axis])
                 .show_ui(ui, |ui| {
@@ -3274,7 +3599,7 @@ fn show_transport_workspace(
                         ui.selectable_value(&mut panel.rotate_axis, index, *name);
                     }
                 });
-            ui.label("degrees:");
+            ui.label(t!(language, "degrees:", "角度:"));
             ui.add(egui::TextEdit::singleline(&mut panel.rotate_degrees).desired_width(50.0));
             if ui
                 .button("Rotate about target centroid")
@@ -3287,13 +3612,20 @@ fn show_transport_workspace(
             }
         });
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("SAVE").small().strong());
+            ui.label(
+                egui::RichText::new(t!(language, "SAVE", "保存"))
+                    .small()
+                    .strong(),
+            );
             ui.add(
                 egui::TextEdit::singleline(&mut panel.save_source_path)
                     .desired_width(260.0)
                     .hint_text("positioned-source.json"),
             );
-            if ui.button("Write source").clicked() {
+            if ui
+                .button(t!(language, "Write source", "線源を出力"))
+                .clicked()
+            {
                 panel.save(true);
             }
             ui.add(
@@ -3301,7 +3633,10 @@ fn show_transport_workspace(
                     .desired_width(260.0)
                     .hint_text("position-report.json"),
             );
-            if ui.button("Write report").clicked() {
+            if ui
+                .button(t!(language, "Write report", "レポートを出力"))
+                .clicked()
+            {
                 panel.save(false);
             }
         });
@@ -3314,9 +3649,17 @@ fn show_transport_workspace(
     }
 
     ui.add_space(14.0);
-    tour_targets.set(TourTarget::RunPanel, ui.heading("Run a subcommand").rect);
+    tour_targets.set(
+        TourTarget::RunPanel,
+        ui.heading(t!(language, "Run a subcommand", "サブコマンドを実行"))
+            .rect,
+    );
     if cfg!(target_arch = "wasm32") {
-        ui.label("Process execution requires the native build — the web inspector is read-only.");
+        ui.label(t!(
+            language,
+            "Process execution requires the native build — the web inspector is read-only.",
+            "プロセス実行はネイティブ版のみ — Web インスペクタは読み取り専用です。"
+        ));
     }
     let running = run.poll();
     if running {
@@ -3325,38 +3668,41 @@ fn show_transport_workspace(
     }
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label("program");
+            ui.label(t!(language, "program", "プログラム"));
             ui.add(
                 egui::TextEdit::singleline(&mut run.program)
                     .desired_width(120.0)
                     .hint_text("openbnct"),
             );
-            ui.label("args");
+            ui.label(t!(language, "args", "引数"));
             ui.add(
                 egui::TextEdit::singleline(&mut run.args)
                     .desired_width(ui.available_width() - 220.0)
                     .hint_text("--help"),
             );
-            ui.label("timeout s");
+            ui.label(t!(language, "timeout s", "タイムアウト秒"));
             ui.add(egui::TextEdit::singleline(&mut run.timeout_s).desired_width(50.0));
         });
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
                     !running && cfg!(not(target_arch = "wasm32")),
-                    egui::Button::new("Run"),
+                    egui::Button::new(t!(language, "Run", "実行")),
                 )
                 .on_disabled_hover_text(if cfg!(target_arch = "wasm32") {
-                    "native build only"
+                    t!(language, "native build only", "ネイティブ版のみ")
                 } else {
-                    "a job is already running"
+                    t!(language, "a job is already running", "ジョブ実行中")
                 })
                 .clicked()
             {
                 run.start();
             }
             if ui
-                .add_enabled(running, egui::Button::new("Cancel"))
+                .add_enabled(
+                    running,
+                    egui::Button::new(t!(language, "Cancel", "キャンセル")),
+                )
                 .clicked()
             {
                 run.cancel();
@@ -3411,29 +3757,43 @@ fn show_plan_workspace(
     ui: &mut egui::Ui,
     panel: &mut PlanPanel,
     drop_sender: Option<&DropSender>,
+    language: Language,
     tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
     show_workspace_heading(
         ui,
         theme,
-        "Exposure plan",
-        "Structured multi-exposure schedules; every detected issue is reported, not just the first.",
+        t!(language, "Exposure plan", "照射計画"),
+        t!(
+            language,
+            "Structured multi-exposure schedules; every detected issue is reported, not just the first.",
+            "構造化された複数回照射スケジュール — 検出された問題は最初の一件だけでなく全件報告。"
+        ),
     );
 
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("PLAN").small().strong());
+            ui.label(
+                egui::RichText::new(t!(language, "PLAN", "計画"))
+                    .small()
+                    .strong(),
+            );
             ui.add(
                 egui::TextEdit::singleline(&mut panel.plan_path)
                     .desired_width((ui.available_width() - 275.0).max(160.0))
                     .hint_text("/path/to/exposure-plan.json"),
             );
-            if let Some(path) = browse_file_button(ui, drop_sender, "Plan JSON", &["json"]) {
+            if let Some(path) =
+                browse_file_button(ui, drop_sender, "Plan JSON", &["json"], language)
+            {
                 panel.plan_path = path.display().to_string();
                 panel.load();
             }
-            if ui.button("Load + diagnose").clicked() {
+            if ui
+                .button(t!(language, "Load + diagnose", "読込・診断"))
+                .clicked()
+            {
                 panel.load();
             }
         });
@@ -3524,13 +3884,20 @@ fn show_plan_workspace(
     ui.add_space(10.0);
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("TABLE EXPORT").small().strong());
+            ui.label(
+                egui::RichText::new(t!(language, "TABLE EXPORT", "テーブル出力"))
+                    .small()
+                    .strong(),
+            );
             ui.add(
                 egui::TextEdit::singleline(&mut panel.export_path)
                     .desired_width(420.0)
                     .hint_text("/path/to/schedule.csv or .xlsx"),
             );
-            if ui.button("Export table").clicked() {
+            if ui
+                .button(t!(language, "Export table", "テーブルを出力"))
+                .clicked()
+            {
                 panel.export_table();
             }
         });
@@ -3542,7 +3909,8 @@ fn show_plan_workspace(
     ui.add_space(14.0);
     tour_targets.set(
         TourTarget::RobustnessCards,
-        ui.heading("Robustness report").rect,
+        ui.heading(t!(language, "Robustness report", "ロバスト性レポート"))
+            .rect,
     );
     ui.label(
         "Drop a plan-robustness .json — per-objective violation probabilities \
@@ -3553,7 +3921,11 @@ fn show_plan_workspace(
             ui.colored_label(theme.error, format!("robustness rejected: {error}"));
         }
         let Some(report) = &panel.robustness else {
-            ui.label("No robustness report loaded.");
+            ui.label(t!(
+                language,
+                "No robustness report loaded.",
+                "ロバスト性レポート未読込。"
+            ));
             return;
         };
         ui.monospace(&report.id);
@@ -3612,7 +3984,7 @@ fn show_plan_workspace(
 /// Tri-planar dose/field map rendered from the loaded bundle's own grid —
 /// the standalone-inspection path that the web build also exercises.
 /// Click/drag on any pane re-centres the shared crosshair.
-fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
+fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, language: Language, theme: Theme) {
     let Some(bundle) = &panel.bundle else {
         return;
     };
@@ -3653,7 +4025,11 @@ fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
         }
     };
     if !max.is_finite() || max <= 0.0 {
-        ui.label("selected quantity has no positive values to render");
+        ui.label(t!(
+            language,
+            "selected quantity has no positive values to render",
+            "選択した物理量に描画可能な正の値がありません"
+        ));
         return;
     }
     let Some(voxel) = panel.map.voxel else {
@@ -3662,7 +4038,7 @@ fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
 
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label("Quantity");
+            ui.label(t!(language, "Quantity", "物理量"));
             egui::ComboBox::from_id_salt("dose-map-quantity")
                 .selected_text(panel.map.quantity.clone())
                 .show_ui(ui, |ui| {
@@ -3670,11 +4046,21 @@ fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
                         ui.selectable_value(&mut panel.map.quantity, name.clone(), name.as_str());
                     }
                 });
-            ui.checkbox(&mut panel.map.log_scale, "log scale");
-            ui.checkbox(&mut panel.map.contours, "isodose 90/50/10%");
+            ui.checkbox(
+                &mut panel.map.log_scale,
+                t!(language, "log scale", "対数スケール"),
+            );
+            ui.checkbox(
+                &mut panel.map.contours,
+                t!(language, "isodose 90/50/10%", "等線量 90/50/10%"),
+            );
             ui.add_enabled_ui(sigma_values.is_some(), |ui| {
-                ui.checkbox(&mut panel.map.sigma_view, "σ map")
-                    .on_disabled_hover_text("this component carries no uncertainty field");
+                ui.checkbox(&mut panel.map.sigma_view, t!(language, "σ map", "σ マップ"))
+                    .on_disabled_hover_text(t!(
+                        language,
+                        "this component carries no uncertainty field",
+                        "この成分は不確かさフィールドを持ちません"
+                    ));
             });
         });
 
@@ -3777,7 +4163,7 @@ fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
 /// Line profile of the selected quantity along one grid axis, through
 /// the dose-map crosshair. An optional measurement-record histogram is
 /// overlaid peak-normalized — a shape comparison, never a units mix.
-fn show_depth_profile(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
+fn show_depth_profile(ui: &mut egui::Ui, panel: &mut DosePanel, language: Language, theme: Theme) {
     use openbnct_transport::MeasurementValue;
 
     let Some(bundle) = &panel.bundle else {
@@ -3812,19 +4198,27 @@ fn show_depth_profile(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
         .collect();
     let max = profile.iter().map(|point| point.1).fold(0.0_f64, f64::max);
     if !max.is_finite() || max <= 0.0 {
-        ui.label("no positive values along this profile");
+        ui.label(t!(
+            language,
+            "no positive values along this profile",
+            "このプロファイル上に正の値がありません"
+        ));
         return;
     }
 
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label("Axis");
+            ui.label(t!(language, "Axis", "軸"));
             for (candidate, label) in [(0_usize, "X"), (1, "Y"), (2, "Z")] {
                 ui.selectable_value(&mut panel.profile.axis, candidate, label);
             }
             ui.checkbox(&mut panel.profile.log_y, "log y");
             ui.separator();
-            ui.label("Measurement overlay — drop a measurement-record .json");
+            ui.label(t!(
+                language,
+                "Measurement overlay — drop a measurement-record .json",
+                "実測オーバーレイ — measurement-record .json をドロップ"
+            ));
             if let Some(record) = &panel.profile.measurement {
                 egui::ComboBox::from_id_salt("profile-measurement")
                     .selected_text(
@@ -3841,7 +4235,7 @@ fn show_depth_profile(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
                             }
                         }
                     });
-                if ui.button("clear").clicked() {
+                if ui.button(t!(language, "clear", "クリア")).clicked() {
                     panel.profile.measurement = None;
                 }
             }
@@ -4015,7 +4409,7 @@ fn render_ratio_slice(
 /// A/B bundle diff: a drop zone loads the second artifact, geometry
 /// equivalence is verified, then a B/A ratio map renders on the shared
 /// crosshair plus aggregate stats and the two content bindings.
-fn show_dose_compare(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
+fn show_dose_compare(ui: &mut egui::Ui, panel: &mut DosePanel, language: Language, theme: Theme) {
     egui::Frame::group(ui.style()).show(ui, |ui| {
         // The drop zone is painted every frame so handle_dropped can hit-test.
         let (rect, _) =
@@ -4040,15 +4434,26 @@ fn show_dose_compare(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
             rect.center(),
             egui::Align2::CENTER_CENTER,
             if panel.compare.is_some() {
-                "drop a dose bundle here to replace B · drops elsewhere replace A"
+                t!(
+                    language,
+                    "drop a dose bundle here to replace B · drops elsewhere replace A",
+                    "ここに線量バンドルをドロップで B を置換 · ゾーン外は A を置換"
+                )
             } else {
-                "drop a second dose bundle (B) here to diff against the loaded A"
+                t!(
+                    language,
+                    "drop a second dose bundle (B) here to diff against the loaded A",
+                    "2つ目の線量バンドル(B)をここにドロップして読込済み A と比較"
+                )
             },
             egui::FontId::monospace(11.0),
             theme.text_dim,
         );
         if let Some(error) = &panel.compare_error {
-            ui.colored_label(theme.error, format!("B rejected: {error}"));
+            ui.colored_label(
+                theme.error,
+                format!("{}: {error}", t!(language, "B rejected", "B 拒否")),
+            );
         }
         let (Some(a), Some(b)) = (&panel.bundle, &panel.compare) else {
             return;
@@ -4067,7 +4472,7 @@ fn show_dose_compare(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
             &b.sha256[..12.min(b.sha256.len())],
             b.artifact.provenance_id()
         ));
-        if ui.button("clear B").clicked() {
+        if ui.button(t!(language, "clear B", "B をクリア")).clicked() {
             panel.compare = None;
             panel.compare_textures = None;
             panel.compare_cache_key = None;
@@ -4130,7 +4535,11 @@ fn show_dose_compare(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
             }
         }
         if ratios.is_empty() {
-            ui.label("no overlapping nonzero voxels to compare");
+            ui.label(t!(
+                language,
+                "no overlapping nonzero voxels to compare",
+                "比較可能な重なり合う非ゼロボクセルがありません"
+            ));
             return;
         }
         let mean = ratios.iter().sum::<f64>() / ratios.len() as f64;
@@ -4224,28 +4633,42 @@ fn show_dose_workspace(
     panel: &mut DosePanel,
     nifti: &mut NiftiPanel,
     drop_sender: Option<&DropSender>,
+    language: Language,
     tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
     show_workspace_heading(
         ui,
         theme,
-        "Dose components",
-        "Physical and biological layers stay separate; only validated bundles render.",
+        t!(language, "Dose components", "線量成分"),
+        t!(
+            language,
+            "Physical and biological layers stay separate; only validated bundles render.",
+            "物理線量と生物学的線量は別レイヤー — 検証済みバンドルのみ描画。"
+        ),
     );
 
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new("DOSE BUNDLE").small().strong());
+            ui.label(
+                egui::RichText::new(t!(language, "DOSE BUNDLE", "線量バンドル"))
+                    .small()
+                    .strong(),
+            );
             ui.add(
                 egui::TextEdit::singleline(&mut panel.bundle_path)
                     .desired_width(460.0)
                     .hint_text("/path/to/dose-bundle.json — or drop it here"),
             );
-            if ui.button("Load + validate").clicked() {
+            if ui
+                .button(t!(language, "Load + validate", "読込・検証"))
+                .clicked()
+            {
                 panel.load_bundle();
             }
-            if let Some(file) = browse_file_button(ui, drop_sender, "dose bundle", &["json"]) {
+            if let Some(file) =
+                browse_file_button(ui, drop_sender, "dose bundle", &["json"], language)
+            {
                 panel.bundle_path = file.display().to_string();
                 panel.load_bundle();
             }
@@ -4357,37 +4780,47 @@ fn show_dose_workspace(
     ui.monospace(format!("unit: {}", artifact.unit()));
 
     ui.add_space(14.0);
-    tour_targets.set(TourTarget::DoseMap, ui.heading("Dose map").rect);
-    show_dose_map(ui, panel, theme);
+    tour_targets.set(
+        TourTarget::DoseMap,
+        ui.heading(t!(language, "Dose map", "線量マップ")).rect,
+    );
+    show_dose_map(ui, panel, language, theme);
 
     ui.add_space(14.0);
-    ui.heading("Line profile");
-    show_depth_profile(ui, panel, theme);
+    ui.heading(t!(language, "Line profile", "ラインプロファイル"));
+    show_depth_profile(ui, panel, language, theme);
 
     ui.add_space(14.0);
-    ui.heading("A/B compare");
-    show_dose_compare(ui, panel, theme);
+    ui.heading(t!(language, "A/B compare", "A/B 比較"));
+    show_dose_compare(ui, panel, language, theme);
     if panel.compare_zone != egui::Rect::NOTHING {
         tour_targets.set(TourTarget::CompareZone, panel.compare_zone);
     }
 
     ui.add_space(14.0);
-    ui.heading("Region dose-volume histogram");
+    ui.heading(t!(
+        language,
+        "Region dose-volume histogram",
+        "領域線量-体積ヒストグラム"
+    ));
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label("Mask");
+            ui.label(t!(language, "Mask", "マスク"));
             ui.add(
                 egui::TextEdit::singleline(&mut panel.mask_path)
                     .desired_width(360.0)
                     .hint_text("/path/to/region-mask.json"),
             );
-            ui.label("Quantity");
+            ui.label(t!(language, "Quantity", "物理量"));
             ui.add(
                 egui::TextEdit::singleline(&mut panel.quantity)
                     .desired_width(170.0)
                     .hint_text("physical_total"),
             );
-            if ui.button("Compute DVH").clicked() {
+            if ui
+                .button(t!(language, "Compute DVH", "DVH を計算"))
+                .clicked()
+            {
                 panel.compute_histogram();
             }
         });
@@ -4407,8 +4840,12 @@ fn show_dose_workspace(
     });
 
     ui.add_space(14.0);
-    ui.heading("Region dose-volume metrics");
-    ui.label("Same `RegionDoseMetrics::compute` path as `openbnct metrics` and `compute_metrics` in Python.");
+    ui.heading(t!(
+        language,
+        "Region dose-volume metrics",
+        "領域線量-体積指標"
+    ));
+    ui.label(t!(language, "Same `RegionDoseMetrics::compute` path as `openbnct metrics` and `compute_metrics` in Python.", "`openbnct metrics`・Python の `compute_metrics` と同じ `RegionDoseMetrics::compute` パス。"));
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label("D_x %:");
@@ -4429,7 +4866,10 @@ fn show_dose_workspace(
                     .desired_width(80.0)
                     .hint_text("optional"),
             );
-            if ui.button("Compute metrics").clicked() {
+            if ui
+                .button(t!(language, "Compute metrics", "指標を計算"))
+                .clicked()
+            {
                 panel.compute_metrics();
             }
         });
@@ -4472,7 +4912,10 @@ fn show_dose_workspace(
                         .desired_width(300.0)
                         .hint_text("dose-metrics.json"),
                 );
-                if ui.button("Write metrics").clicked() {
+                if ui
+                    .button(t!(language, "Write metrics", "指標を出力"))
+                    .clicked()
+                {
                     panel.save_metrics();
                 }
             });
@@ -4483,7 +4926,7 @@ fn show_dose_workspace(
     });
 
     ui.add_space(14.0);
-    ui.heading("NIfTI volumes");
+    ui.heading(t!(language, "NIfTI volumes", "NIfTI ボリューム"));
     ui.label("Same `openbnct-nifti` paths as `openbnct nifti` — sform-preferred RAS→LPS handling.");
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -4493,10 +4936,12 @@ fn show_dose_workspace(
                     .desired_width(300.0)
                     .hint_text("/path/to/volume.nii[.gz]"),
             );
-            if ui.button("Inspect").clicked() {
+            if ui.button(t!(language, "Inspect", "検査")).clicked() {
                 nifti.inspect();
             }
-            if let Some(file) = browse_file_button(ui, drop_sender, "NIfTI", &["nii", "gz"]) {
+            if let Some(file) =
+                browse_file_button(ui, drop_sender, "NIfTI", &["nii", "gz"], language)
+            {
                 nifti.input_path = file.display().to_string();
                 nifti.inspect();
             }
@@ -4537,7 +4982,10 @@ fn show_dose_workspace(
                         .desired_width(240.0)
                         .hint_text("region-mask.json"),
                 );
-                if ui.button("Write mask").clicked() {
+                if ui
+                    .button(t!(language, "Write mask", "マスクを出力"))
+                    .clicked()
+                {
                     nifti.write_mask();
                 }
             });
@@ -4550,7 +4998,7 @@ fn show_dose_workspace(
                         .desired_width(200.0)
                         .hint_text("resampled.nii"),
                 );
-                if ui.button("Resample").clicked() {
+                if ui.button(t!(language, "Resample", "リサンプル")).clicked() {
                     nifti.resample();
                 }
             });
@@ -4575,7 +5023,7 @@ fn show_dose_workspace(
                     .desired_width(200.0)
                     .hint_text("dose.nii"),
             );
-            if ui.button("Export").clicked() {
+            if ui.button(t!(language, "Export", "エクスポート")).clicked() {
                 nifti.export_dose();
             }
         });
@@ -4654,14 +5102,19 @@ fn show_evidence_workspace(
     ui: &mut egui::Ui,
     case: Option<&ViewerCase>,
     panel: &mut EvidencePanel,
+    language: Language,
     tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
     show_workspace_heading(
         ui,
         theme,
-        "Evidence",
-        "Qualification is a chain of scoped claims, not one global green check.",
+        t!(language, "Evidence", "エビデンス"),
+        t!(
+            language,
+            "Qualification is a chain of scoped claims, not one global green check.",
+            "適格性は一つの総合判定ではなく、範囲を限定した主張の連鎖。"
+        ),
     );
 
     let geometry_detail = case.map_or_else(
@@ -4674,7 +5127,7 @@ fn show_evidence_workspace(
     let ledger = ui.scope(|ui| {
         show_evidence_row(
             ui,
-            "Runtime geometry gate",
+            t!(language, "Runtime geometry gate", "実行時ジオメトリゲート"),
             if case.is_some() {
                 GateState::Verified
             } else {
@@ -4682,48 +5135,80 @@ fn show_evidence_workspace(
             },
             &geometry_detail,
             None,
+            language,
         );
         show_evidence_row(
             ui,
-            "Official OpenMC processed selection",
+            t!(
+                language,
+                "Official OpenMC processed selection",
+                "公式 OpenMC 処理済みデータ選択"
+            ),
             GateState::Frozen,
-            "Case manifest binds cross_sections.xml, ten neutron tables, and five photon tables.",
+            t!(
+                language,
+                "Case manifest binds cross_sections.xml, ten neutron tables, and five photon tables.",
+                "症例マニフェストが cross_sections.xml、中性子テーブル10件、光子テーブル5件を紐付け。"
+            ),
             Some(&manifest_hash),
+            language,
         );
         show_evidence_row(
             ui,
-            "Controlled NJOY2016.78 execution",
+            t!(
+                language,
+                "Controlled NJOY2016.78 execution",
+                "制御付き NJOY2016.78 実行"
+            ),
             GateState::Blocked,
-            "Preserved rejected evidence: 72 kinematic findings across four nuclides.",
+            t!(
+                language,
+                "Preserved rejected evidence: 72 kinematic findings across four nuclides.",
+                "棄却された証拠を保存: 4核種にわたる72件の運動学的所見。"
+            ),
             Some(&execution_hash),
+            language,
         );
         show_evidence_row(
             ui,
-            "OpenMC / NJOY MT 301 comparison",
+            t!(
+                language,
+                "OpenMC / NJOY MT 301 comparison",
+                "OpenMC / NJOY MT 301 比較"
+            ),
             GateState::Frozen,
-            "All ten curves agree within 4.9e-7; O-17/O-18 local fallback remains explicit.",
+            t!(
+                language,
+                "All ten curves agree within 4.9e-7; O-17/O-18 local fallback remains explicit.",
+                "全10曲線が 4.9e-7 以内で一致。O-17/O-18 のローカルフォールバックは明示的。"
+            ),
             Some(&comparison_hash),
+            language,
         );
     });
     tour_targets.set(TourTarget::EvidenceLedger, ledger.response.rect);
 
     ui.add_space(12.0);
     egui::Frame::group(ui.style()).show(ui, |ui| {
-        ui.heading("Qualification ceiling");
+        ui.heading(t!(language, "Qualification ceiling", "適格範囲の上限"));
         ui.label(
             egui::RichText::new("synthetic_research_only")
                 .monospace()
                 .strong(),
         );
-        ui.label(
-            "Acquisition identity, transport capability, response suitability, execution, "
-                .to_owned()
-                + "cross-code comparison, and experimental validation remain separate claims.",
-        );
+        ui.label(t!(
+            language,
+            "Acquisition identity, transport capability, response suitability, execution,              cross-code comparison, and experimental validation remain separate claims.",
+            "取得同一性・輸送能力・応答適格性・実行・クロスコード比較・実験的検証は個別の主張です。"
+        ));
     });
 
     ui.add_space(14.0);
-    ui.heading("Exported evidence bundle");
+    ui.heading(t!(
+        language,
+        "Exported evidence bundle",
+        "エクスポート済みエビデンス"
+    ));
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label("Bundle root");
@@ -4732,7 +5217,14 @@ fn show_evidence_workspace(
                     .desired_width(460.0)
                     .hint_text("/path/to/evidence-bundle"),
             );
-            if ui.button("Verify manifest + hashes").clicked() {
+            if ui
+                .button(t!(
+                    language,
+                    "Verify manifest + hashes",
+                    "マニフェスト+ハッシュ検証"
+                ))
+                .clicked()
+            {
                 panel.verify();
             }
         });
@@ -4767,6 +5259,7 @@ fn show_evidence_row(
     state: GateState,
     detail: &str,
     hash: Option<&str>,
+    language: Language,
 ) {
     egui::Frame::group(ui.style()).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -4779,14 +5272,14 @@ fn show_evidence_row(
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                status_badge(ui, state, state.label())
+                status_badge(ui, state, state.localized_label(language))
             });
         });
     });
 }
 
-fn show_case_summary(ui: &mut egui::Ui, case: &ViewerCase) {
-    ui.heading("Case");
+fn show_case_summary(ui: &mut egui::Ui, case: &ViewerCase, language: Language) {
+    ui.heading(t!(language, "Case", "症例"));
     ui.strong(&case.data.case_id);
     ui.small(case.root.display().to_string());
     ui.label(format!(
@@ -4797,10 +5290,14 @@ fn show_case_summary(ui: &mut egui::Ui, case: &ViewerCase) {
         GateState::Verified.color(ui.visuals().dark_mode),
         case.data.provenance.clone(),
     );
-    ui.label("Qualification: synthetic research only");
+    ui.label(t!(
+        language,
+        "Qualification: synthetic research only",
+        "適格範囲: 研究用途のみ"
+    ));
 
     ui.separator();
-    ui.heading("Crosshair");
+    ui.heading(t!(language, "Crosshair", "クロスヘア"));
     let voxel = case.crosshair.voxel();
     let world = case
         .crosshair
@@ -4840,22 +5337,38 @@ fn show_display_controls(
     ui: &mut egui::Ui,
     case: &mut ViewerCase,
     display: &mut DisplaySettings,
+    language: Language,
     theme: Theme,
 ) -> bool {
     let mut changed = false;
-    ui.strong("Window & overlays");
+    ui.strong(t!(language, "Window & overlays", "ウィンドウ・重ね表示"));
     changed |= ui
-        .add(egui::Slider::new(&mut display.window_center, -1_024.0..=3_071.0).text("level HU"))
+        .add(
+            egui::Slider::new(&mut display.window_center, -1_024.0..=3_071.0).text(t!(
+                language,
+                "level HU",
+                "レベル HU"
+            )),
+        )
         .changed();
     changed |= ui
-        .add(egui::Slider::new(&mut display.window_width, 1.0..=4_096.0).text("width HU"))
+        .add(
+            egui::Slider::new(&mut display.window_width, 1.0..=4_096.0)
+                .text(t!(language, "width HU", "幅 HU")),
+        )
         .changed();
     changed |= ui
-        .add(egui::Slider::new(&mut display.overlay_opacity, 0.0..=1.0).text("ROI opacity"))
+        .add(
+            egui::Slider::new(&mut display.overlay_opacity, 0.0..=1.0).text(t!(
+                language,
+                "ROI opacity",
+                "ROI 不透明度"
+            )),
+        )
         .changed();
 
     ui.separator();
-    ui.strong("Crosshair position");
+    ui.strong(t!(language, "Crosshair position", "クロスヘア位置"));
     let mut voxel = case.crosshair.voxel();
     for (axis, label) in ["column / L", "row / P", "slice / S"]
         .into_iter()
@@ -4873,7 +5386,7 @@ fn show_display_controls(
     }
 
     ui.separator();
-    ui.strong("Structures");
+    ui.strong(t!(language, "Structures", "輪郭構造"));
     for ((visible, roi), color) in case
         .roi_visible
         .iter_mut()
@@ -4893,17 +5406,24 @@ fn show_display_controls(
     }
 
     ui.separator();
-    ui.strong("Dose overlay");
-    ui.label("Load a dose bundle for this case to wash it over the image.");
+    ui.strong(t!(language, "Dose overlay", "線量オーバーレイ"));
+    ui.label(t!(
+        language,
+        "Load a dose bundle for this case to wash it over the image.",
+        "この症例の線量バンドルを読み込むと画像に重ねて表示します。"
+    ));
     ui.horizontal(|ui| {
-        ui.label("bundle");
+        ui.label(t!(language, "bundle", "バンドル"));
         ui.add(
             egui::TextEdit::singleline(&mut case.dose.path)
                 .hint_text("dose-bundle.json")
                 .desired_width(160.0),
         );
     });
-    if ui.button("Load dose bundle").clicked() {
+    if ui
+        .button(t!(language, "Load dose bundle", "線量バンドルを読込"))
+        .clicked()
+    {
         case.dose.load(&case.data);
         changed = true;
     }
@@ -4946,15 +5466,27 @@ fn show_display_controls(
                 }
             });
         changed |= ui
-            .checkbox(&mut case.dose.enabled, "show dose wash")
-            .changed();
-        changed |= ui
-            .add(egui::Slider::new(&mut case.dose.opacity, 0.0..=1.0).text("dose opacity"))
+            .checkbox(
+                &mut case.dose.enabled,
+                t!(language, "show dose wash", "線量ウォッシュを表示"),
+            )
             .changed();
         changed |= ui
             .add(
-                egui::Slider::new(&mut case.dose.threshold_percent, 0.0..=100.0)
-                    .text("wash ≥ % of max"),
+                egui::Slider::new(&mut case.dose.opacity, 0.0..=1.0).text(t!(
+                    language,
+                    "dose opacity",
+                    "線量不透明度"
+                )),
+            )
+            .changed();
+        changed |= ui
+            .add(
+                egui::Slider::new(&mut case.dose.threshold_percent, 0.0..=100.0).text(t!(
+                    language,
+                    "wash ≥ % of max",
+                    "ウォッシュ ≥ 最大値の%"
+                )),
             )
             .changed();
     }
@@ -5210,15 +5742,27 @@ fn roi_color(number: i32) -> egui::Color32 {
     }
 }
 
-fn show_empty_state(ui: &mut egui::Ui) {
+fn show_empty_state(ui: &mut egui::Ui, language: Language) {
     ui.vertical_centered(|ui| {
         ui.add_space(90.0);
-        ui.heading("No verified synthetic case loaded");
-        ui.label("Generate the frozen case from a terminal:");
+        ui.heading(t!(language, "No case loaded", "症例が読み込まれていません"));
+        ui.label(t!(
+            language,
+            "Generate the frozen benchmark from a terminal:",
+            "凍結ベンチマークをターミナルで生成:"
+        ));
         ui.monospace("cargo run --bin openbnct -- benchmark generate /tmp/nf-bnct-001");
-        ui.label("Then load that directory above, or pass it as the first GUI argument.");
+        ui.label(t!(
+            language,
+            "…or drop a DICOM study's files anywhere — one CT series + one RTSTRUCT.",
+            "…または DICOM スタディのファイルをドロップ — CT シリーズ1件 + RTSTRUCT 1件。"
+        ));
         ui.add_space(20.0);
-        ui.label("DICOM and artifact-integrity gates run before any image is displayed.");
+        ui.label(t!(
+            language,
+            "DICOM and artifact-integrity gates run before any image is displayed.",
+            "画像表示の前に DICOM・完全性ゲートが実行されます。"
+        ));
     });
 }
 
@@ -5349,12 +5893,18 @@ mod tests {
     #[test]
     fn readiness_never_promotes_the_blocked_response_or_transport_run() {
         for case_loaded in [false, true] {
-            let gates = readiness_gates(case_loaded);
+            let gates = readiness_gates(case_loaded, Language::English);
             assert_eq!(gates[3].state, GateState::Blocked);
             assert_eq!(gates[4].state, GateState::Pending);
         }
-        assert_eq!(readiness_gates(false)[0].state, GateState::InputRequired);
-        assert_eq!(readiness_gates(true)[0].state, GateState::Verified);
+        assert_eq!(
+            readiness_gates(false, Language::English)[0].state,
+            GateState::InputRequired
+        );
+        assert_eq!(
+            readiness_gates(true, Language::English)[0].state,
+            GateState::Verified
+        );
     }
 
     #[test]
@@ -5774,6 +6324,7 @@ mod tests {
                     &mut display,
                     &mut WorkbenchPanels::default(),
                     None,
+                    Language::English,
                     &mut tour_targets,
                     Theme::resolve(false),
                 );
