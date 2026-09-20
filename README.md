@@ -216,6 +216,27 @@ bundling those systems.
   plan workspace, source positioning), and a bounded Python package —
   all calling the same Rust contracts.
 
+### Web workbench
+
+The same egui workbench also builds to wasm32 — one codebase, two
+products: `cargo run --bin openbnct-gui` for the desktop app, or the
+hosted bundle at [openbnct.avilalabs.org](https://openbnct.avilalabs.org)
+(also reachable at
+[avilalabs.github.io/OpenBNCT](https://avilalabs.github.io/OpenBNCT/)).
+The web build is the inspector surface — drag a dose bundle, exposure
+plan, or NIfTI volume onto the page and it lands in the matching
+workspace through the same validation path as the desktop app.
+Filesystem- and process-bound features (case folders, execution) remain
+native-only and report that honestly.
+
+**Browser requirements:** the app renders through WebGPU or WebGL2
+(with an automatic glow/WebGL fallback). Chrome and Edge work out of
+the box, as does Firefox (WebGL2; WebGPU is not required). LibreWolf
+disables WebGL by default — allow it per-site from the address-bar
+permission prompt, or set `webgl.disabled = false` in `about:config`.
+A browser with no WebGL cannot run the web build; use the desktop app
+instead.
+
 ## Quick start
 
 All 16 `openbnct*` crates are published on crates.io, and the `openbnct`

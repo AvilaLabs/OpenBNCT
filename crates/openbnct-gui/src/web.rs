@@ -60,8 +60,15 @@ pub async fn start_web() -> Result<(), JsValue> {
         }
     }
 
-    let message = "no usable GPU backend (WebGPU and WebGL both unavailable — \
-                   check that hardware acceleration and WebGL are enabled)";
+    let message = "This browser did not allow a WebGL/WebGPU context.<br><br>\
+                   <b>Firefox</b>: should work by default — check that hardware \
+                   acceleration is enabled.<br>\
+                   <b>LibreWolf</b>: disables WebGL by default. Reload, then allow \
+                   WebGL from the address-bar permission icon, or set \
+                   <code>webgl.disabled = false</code> in <code>about:config</code>.<br>\
+                   <b>Other browsers</b>: enable WebGL / hardware acceleration in settings.";
     show_boot_error(message);
-    Err(JsValue::from_str(message))
+    Err(JsValue::from_str(
+        "no usable GPU backend (WebGPU and WebGL both unavailable)",
+    ))
 }
