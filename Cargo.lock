@@ -3095,6 +3095,7 @@ dependencies = [
  "console_error_panic_hook",
  "eframe",
  "image",
+ "js-sys",
  "openbnct-bio",
  "openbnct-core",
  "openbnct-dicom",
@@ -3110,6 +3111,7 @@ dependencies = [
  "wasm-bindgen",
  "wasm-bindgen-futures",
  "web-sys",
+ "zip 4.6.1",
 ]
 
 [[package]]

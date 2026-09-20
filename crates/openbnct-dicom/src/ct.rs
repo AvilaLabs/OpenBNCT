@@ -235,6 +235,18 @@ pub(crate) fn assemble_series(mut slices: Vec<RawSlice>) -> Result<AssembledSeri
 /// positions, never from filenames or Instance Number.
 pub fn import_ct_series(paths: &[PathBuf]) -> Result<CtVolume> {
     let slices = read_series(paths, uids::CT_IMAGE_STORAGE, "CT", PixelKind::Signed16)?;
+    ct_from_slices(slices)
+}
+
+/// Bytes-based CT import for hosts without a filesystem. `files` pairs a
+/// stable label (used in errors) with complete Part-10 bytes per slice.
+/// The same geometry and encoding gates run as [`import_ct_series`].
+pub fn import_ct_series_from_bytes(files: &[(String, Vec<u8>)]) -> Result<CtVolume> {
+    let slices = read_series_bytes(files, uids::CT_IMAGE_STORAGE, "CT", PixelKind::Signed16)?;
+    ct_from_slices(slices)
+}
+
+fn ct_from_slices(slices: Vec<RawSlice>) -> Result<CtVolume> {
     let assembled = assemble_series(slices)?;
     Ok(CtVolume {
         geometry: assembled.geometry,
@@ -281,6 +293,35 @@ pub(crate) fn read_series(
     Ok(slices)
 }
 
+/// Byte-slices variant of [`read_series`] — same gates, in-memory input.
+pub(crate) fn read_series_bytes(
+    files: &[(String, Vec<u8>)],
+    sop_class_uid: &str,
+    modality: &str,
+    pixel_kind: PixelKind,
+) -> Result<Vec<RawSlice>> {
+    if files.is_empty() {
+        return Err(DicomError::EmptySeries);
+    }
+    if files.len() < 2 {
+        return Err(DicomError::Geometry(
+            "at least two slices are required to establish slice spacing".into(),
+        ));
+    }
+
+    let mut slices = Vec::with_capacity(files.len());
+    for (name, bytes) in files {
+        slices.push(read_slice_bytes(
+            bytes,
+            Path::new(name),
+            sop_class_uid,
+            modality,
+            pixel_kind,
+        )?);
+    }
+    Ok(slices)
+}
+
 pub(crate) fn read_slice(
     path: &Path,
     sop_class_uid: &str,
@@ -291,7 +332,35 @@ pub(crate) fn read_slice(
         path: path.to_path_buf(),
         source: Box::new(source),
     })?;
+    slice_from_object(&obj, path, sop_class_uid, modality, pixel_kind)
+}
 
+/// In-memory variant of [`read_slice`] for hosts without a filesystem
+/// (web drops, archives). `label` stands in for the path in errors and
+/// the slice's recorded origin.
+pub(crate) fn read_slice_bytes(
+    bytes: &[u8],
+    label: &Path,
+    sop_class_uid: &str,
+    modality: &str,
+    pixel_kind: PixelKind,
+) -> Result<RawSlice> {
+    let obj = DefaultDicomObject::from_reader(std::io::Cursor::new(bytes)).map_err(|source| {
+        DicomError::Read {
+            path: label.to_path_buf(),
+            source: Box::new(source),
+        }
+    })?;
+    slice_from_object(&obj, label, sop_class_uid, modality, pixel_kind)
+}
+
+fn slice_from_object(
+    obj: &DefaultDicomObject,
+    path: &Path,
+    sop_class_uid: &str,
+    modality: &str,
+    pixel_kind: PixelKind,
+) -> Result<RawSlice> {
     if obj.meta().transfer_syntax() != uids::EXPLICIT_VR_LITTLE_ENDIAN {
         return Err(attribute_error(
             path,
@@ -304,21 +373,21 @@ pub(crate) fn read_slice(
         ));
     }
     require_string(
-        &obj,
+        obj,
         path,
         tags::SOP_CLASS_UID,
         "SOP Class UID",
         sop_class_uid,
     )?;
-    require_string(&obj, path, tags::MODALITY, "Modality", modality)?;
+    require_string(obj, path, tags::MODALITY, "Modality", modality)?;
 
-    let rows = integer(&obj, path, tags::ROWS, "Rows")?;
-    let columns = integer(&obj, path, tags::COLUMNS, "Columns")?;
+    let rows = integer(obj, path, tags::ROWS, "Rows")?;
+    let columns = integer(obj, path, tags::COLUMNS, "Columns")?;
     if rows == 0 || columns == 0 {
         return Err(attribute_error(path, "Rows/Columns", "must be non-zero"));
     }
 
-    let pixel_spacing = fixed_floats::<2>(&obj, path, tags::PIXEL_SPACING, "Pixel Spacing")?;
+    let pixel_spacing = fixed_floats::<2>(obj, path, tags::PIXEL_SPACING, "Pixel Spacing")?;
     if pixel_spacing
         .iter()
         .any(|value| !value.is_finite() || *value <= 0.0)
@@ -330,37 +399,37 @@ pub(crate) fn read_slice(
         ));
     }
     let image_position = fixed_floats::<3>(
-        &obj,
+        obj,
         path,
         tags::IMAGE_POSITION_PATIENT,
         "Image Position (Patient)",
     )?;
     let image_orientation = fixed_floats::<6>(
-        &obj,
+        obj,
         path,
         tags::IMAGE_ORIENTATION_PATIENT,
         "Image Orientation (Patient)",
     )?;
 
     require_integer(
-        &obj,
+        obj,
         path,
         tags::SAMPLES_PER_PIXEL,
         "Samples per Pixel",
         1_u16,
     )?;
     require_string(
-        &obj,
+        obj,
         path,
         tags::PHOTOMETRIC_INTERPRETATION,
         "Photometric Interpretation",
         "MONOCHROME2",
     )?;
-    require_integer(&obj, path, tags::BITS_ALLOCATED, "Bits Allocated", 16_u16)?;
-    require_integer(&obj, path, tags::BITS_STORED, "Bits Stored", 16_u16)?;
-    require_integer(&obj, path, tags::HIGH_BIT, "High Bit", 15_u16)?;
+    require_integer(obj, path, tags::BITS_ALLOCATED, "Bits Allocated", 16_u16)?;
+    require_integer(obj, path, tags::BITS_STORED, "Bits Stored", 16_u16)?;
+    require_integer(obj, path, tags::HIGH_BIT, "High Bit", 15_u16)?;
     let pixel_representation = integer(
-        &obj,
+        obj,
         path,
         tags::PIXEL_REPRESENTATION,
         "Pixel Representation",
@@ -377,8 +446,8 @@ pub(crate) fn read_slice(
         }
     };
 
-    let rescale_slope = float(&obj, path, tags::RESCALE_SLOPE, "Rescale Slope")?;
-    let rescale_intercept = float(&obj, path, tags::RESCALE_INTERCEPT, "Rescale Intercept")?;
+    let rescale_slope = float(obj, path, tags::RESCALE_SLOPE, "Rescale Slope")?;
+    let rescale_intercept = float(obj, path, tags::RESCALE_INTERCEPT, "Rescale Intercept")?;
     if !rescale_slope.is_finite() || rescale_slope == 0.0 || !rescale_intercept.is_finite() {
         return Err(attribute_error(
             path,
@@ -388,19 +457,19 @@ pub(crate) fn read_slice(
     }
 
     let expected_pixels = usize::from(rows) * usize::from(columns);
-    let stored_pixels = pixels(&obj, path, expected_pixels, pixel_signed)?;
+    let stored_pixels = pixels(obj, path, expected_pixels, pixel_signed)?;
 
     Ok(RawSlice {
         path: path.to_path_buf(),
-        study_instance_uid: string(&obj, path, tags::STUDY_INSTANCE_UID, "Study Instance UID")?,
-        series_instance_uid: string(&obj, path, tags::SERIES_INSTANCE_UID, "Series Instance UID")?,
+        study_instance_uid: string(obj, path, tags::STUDY_INSTANCE_UID, "Study Instance UID")?,
+        series_instance_uid: string(obj, path, tags::SERIES_INSTANCE_UID, "Series Instance UID")?,
         frame_of_reference_uid: string(
-            &obj,
+            obj,
             path,
             tags::FRAME_OF_REFERENCE_UID,
             "Frame of Reference UID",
         )?,
-        sop_instance_uid: string(&obj, path, tags::SOP_INSTANCE_UID, "SOP Instance UID")?,
+        sop_instance_uid: string(obj, path, tags::SOP_INSTANCE_UID, "SOP Instance UID")?,
         rows,
         columns,
         pixel_spacing,

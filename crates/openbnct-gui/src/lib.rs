@@ -15,7 +15,7 @@ use std::path::{Path, PathBuf};
 use eframe::egui;
 use openbnct_bio::{BiologicalDoseBundle, RegionMask};
 use openbnct_core::PhysicalDoseBundle;
-use openbnct_dicom::{VerifiedBenchmarkCase, load_nf_bnct_001};
+use openbnct_dicom::{VerifiedBenchmarkCase, load_nf_bnct_001, load_nf_bnct_001_from_files};
 use openbnct_evidence::{
     DoseVolumeHistogram, EvidenceBundleManifest, RegionDoseMetrics, sha256_hex,
 };
@@ -1438,6 +1438,11 @@ impl SpectrumView {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum DropTarget {
     Case,
+    /// A `.zip` of the NF-BNCT-001 case directory — one file, full case.
+    CaseArchive,
+    /// One loose member (`case.json`, `rtstruct.dcm`, `ct-*.dcm`) of a
+    /// multi-file case drop — accumulated until the set is complete.
+    CaseFile,
     DoseBundle,
     Plan,
     NiftiVolume,
@@ -1467,6 +1472,12 @@ fn classify_dropped_name(name: &str) -> DropTarget {
     let name = name.to_ascii_lowercase();
     if name.ends_with(".nii") || name.ends_with(".nii.gz") {
         return DropTarget::NiftiVolume;
+    }
+    if name.ends_with(".zip") {
+        return DropTarget::CaseArchive;
+    }
+    if io::looks_like_case_member(&name) {
+        return DropTarget::CaseFile;
     }
     if name.ends_with(".json") {
         return DropTarget::DoseBundle;
@@ -1507,6 +1518,13 @@ pub(crate) struct OpenBnctApp {
     workspace: WorkspaceTab,
     dark_mode: bool,
     template_status: Option<String>,
+    /// Loose case members accumulated across a multi-file drop — a full
+    /// NF-BNCT-001 set (case.json + rtstruct.dcm + 40 ct slices) loads.
+    pending_case_files: Vec<(String, Vec<u8>)>,
+    case_drop_note: Option<String>,
+    /// Set by View → Screenshot; consumed when the viewport delivers the
+    /// `Event::Screenshot` frame on the next update.
+    want_screenshot: bool,
     brand_logo: Option<egui::TextureHandle>,
     help: GuidedHelp,
     panels: WorkbenchPanels,
@@ -1537,6 +1555,9 @@ impl OpenBnctApp {
             },
             dark_mode: false,
             template_status: None,
+            pending_case_files: Vec::new(),
+            case_drop_note: None,
+            want_screenshot: false,
             brand_logo: brand::load_logo_texture(context).ok(),
             help: GuidedHelp::default(),
             panels: WorkbenchPanels::default(),
@@ -1588,12 +1609,43 @@ impl OpenBnctApp {
     fn show_menu_bar(&mut self, ui: &mut egui::Ui, tour_targets: &mut TourTargets) {
         egui::MenuBar::new().ui(ui, |ui| {
             ui.menu_button("File", |ui| {
-                if ui.button("Open case…").clicked() {
-                    if let Some(dir) = io::pick_folder() {
-                        self.case_path = dir.display().to_string();
-                        self.load_case();
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    if ui.button("Open case…").clicked() {
+                        if let Some(dir) = io::pick_folder() {
+                            self.case_path = dir.display().to_string();
+                            self.load_case();
+                        }
+                        ui.close();
                     }
-                    ui.close();
+                    ui.small("…or drop the case directory anywhere.");
+                }
+                #[cfg(target_arch = "wasm32")]
+                {
+                    if ui.button("Open case archive (.zip)…").clicked() {
+                        // Browsers cannot hand us a folder path — pick a
+                        // zipped case directory; bytes arrive on the drop
+                        // channel and verify through the same loader.
+                        let sender = self.drop_sender.clone();
+                        let context = ui.ctx().clone();
+                        wasm_bindgen_futures::spawn_local(async move {
+                            let picked = rfd::AsyncFileDialog::new()
+                                .add_filter("NF-BNCT-001 case archive", &["zip"])
+                                .pick_file()
+                                .await;
+                            if let Some(file) = picked {
+                                let name = file.file_name();
+                                let bytes = file.read().await;
+                                let _ = sender.send((name, None, Ok(bytes)));
+                            }
+                            context.request_repaint();
+                        });
+                        ui.close();
+                    }
+                    ui.small(
+                        "…or drop a .zip of the case folder — or all 42 members \
+                         (case.json, rtstruct.dcm, ct-000…039.dcm) at once.",
+                    );
                 }
                 if ui.button("Export case template…").clicked() {
                     if let Some(dir) = io::pick_folder() {
@@ -1614,6 +1666,43 @@ impl OpenBnctApp {
             });
             ui.menu_button("View", |ui| {
                 ui.checkbox(&mut self.dark_mode, "Dark mode");
+                ui.separator();
+                ui.label(egui::RichText::new("Interface scale").small());
+                ui.horizontal(|ui| {
+                    for (label, factor) in [
+                        ("75%", 0.75_f32),
+                        ("100%", 1.0),
+                        ("125%", 1.25),
+                        ("150%", 1.5),
+                    ] {
+                        let current = (ui.ctx().zoom_factor() - factor).abs() < 0.01;
+                        if ui.selectable_label(current, label).clicked() {
+                            ui.ctx().set_zoom_factor(factor);
+                        }
+                    }
+                });
+                ui.separator();
+                if ui.button("Reset views").clicked() {
+                    self.reset_views();
+                    ui.close();
+                }
+                if ui.button("Screenshot…").clicked() {
+                    self.want_screenshot = true;
+                    ui.send_viewport_cmd(egui::ViewportCommand::Screenshot(
+                        egui::UserData::default(),
+                    ));
+                    ui.close();
+                }
+                #[cfg(not(target_arch = "wasm32"))]
+                {
+                    ui.separator();
+                    if ui.button("Toggle fullscreen").clicked() {
+                        ui.send_viewport_cmd(egui::ViewportCommand::Fullscreen(
+                            !ui.input(|i| i.viewport().fullscreen.unwrap_or(false)),
+                        ));
+                        ui.close();
+                    }
+                }
             });
             let help = ui.menu_button("Help", |ui| {
                 if ui.button("Help and guided tours").clicked() {
@@ -1623,6 +1712,68 @@ impl OpenBnctApp {
             });
             tour_targets.set(TourTarget::HelpButton, help.response.rect);
         });
+    }
+
+    /// Restore display state without touching loaded artifacts: crosshair
+    /// centered, dose-map overlays off, profile defaults, textures rebuilt.
+    fn reset_views(&mut self) {
+        if let Some(case) = &mut self.case {
+            case.crosshair = Crosshair::centered(&case.grid);
+            case.textures_dirty = true;
+        }
+        self.panels.dose.map.voxel = None;
+        self.panels.dose.map.log_scale = false;
+        self.panels.dose.map.contours = false;
+        self.panels.dose.map.sigma_view = false;
+        self.panels.dose.map.textures = None;
+        self.panels.dose.map.cache_key = None;
+        self.panels.dose.profile.axis = 0;
+        self.panels.dose.profile.log_y = false;
+        self.panels.dose.profile.measurement_pick = 0;
+        self.template_status =
+            Some("views reset — crosshair centered, overlays and profiles restored".into());
+    }
+
+    /// Encode the captured frame to PNG, then save (native picker) or
+    /// download (browser blob).
+    fn save_screenshot(&mut self, image: &egui::ColorImage) {
+        use image::ImageEncoder;
+        let rgba: Vec<u8> = image
+            .pixels
+            .iter()
+            .flat_map(|pixel| pixel.to_array())
+            .collect();
+        let mut png = Vec::new();
+        let encoded = image::codecs::png::PngEncoder::new(&mut png).write_image(
+            &rgba,
+            image.size[0] as u32,
+            image.size[1] as u32,
+            image::ExtendedColorType::Rgba8,
+        );
+        if let Err(error) = encoded {
+            self.load_error = Some(format!("screenshot encode failed: {error}"));
+            return;
+        }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if let Some(path) = rfd::FileDialog::new()
+                .add_filter("PNG image", &["png"])
+                .set_file_name("openbnct.png")
+                .save_file()
+            {
+                match io::write_bytes(&path, &png) {
+                    Ok(()) => {
+                        self.template_status =
+                            Some(format!("screenshot saved to {}", path.display()))
+                    }
+                    Err(error) => {
+                        self.load_error = Some(format!("screenshot save failed: {error}"))
+                    }
+                }
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        web::download_bytes("openbnct.png", &png);
     }
 
     /// Route an OS-dropped file onto the matching workbench surface.
@@ -1655,8 +1806,39 @@ impl OpenBnctApp {
                     self.load_case();
                     self.workspace = WorkspaceTab::Geometry;
                 } else {
-                    self.load_error = Some("case drops require a directory — native build".into());
+                    self.load_error = Some(
+                        "case drops need a .zip of the case folder — or drop all 42 \
+                         members (case.json, rtstruct.dcm, ct-000…039.dcm) together"
+                            .into(),
+                    );
                 }
+            }
+            DropTarget::CaseArchive => match bytes
+                .and_then(|b| io::unzip_case_archive(&b).and_then(ViewerCase::load_bytes))
+            {
+                Ok(case) => {
+                    self.case = Some(case);
+                    self.case_drop_note = None;
+                    self.load_error = None;
+                    self.workspace = WorkspaceTab::Geometry;
+                }
+                Err(error) => {
+                    self.load_error = Some(format!("case archive rejected: {error}"));
+                }
+            },
+            DropTarget::CaseFile => {
+                match bytes {
+                    Ok(b) => {
+                        if let Some(member) = io::case_member_name(name) {
+                            self.pending_case_files.retain(|(n, _)| *n != member);
+                            self.pending_case_files.push((member, b));
+                        }
+                    }
+                    Err(error) => {
+                        self.load_error = Some(format!("could not read {name}: {error}"));
+                    }
+                }
+                self.try_complete_case_drop();
             }
             DropTarget::DoseBundle => {
                 // A drop on the painted B zone while a bundle is loaded
@@ -1710,12 +1892,79 @@ impl OpenBnctApp {
             }
         }
     }
+
+    /// A complete loose-file case set is case.json + rtstruct.dcm +
+    /// ct/ct-000…039.dcm (42 files). Until then a progress note tells the
+    /// user exactly which members are still missing.
+    fn try_complete_case_drop(&mut self) {
+        if self.pending_case_files.is_empty() {
+            self.case_drop_note = None;
+            return;
+        }
+        let missing = missing_case_members(&self.pending_case_files);
+        if missing.is_empty() {
+            match ViewerCase::load_bytes(std::mem::take(&mut self.pending_case_files)) {
+                Ok(case) => {
+                    self.case = Some(case);
+                    self.case_drop_note = None;
+                    self.load_error = None;
+                    self.workspace = WorkspaceTab::Geometry;
+                }
+                Err(error) => {
+                    self.load_error = Some(format!("case files rejected: {error}"));
+                }
+            }
+            return;
+        }
+        self.case_drop_note = Some(format!(
+            "Collecting case files — {} received; still need {}",
+            self.pending_case_files.len(),
+            missing.join(", ")
+        ));
+    }
+}
+
+/// Which NF-BNCT-001 members a loose-file set still lacks. Empty means
+/// the set is complete and ready for `load_nf_bnct_001_from_files`.
+fn missing_case_members(files: &[(String, Vec<u8>)]) -> Vec<String> {
+    let have_manifest = files.iter().any(|(name, _)| name == "case.json");
+    let have_rtstruct = files.iter().any(|(name, _)| name == "rtstruct.dcm");
+    let ct_count = files
+        .iter()
+        .filter(|(name, _)| name.starts_with("ct/"))
+        .count();
+    let mut missing = Vec::new();
+    if !have_manifest {
+        missing.push("case.json".to_owned());
+    }
+    if !have_rtstruct {
+        missing.push("rtstruct.dcm".to_owned());
+    }
+    if ct_count < 40 {
+        missing.push(format!("{} more CT slice(s)", 40 - ct_count));
+    }
+    missing
 }
 
 impl eframe::App for OpenBnctApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
         capture_preview(ui.ctx());
+        if self.want_screenshot {
+            let captured = ui.input(|input| {
+                input.events.iter().find_map(|event| {
+                    if let egui::Event::Screenshot { image, .. } = event {
+                        Some(image.clone())
+                    } else {
+                        None
+                    }
+                })
+            });
+            if let Some(image) = captured {
+                self.save_screenshot(&image);
+                self.want_screenshot = false;
+            }
+        }
         if ui.input(|input| input.key_pressed(egui::Key::F1)) {
             self.help.toggle_center();
         }
@@ -1798,6 +2047,15 @@ impl eframe::App for OpenBnctApp {
                 }
                 if let Some(error) = &self.load_error {
                     ui.colored_label(theme.error, format!("Load rejected: {error}"));
+                }
+                if let Some(note) = self.case_drop_note.clone() {
+                    ui.horizontal(|ui| {
+                        ui.colored_label(theme.warn_text, &note);
+                        if ui.small_button("discard").clicked() {
+                            self.pending_case_files.clear();
+                            self.case_drop_note = None;
+                        }
+                    });
                 }
                 if let Some(status) = &self.template_status {
                     ui.label(status);
@@ -2094,9 +2352,17 @@ fn show_workbench(
                         tour_targets,
                         theme,
                     ),
-                    WorkspaceTab::Plan => show_plan_workspace(ui, &mut panels.plan, theme),
+                    WorkspaceTab::Plan => {
+                        show_plan_workspace(ui, &mut panels.plan, tour_targets, theme)
+                    }
                     WorkspaceTab::Dose => {
-                        show_dose_workspace(ui, &mut panels.dose, &mut panels.nifti, theme);
+                        show_dose_workspace(
+                            ui,
+                            &mut panels.dose,
+                            &mut panels.nifti,
+                            tour_targets,
+                            theme,
+                        );
                     }
                     WorkspaceTab::Evidence => show_evidence_workspace(
                         ui,
@@ -2232,6 +2498,17 @@ struct ViewerCase {
 impl ViewerCase {
     fn load(root: &Path) -> Result<Self, String> {
         let verified = load_nf_bnct_001(root).map_err(|error| error.to_string())?;
+        Self::from_verified(root.to_path_buf(), verified)
+    }
+
+    /// In-memory entry point — the same verifier, fed by dropped/picked
+    /// bytes instead of the filesystem (web build, zip archives).
+    fn load_bytes(files: Vec<(String, Vec<u8>)>) -> Result<Self, String> {
+        let verified = load_nf_bnct_001_from_files(&files).map_err(|error| error.to_string())?;
+        Self::from_verified(PathBuf::from("<dropped files>"), verified)
+    }
+
+    fn from_verified(root: PathBuf, verified: VerifiedBenchmarkCase) -> Result<Self, String> {
         let grid = PatientAlignedGrid::new(&verified.ct.geometry)
             .map_err(|error| format!("anatomical viewer cannot represent this grid: {error}"))?;
         let crosshair = Crosshair::centered(&grid);
@@ -2242,7 +2519,7 @@ impl ViewerCase {
             .map(|roi| roi.name != "PHANTOM")
             .collect();
         Ok(Self {
-            root: root.to_path_buf(),
+            root,
             verified,
             grid,
             crosshair,
@@ -2604,7 +2881,10 @@ fn show_transport_workspace(
         });
 
     ui.add_space(12.0);
-    ui.heading("Source spectrum");
+    tour_targets.set(
+        TourTarget::SpectrumPanel,
+        ui.heading("Source spectrum").rect,
+    );
     ui.label(
         "Drop a beam-description or fixed-source-definition JSON — the energy histogram \
          renders log-log with TECDOC-1223 region shading.",
@@ -2788,7 +3068,7 @@ fn show_transport_workspace(
     }
 
     ui.add_space(14.0);
-    ui.heading("Run a subcommand");
+    tour_targets.set(TourTarget::RunPanel, ui.heading("Run a subcommand").rect);
     if cfg!(target_arch = "wasm32") {
         ui.label("Process execution requires the native build — the web inspector is read-only.");
     }
@@ -2881,7 +3161,12 @@ fn capability_label(ui: &mut egui::Ui, name: &str, enabled: bool) {
     });
 }
 
-fn show_plan_workspace(ui: &mut egui::Ui, panel: &mut PlanPanel, theme: Theme) {
+fn show_plan_workspace(
+    ui: &mut egui::Ui,
+    panel: &mut PlanPanel,
+    tour_targets: &mut TourTargets,
+    theme: Theme,
+) {
     show_workspace_heading(
         ui,
         theme,
@@ -3010,7 +3295,10 @@ fn show_plan_workspace(ui: &mut egui::Ui, panel: &mut PlanPanel, theme: Theme) {
     });
 
     ui.add_space(14.0);
-    ui.heading("Robustness report");
+    tour_targets.set(
+        TourTarget::RobustnessCards,
+        ui.heading("Robustness report").rect,
+    );
     ui.label(
         "Drop a plan-robustness .json — per-objective violation probabilities \
          under the declared systematic uncertainties.",
@@ -3689,6 +3977,7 @@ fn show_dose_workspace(
     ui: &mut egui::Ui,
     panel: &mut DosePanel,
     nifti: &mut NiftiPanel,
+    tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
     show_workspace_heading(
@@ -3823,7 +4112,7 @@ fn show_dose_workspace(
     ui.monospace(format!("unit: {}", artifact.unit()));
 
     ui.add_space(14.0);
-    ui.heading("Dose map");
+    tour_targets.set(TourTarget::DoseMap, ui.heading("Dose map").rect);
     show_dose_map(ui, panel, theme);
 
     ui.add_space(14.0);
@@ -3833,6 +4122,9 @@ fn show_dose_workspace(
     ui.add_space(14.0);
     ui.heading("A/B compare");
     show_dose_compare(ui, panel, theme);
+    if panel.compare_zone != egui::Rect::NOTHING {
+        tour_targets.set(TourTarget::CompareZone, panel.compare_zone);
+    }
 
     ui.add_space(14.0);
     ui.heading("Region dose-volume histogram");
@@ -4738,6 +5030,75 @@ mod tests {
             classify_dropped_path(Path::new("/tmp/notes.txt")),
             DropTarget::Unsupported
         );
+    }
+
+    #[test]
+    fn case_member_names_normalize_to_manifest_paths() {
+        assert_eq!(
+            io::case_member_name("case.json").as_deref(),
+            Some("case.json")
+        );
+        assert_eq!(
+            io::case_member_name("RTSTRUCT.DCM").as_deref(),
+            Some("rtstruct.dcm")
+        );
+        assert_eq!(
+            io::case_member_name("ct/ct-007.dcm").as_deref(),
+            Some("ct/ct-007.dcm")
+        );
+        assert_eq!(
+            io::case_member_name("nf-bnct-001/ct/ct-007.dcm").as_deref(),
+            Some("ct/ct-007.dcm")
+        );
+        assert_eq!(io::case_member_name("dose-bundle.json"), None);
+        assert_eq!(io::case_member_name("other.dcm"), None);
+        assert_eq!(
+            classify_dropped_name("nf-bnct-001.zip"),
+            DropTarget::CaseArchive
+        );
+        assert_eq!(classify_dropped_name("case.json"), DropTarget::CaseFile);
+        assert_eq!(classify_dropped_name("ct-012.dcm"), DropTarget::CaseFile);
+    }
+
+    #[test]
+    fn missing_case_members_reports_the_gap() {
+        let files = vec![("case.json".to_string(), b"{}".to_vec())];
+        let missing = missing_case_members(&files);
+        assert!(missing.iter().any(|entry| entry == "rtstruct.dcm"));
+        assert!(missing.iter().any(|entry| entry.contains("CT slice")));
+
+        let mut full = vec![
+            ("case.json".to_string(), b"{}".to_vec()),
+            ("rtstruct.dcm".to_string(), b"rt".to_vec()),
+        ];
+        for index in 0..40 {
+            full.push((format!("ct/ct-{index:03}.dcm"), b"ct".to_vec()));
+        }
+        assert!(missing_case_members(&full).is_empty());
+    }
+
+    #[test]
+    fn case_archive_extracts_manifest_relative_members() {
+        let mut cursor = std::io::Cursor::new(Vec::new());
+        {
+            let mut writer = zip::ZipWriter::new(&mut cursor);
+            let options = zip::write::SimpleFileOptions::default();
+            for (name, body) in [
+                ("nf-bnct-001/case.json", &b"{}"[..]),
+                ("nf-bnct-001/rtstruct.dcm", b"rt"),
+                ("nf-bnct-001/ct/ct-000.dcm", b"ct0"),
+                ("nf-bnct-001/notes.txt", b"ignored"),
+            ] {
+                writer.start_file(name, options).unwrap();
+                std::io::Write::write_all(&mut writer, body).unwrap();
+            }
+            writer.finish().unwrap();
+        }
+        let files = io::unzip_case_archive(&cursor.into_inner()).unwrap();
+        let names: Vec<_> = files.iter().map(|(name, _)| name.as_str()).collect();
+        assert_eq!(names, ["case.json", "rtstruct.dcm", "ct/ct-000.dcm"]);
+        assert!(io::unzip_case_archive(b"not a zip").is_err());
+        assert!(io::unzip_case_archive(&[]).is_err());
     }
 
     #[test]

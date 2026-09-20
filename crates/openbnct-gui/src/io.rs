@@ -65,3 +65,61 @@ pub fn pick_file(filter_name: &str, extensions: &[&str]) -> Option<PathBuf> {
 pub fn pick_file(_filter_name: &str, _extensions: &[&str]) -> Option<PathBuf> {
     None
 }
+
+/// Map a dropped/picked file name to its manifest-relative case path.
+/// Flat drops give basenames; archives may nest under a top folder —
+/// only the basename decides membership.
+pub fn case_member_name(name: &str) -> Option<String> {
+    let normalized = name.replace('\\', "/");
+    let base = normalized
+        .rsplit('/')
+        .next()
+        .unwrap_or(normalized.as_str())
+        .to_ascii_lowercase();
+    if base == "case.json" {
+        Some("case.json".to_owned())
+    } else if base == "rtstruct.dcm" {
+        Some("rtstruct.dcm".to_owned())
+    } else if base.starts_with("ct-") && base.ends_with(".dcm") {
+        Some(format!("ct/{base}"))
+    } else {
+        None
+    }
+}
+
+/// True when a dropped name looks like an NF-BNCT-001 case member.
+pub fn looks_like_case_member(name: &str) -> bool {
+    case_member_name(name).is_some()
+}
+
+/// Unpack a `.zip` of the case directory into manifest-relative entries.
+/// Works on both targets — `zip` is pure Rust with deflate inflate.
+pub fn unzip_case_archive(bytes: &[u8]) -> Result<Vec<(String, Vec<u8>)>, String> {
+    let cursor = std::io::Cursor::new(bytes);
+    let mut archive =
+        zip::ZipArchive::new(cursor).map_err(|error| format!("invalid zip archive: {error}"))?;
+    let mut files = Vec::new();
+    for index in 0..archive.len() {
+        let mut entry = archive
+            .by_index(index)
+            .map_err(|error| format!("zip entry {index}: {error}"))?;
+        if entry.is_dir() {
+            continue;
+        }
+        let name = entry.name().to_owned();
+        let Some(member) = case_member_name(&name) else {
+            continue;
+        };
+        let mut contents = Vec::with_capacity(entry.size() as usize);
+        std::io::Read::read_to_end(&mut entry, &mut contents)
+            .map_err(|error| format!("zip entry {name}: {error}"))?;
+        files.push((member, contents));
+    }
+    if files.is_empty() {
+        return Err(
+            "archive contains no NF-BNCT-001 members (expected case.json, rtstruct.dcm, ct/ct-*.dcm)"
+                .to_owned(),
+        );
+    }
+    Ok(files)
+}

@@ -108,6 +108,60 @@ pub fn load_nf_bnct_001(root: &Path) -> Result<VerifiedBenchmarkCase> {
         ));
     }
     let ct = import_ct_series(&ct_files)?;
+    check_ct_geometry(&ct)?;
+
+    let rtstruct_path = root.join("rtstruct.dcm");
+    let structures = import_rtstruct(&rtstruct_path, &ct)?;
+    let reports = check_rois(&structures, &ct)?;
+
+    let verified_artifact_count = verify_manifest(root, &ct, &reports)?;
+    Ok(verified_case(
+        ct,
+        structures,
+        reports,
+        verified_artifact_count,
+    ))
+}
+
+/// In-memory variant of [`load_nf_bnct_001`] for hosts without a
+/// filesystem (web drops, archives). `files` maps manifest-relative
+/// names — `ct/ct-000.dcm`, `rtstruct.dcm`, `case.json` — to complete
+/// bytes; every geometry, ROI, and digest gate is identical.
+pub fn load_nf_bnct_001_from_files(files: &[(String, Vec<u8>)]) -> Result<VerifiedBenchmarkCase> {
+    let map: BTreeMap<String, &[u8]> = files
+        .iter()
+        .map(|(name, bytes)| (name.clone(), bytes.as_slice()))
+        .collect();
+    let ct_files: Vec<(String, Vec<u8>)> = map
+        .iter()
+        .filter(|(name, _)| name.starts_with("ct/") && name.ends_with(".dcm"))
+        .map(|(name, bytes)| (name.clone(), bytes.to_vec()))
+        .collect();
+    if ct_files.len() != 40 {
+        return mismatch(format!(
+            "file set contains {} CT slices under ct/; expected 40",
+            ct_files.len()
+        ));
+    }
+    let ct = crate::import_ct_series_from_bytes(&ct_files)?;
+    check_ct_geometry(&ct)?;
+
+    let rtstruct_bytes = map
+        .get("rtstruct.dcm")
+        .ok_or_else(|| DicomError::Benchmark("file set is missing rtstruct.dcm".into()))?;
+    let structures = crate::import_rtstruct_bytes(rtstruct_bytes, &ct)?;
+    let reports = check_rois(&structures, &ct)?;
+
+    let verified_artifact_count = verify_manifest_map(&map, &ct, &reports)?;
+    Ok(verified_case(
+        ct,
+        structures,
+        reports,
+        verified_artifact_count,
+    ))
+}
+
+fn check_ct_geometry(ct: &CtVolume) -> Result<()> {
     expect_equal("shape", &ct.geometry.shape, &[40, 40, 40])?;
     expect_equal("spacing", &ct.geometry.spacing_mm, &[5.0, 5.0, 5.0])?;
     expect_equal("origin", &ct.geometry.origin_mm, &[-97.5, -97.5, -97.5])?;
@@ -147,9 +201,10 @@ pub fn load_nf_bnct_001(root: &Path) -> Result<VerifiedBenchmarkCase> {
     {
         return mismatch("CT pixel or rescale values differ from the frozen all-zero HU volume");
     }
+    Ok(())
+}
 
-    let rtstruct_path = root.join("rtstruct.dcm");
-    let structures = import_rtstruct(&rtstruct_path, &ct)?;
+fn check_rois(structures: &crate::StructureSet, ct: &CtVolume) -> Result<Vec<RoiReport>> {
     if structures.rois.len() != EXPECTED_ROIS.len() {
         return mismatch(format!(
             "RT Structure Set contains {} ROIs; expected {}",
@@ -164,9 +219,9 @@ pub fn load_nf_bnct_001(root: &Path) -> Result<VerifiedBenchmarkCase> {
             .roi(expected.name)
             .ok_or_else(|| DicomError::Benchmark(format!("missing ROI {:?}", expected.name)))?;
         let voxel_count = roi.voxel_count();
-        let volume_cm3 = roi.volume_cm3(&ct);
+        let volume_cm3 = roi.volume_cm3(ct);
         let centroid_lps_mm = roi
-            .centroid_lps_mm(&ct)
+            .centroid_lps_mm(ct)
             .ok_or_else(|| DicomError::Benchmark(format!("ROI {:?} is empty", expected.name)))?;
         if roi.number != expected.number
             || voxel_count != expected.voxel_count
@@ -186,10 +241,16 @@ pub fn load_nf_bnct_001(root: &Path) -> Result<VerifiedBenchmarkCase> {
             centroid_lps_mm,
         });
     }
+    Ok(reports)
+}
 
-    let verified_artifact_count = verify_manifest(root, &ct, &reports)?;
-
-    Ok(VerifiedBenchmarkCase {
+fn verified_case(
+    ct: CtVolume,
+    structures: crate::StructureSet,
+    reports: Vec<RoiReport>,
+    verified_artifact_count: usize,
+) -> VerifiedBenchmarkCase {
+    VerifiedBenchmarkCase {
         report: BenchmarkReport {
             case_id: "NF-BNCT-001",
             shape: ct.geometry.shape,
@@ -201,7 +262,7 @@ pub fn load_nf_bnct_001(root: &Path) -> Result<VerifiedBenchmarkCase> {
         },
         ct,
         structures,
-    })
+    }
 }
 
 fn verify_manifest(root: &Path, ct: &CtVolume, rois: &[RoiReport]) -> Result<usize> {
@@ -212,6 +273,29 @@ fn verify_manifest(root: &Path, ct: &CtVolume, rois: &[RoiReport]) -> Result<usi
     })?;
     let manifest: CaseManifest = serde_json::from_slice(&bytes)
         .map_err(|error| DicomError::Benchmark(format!("invalid case.json: {error}")))?;
+    check_manifest_fields(&manifest, ct, rois)?;
+    manifest.verify_artifacts(root)?;
+    Ok(manifest.artifacts.len())
+}
+
+/// Bytes-based manifest verify — identical field gates, digests checked
+/// against the supplied file map instead of the filesystem.
+fn verify_manifest_map(
+    files: &BTreeMap<String, &[u8]>,
+    ct: &CtVolume,
+    rois: &[RoiReport],
+) -> Result<usize> {
+    let bytes = files
+        .get("case.json")
+        .ok_or_else(|| DicomError::Benchmark("file set is missing case.json".into()))?;
+    let manifest: CaseManifest = serde_json::from_slice(bytes)
+        .map_err(|error| DicomError::Benchmark(format!("invalid case.json: {error}")))?;
+    check_manifest_fields(&manifest, ct, rois)?;
+    manifest.verify_artifacts_map(files)?;
+    Ok(manifest.artifacts.len())
+}
+
+fn check_manifest_fields(manifest: &CaseManifest, ct: &CtVolume, rois: &[RoiReport]) -> Result<()> {
     manifest.validate()?;
 
     expect_equal(
@@ -317,9 +401,7 @@ fn verify_manifest(root: &Path, ct: &CtVolume, rois: &[RoiReport]) -> Result<usi
     {
         return mismatch("manifest metadata is invalid for rtstruct.dcm");
     }
-
-    manifest.verify_artifacts(root)?;
-    Ok(manifest.artifacts.len())
+    Ok(())
 }
 
 fn dicom_files(directory: &Path) -> Result<Vec<PathBuf>> {

@@ -11,7 +11,9 @@ use openbnct_dicom::synthetic::{
     COLUMNS, FIRST_CENTER_MM, FRAME_OF_REFERENCE_UID, ROWS, SLICES, SPACING_MM, ct_slice_uid,
     generate_nf_bnct_001, validate_part10_files,
 };
-use openbnct_dicom::{DicomError, import_ct_series, import_rtstruct, verify_nf_bnct_001};
+use openbnct_dicom::{
+    DicomError, import_ct_series, import_rtstruct, load_nf_bnct_001_from_files, verify_nf_bnct_001,
+};
 use tempfile::tempdir;
 
 #[test]
@@ -76,6 +78,49 @@ fn generated_case_round_trips_with_exact_geometry_and_masks() {
     assert_eq!(report.shape, [40, 40, 40]);
     assert_eq!(report.verified_artifact_count, 41);
     assert_eq!(report.rois.len(), 5);
+}
+
+#[test]
+fn generated_case_verifies_from_in_memory_files() {
+    let temp = tempdir().expect("temporary directory");
+    let output = temp.path().join("nf-bnct-001");
+    let generated = generate_nf_bnct_001(&output).expect("generate benchmark");
+
+    let mut files: Vec<(String, Vec<u8>)> = Vec::new();
+    for path in &generated.ct_files {
+        let name = path
+            .file_name()
+            .and_then(|n| n.to_str())
+            .expect("slice file name");
+        files.push((
+            format!("ct/{name}"),
+            std::fs::read(path).expect("read slice"),
+        ));
+    }
+    files.push((
+        "rtstruct.dcm".to_owned(),
+        std::fs::read(&generated.rtstruct_file).expect("read rtstruct"),
+    ));
+    files.push((
+        "case.json".to_owned(),
+        std::fs::read(&generated.manifest_file).expect("read manifest"),
+    ));
+
+    let verified = load_nf_bnct_001_from_files(&files).expect("in-memory verify");
+    assert_eq!(
+        verified.ct.geometry.shape,
+        [COLUMNS as u32, ROWS as u32, SLICES as u32]
+    );
+    assert_eq!(verified.structures.rois.len(), 5);
+
+    // A single corrupted byte must fail the manifest digest.
+    let mut corrupted = files.clone();
+    corrupted[0].1[512] ^= 0xFF;
+    assert!(load_nf_bnct_001_from_files(&corrupted).is_err());
+
+    // Missing members are named, not guessed at.
+    let incomplete = files[..files.len() - 1].to_vec();
+    assert!(load_nf_bnct_001_from_files(&incomplete).is_err());
 }
 
 #[test]

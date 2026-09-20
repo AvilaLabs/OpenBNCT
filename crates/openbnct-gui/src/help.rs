@@ -2,7 +2,7 @@
 
 use eframe::egui;
 
-const TARGET_COUNT: usize = 10;
+const TARGET_COUNT: usize = 15;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub(crate) enum HelpWorkspace {
@@ -26,6 +26,11 @@ pub(crate) enum TourTarget {
     TransportGates,
     TransportActions,
     EvidenceLedger,
+    DoseMap,
+    CompareZone,
+    SpectrumPanel,
+    RunPanel,
+    RobustnessCards,
 }
 
 impl TourTarget {
@@ -54,16 +59,29 @@ enum GuideKind {
     QuickStart,
     Geometry,
     Readiness,
+    DoseMaps,
+    Compare,
+    SourceAndRun,
 }
 
 impl GuideKind {
-    const ALL: [Self; 3] = [Self::QuickStart, Self::Geometry, Self::Readiness];
+    const ALL: [Self; 6] = [
+        Self::QuickStart,
+        Self::Geometry,
+        Self::DoseMaps,
+        Self::Compare,
+        Self::SourceAndRun,
+        Self::Readiness,
+    ];
 
     const fn title(self) -> &'static str {
         match self {
             Self::QuickStart => "Quick start",
             Self::Geometry => "Inspect geometry",
             Self::Readiness => "Readiness & evidence",
+            Self::DoseMaps => "Read dose & σ maps",
+            Self::Compare => "Compare two bundles",
+            Self::SourceAndRun => "Spectra & running jobs",
         }
     }
 
@@ -72,6 +90,13 @@ impl GuideKind {
             Self::QuickStart => "Learn the shell, load gate, workspaces, and status language.",
             Self::Geometry => "Review linked DICOM views, display controls, and the crosshair.",
             Self::Readiness => "Trace why a capability is frozen, blocked, pending, or verified.",
+            Self::DoseMaps => {
+                "Drop a dose bundle, read component maps, contours, σ maps, and profiles."
+            }
+            Self::Compare => "A/B two dose bundles — ratio slices, statistics, and provenance.",
+            Self::SourceAndRun => {
+                "Inspect a beam spectrum on web or native; run bounded commands on desktop."
+            }
         }
     }
 
@@ -80,6 +105,9 @@ impl GuideKind {
             Self::QuickStart => &QUICK_START_STEPS,
             Self::Geometry => &GEOMETRY_STEPS,
             Self::Readiness => &READINESS_STEPS,
+            Self::DoseMaps => &DOSE_MAP_STEPS,
+            Self::Compare => &COMPARE_STEPS,
+            Self::SourceAndRun => &SOURCE_RUN_STEPS,
         }
     }
 }
@@ -179,6 +207,93 @@ const READINESS_STEPS: [TourStep; 4] = [
     },
 ];
 
+const DOSE_MAP_STEPS: [TourStep; 5] = [
+    TourStep {
+        target: TourTarget::WorkspaceNavigation,
+        workspace: Some(HelpWorkspace::Dose),
+        title: "Open Dose components",
+        instruction: "Drop a physical or biological dose-bundle JSON anywhere in the window — the bundle's own grid geometry drives the viewer, so no case directory is needed on web.",
+    },
+    TourStep {
+        target: TourTarget::DoseMap,
+        workspace: Some(HelpWorkspace::Dose),
+        title: "Read the component map",
+        instruction: "Pick a component (boron, nitrogen, hydrogen, gamma, total) and quantity. Click any of the three planes to move the shared crosshair — all panes stay linked.",
+    },
+    TourStep {
+        target: TourTarget::DoseMap,
+        workspace: Some(HelpWorkspace::Dose),
+        title: "Shape the display",
+        instruction: "Log scale reveals wide dynamic ranges; isodose contours mark 90/50/10% of peak. The σ-map toggle swaps the wash to absolute standard uncertainty where the component carries one.",
+    },
+    TourStep {
+        target: TourTarget::DoseMap,
+        workspace: Some(HelpWorkspace::Dose),
+        title: "Quantify along a line",
+        instruction: "Below the map, the line-profile section draws the selected component along an axis through the crosshair — drop a measurement-record JSON to overlay measured points on the same axis.",
+    },
+    TourStep {
+        target: TourTarget::CompareZone,
+        workspace: Some(HelpWorkspace::Dose),
+        title: "Cards carry the summary",
+        instruction: "Above the map, each component card reports min/max/mean and mean relative 1σ. Below, the compare drop zone accepts a second bundle for A/B diffing — the next tour walks through it.",
+    },
+];
+
+const COMPARE_STEPS: [TourStep; 4] = [
+    TourStep {
+        target: TourTarget::WorkspaceNavigation,
+        workspace: Some(HelpWorkspace::Dose),
+        title: "Load artifact A",
+        instruction: "Drop the first dose bundle anywhere — it becomes the reference (A). Its case id, SHA-256, and provenance binding appear in the diff header.",
+    },
+    TourStep {
+        target: TourTarget::CompareZone,
+        workspace: Some(HelpWorkspace::Dose),
+        title: "Drop B on the compare zone",
+        instruction: "Drop a second bundle inside the marked zone. Dropping anywhere else replaces A instead — the zone is what makes it a comparison.",
+    },
+    TourStep {
+        target: TourTarget::CompareZone,
+        workspace: Some(HelpWorkspace::Dose),
+        title: "Read the ratio map",
+        instruction: "Tri-planar B/A ratio renders on the shared crosshair: blue under 0.5×, white at unity, red over 2×, dark where the ratio is undefined. Statistics report mean ratio, max deviation, and the ±5% agreement fraction.",
+    },
+    TourStep {
+        target: TourTarget::CompareZone,
+        workspace: Some(HelpWorkspace::Dose),
+        title: "Check provenance",
+        instruction: "The diff header prints both artifacts' content bindings — if geometry or provenance don't line up, the comparison refuses rather than guessing. That refusal is the verification story.",
+    },
+];
+
+const SOURCE_RUN_STEPS: [TourStep; 4] = [
+    TourStep {
+        target: TourTarget::SpectrumPanel,
+        workspace: Some(HelpWorkspace::Transport),
+        title: "Drop a source artifact",
+        instruction: "A beam-description or fixed-source-definition JSON renders its energy spectrum log-log with thermal/epithermal/fast region shading and per-region fractions.",
+    },
+    TourStep {
+        target: TourTarget::SpectrumPanel,
+        workspace: Some(HelpWorkspace::Transport),
+        title: "Read the regions",
+        instruction: "The shaded bands mark the BNCT-relevant ranges; fractions under the plot quantify how much source strength sits in each — the number that matters for epithermal quality.",
+    },
+    TourStep {
+        target: TourTarget::RunPanel,
+        workspace: Some(HelpWorkspace::Transport),
+        title: "Run a bounded command (native)",
+        instruction: "On the desktop build, type a program (e.g. openbnct) and arguments (e.g. dicom verify <case-dir>), set a timeout, and Run. Output streams live; Cancel kills and reaps the child.",
+    },
+    TourStep {
+        target: TourTarget::RunPanel,
+        workspace: Some(HelpWorkspace::Transport),
+        title: "Web runs inspection only",
+        instruction: "In the browser this panel is intentionally inert — no processes exist there. The web build inspects and verifies artifacts; execution stays on the desktop binary.",
+    },
+];
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 struct ActiveTour {
     guide: GuideKind,
@@ -259,6 +374,26 @@ impl GuidedHelp {
                         );
                     }
                     ui.add_space(5.0);
+                }
+
+                ui.add_space(8.0);
+                ui.separator();
+                ui.heading("Use cases");
+                ui.small("Concrete recipes — each names its inputs and what to check.");
+                for recipe in USE_CASES {
+                    ui.collapsing(egui::RichText::new(recipe.title).strong(), |ui| {
+                        ui.small(
+                            egui::RichText::new(format!("Workspace: {}", recipe.workspace))
+                                .color(theme.text_dim),
+                        );
+                        ui.label(recipe.goal);
+                        for (index, step) in recipe.steps.iter().enumerate() {
+                            ui.label(format!("{}. {step}", index + 1));
+                        }
+                        if let Some(watch) = recipe.watch_for {
+                            ui.colored_label(theme.warn_text, format!("Watch: {watch}"));
+                        }
+                    });
                 }
 
                 ui.add_space(8.0);
@@ -468,27 +603,27 @@ fn workspace_help(workspace: HelpWorkspace) -> (&'static str, &'static str) {
     match workspace {
         HelpWorkspace::Overview => (
             "Research overview",
-            "Start here to understand the current scientific ceiling. Each readiness card is a scoped claim, not a project-wide pass or fail.",
+            "Start here to understand the current scientific ceiling. Each readiness card is a scoped claim, not a project-wide pass or fail. Drop a case archive or bundle to begin.",
         ),
         HelpWorkspace::Geometry => (
             "Geometry",
-            "Inspect the accepted DICOM geometry in linked patient-space views. Display controls do not alter the underlying case.",
+            "Inspect the accepted DICOM geometry in linked patient-space views. Click any plane to move the shared crosshair; ROI checkboxes and CT level/width change display only, never source data.",
         ),
         HelpWorkspace::Transport => (
             "Transport",
-            "Follow the ordered gate chain and backend capability flags. Unavailable actions are intentionally disabled.",
+            "Follow the ordered gate chain and backend capability flags, drop a beam-description JSON for the spectrum viewer, or run a bounded CLI command (desktop only).",
         ),
         HelpWorkspace::Plan => (
             "Exposure plan",
-            "Load a structured exposure plan, inspect every detected issue, and round-trip the schedule through CSV/XLSX tables. Accumulation runs through the CLI or Python.",
+            "Drop an exposure plan to inspect every detected issue, round-trip the schedule through CSV/XLSX, or read a plan-robustness report's violation probabilities. Accumulation runs through the CLI or Python.",
         ),
         HelpWorkspace::Dose => (
             "Dose components",
-            "Load a validated physical or biological dose bundle to inspect component statistics and region DVHs. The two layers never merge.",
+            "Drop a dose bundle for component cards, the tri-planar map (log scale, contours, σ toggle), line profiles with measurement overlays, and the A/B compare zone. Physical and biological layers never merge.",
         ),
         HelpWorkspace::Evidence => (
             "Evidence",
-            "Inspect evidence one bounded claim at a time. Frozen project artifacts and a verified local run are intentionally different states.",
+            "Inspect evidence one bounded claim at a time. Frozen project artifacts and a verified local run are intentionally different states; content bindings print alongside.",
         ),
     }
 }
@@ -500,7 +635,7 @@ struct FaqEntry {
     answer: &'static str,
 }
 
-const FAQ: [FaqEntry; 8] = [
+const FAQ: [FaqEntry; 17] = [
     FaqEntry {
         question: "How do I load a case?",
         keywords: &["load", "case", "directory", "dicom", "generate"],
@@ -563,6 +698,247 @@ const FAQ: [FaqEntry; 8] = [
             "roi",
         ],
         answer: "Click or drag in any anatomical view to update one shared voxel crosshair. The other two views follow it, while LPS coordinates and explicit patient-side labels preserve orientation meaning.",
+    },
+    FaqEntry {
+        question: "How do I open a case in the web app?",
+        keywords: &["web", "browser", "open", "case", "zip", "upload"],
+        answer: "Browsers cannot hand the app a folder path. Either File → \"Open case archive (.zip)…\" and pick a zip of the case directory, or drop the .zip anywhere — or drop all 42 members (case.json, rtstruct.dcm, ct-000…039.dcm) in one selection. Every member is hashed against case.json's manifest before the case renders.",
+    },
+    FaqEntry {
+        question: "What is the σ map?",
+        keywords: &[
+            "sigma",
+            "σ",
+            "uncertainty",
+            "standard",
+            "deviation",
+            "error",
+        ],
+        answer: "The σ-map toggle on the dose map swaps the dose wash for the component's absolute standard-uncertainty field. It is disabled when that component carries no uncertainty data. Component cards report mean relative 1σ alongside dose statistics.",
+    },
+    FaqEntry {
+        question: "How do I compare two dose bundles?",
+        keywords: &["compare", "diff", "ratio", "two", "ab", "a/b", "second"],
+        answer: "Drop the reference bundle anywhere (it becomes A), then drop the second bundle inside the marked compare zone (it becomes B). A tri-planar B/A ratio map renders on the shared crosshair with agreement statistics; mismatched grids refuse rather than interpolate.",
+    },
+    FaqEntry {
+        question: "How do I overlay measured data on a profile?",
+        keywords: &[
+            "measurement",
+            "measured",
+            "overlay",
+            "profile",
+            "depth",
+            "chamber",
+        ],
+        answer: "Drop a measurement-record JSON while a dose bundle is loaded. The line-profile section plots the record's series against the extracted line; use the series picker and normalization control to align conventions.",
+    },
+    FaqEntry {
+        question: "What does the spectrum viewer show?",
+        keywords: &["spectrum", "spectra", "energy", "beam", "source", "log"],
+        answer: "Drop a beam-description or fixed-source-definition JSON in the Transport workspace. The histogram renders log-log with thermal, epithermal, and fast regions shaded and their fraction of total source strength listed below.",
+    },
+    FaqEntry {
+        question: "What is a plan-robustness report?",
+        keywords: &[
+            "robustness",
+            "violation",
+            "probability",
+            "worst",
+            "scenario",
+        ],
+        answer: "Drop a plan-robustness JSON in the Plan workspace. Each objective card shows achieved value, bound, σ, and violation probability with a color-coded bar — the quantities that say whether a plan survives setup uncertainty.",
+    },
+    FaqEntry {
+        question: "How do I run a command from the app?",
+        keywords: &[
+            "run", "execute", "command", "cli", "process", "job", "timeout",
+        ],
+        answer: "Native build only: the run panel in the Transport workspace takes a program, arguments, and a wall-clock timeout. Output streams live; Cancel kills and reaps the child. The web build disables it — browsers have no processes.",
+    },
+    FaqEntry {
+        question: "What can the web build do?",
+        keywords: &["web", "browser", "wasm", "online", "hosted", "difference"],
+        answer: "Everything inspection-side: case archives, dose maps, σ maps, profiles, spectra, A/B diffs, robustness cards, NIfTI volumes, evidence rows. What it cannot do is touch your filesystem or spawn processes — the desktop build owns those.",
+    },
+    FaqEntry {
+        question: "How do I save a picture of the screen?",
+        keywords: &["screenshot", "capture", "png", "export", "image", "picture"],
+        answer: "View → Screenshot captures the current frame. On the desktop it asks for a save path; in the browser it downloads a PNG. The View menu also carries zoom presets and a reset that recenters crosshairs without unloading artifacts.",
+    },
+];
+
+struct UseCase {
+    title: &'static str,
+    workspace: &'static str,
+    goal: &'static str,
+    steps: &'static [&'static str],
+    watch_for: Option<&'static str>,
+}
+
+const USE_CASES: [UseCase; 14] = [
+    UseCase {
+        title: "Inspect the frozen NF-BNCT-001 benchmark",
+        workspace: "Overview → Geometry",
+        goal: "Open the synthetic benchmark case and confirm it verifies.",
+        steps: &[
+            "Desktop: File → Open case… and pick the generated NF-BNCT-001 directory.",
+            "Web: zip the case directory, then File → Open case archive (.zip)… — or drop the zip anywhere.",
+            "The verifier hashes every member against case.json and checks DICOM geometry before rendering.",
+            "Geometry workspace shows the phantom in tri-planar views; ROI checkboxes toggle each structure.",
+        ],
+        watch_for: Some(
+            "any modified or missing file is rejected with the exact manifest entry that failed",
+        ),
+    },
+    UseCase {
+        title: "Load a case by dropping loose files",
+        workspace: "Header → Geometry",
+        goal: "Assemble the case without zipping — useful on native builds.",
+        steps: &[
+            "In a file manager, select case.json, rtstruct.dcm, and all ct/ct-*.dcm files together.",
+            "Drop the selection anywhere in the window.",
+            "The status line counts received members and names what is still missing.",
+            "When all 42 members arrive, verification runs and Geometry opens automatically.",
+        ],
+        watch_for: Some(
+            "drop is additive — a stray file mid-drop goes to the artifact panels, not the case set",
+        ),
+    },
+    UseCase {
+        title: "Inspect a dose bundle",
+        workspace: "Dose components",
+        goal: "Read component statistics for a physical or biological bundle.",
+        steps: &[
+            "Drop a dose-bundle JSON anywhere — the schema gate validates and binds SHA-256.",
+            "Component cards list min/max/mean and mean relative 1σ per component.",
+            "Region DVHs and the region metrics table sit below the map.",
+        ],
+        watch_for: Some(
+            "physical and biological bundles are separate layers — they never merge into one display",
+        ),
+    },
+    UseCase {
+        title: "Read a dose map",
+        workspace: "Dose components",
+        goal: "See a component's spatial distribution on the bundle grid.",
+        steps: &[
+            "Load a dose bundle, then pick the component and quantity in the map controls.",
+            "Click any plane to move the crosshair; all three panes stay linked.",
+            "Toggle log scale for wide dynamic ranges; contours mark 90/50/10% of peak.",
+        ],
+        watch_for: None,
+    },
+    UseCase {
+        title: "Check uncertainty with the σ map",
+        workspace: "Dose components",
+        goal: "See where a component's standard uncertainty is large.",
+        steps: &[
+            "Load a bundle whose components carry absolute_standard_uncertainty.",
+            "Toggle σ map — the wash switches from dose to σ per voxel.",
+            "Component cards quantify the mean relative 1σ for context.",
+        ],
+        watch_for: Some("the toggle disables itself when the selected component has no σ field"),
+    },
+    UseCase {
+        title: "Overlay a measurement on a line profile",
+        workspace: "Dose components",
+        goal: "Compare a measured depth series against the computed profile.",
+        steps: &[
+            "Load a dose bundle, scroll to the line-profile section, pick an axis.",
+            "Drop a measurement-record JSON — its series appear as overlay points.",
+            "Use the series picker and normalization control to match conventions.",
+        ],
+        watch_for: None,
+    },
+    UseCase {
+        title: "Compare two dose bundles",
+        workspace: "Dose components",
+        goal: "A/B two runs — e.g. a repeat transport or a different tally.",
+        steps: &[
+            "Drop bundle A anywhere; its sha256 and provenance appear in the diff header.",
+            "Drop bundle B inside the marked compare zone.",
+            "Read the B/A ratio map: blue <0.5×, white 1.0, red >2×, dark = undefined.",
+            "Check the statistics row: mean ratio, max deviation, ±5% agreement fraction.",
+        ],
+        watch_for: Some(
+            "mismatched grids or provenance refuse to diff — that refusal is deliberate",
+        ),
+    },
+    UseCase {
+        title: "Inspect a beam spectrum",
+        workspace: "Transport",
+        goal: "See how a source's strength distributes across energy.",
+        steps: &[
+            "Drop a beam-description or fixed-source-definition JSON.",
+            "The log-log histogram shades thermal, epithermal, and fast regions.",
+            "Region fractions below quantify each band's share of total strength.",
+        ],
+        watch_for: None,
+    },
+    UseCase {
+        title: "Read a plan-robustness report",
+        workspace: "Plan",
+        goal: "Check whether a plan's objectives survive setup uncertainty.",
+        steps: &[
+            "Drop a plan-robustness JSON.",
+            "Each objective card shows achieved value, bound, σ, and violation probability.",
+            "The probability bar is color-coded — red marks objectives likely violated.",
+        ],
+        watch_for: None,
+    },
+    UseCase {
+        title: "Load and check an exposure plan",
+        workspace: "Plan",
+        goal: "Validate a structured exposure plan and inspect its issues.",
+        steps: &[
+            "Drop an exposure-plan JSON (schema openbnct.exposure-plan/…).",
+            "The panel lists every detected issue; round-trip edits via CSV/XLSX exports.",
+            "Accumulation itself runs through the CLI or Python — the panel is inspection.",
+        ],
+        watch_for: None,
+    },
+    UseCase {
+        title: "Inspect a NIfTI volume",
+        workspace: "Dose components",
+        goal: "Look at a .nii / .nii.gz volume without a case directory.",
+        steps: &[
+            "Drop the NIfTI file anywhere.",
+            "The inspector shows geometry, dtype, and slice previews.",
+        ],
+        watch_for: None,
+    },
+    UseCase {
+        title: "Run a bounded command (desktop)",
+        workspace: "Transport",
+        goal: "Drive the CLI from inside the workbench.",
+        steps: &[
+            "Native build only — the run panel is inert in the browser.",
+            "Type a program (e.g. openbnct) and arguments (e.g. dicom verify <dir>).",
+            "Set a timeout, Run, watch output live; Cancel kills and reaps the child.",
+        ],
+        watch_for: Some("the panel wraps the CLI — it never reimplements a scientific path"),
+    },
+    UseCase {
+        title: "Export a case template",
+        workspace: "File menu",
+        goal: "Get an editable skeleton of the NF-BNCT-001 layout.",
+        steps: &[
+            "File → Export case template… and pick a destination directory.",
+            "The written files are a template — edit before use; they are not the frozen benchmark.",
+        ],
+        watch_for: None,
+    },
+    UseCase {
+        title: "Capture and share a view",
+        workspace: "View menu",
+        goal: "Save the current frame for a report or issue.",
+        steps: &[
+            "View → Screenshot captures the whole window.",
+            "Desktop prompts for a save path; the browser downloads a PNG.",
+            "Zoom presets under View rescale the UI before capturing.",
+        ],
+        watch_for: None,
     },
 ];
 

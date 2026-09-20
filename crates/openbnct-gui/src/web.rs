@@ -13,6 +13,35 @@ use crate::OpenBnctApp;
 
 const CANVAS_ID: &str = "openbnct_canvas";
 
+/// Trigger a browser download for in-memory bytes — the web counterpart
+/// of a save dialog (screenshots, exports).
+pub(crate) fn download_bytes(name: &str, bytes: &[u8]) {
+    let Some(window) = web_sys::window() else {
+        return;
+    };
+    let Some(document) = window.document() else {
+        return;
+    };
+    let array = js_sys::Uint8Array::from(bytes);
+    let parts = js_sys::Array::new();
+    parts.push(&array);
+    let Ok(blob) = web_sys::Blob::new_with_u8_array_sequence(&parts) else {
+        return;
+    };
+    let Ok(url) = web_sys::Url::create_object_url_with_blob(&blob) else {
+        return;
+    };
+    let Ok(anchor) = document.create_element("a") else {
+        return;
+    };
+    let _ = anchor.set_attribute("href", &url);
+    let _ = anchor.set_attribute("download", name);
+    if let Ok(element) = anchor.dyn_into::<web_sys::HtmlElement>() {
+        element.click();
+    }
+    let _ = web_sys::Url::revoke_object_url(&url);
+}
+
 fn show_boot_error(message: &str) {
     let Some(document) = web_sys::window().and_then(|window| window.document()) else {
         return;

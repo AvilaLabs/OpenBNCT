@@ -238,6 +238,34 @@ impl CaseManifest {
         }
         Ok(())
     }
+
+    /// Byte-map variant of [`Self::verify_artifacts`] for hosts without a
+    /// filesystem (web drops, archive extraction). `files` keys are the
+    /// manifest-relative paths (`ct/ct-000.dcm`, `rtstruct.dcm`, …); the
+    /// same digest gates apply, and absence of a declared path is an error.
+    pub fn verify_artifacts_map(
+        &self,
+        files: &std::collections::BTreeMap<String, &[u8]>,
+    ) -> Result<(), ManifestError> {
+        self.validate()?;
+        for artifact in &self.artifacts {
+            let bytes = files.get(artifact.path.as_str()).ok_or_else(|| {
+                ManifestError::Invalid(format!(
+                    "declared artifact {:?} is absent from the supplied file set",
+                    artifact.path
+                ))
+            })?;
+            let observed = sha256_hex(bytes);
+            if observed != artifact.sha256 {
+                return Err(ManifestError::HashMismatch {
+                    path: artifact.path.clone(),
+                    expected: artifact.sha256.clone(),
+                    observed,
+                });
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]

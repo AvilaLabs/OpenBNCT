@@ -19,7 +19,7 @@
 //! to the same epoch). Half-life is read from the radiopharmaceutical
 //! item, so the import is tracer-agnostic.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use dicom_core::Tag;
 use dicom_dictionary_std::{tags, uids};
@@ -104,10 +104,40 @@ pub fn import_pet_series(paths: &[PathBuf]) -> Result<PetVolume> {
         path: reference_path.clone(),
         source: Box::new(source),
     })?;
-    let units = string(&obj, &reference_path, UNITS, "Units")?;
+    pet_from_reference(&obj, &reference_path, assembled)
+}
+
+/// In-memory variant of [`import_pet_series`] for hosts without a
+/// filesystem. `files` pairs a stable label with complete Part-10 bytes
+/// per slice; the first entry doubles as the series-level reference.
+pub fn import_pet_series_from_bytes(files: &[(String, Vec<u8>)]) -> Result<PetVolume> {
+    let slices = crate::ct::read_series_bytes(
+        files,
+        uids::POSITRON_EMISSION_TOMOGRAPHY_IMAGE_STORAGE,
+        "PT",
+        PixelKind::Either16,
+    )?;
+    let assembled = assemble_series(slices)?;
+    let (name, bytes) = files.first().ok_or_else(|| DicomError::EmptySeries)?;
+    let reference_path = PathBuf::from(name);
+    let obj = dicom_object::DefaultDicomObject::from_reader(std::io::Cursor::new(bytes)).map_err(
+        |source| DicomError::Read {
+            path: reference_path.clone(),
+            source: Box::new(source),
+        },
+    )?;
+    pet_from_reference(&obj, &reference_path, assembled)
+}
+
+fn pet_from_reference(
+    obj: &dicom_object::DefaultDicomObject,
+    reference_path: &Path,
+    assembled: crate::ct::AssembledSeries,
+) -> Result<PetVolume> {
+    let units = string(obj, reference_path, UNITS, "Units")?;
     if units != "BQML" {
         return Err(attribute_error(
-            &reference_path,
+            reference_path,
             "Units",
             format!("SUVbw requires BQML, found {units:?}"),
         ));
@@ -120,16 +150,16 @@ pub fn import_pet_series(paths: &[PathBuf]) -> Result<PetVolume> {
         .unwrap_or_else(|| "START".into());
     if decay_correction != "START" {
         return Err(attribute_error(
-            &reference_path,
+            reference_path,
             "Decay Correction",
             format!("expected START, found {decay_correction:?}"),
         ));
     }
 
-    let patient_weight_kg = float(&obj, &reference_path, PATIENT_WEIGHT, "Patient's Weight")?;
+    let patient_weight_kg = float(obj, reference_path, PATIENT_WEIGHT, "Patient's Weight")?;
     if !patient_weight_kg.is_finite() || patient_weight_kg <= 0.0 {
         return Err(attribute_error(
-            &reference_path,
+            reference_path,
             "Patient's Weight",
             "must be finite and positive for SUVbw",
         ));
@@ -139,7 +169,7 @@ pub fn import_pet_series(paths: &[PathBuf]) -> Result<PetVolume> {
         .element(RADIOPHARMACEUTICAL_INFORMATION)
         .map_err(|error| {
             attribute_error(
-                &reference_path,
+                reference_path,
                 "Radiopharmaceutical Information Sequence",
                 error.to_string(),
             )
@@ -147,14 +177,14 @@ pub fn import_pet_series(paths: &[PathBuf]) -> Result<PetVolume> {
         .items()
         .ok_or_else(|| {
             attribute_error(
-                &reference_path,
+                reference_path,
                 "Radiopharmaceutical Information Sequence",
                 "expected a data set sequence",
             )
         })?;
     if items.len() != 1 {
         return Err(attribute_error(
-            &reference_path,
+            reference_path,
             "Radiopharmaceutical Information Sequence",
             format!("expected exactly one item, found {}", items.len()),
         ));
@@ -162,38 +192,38 @@ pub fn import_pet_series(paths: &[PathBuf]) -> Result<PetVolume> {
     let radiopharm = &items[0];
     let injected_dose_bq = item_float(
         radiopharm,
-        &reference_path,
+        reference_path,
         RADIONUCLIDE_TOTAL_DOSE,
         "Radionuclide Total Dose",
     )?;
     if !injected_dose_bq.is_finite() || injected_dose_bq <= 0.0 {
         return Err(attribute_error(
-            &reference_path,
+            reference_path,
             "Radionuclide Total Dose",
             "must be finite and positive for SUVbw",
         ));
     }
     let half_life_s = item_float(
         radiopharm,
-        &reference_path,
+        reference_path,
         RADIONUCLIDE_HALF_LIFE,
         "Radionuclide Half Life",
     )?;
     if !half_life_s.is_finite() || half_life_s <= 0.0 {
         return Err(attribute_error(
-            &reference_path,
+            reference_path,
             "Radionuclide Half Life",
             "must be finite and positive for SUVbw",
         ));
     }
     let start_time = item_string(
         radiopharm,
-        &reference_path,
+        reference_path,
         RADIOPHARMACEUTICAL_START_TIME,
         "Radiopharmaceutical Start Time",
     )?;
     let start_s = parse_tm(
-        &reference_path,
+        reference_path,
         "Radiopharmaceutical Start Time",
         &start_time,
     )?;
@@ -210,12 +240,12 @@ pub fn import_pet_series(paths: &[PathBuf]) -> Result<PetVolume> {
         .map(|value| value.trim_end_matches([' ', '\0']).to_owned())
         .ok_or_else(|| {
             attribute_error(
-                &reference_path,
+                reference_path,
                 "Acquisition/Series Time",
                 "neither is present",
             )
         })?;
-    let scan_s = parse_tm(&reference_path, "Acquisition/Series Time", &scan_time)?;
+    let scan_s = parse_tm(reference_path, "Acquisition/Series Time", &scan_time)?;
 
     // Midnight crossing: scan logically after the injection even when the
     // clock wrapped.

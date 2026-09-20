@@ -92,6 +92,27 @@ pub fn import_rtstruct(path: &Path, ct: &CtVolume) -> Result<StructureSet> {
         path: path.to_path_buf(),
         source: Box::new(source),
     })?;
+    rtstruct_from_object(&obj, path, ct)
+}
+
+/// In-memory variant of [`import_rtstruct`] for hosts without a
+/// filesystem; the same topology gates run on the parsed object.
+pub fn import_rtstruct_bytes(bytes: &[u8], ct: &CtVolume) -> Result<StructureSet> {
+    let label = Path::new("rtstruct.dcm");
+    let obj = DefaultDicomObject::from_reader(std::io::Cursor::new(bytes)).map_err(|source| {
+        DicomError::Read {
+            path: label.to_path_buf(),
+            source: Box::new(source),
+        }
+    })?;
+    rtstruct_from_object(&obj, label, ct)
+}
+
+fn rtstruct_from_object(
+    obj: &DefaultDicomObject,
+    path: &Path,
+    ct: &CtVolume,
+) -> Result<StructureSet> {
     if obj.meta().transfer_syntax() != uids::EXPLICIT_VR_LITTLE_ENDIAN {
         return Err(attribute_error(
             path,
@@ -104,23 +125,23 @@ pub fn import_rtstruct(path: &Path, ct: &CtVolume) -> Result<StructureSet> {
         ));
     }
     require_string(
-        &obj,
+        obj,
         path,
         tags::SOP_CLASS_UID,
         "SOP Class UID",
         uids::RT_STRUCTURE_SET_STORAGE,
     )?;
-    require_string(&obj, path, tags::MODALITY, "Modality", "RTSTRUCT")?;
+    require_string(obj, path, tags::MODALITY, "Modality", "RTSTRUCT")?;
     require_string(
-        &obj,
+        obj,
         path,
         tags::STUDY_INSTANCE_UID,
         "Study Instance UID",
         &ct.study_instance_uid,
     )?;
 
-    let frame_uid = validate_references(&obj, path, ct)?;
-    let definitions = read_definitions(&obj, path, &frame_uid)?;
+    let frame_uid = validate_references(obj, path, ct)?;
+    let definitions = read_definitions(obj, path, &frame_uid)?;
     let voxel_count = ct
         .geometry
         .voxel_count()
@@ -132,7 +153,7 @@ pub fn import_rtstruct(path: &Path, ct: &CtVolume) -> Result<StructureSet> {
     let mut observed_contour_rois = BTreeSet::new();
 
     let roi_contours = sequence(
-        &obj,
+        obj,
         path,
         tags::ROI_CONTOUR_SEQUENCE,
         "ROI Contour Sequence",
