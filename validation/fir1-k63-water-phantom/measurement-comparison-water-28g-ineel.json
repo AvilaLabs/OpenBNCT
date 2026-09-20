@@ -1,0 +1,66 @@
+{
+  "schema_version": "openbnct.measurement-comparison/0.1.0",
+  "id": "openbnct.measurement-comparison.fir1-k63-water-phantom.28g-ineel.v1",
+  "measurements": {
+    "id": "nctforge.measurement.fir1-k63-water-phantom.v1",
+    "sha256": "sha256:e921685c0960b318f23fd73e4eee14b7296147cda31a52f43fe5bcb2409a4e74"
+  },
+  "computed": {
+    "id": "openbnct.beam-quality.fir1-k63-water-phantom.28g-ineel.v1",
+    "sha256": "sha256:4623c14bc37739d48a18be54808548b2429c6ffd06dd3df914ebd580ef5efbdc"
+  },
+  "sigma_tolerance": 2.0,
+  "comparisons": [
+    {
+      "measurement_id": "advantage-depth",
+      "metric": "advantage_depth_cm",
+      "measured": 8.1,
+      "uncertainty_1sigma": null,
+      "computed": 0.25,
+      "relative_difference": 0.9691358024691358,
+      "difference_sigma": null,
+      "passed": null
+    },
+    {
+      "measurement_id": "advantage-ratio",
+      "metric": "advantage_ratio",
+      "measured": 4.9,
+      "uncertainty_1sigma": null,
+      "computed": 1.0000114298109115,
+      "relative_difference": 0.7959160347324671,
+      "difference_sigma": null,
+      "passed": null
+    },
+    {
+      "measurement_id": "peak-therapeutic-ratio",
+      "metric": "peak_therapeutic_ratio",
+      "measured": 5.7,
+      "uncertainty_1sigma": null,
+      "computed": 1.0000449676979497,
+      "relative_difference": 0.8245535144389561,
+      "difference_sigma": null,
+      "passed": null
+    },
+    {
+      "measurement_id": "thermal-fluence-max-depth",
+      "metric": "thermal_fluence_max_depth_cm",
+      "measured": 2.25,
+      "uncertainty_1sigma": null,
+      "computed": 1.75,
+      "relative_difference": 0.2222222222222222,
+      "difference_sigma": null,
+      "passed": null
+    }
+  ],
+  "profile_comparisons": [],
+  "summary": {
+    "compared": 4,
+    "unmatched": 0,
+    "passed": 0,
+    "failed": 0,
+    "without_uncertainty": 4,
+    "chi_square": null,
+    "degrees_of_freedom": 0,
+    "profiles_compared": 0
+  }
+}

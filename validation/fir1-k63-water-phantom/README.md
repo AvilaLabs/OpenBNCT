@@ -177,3 +177,41 @@ Reading:
 Research-scope note: this is a verification comparison of a
 deterministic S_N solve against an independent Monte Carlo tally —
 not a commissioning or equivalence claim.
+
+## INEEL measured-spectrum rerun (2026-09-20)
+
+The phantom was re-solved with the measured FiR 1 free-beam spectrum
+digitized from INEEL/EXT-01-00204 Figure 5 (120-bin histogram, VTT
+LSL-M2 region anchors — `beams/fir1-k63-ineel-spectrum.json`,
+spectrum artifact `beams/fir1-k63-spectrum-ineel-digitized.json`)
+at identical solver settings: S8, TSL+P1, Anderson-5, the same
+1e-4 convergence target as the committed `*-tsl-p1-1e` pair.
+
+Artifacts: `multigroup-flux-28g-ineel.json` (converged, 94 outers,
+residual 9.67e-5), `dose-28g-ineel.json`,
+`beam-quality-water-28g-ineel.json`,
+`measurement-comparison-water-28g-ineel.json`.
+
+Findings:
+
+- Thermal-fluence peak depth moved 1.25 -> 1.75 cm vs the measured
+  2.25 cm — the resolved epithermal structure hardens the incident
+  spectrum relative to the coarse histogram and pushes
+  thermalization deeper, a real improvement in the one metric that
+  is physically meaningful on this unboronated phantom.
+- The deep thermal tail nonetheless *fell* further: computed/measured
+  shape declines from ~0.65x (3-bin) to ~0.08-0.20x beyond 7.7 cm
+  (INEEL) on the normalized profile — the same qualitative pattern
+  the PMMA phantom showed.
+- Second-phantom confirmation of the PMMA result: the absolute
+  residual is **not** a source-spectral-resolution artifact. The
+  earlier attribution to "the 3-bin source histogram" is withdrawn;
+  the remaining deficit lies in transport/data fidelity
+  (angular-order, group structure, scatter-kernel treatment) or in
+  the declared port-fluence normalization.
+
+The measured-spectrum source remains the better-provenanced input
+and is kept as the canonical refined beam model.
+
+Research-scope note: the spectrum is a literature reconstruction of
+a published measured figure, not a commissioned facility model.

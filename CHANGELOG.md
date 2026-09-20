@@ -51,7 +51,11 @@ own versions independent of the crate version.
   (`*-ineel` artifacts): normalized χ² unchanged (~21), absolute χ²
   25.3 vs 28.3 — the absolute-scale residual is NOT a source-shape
   artifact; the deficit sits in transport/data fidelity or the port-rate
-  normalization. Hypothesis closed, better-provenanced source retained.
+  normalization. Water-phantom rerun at TSL+P1 confirms on a second
+  composition (`validation/fir1-k63-water-phantom/*-ineel` artifacts):
+  thermal-peak depth moved 1.25→1.75 cm toward the measured 2.25 cm,
+  yet the deep tail fell further — spectral resolution does not close
+  the gap. Hypothesis closed, better-provenanced source retained.
 - Coupled-photon verification, second phantom + mesh sensitivity: PMMA
   `sn photon-collapse`/`photon-solve` artifacts at 27- and 12-group
   meshes (`validation/fir1-k63-pmma-phantom/photon-{data,dose}-{12,27}g`).
