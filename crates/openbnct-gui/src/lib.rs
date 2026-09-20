@@ -5,6 +5,7 @@
 mod brand;
 mod help;
 mod io;
+mod run;
 #[cfg(target_arch = "wasm32")]
 mod web;
 
@@ -1112,6 +1113,79 @@ impl PlanPanel {
     }
 }
 
+/// Run-panel state: the command line, the live job, and the output tail.
+/// Execution itself is native-only — `run::Job::spawn` is an honest error
+/// on wasm.
+struct RunPanel {
+    program: String,
+    args: String,
+    timeout_s: String,
+    job: Option<run::Job>,
+    output: Vec<String>,
+    status: Option<String>,
+}
+
+impl Default for RunPanel {
+    fn default() -> Self {
+        Self {
+            program: "openbnct".into(),
+            args: "--help".into(),
+            timeout_s: "600".into(),
+            job: None,
+            output: Vec::new(),
+            status: None,
+        }
+    }
+}
+
+impl RunPanel {
+    fn start(&mut self) {
+        self.output.clear();
+        self.status = None;
+        let args: Vec<String> = self.args.split_whitespace().map(str::to_owned).collect();
+        let timeout = self
+            .timeout_s
+            .trim()
+            .parse::<u64>()
+            .map(|s| std::time::Duration::from_secs(s.max(1)))
+            .unwrap_or(run::DEFAULT_TIMEOUT);
+        match run::Job::spawn(self.program.trim(), &args, timeout) {
+            Ok(job) => self.job = Some(job),
+            Err(error) => self.status = Some(error),
+        }
+    }
+
+    /// Drain the job and update status; call every frame while a job
+    /// exists. Returns true while still running (requests repaints).
+    fn poll(&mut self) -> bool {
+        let Some(job) = &mut self.job else {
+            return false;
+        };
+        let running = job.poll(&mut self.output, 300);
+        if !running {
+            let job = self.job.take().unwrap();
+            self.status = Some(if job.timed_out {
+                "killed — deadline exceeded".into()
+            } else {
+                match job.exit_code {
+                    Some(0) => "exit 0".into(),
+                    Some(code) => format!("exit {code}"),
+                    None => "terminated".into(),
+                }
+            });
+        }
+        running
+    }
+
+    fn cancel(&mut self) {
+        if let Some(job) = &mut self.job {
+            job.cancel();
+        }
+        self.job = None;
+        self.status = Some("cancelled".into());
+    }
+}
+
 /// UI state for the transport workspace's source-positioning panel. Runs the
 /// same `openbnct_transport::aim_source_at_centroid`/`rotate_source` path as
 /// `openbnct position` and the Python bindings.
@@ -1298,6 +1372,7 @@ struct WorkbenchPanels {
     plan: PlanPanel,
     position: PositionPanel,
     spectrum: SpectrumView,
+    run: RunPanel,
 }
 
 /// Source-spectrum inspector state: the parsed source definition and the
@@ -2015,6 +2090,7 @@ fn show_workbench(
                         case.as_deref(),
                         &mut panels.position,
                         &mut panels.spectrum,
+                        &mut panels.run,
                         tour_targets,
                         theme,
                     ),
@@ -2490,6 +2566,7 @@ fn show_transport_workspace(
     case: Option<&ViewerCase>,
     panel: &mut PositionPanel,
     spectrum: &mut SpectrumView,
+    run: &mut RunPanel,
     tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
@@ -2709,6 +2786,70 @@ fn show_transport_workspace(
     if let Some(status) = &panel.status {
         ui.colored_label(GateState::Verified.color(ui.visuals().dark_mode), status);
     }
+
+    ui.add_space(14.0);
+    ui.heading("Run a subcommand");
+    if cfg!(target_arch = "wasm32") {
+        ui.label("Process execution requires the native build — the web inspector is read-only.");
+    }
+    let running = run.poll();
+    if running {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(150));
+    }
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label("program");
+            ui.add(
+                egui::TextEdit::singleline(&mut run.program)
+                    .desired_width(120.0)
+                    .hint_text("openbnct"),
+            );
+            ui.label("args");
+            ui.add(
+                egui::TextEdit::singleline(&mut run.args)
+                    .desired_width(ui.available_width() - 220.0)
+                    .hint_text("--help"),
+            );
+            ui.label("timeout s");
+            ui.add(egui::TextEdit::singleline(&mut run.timeout_s).desired_width(50.0));
+        });
+        ui.horizontal(|ui| {
+            if ui
+                .add_enabled(
+                    !running && cfg!(not(target_arch = "wasm32")),
+                    egui::Button::new("Run"),
+                )
+                .on_disabled_hover_text(if cfg!(target_arch = "wasm32") {
+                    "native build only"
+                } else {
+                    "a job is already running"
+                })
+                .clicked()
+            {
+                run.start();
+            }
+            if ui
+                .add_enabled(running, egui::Button::new("Cancel"))
+                .clicked()
+            {
+                run.cancel();
+            }
+            if let Some(status) = &run.status {
+                ui.monospace(status.clone());
+            }
+        });
+        if !run.output.is_empty() {
+            egui::ScrollArea::vertical()
+                .max_height(180.0)
+                .stick_to_bottom(true)
+                .show(ui, |ui| {
+                    for line in &run.output {
+                        ui.monospace(line);
+                    }
+                });
+        }
+    });
 }
 
 fn axis_label(axis: openbnct_transport::PlaneAxis) -> &'static str {
