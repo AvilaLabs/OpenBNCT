@@ -20,7 +20,7 @@ use openbnct_evidence::{
 };
 use openbnct_openmc::{OpenMcBackend, TARGET_OPENMC_VERSION};
 use openbnct_transport::TransportBackend;
-use openbnct_view::{AnatomicalPlane, Crosshair, PatientAlignedGrid, SliceView};
+use openbnct_view::{AnatomicalPlane, Crosshair, PatientAlignedGrid, SliceView, ViewError};
 
 use help::{GuidedHelp, HelpWorkspace, TourTarget, TourTargets};
 
@@ -348,6 +348,15 @@ impl DoseArtifact {
         }
     }
 
+    /// The upstream binding each kind carries — physical bundles name
+    /// their run manifest, biological bundles their parent physical dose.
+    fn provenance_id(&self) -> &str {
+        match self {
+            Self::Physical(bundle) => &bundle.provenance_id,
+            Self::Biological(bundle) => &bundle.physical_bundle_provenance,
+        }
+    }
+
     fn geometry(&self) -> &openbnct_core::GridGeometry {
         match self {
             Self::Physical(bundle) => &bundle.geometry,
@@ -570,6 +579,14 @@ struct DosePanel {
     bundle_error: Option<String>,
     map: DoseMapView,
     profile: ProfileView,
+    /// Second bundle for the A/B diff — loaded via the compare drop zone.
+    compare: Option<LoadedDose>,
+    compare_error: Option<String>,
+    /// Screen rect of the "drop B here" zone, painted last frame — drop
+    /// routing needs it before the frame's widget tree runs.
+    compare_zone: egui::Rect,
+    compare_textures: Option<[egui::TextureHandle; 3]>,
+    compare_cache_key: Option<String>,
     mask_path: String,
     quantity: String,
     histogram: Option<DoseVolumeHistogram>,
@@ -591,6 +608,11 @@ impl Default for DosePanel {
             bundle_error: None,
             map: DoseMapView::default(),
             profile: ProfileView::default(),
+            compare: None,
+            compare_error: None,
+            compare_zone: egui::Rect::NOTHING,
+            compare_textures: None,
+            compare_cache_key: None,
             mask_path: String::new(),
             quantity: String::new(),
             histogram: None,
@@ -632,6 +654,20 @@ impl DosePanel {
         }
     }
 
+    /// Compare-slot loader — parses without touching bundle-A state.
+    fn load_compare_bytes(&mut self, bytes: Vec<u8>) {
+        match DoseArtifact::load_bytes(bytes) {
+            Ok(bundle) => {
+                self.compare_error = None;
+                self.compare = Some(bundle);
+            }
+            Err(error) => {
+                self.compare = None;
+                self.compare_error = Some(error);
+            }
+        }
+    }
+
     fn accept_bundle(&mut self, bundle: LoadedDose) {
         self.bundle_error = None;
         self.histogram = None;
@@ -651,6 +687,10 @@ impl DosePanel {
                     .total_cmp(&(f64::from(geometry.shape[b]) * geometry.spacing_mm[b]))
             })
             .unwrap_or(2);
+        // A changed under a loaded B — the diff is stale until re-dropped.
+        self.compare = None;
+        self.compare_textures = None;
+        self.compare_cache_key = None;
         self.bundle = Some(bundle);
     }
 
@@ -1395,11 +1435,12 @@ pub(crate) struct OpenBnctApp {
     brand_logo: Option<egui::TextureHandle>,
     help: GuidedHelp,
     panels: WorkbenchPanels,
-    /// Web drops resolve asynchronously — bytes land here on a later frame.
+    /// Web drops resolve asynchronously — bytes land here on a later frame,
+    /// carrying the drop position so zones (e.g. the dose-B box) route right.
     #[cfg(target_arch = "wasm32")]
-    drop_sender: std::sync::mpsc::Sender<(String, Result<Vec<u8>, String>)>,
+    drop_sender: std::sync::mpsc::Sender<(String, Option<egui::Pos2>, Result<Vec<u8>, String>)>,
     #[cfg(target_arch = "wasm32")]
-    drop_receiver: std::sync::mpsc::Receiver<(String, Result<Vec<u8>, String>)>,
+    drop_receiver: std::sync::mpsc::Receiver<(String, Option<egui::Pos2>, Result<Vec<u8>, String>)>,
 }
 
 impl OpenBnctApp {
@@ -1512,7 +1553,13 @@ impl OpenBnctApp {
     /// Route an OS-dropped file onto the matching workbench surface.
     /// `path` is a real directory-capable path only on native (web drops
     /// carry the file name there); `bytes` is already-read content.
-    fn handle_dropped(&mut self, name: &str, path: Option<&Path>, bytes: Result<Vec<u8>, String>) {
+    fn handle_dropped(
+        &mut self,
+        name: &str,
+        path: Option<&Path>,
+        bytes: Result<Vec<u8>, String>,
+        position: Option<egui::Pos2>,
+    ) {
         let target = match path {
             Some(path) => classify_dropped_path(path),
             None => classify_dropped_name(name),
@@ -1537,9 +1584,20 @@ impl OpenBnctApp {
                 }
             }
             DropTarget::DoseBundle => {
-                let result = bytes.and_then(|b| self.panels.dose.load_bundle_bytes(b));
-                if let Err(error) = result {
-                    self.panels.dose.bundle_error = Some(error);
+                // A drop on the painted B zone while a bundle is loaded
+                // feeds the compare slot; anywhere else replaces A.
+                let into_compare = self.panels.dose.bundle.is_some()
+                    && position.is_some_and(|p| self.panels.dose.compare_zone.contains(p));
+                if into_compare {
+                    match bytes {
+                        Ok(b) => self.panels.dose.load_compare_bytes(b),
+                        Err(error) => self.panels.dose.compare_error = Some(error),
+                    }
+                } else {
+                    let result = bytes.and_then(|b| self.panels.dose.load_bundle_bytes(b));
+                    if let Err(error) = result {
+                        self.panels.dose.bundle_error = Some(error);
+                    }
                 }
                 self.workspace = WorkspaceTab::Dose;
             }
@@ -1594,6 +1652,7 @@ impl eframe::App for OpenBnctApp {
         // on a later frame; native drops read synchronously in place.
         let dropped: Vec<egui::DroppedFileHandle> =
             ui.input(|input| input.raw.dropped_files.clone());
+        let drop_pos = ui.input(|input| input.pointer.interact_pos().or(input.pointer.hover_pos()));
         for file in dropped {
             let name = file
                 .path()
@@ -1604,7 +1663,7 @@ impl eframe::App for OpenBnctApp {
             #[cfg(not(target_arch = "wasm32"))]
             {
                 let path = file.path().is_dir().then(|| file.path().to_path_buf());
-                self.handle_dropped(&name, path.as_deref(), file.bytes());
+                self.handle_dropped(&name, path.as_deref(), file.bytes(), drop_pos);
             }
             #[cfg(target_arch = "wasm32")]
             {
@@ -1612,14 +1671,14 @@ impl eframe::App for OpenBnctApp {
                 let context = ui.ctx().clone();
                 wasm_bindgen_futures::spawn_local(async move {
                     let bytes = file.bytes_async().await;
-                    let _ = sender.send((name, bytes));
+                    let _ = sender.send((name, drop_pos, bytes));
                     context.request_repaint();
                 });
             }
         }
         #[cfg(target_arch = "wasm32")]
-        while let Ok((name, bytes)) = self.drop_receiver.try_recv() {
-            self.handle_dropped(&name, None, bytes);
+        while let Ok((name, pos, bytes)) = self.drop_receiver.try_recv() {
+            self.handle_dropped(&name, None, bytes, pos);
         }
 
         let mut tour_targets = TourTargets::default();
@@ -3230,6 +3289,261 @@ fn show_depth_profile(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
     });
 }
 
+/// Diverging ratio color: log2(B/A) mapped blue→white→red over
+/// [0.5×, 2×]; undefined voxels (A ≤ 0) render dark.
+fn ratio_color(ratio: Option<f64>) -> egui::Color32 {
+    let Some(r) = ratio else {
+        return egui::Color32::from_rgb(30, 32, 38);
+    };
+    if !r.is_finite() || r <= 0.0 {
+        return egui::Color32::from_rgb(30, 32, 38);
+    }
+    let t = ((r.log2() + 1.0) / 2.0).clamp(0.0, 1.0) as f32;
+    let (low, mid, high) = (
+        (80u8, 140u8, 255u8),
+        (255u8, 255u8, 255u8),
+        (255u8, 90u8, 60u8),
+    );
+    let lerp = |a: (u8, u8, u8), b: (u8, u8, u8), t: f32| {
+        egui::Color32::from_rgb(
+            (a.0 as f32 + (b.0 as f32 - a.0 as f32) * t) as u8,
+            (a.1 as f32 + (b.1 as f32 - a.1 as f32) * t) as u8,
+            (a.2 as f32 + (b.2 as f32 - a.2 as f32) * t) as u8,
+        )
+    };
+    if t < 0.5 {
+        lerp(low, mid, t * 2.0)
+    } else {
+        lerp(mid, high, (t - 0.5) * 2.0)
+    }
+}
+
+/// Render one ratio slice (B/A) through the shared crosshair voxel.
+fn render_ratio_slice(
+    a_values: &[f64],
+    b_values: &[f64],
+    view: SliceView,
+) -> Result<egui::ColorImage, ViewError> {
+    let a = view.extract(a_values)?;
+    let b = view.extract(b_values)?;
+    let dimensions = view.dimensions();
+    let mut pixels = Vec::with_capacity(a.len());
+    for (a_v, b_v) in a.iter().zip(b.iter()) {
+        let ratio = (*a_v > 0.0 && b_v.is_finite()).then(|| b_v / a_v);
+        pixels.push(ratio_color(ratio));
+    }
+    Ok(egui::ColorImage::new(
+        [dimensions[0] as usize, dimensions[1] as usize],
+        pixels,
+    ))
+}
+
+/// A/B bundle diff: a drop zone loads the second artifact, geometry
+/// equivalence is verified, then a B/A ratio map renders on the shared
+/// crosshair plus aggregate stats and the two content bindings.
+fn show_dose_compare(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        // The drop zone is painted every frame so handle_dropped can hit-test.
+        let (rect, _) =
+            ui.allocate_exact_size(egui::vec2(ui.available_width(), 40.0), egui::Sense::hover());
+        panel.compare_zone = rect;
+        let hovering = ui
+            .input(|i| i.pointer.hover_pos())
+            .is_some_and(|p| rect.contains(p));
+        let fill = if hovering {
+            egui::Color32::from_rgb(46, 56, 74)
+        } else {
+            egui::Color32::from_rgb(34, 38, 48)
+        };
+        ui.painter().rect_filled(rect, 6.0, fill);
+        ui.painter().rect_stroke(
+            rect,
+            6.0,
+            egui::Stroke::new(1.0, theme.text_dim),
+            egui::StrokeKind::Inside,
+        );
+        ui.painter().text(
+            rect.center(),
+            egui::Align2::CENTER_CENTER,
+            if panel.compare.is_some() {
+                "drop a dose bundle here to replace B · drops elsewhere replace A"
+            } else {
+                "drop a second dose bundle (B) here to diff against the loaded A"
+            },
+            egui::FontId::monospace(11.0),
+            theme.text_dim,
+        );
+        if let Some(error) = &panel.compare_error {
+            ui.colored_label(theme.error, format!("B rejected: {error}"));
+        }
+        let (Some(a), Some(b)) = (&panel.bundle, &panel.compare) else {
+            return;
+        };
+
+        // Provenance header — both content bindings, always visible.
+        ui.monospace(format!(
+            "A: case {} · sha256:{}… · provenance {}",
+            a.artifact.case_id(),
+            &a.sha256[..12.min(a.sha256.len())],
+            a.artifact.provenance_id()
+        ));
+        ui.monospace(format!(
+            "B: case {} · sha256:{}… · provenance {}",
+            b.artifact.case_id(),
+            &b.sha256[..12.min(b.sha256.len())],
+            b.artifact.provenance_id()
+        ));
+        if ui.button("clear B").clicked() {
+            panel.compare = None;
+            panel.compare_textures = None;
+            panel.compare_cache_key = None;
+            return;
+        }
+
+        // Geometry equivalence — the diff is meaningless otherwise.
+        let (ga, gb) = (a.artifact.geometry(), b.artifact.geometry());
+        let close = |x: &[f64; 3], y: &[f64; 3]| {
+            x.iter()
+                .zip(y)
+                .all(|(u, v)| (u - v).abs() <= 1e-9 * v.abs().max(1.0))
+        };
+        if ga.shape != gb.shape
+            || !close(&ga.spacing_mm, &gb.spacing_mm)
+            || !close(&ga.origin_mm, &gb.origin_mm)
+        {
+            ui.colored_label(
+                theme.error,
+                "grid mismatch — A/B diff needs identical shape, spacing, origin",
+            );
+            return;
+        }
+        let Some((_, a_values, _)) = a
+            .artifact
+            .rows()
+            .into_iter()
+            .find(|(name, ..)| *name == panel.map.quantity)
+        else {
+            return;
+        };
+        let Some((_, b_values, _)) = b
+            .artifact
+            .rows()
+            .into_iter()
+            .find(|(name, ..)| *name == panel.map.quantity)
+        else {
+            ui.colored_label(
+                theme.warn_text,
+                format!(
+                    "B carries no row {:?} — pick a quantity present in both",
+                    panel.map.quantity
+                ),
+            );
+            return;
+        };
+        if a_values.len() != b_values.len() {
+            ui.colored_label(theme.error, "row length mismatch despite equal grids");
+            return;
+        }
+
+        // Aggregate ratio stats over voxels where A > 0.
+        let mut ratios = Vec::new();
+        let mut undefined = 0usize;
+        for (a_v, b_v) in a_values.iter().zip(b_values.iter()) {
+            if *a_v > 0.0 && b_v.is_finite() {
+                ratios.push(b_v / a_v);
+            } else {
+                undefined += 1;
+            }
+        }
+        if ratios.is_empty() {
+            ui.label("no overlapping nonzero voxels to compare");
+            return;
+        }
+        let mean = ratios.iter().sum::<f64>() / ratios.len() as f64;
+        let max_dev = ratios.iter().map(|r| (r - 1.0).abs()).fold(0.0, f64::max);
+        let out5 = ratios.iter().filter(|r| **r > 1.05 || **r < 0.95).count();
+        ui.monospace(format!(
+            "B/A over {} voxels ({} undefined): mean {:.4} · max |dev| {:.3} · {:.1}% outside ±5%",
+            ratios.len(),
+            undefined,
+            mean,
+            max_dev,
+            100.0 * out5 as f64 / ratios.len() as f64,
+        ));
+
+        // Tri-planar ratio map on the shared dose-map crosshair.
+        let Ok(grid) = PatientAlignedGrid::new(ga) else {
+            ui.colored_label(theme.warn_text, "ratio map needs a patient-aligned grid");
+            return;
+        };
+        let voxel = panel.map.voxel.unwrap_or_else(|| ga.shape.map(|e| e / 2));
+        let Ok(mut crosshair) = Crosshair::new(&grid, voxel) else {
+            return;
+        };
+        let key = format!(
+            "{}|{}|{}|{:?}",
+            a.sha256, b.sha256, panel.map.quantity, voxel
+        );
+        if panel.compare_cache_key.as_deref() != Some(key.as_str()) {
+            let planes = [
+                AnatomicalPlane::Axial,
+                AnatomicalPlane::Coronal,
+                AnatomicalPlane::Sagittal,
+            ];
+            let mut rendered = Vec::with_capacity(3);
+            let mut ok = true;
+            for plane in planes {
+                match grid
+                    .slice(plane, crosshair)
+                    .and_then(|view| render_ratio_slice(a_values, b_values, view))
+                {
+                    Ok(image) => rendered.push(ui.ctx().load_texture(
+                        format!("ratio-map-{plane:?}"),
+                        image,
+                        egui::TextureOptions::NEAREST,
+                    )),
+                    Err(error) => {
+                        ui.colored_label(theme.error, format!("{plane:?} ratio slice: {error}"));
+                        ok = false;
+                    }
+                }
+            }
+            panel.compare_textures = (ok && rendered.len() == 3).then(|| {
+                [
+                    rendered[0].clone(),
+                    rendered[1].clone(),
+                    rendered[2].clone(),
+                ]
+            });
+            panel.compare_cache_key = Some(key);
+        }
+        if let Some(textures) = &panel.compare_textures {
+            ui.columns(3, |columns| {
+                let planes = [
+                    AnatomicalPlane::Axial,
+                    AnatomicalPlane::Coronal,
+                    AnatomicalPlane::Sagittal,
+                ];
+                for (column, (plane, texture)) in
+                    columns.iter_mut().zip(planes.iter().zip(textures.iter()))
+                {
+                    if let Ok(view) = grid.slice(*plane, crosshair)
+                        && let Some(target) =
+                            show_slice_view(column, texture, view, crosshair, 220.0)
+                    {
+                        let _ = crosshair.set_voxel(&grid, target);
+                    }
+                }
+            });
+            // Clicks on the ratio panes steer the shared dose-map crosshair.
+            panel.map.voxel = Some(crosshair.voxel());
+            ui.monospace(
+                "B/A ratio · blue < 0.5× · white = 1.0 · red > 2× · dark = undefined (A ≤ 0)",
+            );
+        }
+    });
+}
+
 fn show_dose_workspace(
     ui: &mut egui::Ui,
     panel: &mut DosePanel,
@@ -3374,6 +3688,10 @@ fn show_dose_workspace(
     ui.add_space(14.0);
     ui.heading("Line profile");
     show_depth_profile(ui, panel, theme);
+
+    ui.add_space(14.0);
+    ui.heading("A/B compare");
+    show_dose_compare(ui, panel, theme);
 
     ui.add_space(14.0);
     ui.heading("Region dose-volume histogram");
