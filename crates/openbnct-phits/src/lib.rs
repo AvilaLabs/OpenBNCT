@@ -26,6 +26,8 @@
 //! resampled or silently substituted. Missing `*_err.out` imports with no
 //! claimed uncertainty.
 
+pub mod deck;
+
 use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};

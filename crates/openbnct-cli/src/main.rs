@@ -1470,6 +1470,24 @@ enum ExportCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Emit a PHITS input deck for a transport case.
+    ///
+    /// Emit subset is deliberately narrow: Z-axis `uniform_disk` sources
+    /// (`s-type = 1` circular plane), monoenergetic beams, single
+    /// material filling the grid `RPP`, and a `[t-track]` xyz-mesh
+    /// tally the `openbnct import phits` adapter can re-ingest.
+    /// Anything outside the subset is refused with a named reason.
+    Phits {
+        /// `openbnct.transport-case/0.1.0` document.
+        #[arg(long)]
+        case: PathBuf,
+        /// Histories per batch (`maxbch`); `maxcas` is derived.
+        #[arg(long, default_value = "10")]
+        maxbch: u32,
+        /// New output path for the deck.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -7437,6 +7455,30 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 .map_err(|error| io::Error::other(format!("mcnp export: {error}")))?;
                 write_new_text(&output, deck.as_bytes())?;
                 println!("wrote MCNP deck at {}", output.display());
+            }
+            ExportCommand::Phits {
+                case,
+                maxbch,
+                output,
+            } => {
+                let case_bytes = fs::read(&case)?;
+                let case_doc: TransportCase =
+                    serde_json::from_slice(&case_bytes).map_err(|error| {
+                        io::Error::other(format!("case {}: {error}", case.display()))
+                    })?;
+                let deck = openbnct_phits::deck::export_phits_deck(
+                    &case_doc,
+                    &openbnct_phits::deck::PhitsDeckOptions {
+                        case_sha256: format!(
+                            "sha256:{}",
+                            openbnct_evidence::sha256_hex(&case_bytes)
+                        ),
+                        maxbch,
+                    },
+                )
+                .map_err(|error| io::Error::other(format!("phits export: {error}")))?;
+                write_new_text(&output, deck.as_bytes())?;
+                println!("wrote PHITS deck at {}", output.display());
             }
         },
         Some(Command::Compare {
