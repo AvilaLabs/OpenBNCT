@@ -901,7 +901,12 @@ fn collapse_material(
             }
             for (li, mat) in transfer_pl.iter_mut().enumerate() {
                 for (gp, val) in row_pl[li].iter().enumerate() {
-                    mat[g * groups + gp] += n_density * val;
+                    // Realizability bound: |P_l moment| ≤ P0 for any
+                    // positive kernel (|P_l(μ)| ≤ 1). The free-gas
+                    // estimate can exceed the bound-atom row on TSL
+                    // upscatter pairs — clamp to the final P0 entry.
+                    let bound = row[gp].max(0.0);
+                    mat[g * groups + gp] += n_density * val.clamp(-bound, bound);
                 }
             }
             sigma_t[g] += n_density * (sigma_s + sigma_a);

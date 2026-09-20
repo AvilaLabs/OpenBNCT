@@ -61,9 +61,14 @@ own versions independent of the crate version.
   `--p1 --anisotropy 5` solves decomposed the measured-profile
   residual — peak-normalized χ² fell 20.95 → 1.92 at S8 (S16 adds
   nothing: 3.34). The isotropic-scatter approximation was the
-  dominant *shape* error. What remains is a flat ~0.33 absolute
-  scale through 5 cm (port-rate normalization candidate) plus a
-  still-too-fast deep-tail decay beyond ~6.5 cm.
+  dominant *shape* error. A TSL+moments collapse (H(Lucite)
+  bound-atom kernel + realizability-clamped l≥2 moments — fixing a
+  defect where free-gas stand-in moments violated |Σ_sl| ≤ Σ_s0 on
+  upscatter pairs) restores most of the deep thermal tail:
+  normalized χ² = 1.06 (vs 20.95 isotropic). Surviving residuals:
+  a flat ~0.33 absolute scale through 5 cm (port-rate
+  normalization candidate) and a ~0.3–0.45 deep-tail ratio beyond
+  ~8.75 cm.
 - Coupled-photon verification, second phantom + mesh sensitivity: PMMA
   `sn photon-collapse`/`photon-solve` artifacts at 27- and 12-group
   meshes (`validation/fir1-k63-pmma-phantom/photon-{data,dose}-{12,27}g`).

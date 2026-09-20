@@ -143,10 +143,23 @@ Findings:
   with port-fluence-rate normalization, not transport shape; and
   (b) a real deep-tail deficit: the computed profile still decays
   too fast beyond ~6.5 cm (ratio falls to 0.037 at 14.5 cm).
-- The deep-tail residual is the next isolated question: this run
-  used non-TSL data, so bound-atom upscatter (H in Lucite) is
-  absent — a TSL+moments collapse tests whether upscatter restores
-  the deep thermal tail.
+- The deep-tail residual was the next isolated question — and the
+  TSL+moments collapse (`multigroup-data-28g-tsl-moments.json`,
+  H(Lucite) bound-atom kernel + clamped l=2..5 moments) answers it:
+  bound-atom upscatter restores most of the deep thermal tail,
+  bringing normalized χ² to **1.06** (from 1.92 free-gas P5).
+  Ratios vs measured at depth: 0.85 at 6.55 cm, 0.68 at 8.75 cm,
+  0.44 at 11.5 cm, 0.27 at 14.5 cm — versus 0.64/0.15/0.22/0.04
+  without TSL. The remaining deep deficit (~0.3-0.45) plus the
+  flat ~0.33 absolute scale are the surviving residuals.
+- The TSL collapse also exposed and fixed a real collapse defect:
+  free-gas l≥2 stand-in moments could exceed the bound-atom P0
+  entry on TSL upscatter pairs, violating |Σ_sl| ≤ Σ_s0 — now
+  clamped per-entry to the post-TSL P0 (mgcollapse.rs).
+
+TSL+P5 artifacts: `multigroup-data-28g-tsl-moments.json`,
+`multigroup-flux-28g-ineel-tsl-s8-p5.json` (converged, 36 outers),
+`dose-28g-ineel-tsl-s8-p5.json`.
 
 Artifacts: `multigroup-data-28g-moments.json`,
 `multigroup-flux-28g-ineel-s8-p5.json`, `dose-28g-ineel-s8-p5.json`,
