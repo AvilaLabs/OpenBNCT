@@ -1,0 +1,33 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>OpenBNCT workbench</title>
+  <style>
+    html, body { margin: 0; padding: 0; height: 100%; background: #0f1115; }
+    #openbnct_canvas { width: 100%; height: 100%; display: block; }
+    #openbnct-loading {
+      position: absolute; inset: 0; display: flex; align-items: center;
+      justify-content: center; color: #97a2b2; font-family: monospace;
+    }
+  </style>
+</head>
+<body>
+  <!-- eframe renders into this canvas; the wasm bundle is injected by trunk. -->
+  <canvas id="openbnct_canvas"></canvas>
+  <div id="openbnct-loading">loading openbnct…</div>
+  <script>
+    // Remove the loading veil once the canvas has its first painted frame.
+    const observer = new MutationObserver(() => {
+      const canvas = document.getElementById('openbnct_canvas');
+      if (canvas && canvas.width > 0) {
+        const veil = document.getElementById('openbnct-loading');
+        if (veil) veil.remove();
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.getElementById('openbnct_canvas'), { attributes: true });
+  </script>
+</body>
+</html>

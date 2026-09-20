@@ -30,12 +30,15 @@ pub use acceptance::{
 };
 pub use acquisition::{
     ACQUISITION_PROFILE_SCHEMA, ACQUISITION_RECEIPT_SCHEMA, AcquiredData, AcquiredDataArtifact,
-    AcquisitionError, AcquisitionEvidenceState, AcquisitionProgress, DataAcquisitionClient,
-    DataAcquisitionProbe, DataAcquisitionProfile, DataAcquisitionProfileDocument,
-    DataAcquisitionReceipt, DataAcquisitionReceiptDocument, DataPublication, DataTransferEvidence,
-    DigestAlgorithm, PublishedDataArtifact, PublishedDigest, PublisherDigestStatus, SizeEvidence,
-    UpstreamRecipe,
+    AcquisitionError, AcquisitionEvidenceState, AcquisitionProgress, DataAcquisitionProbe,
+    DataAcquisitionProfile, DataAcquisitionProfileDocument, DataAcquisitionReceipt,
+    DataAcquisitionReceiptDocument, DataPublication, DataTransferEvidence, DigestAlgorithm,
+    PublishedDataArtifact, PublishedDigest, PublisherDigestStatus, SizeEvidence, UpstreamRecipe,
 };
+// The HTTP acquisition client requires reqwest's blocking API —
+// unavailable on wasm; evidence types above are pure data.
+#[cfg(not(target_arch = "wasm32"))]
+pub use acquisition::DataAcquisitionClient;
 pub use data::{
     DataArtifact, DataDistributionIdentity, DataInspectionIdentity, NeutronTableCapability,
     NuclearDataError, NuclearDataManifest, PhotonTableCapability, TARGET_ACQUISITION_PROFILE_ID,

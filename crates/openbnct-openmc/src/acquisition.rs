@@ -6,14 +6,22 @@
 //! nuclear physics represented by those bytes. In particular, a SHA-256 that
 //! NCTForge computes locally is not a substitute for a publisher digest.
 
-use std::fs::{self, File, OpenOptions};
-use std::io::{self, Read, Write};
+use std::fs;
+#[cfg(not(target_arch = "wasm32"))]
+use std::fs::{File, OpenOptions};
+use std::io;
+#[cfg(not(target_arch = "wasm32"))]
+use std::io::{Read, Write};
 use std::path::{Component, Path, PathBuf};
+#[cfg(not(target_arch = "wasm32"))]
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+#[cfg(not(target_arch = "wasm32"))]
 use md5::Md5;
 use reqwest::Url;
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest::blocking::{Client, Response};
+#[cfg(not(target_arch = "wasm32"))]
 use reqwest::header::{
     ACCEPT_ENCODING, ACCEPT_RANGES, CONTENT_DISPOSITION, CONTENT_LENGTH, CONTENT_RANGE, ETAG,
     HeaderMap, LAST_MODIFIED, LOCATION, RANGE,
@@ -25,7 +33,9 @@ use thiserror::Error;
 pub const ACQUISITION_PROFILE_SCHEMA: &str = "openbnct.data-acquisition-profile/0.2.0";
 pub const ACQUISITION_RECEIPT_SCHEMA: &str = "openbnct.data-acquisition-receipt/0.1.0";
 
+#[cfg(not(target_arch = "wasm32"))]
 const MAX_REDIRECTS: usize = 10;
+#[cfg(not(target_arch = "wasm32"))]
 const COPY_BUFFER_BYTES: usize = 1024 * 1024;
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -480,11 +490,13 @@ pub struct AcquiredData {
     pub receipt: DataAcquisitionReceipt,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 #[derive(Debug)]
 pub struct DataAcquisitionClient {
     client: Client,
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 impl DataAcquisitionClient {
     pub fn new() -> Result<Self, AcquisitionError> {
         let client = Client::builder()
@@ -991,6 +1003,7 @@ fn host_matches(host: &str, suffix: &str) -> bool {
             .is_some_and(|prefix| prefix.ends_with('.'))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn required_header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, AcquisitionError> {
     headers
         .get(name)
@@ -999,6 +1012,7 @@ fn required_header<'a>(headers: &'a HeaderMap, name: &str) -> Result<&'a str, Ac
         .map_err(|_| AcquisitionError::InvalidHeader(format!("non-text {name}")))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn header_text(headers: &HeaderMap, name: &str) -> Result<Option<String>, AcquisitionError> {
     headers
         .get(name)
@@ -1011,6 +1025,7 @@ fn header_text(headers: &HeaderMap, name: &str) -> Result<Option<String>, Acquis
         .transpose()
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn parse_content_range(value: &str) -> Result<(u64, u64, u64), AcquisitionError> {
     let (unit, range_and_total) = value.split_once(' ').ok_or_else(|| {
         AcquisitionError::InvalidRangeResponse(format!("malformed Content-Range {value:?}"))
@@ -1043,6 +1058,7 @@ fn parse_content_range(value: &str) -> Result<(u64, u64, u64), AcquisitionError>
     Ok((start, end, total))
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn content_disposition_filename(headers: &HeaderMap) -> Result<Option<String>, AcquisitionError> {
     let Some(value) = header_text(headers, CONTENT_DISPOSITION.as_str())? else {
         return Ok(None);
@@ -1078,6 +1094,7 @@ fn validate_content_disposition(
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn validate_download_response(
     response: &Response,
     offset: u64,
@@ -1118,6 +1135,7 @@ fn validate_download_response(
     Ok(())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn partial_file_size(path: &Path) -> Result<u64, AcquisitionError> {
     let Some(metadata) = path
         .symlink_metadata()
@@ -1145,6 +1163,7 @@ fn partial_file_size(path: &Path) -> Result<u64, AcquisitionError> {
     Ok(metadata.len())
 }
 
+#[cfg(not(target_arch = "wasm32"))]
 fn hash_partial_file(
     path: &Path,
     calculate_md5: bool,
