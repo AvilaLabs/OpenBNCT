@@ -543,6 +543,8 @@ struct DoseMapView {
     quantity: String,
     log_scale: bool,
     contours: bool,
+    /// Render the component's 1σ field instead of its value field.
+    sigma_view: bool,
     textures: Option<[egui::TextureHandle; 3]>,
     /// Render inputs the textures were produced from — regenerated on change.
     cache_key: Option<String>,
@@ -990,6 +992,8 @@ struct PlanPanel {
     error: Option<String>,
     export_path: String,
     export_status: Option<String>,
+    robustness: Option<openbnct_plan::robustness::PlanRobustnessReport>,
+    robustness_error: Option<String>,
 }
 
 impl PlanPanel {
@@ -1035,6 +1039,35 @@ impl PlanPanel {
         match openbnct_plan::write_table(Path::new(self.export_path.trim()), plan) {
             Ok(()) => self.export_status = Some(format!("wrote {}", self.export_path.trim())),
             Err(error) => self.export_status = Some(error.to_string()),
+        }
+    }
+
+    /// Bytes-only robustness-report loader — web drop path.
+    fn load_robustness_bytes(&mut self, bytes: &[u8]) {
+        match serde_json::from_slice::<openbnct_plan::robustness::PlanRobustnessReport>(bytes)
+            .map_err(|e| e.to_string())
+            .and_then(|report| {
+                if openbnct_core::schema_matches(
+                    &report.schema_version,
+                    openbnct_plan::robustness::PLAN_ROBUSTNESS_SCHEMA,
+                ) {
+                    Ok(report)
+                } else {
+                    Err(format!(
+                        "unsupported schema {:?} — expected {}",
+                        report.schema_version,
+                        openbnct_plan::robustness::PLAN_ROBUSTNESS_SCHEMA
+                    ))
+                }
+            }) {
+            Ok(report) => {
+                self.robustness_error = None;
+                self.robustness = Some(report);
+            }
+            Err(error) => {
+                self.robustness = None;
+                self.robustness_error = Some(error);
+            }
         }
     }
 }
@@ -1295,6 +1328,7 @@ enum DropTarget {
     NiftiVolume,
     Measurement,
     Spectrum,
+    Robustness,
     Unsupported,
 }
 
@@ -1345,6 +1379,7 @@ fn classify_dropped_json(bytes: &[u8]) -> DropTarget {
         s if s.contains("beam-description/") || s.contains("fixed-source-definition/") => {
             DropTarget::Spectrum
         }
+        s if s.contains("plan-robustness/") => DropTarget::Robustness,
         _ => DropTarget::DoseBundle,
     }
 }
@@ -1529,6 +1564,13 @@ impl OpenBnctApp {
                     Err(error) => self.panels.spectrum.error = Some(error),
                 }
                 self.workspace = WorkspaceTab::Transport;
+            }
+            DropTarget::Robustness => {
+                match bytes {
+                    Ok(b) => self.panels.plan.load_robustness_bytes(&b),
+                    Err(error) => self.panels.plan.robustness_error = Some(error),
+                }
+                self.workspace = WorkspaceTab::Plan;
             }
             DropTarget::Unsupported => {
                 self.load_error = Some(format!("unsupported drop {name}"));
@@ -2766,6 +2808,72 @@ fn show_plan_workspace(ui: &mut egui::Ui, panel: &mut PlanPanel, theme: Theme) {
             ui.label(status);
         }
     });
+
+    ui.add_space(14.0);
+    ui.heading("Robustness report");
+    ui.label(
+        "Drop a plan-robustness .json — per-objective violation probabilities \
+         under the declared systematic uncertainties.",
+    );
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        if let Some(error) = &panel.robustness_error {
+            ui.colored_label(theme.error, format!("robustness rejected: {error}"));
+        }
+        let Some(report) = &panel.robustness else {
+            ui.label("No robustness report loaded.");
+            return;
+        };
+        ui.monospace(&report.id);
+        ui.monospace(format!(
+            "method: {} · qualification: {}",
+            report.method, report.qualification
+        ));
+        if !report.sources.is_empty() {
+            ui.monospace(format!(
+                "sources: {}",
+                report
+                    .sources
+                    .iter()
+                    .map(|s| format!("{s:?}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        ui.add_space(6.0);
+        for objective in &report.objectives {
+            let p = objective.violation_probability.clamp(0.0, 1.0);
+            let color = if p > 0.2 {
+                theme.error
+            } else if p > 0.05 {
+                theme.warn_text
+            } else {
+                egui::Color32::from_rgb(80, 220, 140)
+            };
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.strong(format!("{} · {}", objective.kind, objective.mask));
+                    ui.monospace(format!(
+                        "achieved {:.4e} vs bound {:.4e} · σ {:.2e}",
+                        objective.achieved, objective.bound, objective.sigma_1sigma
+                    ));
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    ui.colored_label(color, format!("P(violate) = {:.3}", p));
+                    let (rect, _) =
+                        ui.allocate_exact_size(egui::vec2(120.0, 10.0), egui::Sense::hover());
+                    ui.painter()
+                        .rect_filled(rect, 3.0, egui::Color32::from_rgb(60, 66, 78));
+                    let fill = egui::Rect::from_min_size(
+                        rect.min,
+                        egui::vec2(rect.width() * p as f32, rect.height()),
+                    );
+                    ui.painter().rect_filled(fill, 3.0, color);
+                });
+            });
+            ui.separator();
+        }
+        ui.monospace(format!("provenance: {}", report.provenance_id));
+    });
 }
 
 /// Tri-planar dose/field map rendered from the loaded bundle's own grid —
@@ -2786,8 +2894,19 @@ fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
             .map(|(name, ..)| name.clone())
             .unwrap_or_default();
     }
-    let Some((_, values, _)) = rows.iter().find(|(name, ..)| *name == panel.map.quantity) else {
+    let Some((_, dose_values, sigma_values)) =
+        rows.iter().find(|(name, ..)| *name == panel.map.quantity)
+    else {
         return;
+    };
+    // σ view only when the row actually carries an uncertainty field.
+    if panel.map.sigma_view && sigma_values.is_none() {
+        panel.map.sigma_view = false;
+    }
+    let values = if panel.map.sigma_view {
+        sigma_values.unwrap_or(dose_values)
+    } else {
+        dose_values
     };
     let max = values.iter().copied().fold(0.0_f64, f64::max);
     let grid = match PatientAlignedGrid::new(artifact.geometry()) {
@@ -2820,14 +2939,23 @@ fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
                 });
             ui.checkbox(&mut panel.map.log_scale, "log scale");
             ui.checkbox(&mut panel.map.contours, "isodose 90/50/10%");
+            ui.add_enabled_ui(sigma_values.is_some(), |ui| {
+                ui.checkbox(&mut panel.map.sigma_view, "σ map")
+                    .on_disabled_hover_text("this component carries no uncertainty field");
+            });
         });
 
         let Ok(mut crosshair) = Crosshair::new(&grid, voxel) else {
             return;
         };
         let key = format!(
-            "{}|{}|{:?}|{}|{}",
-            bundle.sha256, panel.map.quantity, voxel, panel.map.log_scale, panel.map.contours
+            "{}|{}|{:?}|{}|{}|{}",
+            bundle.sha256,
+            panel.map.quantity,
+            voxel,
+            panel.map.log_scale,
+            panel.map.contours,
+            panel.map.sigma_view
         );
         if panel.map.cache_key.as_deref() != Some(key.as_str()) {
             let mut textures: Option<[egui::TextureHandle; 3]> = None;
@@ -2902,8 +3030,9 @@ fn show_dose_map(ui: &mut egui::Ui, panel: &mut DosePanel, theme: Theme) {
 
         let crosshair_voxel = crosshair.voxel();
         if let Ok(index) = grid.linear_index(crosshair_voxel) {
+            let label = if panel.map.sigma_view { "1σ" } else { "value" };
             ui.monospace(format!(
-                "crosshair {:?} → {:.4e} {}",
+                "crosshair {:?} → {label} {:.4e} {}",
                 crosshair_voxel,
                 values[index],
                 artifact.unit(),
@@ -3223,10 +3352,15 @@ fn show_dose_workspace(
                 ui.strong(name.as_str());
                 ui.monospace(format!("max  {max:.3e}"));
                 ui.monospace(format!("mean {mean:.3e}"));
-                ui.small(if sigma.is_some() {
-                    "1σ uncertainty present"
+                ui.small(if let Some(sigma) = sigma {
+                    let sigma_mean = sigma.iter().sum::<f64>() / sigma.len().max(1) as f64;
+                    if mean > 0.0 {
+                        format!("1σ mean/mean = {:.1}%", 100.0 * sigma_mean / mean)
+                    } else {
+                        "1σ uncertainty present".to_string()
+                    }
                 } else {
-                    "no uncertainty carried"
+                    "no uncertainty carried".to_string()
                 });
             });
         }
