@@ -1538,6 +1538,63 @@ pub fn solve_multigroup_adjoint(
     Ok(result)
 }
 
+/// Score one beam direction against a solved adjoint importance field:
+/// the inner product of the direction's uncollided beam flux with φ*.
+///
+/// One adjoint solve (target region as the adjoint source) plus this
+/// ray-trace scores every candidate direction without a per-direction
+/// forward solve — the fast first pass of a beam-direction search.
+/// Units are importance×fluence; the score is meaningful only
+/// comparatively across directions sharing the adjoint, geometry, and
+/// aperture.
+///
+/// The source template's space/angle are replaced by
+/// [`crate::positioning::aim_disk_source_at_centroid`]'s aimed disk —
+/// the same positioning `plan fields` uses, so the score ranks the
+/// beams the sweep would actually solve.
+pub fn adjoint_direction_score(
+    case: &TransportCase,
+    data: &MultigroupData,
+    options: &SnOptions,
+    adjoint: &MultigroupFlux,
+    aim: &openbnct_core::RegionMask,
+    direction_lps: [f64; 3],
+    radius_cm: f64,
+) -> Result<f64, MultigroupError> {
+    let invalid = |m: String| MultigroupError::Solve(m);
+    let n_cells = case.geometry.voxel_count()?;
+    if adjoint.flux.len() != n_cells {
+        return Err(invalid("adjoint flux grid does not match the case".into()));
+    }
+    let (aimed_source, _report) = crate::positioning::aim_disk_source_at_centroid(
+        &case.source,
+        &case.geometry,
+        aim,
+        direction_lps,
+        radius_cm,
+    )
+    .map_err(|error| invalid(format!("aim direction: {error}")))?;
+    let mut aimed_case = case.clone();
+    aimed_case.source = aimed_source;
+    let (_ad, case_material) =
+        material_composition_map(&aimed_case, data, options.assignment.as_ref())?;
+    let Some(uncollided) = uncollided_beam_flux(&aimed_case, data, &case_material)? else {
+        return Err(invalid(
+            "direction does not admit an uncollided beam — needs an on-face disk source".into(),
+        ));
+    };
+    let mut score = 0.0;
+    for (beam_groups, adjoint_groups) in uncollided.iter().zip(adjoint.flux.iter()).take(n_cells) {
+        for (beam, importance) in beam_groups.iter().zip(adjoint_groups.iter()) {
+            score += beam * importance;
+        }
+    }
+    if !score.is_finite() {
+        return Err(invalid("adjoint direction score diverged".into()));
+    }
+    Ok(score)
+}
+
 /// Per-voxel material index: base material, then assignment regions.
 /// Public so downstream evaluators (UQ, screening, lineal tallies) can
 /// resolve the same material map the solver used.

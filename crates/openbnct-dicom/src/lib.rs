@@ -7,6 +7,7 @@
 mod benchmark;
 mod ct;
 mod error;
+mod mr;
 mod pet;
 mod rtdose;
 mod rtplan;
@@ -20,6 +21,7 @@ pub use benchmark::{
 };
 pub use ct::{CtVolume, import_ct_series, import_ct_series_from_bytes};
 pub use error::{DicomError, Result};
+pub use mr::{MrVolume, import_mr_series, import_mr_series_from_bytes};
 pub use pet::{PetVolume, import_pet_series, import_pet_series_from_bytes};
 pub use rtdose::{DoseSelection, RtDoseExportOptions, RtDoseExportResult, export_rt_dose};
 pub use rtplan::{

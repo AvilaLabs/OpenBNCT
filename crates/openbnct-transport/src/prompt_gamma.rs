@@ -125,10 +125,10 @@ impl PromptGammaSource {
         if self.values.iter().any(|v| !v.is_finite() || *v < 0.0) {
             return Err(PromptGammaError::NonFiniteValue);
         }
-        if let Some(sigma) = &self.absolute_standard_uncertainty {
-            if sigma.len() != voxels || sigma.iter().any(|s| !s.is_finite() || *s < 0.0) {
-                return Err(PromptGammaError::NonFiniteValue);
-            }
+        if let Some(sigma) = &self.absolute_standard_uncertainty
+            && (sigma.len() != voxels || sigma.iter().any(|s| !s.is_finite() || *s < 0.0))
+        {
+            return Err(PromptGammaError::NonFiniteValue);
         }
         Ok(())
     }

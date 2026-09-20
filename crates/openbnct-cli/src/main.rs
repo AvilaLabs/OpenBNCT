@@ -1177,6 +1177,18 @@ enum DicomCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Import a DICOM MR series as a rescaled-intensity volume — NIfTI
+    /// float64 on the MR grid, resampleable onto a case via
+    /// `register apply`. Intensities are unitless signal, never HU.
+    ImportMr {
+        /// MR slice `.dcm` files; repeatable or directory-expanded
+        /// upstream.
+        #[arg(long, required = true)]
+        slices: Vec<PathBuf>,
+        /// Output `.nii` or `.nii.gz` path for the intensity volume.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Apply an `openbnct.hu-calibration` anchor table to a CT HU
     /// volume, emitting an `openbnct.material-assignment` whose
     /// per-voxel two-component anchor mixtures the solver blends.
@@ -1702,6 +1714,47 @@ enum PlanCommand {
         /// Output path for the robustness JSON.
         #[arg(long)]
         output: PathBuf,
+    },
+    /// Enumerate beam-direction candidates over an azimuth×elevation
+    /// grid and rank them by tissue path length to the aim-mask
+    /// centroid — the zero-transport pre-filter that selects which
+    /// directions `plan fields` should solve. Emits `name,dx,dy,dz`
+    /// spec lines directly consumable as `plan fields --beam`.
+    Directions {
+        /// `openbnct.transport-case` JSON (geometry source).
+        #[arg(long)]
+        case: PathBuf,
+        /// `RegionMask` JSON every beam axis converges on.
+        #[arg(long)]
+        aim_mask: PathBuf,
+        /// Optional body/skin `RegionMask` — enables tissue-path-length
+        /// scoring (epithermal depth heuristic).
+        #[arg(long)]
+        body_mask: Option<PathBuf>,
+        /// Azimuth divisions over 0–360°.
+        #[arg(long, default_value = "12")]
+        azimuth_steps: u32,
+        /// Elevation divisions over −60..+60°.
+        #[arg(long, default_value = "3")]
+        elevation_steps: u32,
+        /// Emit only the top N ranked candidates (0 = all).
+        #[arg(long, default_value = "0")]
+        top: usize,
+        /// Optional `openbnct.multigroup-data` JSON — enables adjoint
+        /// importance scoring: one adjoint solve with the aim region as
+        /// the source, then every candidate scored by the inner product
+        /// of its uncollided beam with φ* (transport-informed, no
+        /// per-direction solve). Re-ranks the list by importance.
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// Aperture radius in cm for the aimed-disk scoring (with
+        /// `--data`).
+        #[arg(long, default_value = "4.0")]
+        radius_cm: f64,
+        /// Also emit a `name,direction,tissue_path_mm` CSV for the
+        /// record; without it only `plan fields --beam` lines print.
+        #[arg(long)]
+        csv: Option<PathBuf>,
     },
     /// Aim and solve a beam per direction through a target mask —
     /// emits a unit-weight dose bundle per beam plus a
@@ -4216,6 +4269,37 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 openbnct_dicom::export_rt_plan(&output, &options)
                     .map_err(|error| io::Error::other(format!("rtplan export: {error}")))?;
                 println!("rtplan: {}", output.display());
+            }
+            DicomCommand::ImportMr { slices, output } => {
+                let volume = openbnct_dicom::import_mr_series(&slices)
+                    .map_err(|error| io::Error::other(format!("mr import: {error}")))?;
+                let image = NiftiImage {
+                    geometry: volume.geometry.clone(),
+                    values: volume.intensities.clone(),
+                    datatype: DT_FLOAT64,
+                    transform_source: "sform",
+                    description: format!("openbnct MR {}", volume.series_instance_uid),
+                    intent_name: String::new(),
+                    units_declared_mm: true,
+                };
+                write_nifti(&image, &output)?;
+                println!(
+                    "mr: {} voxels -> {}",
+                    volume.intensities.len(),
+                    output.display()
+                );
+                println!(
+                    "  TR {} ms | TE {} ms | FoR {}",
+                    volume
+                        .repetition_time_ms
+                        .map(|v| format!("{v:.0}"))
+                        .unwrap_or_else(|| "n/a".into()),
+                    volume
+                        .echo_time_ms
+                        .map(|v| format!("{v:.0}"))
+                        .unwrap_or_else(|| "n/a".into()),
+                    volume.frame_of_reference_uid
+                );
             }
             DicomCommand::ImportPet { slices, output } => {
                 let volume = openbnct_dicom::import_pet_series(&slices)
@@ -8411,6 +8495,138 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     );
                 }
                 println!("robustness: {}", output.display());
+            }
+            PlanCommand::Directions {
+                case,
+                aim_mask,
+                body_mask,
+                azimuth_steps,
+                elevation_steps,
+                top,
+                data,
+                radius_cm,
+                csv,
+            } => {
+                let case_document: TransportCase = serde_json::from_slice(&fs::read(&case)?)
+                    .map_err(|error| {
+                        io::Error::other(format!("case {}: {error}", case.display()))
+                    })?;
+                let geometry = case_document.geometry.clone();
+                let aim: RegionMask =
+                    serde_json::from_slice(&fs::read(&aim_mask)?).map_err(|error| {
+                        io::Error::other(format!("mask {}: {error}", aim_mask.display()))
+                    })?;
+                let body: Option<RegionMask> = body_mask
+                    .map(|path| {
+                        serde_json::from_slice(&fs::read(&path)?).map_err(|error| {
+                            io::Error::other(format!("mask {}: {error}", path.display()))
+                        })
+                    })
+                    .transpose()?;
+                let mut candidates = openbnct_plan::directions::enumerate_directions(
+                    &geometry,
+                    &aim,
+                    body.as_ref(),
+                    azimuth_steps,
+                    elevation_steps,
+                )
+                .map_err(|error| io::Error::other(format!("directions: {error}")))?;
+                // Adjoint scoring: one solve of the transposed problem
+                // with the aim region as adjoint source, then rank every
+                // candidate by its uncollided beam × φ* inner product.
+                if let Some(data_path) = data {
+                    let data: openbnct_transport::MultigroupData =
+                        serde_json::from_slice(&fs::read(&data_path)?).map_err(|error| {
+                            io::Error::other(format!("data {}: {error}", data_path.display()))
+                        })?;
+                    let options = openbnct_transport::SnOptions::default();
+                    let n_cells = geometry
+                        .voxel_count()
+                        .map_err(|error| io::Error::other(format!("geometry: {error}")))?;
+                    let groups = data.group_count();
+                    let mut adjoint_source = vec![vec![0.0; groups]; n_cells];
+                    for (cell, present) in aim.voxels.iter().enumerate() {
+                        if *present && cell < n_cells {
+                            for row in adjoint_source[cell].iter_mut() {
+                                *row = 1.0;
+                            }
+                        }
+                    }
+                    let adjoint = openbnct_transport::solve_multigroup_adjoint(
+                        &case_document,
+                        &data,
+                        &options,
+                        &adjoint_source,
+                        openbnct_core::ContentReference {
+                            id: "multigroup-data".into(),
+                            sha256: format!(
+                                "sha256:{}",
+                                openbnct_evidence::sha256_hex(&fs::read(&data_path)?)
+                            ),
+                        },
+                        openbnct_core::ContentReference {
+                            id: "case".into(),
+                            sha256: format!(
+                                "sha256:{}",
+                                openbnct_evidence::sha256_hex(&fs::read(&case)?)
+                            ),
+                        },
+                    )
+                    .map_err(|error| io::Error::other(format!("adjoint solve: {error}")))?;
+                    let mut scored: Vec<(f64, usize)> = Vec::with_capacity(candidates.len());
+                    for (index, candidate) in candidates.iter().enumerate() {
+                        let score = openbnct_transport::adjoint_direction_score(
+                            &case_document,
+                            &data,
+                            &options,
+                            &adjoint,
+                            &aim,
+                            candidate.direction_lps,
+                            radius_cm,
+                        )
+                        .map_err(|error| {
+                            io::Error::other(format!("score {}: {error}", candidate.name))
+                        })?;
+                        scored.push((score, index));
+                    }
+                    scored
+                        .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                    candidates = scored
+                        .iter()
+                        .map(|(_, index)| candidates[*index].clone())
+                        .collect();
+                    eprintln!("adjoint-ranked by uncollided-beam importance");
+                }
+                let take = if top == 0 { candidates.len() } else { top };
+                for line in openbnct_plan::directions::beam_spec_lines(&candidates, take) {
+                    println!("{line}");
+                }
+                if let Some(path) = csv {
+                    let mut text = String::from(
+                        "name,dx,dy,dz,azimuth_deg,elevation_deg,tissue_path_mm
+",
+                    );
+                    for c in &candidates {
+                        text.push_str(&format!(
+                            "{},{:.6},{:.6},{:.6},{:.1},{:.1},{}
+",
+                            c.name,
+                            c.direction_lps[0],
+                            c.direction_lps[1],
+                            c.direction_lps[2],
+                            c.azimuth_deg,
+                            c.elevation_deg,
+                            c.tissue_path_mm
+                                .map(|v| format!("{v:.2}"))
+                                .unwrap_or_default()
+                        ));
+                    }
+                    fs::write(&path, text)?;
+                }
+                eprintln!(
+                    "{} candidates enumerated, top {take} emitted",
+                    candidates.len()
+                );
             }
             PlanCommand::Fields {
                 case,
