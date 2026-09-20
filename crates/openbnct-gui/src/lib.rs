@@ -1224,6 +1224,66 @@ struct WorkbenchPanels {
     nifti: NiftiPanel,
     plan: PlanPanel,
     position: PositionPanel,
+    spectrum: SpectrumView,
+}
+
+/// Source-spectrum inspector state: the parsed source definition and the
+/// artifact label it came from (beam description or standalone source).
+#[derive(Default)]
+struct SpectrumView {
+    source: Option<openbnct_transport::FixedSourceDefinition>,
+    source_label: String,
+    error: Option<String>,
+}
+
+impl SpectrumView {
+    /// Accept a `beam-description` (source extracted) or a bare
+    /// `fixed-source-definition`, bytes-only so web drops work.
+    fn load_bytes(&mut self, bytes: &[u8]) {
+        let schema = serde_json::from_slice::<serde_json::Value>(bytes)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("schema_version")
+                    .and_then(|s| s.as_str())
+                    .map(str::to_owned)
+            })
+            .unwrap_or_default();
+        let outcome = if schema.contains("fixed-source-definition") {
+            serde_json::from_slice::<openbnct_transport::FixedSourceDefinition>(bytes)
+                .map_err(|error| error.to_string())
+                .and_then(|source| {
+                    source.validate().map_err(|e| e.to_string())?;
+                    Ok((
+                        source,
+                        serde_json::from_slice::<serde_json::Value>(bytes)
+                            .ok()
+                            .and_then(|v| v.get("id").and_then(|i| i.as_str()).map(str::to_owned))
+                            .unwrap_or_else(|| "fixed-source-definition".into()),
+                    ))
+                })
+        } else if schema.contains("beam-description") {
+            serde_json::from_slice::<openbnct_transport::BeamDescription>(bytes)
+                .map_err(|error| error.to_string())
+                .and_then(|beam| {
+                    beam.validate().map_err(|e| e.to_string())?;
+                    Ok((beam.source, beam.id))
+                })
+        } else {
+            Err("not a beam-description or fixed-source-definition".into())
+        };
+        match outcome {
+            Ok((source, label)) => {
+                self.error = None;
+                self.source = Some(source);
+                self.source_label = label;
+            }
+            Err(error) => {
+                self.source = None;
+                self.error = Some(error);
+            }
+        }
+    }
 }
 
 /// Where an OS-dragged path lands in the workbench.
@@ -1234,6 +1294,7 @@ enum DropTarget {
     Plan,
     NiftiVolume,
     Measurement,
+    Spectrum,
     Unsupported,
 }
 
@@ -1280,6 +1341,9 @@ fn classify_dropped_json(bytes: &[u8]) -> DropTarget {
             || s.starts_with("openbnct.measurement-record/") =>
         {
             DropTarget::Measurement
+        }
+        s if s.contains("beam-description/") || s.contains("fixed-source-definition/") => {
+            DropTarget::Spectrum
         }
         _ => DropTarget::DoseBundle,
     }
@@ -1458,6 +1522,13 @@ impl OpenBnctApp {
                     Err(error) => self.panels.dose.profile.measurement_error = Some(error),
                 }
                 self.workspace = WorkspaceTab::Dose;
+            }
+            DropTarget::Spectrum => {
+                match bytes {
+                    Ok(b) => self.panels.spectrum.load_bytes(&b),
+                    Err(error) => self.panels.spectrum.error = Some(error),
+                }
+                self.workspace = WorkspaceTab::Transport;
             }
             DropTarget::Unsupported => {
                 self.load_error = Some(format!("unsupported drop {name}"));
@@ -1842,6 +1913,7 @@ fn show_workbench(
                         ui,
                         case.as_deref(),
                         &mut panels.position,
+                        &mut panels.spectrum,
                         tour_targets,
                         theme,
                     ),
@@ -2107,10 +2179,216 @@ fn show_geometry_workspace(
     }
 }
 
+/// TECDOC-1223 group boundaries in eV — the same convention the
+/// transport crate's beam-quality evaluator uses.
+const SPECTRUM_THERMAL_UPPER_EV: f64 = 0.5;
+const SPECTRUM_EPITHERMAL_UPPER_EV: f64 = 1.0e4;
+
+/// Log-log energy-spectrum plot: a tabulated histogram renders as a
+/// staircase of bin weights with thermal/epithermal/fast region shading
+/// and region-integral labels (bins straddling a boundary split by
+/// log-interpolated weight density). Monoenergetic sources draw a marker.
+fn show_spectrum(ui: &mut egui::Ui, spectrum: &mut SpectrumView, theme: Theme) {
+    use openbnct_transport::EnergyDistribution;
+
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        if let Some(error) = &spectrum.error {
+            ui.colored_label(theme.error, format!("spectrum rejected: {error}"));
+        }
+        let Some(source) = &spectrum.source else {
+            ui.label(
+                "No source loaded — drop a beam-description or fixed-source-definition .json.",
+            );
+            return;
+        };
+        ui.monospace(&spectrum.source_label);
+
+        let (response, painter) = ui.allocate_painter(
+            egui::vec2(ui.available_width(), 220.0),
+            egui::Sense::hover(),
+        );
+        let rect = response.rect.shrink2(egui::vec2(56.0, 30.0));
+        let axis_stroke = egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 82, 99));
+        painter.rect_stroke(rect, 4.0, axis_stroke, egui::StrokeKind::Inside);
+
+        match &source.energy {
+            EnergyDistribution::Monoenergetic { energy_ev } => {
+                let e = energy_ev.max(1e-11);
+                let (lo, hi) = (e / 10.0, e * 10.0);
+                let x_of = |ev: f64| {
+                    rect.left() + ((ev.ln() - lo.ln()) / (hi.ln() - lo.ln())) as f32 * rect.width()
+                };
+                painter.line_segment(
+                    [
+                        egui::pos2(x_of(e), rect.top()),
+                        egui::pos2(x_of(e), rect.bottom()),
+                    ],
+                    egui::Stroke::new(2.0, theme.brand),
+                );
+                painter.text(
+                    egui::pos2(rect.left() - 8.0, rect.top()),
+                    egui::Align2::RIGHT_CENTER,
+                    "1.0",
+                    egui::FontId::monospace(10.0),
+                    theme.text_dim,
+                );
+                painter.text(
+                    rect.center_bottom() + egui::vec2(0.0, 4.0),
+                    egui::Align2::CENTER_TOP,
+                    format!("monoenergetic {e:.4e} eV"),
+                    egui::FontId::monospace(10.0),
+                    theme.text_dim,
+                );
+            }
+            EnergyDistribution::TabulatedHistogram {
+                energy_boundaries_ev,
+                bin_weights,
+            } => {
+                let e_lo = energy_boundaries_ev
+                    .first()
+                    .copied()
+                    .unwrap_or(1e-11)
+                    .max(1e-11);
+                let e_hi = energy_boundaries_ev.last().copied().unwrap_or(1e7);
+                let w_max = bin_weights.iter().copied().fold(0.0_f64, f64::max);
+                if e_hi <= e_lo || w_max <= 0.0 {
+                    ui.label("empty or degenerate histogram");
+                    return;
+                }
+                let w_floor = w_max * 1e-6;
+                let log_lo = e_lo.ln();
+                let log_span = (e_hi.ln() - log_lo).max(f64::EPSILON);
+                let w_log_span = (w_max.ln() - w_floor.ln()).max(f64::EPSILON);
+                let x_of = |ev: f64| {
+                    rect.left() + ((ev.max(1e-11).ln() - log_lo) / log_span) as f32 * rect.width()
+                };
+                let y_of = |w: f64| {
+                    rect.bottom()
+                        - ((w.max(w_floor).ln() - w_floor.ln()) / w_log_span) as f32 * rect.height()
+                };
+
+                // Region shading behind the curve.
+                let regions = [
+                    (
+                        e_lo,
+                        SPECTRUM_THERMAL_UPPER_EV,
+                        egui::Color32::from_rgba_unmultiplied(80, 140, 255, 18),
+                        "thermal",
+                    ),
+                    (
+                        SPECTRUM_THERMAL_UPPER_EV,
+                        SPECTRUM_EPITHERMAL_UPPER_EV,
+                        egui::Color32::from_rgba_unmultiplied(80, 220, 140, 14),
+                        "epithermal",
+                    ),
+                    (
+                        SPECTRUM_EPITHERMAL_UPPER_EV,
+                        e_hi,
+                        egui::Color32::from_rgba_unmultiplied(255, 120, 80, 16),
+                        "fast",
+                    ),
+                ];
+                for (lo, hi, tint, _) in regions {
+                    let left = x_of(lo.max(e_lo));
+                    let right = x_of(hi.min(e_hi));
+                    if right > left {
+                        painter.rect_filled(
+                            egui::Rect::from_x_y_ranges(left..=right, rect.top()..=rect.bottom()),
+                            0.0,
+                            tint,
+                        );
+                    }
+                }
+                for boundary in [SPECTRUM_THERMAL_UPPER_EV, SPECTRUM_EPITHERMAL_UPPER_EV] {
+                    if boundary > e_lo && boundary < e_hi {
+                        let x = x_of(boundary);
+                        painter.line_segment(
+                            [egui::pos2(x, rect.top()), egui::pos2(x, rect.bottom())],
+                            egui::Stroke::new(1.0, egui::Color32::from_rgb(120, 128, 145)),
+                        );
+                    }
+                }
+
+                // Staircase polyline.
+                let mut points = Vec::with_capacity(2 * bin_weights.len());
+                for (i, &w) in bin_weights.iter().enumerate() {
+                    let x0 = x_of(energy_boundaries_ev[i]);
+                    let x1 = x_of(energy_boundaries_ev[i + 1]);
+                    let y = y_of(w);
+                    points.push(egui::pos2(x0, y));
+                    points.push(egui::pos2(x1, y));
+                }
+                painter.add(egui::Shape::line(
+                    points,
+                    egui::Stroke::new(1.6, theme.brand),
+                ));
+
+                // Region integrals — log-linear weight density inside
+                // straddling bins.
+                let total: f64 = bin_weights.iter().sum();
+                let mut region_mass = [0.0_f64; 3];
+                for (i, &w) in bin_weights.iter().enumerate() {
+                    let lo = energy_boundaries_ev[i];
+                    let hi = energy_boundaries_ev[i + 1];
+                    let ln_span = (hi.ln() - lo.ln()).max(f64::EPSILON);
+                    let split = |bound: f64| {
+                        ((bound.clamp(lo, hi).ln() - lo.ln()) / ln_span).clamp(0.0, 1.0)
+                    };
+                    let below_thermal = split(SPECTRUM_THERMAL_UPPER_EV);
+                    let below_epi = split(SPECTRUM_EPITHERMAL_UPPER_EV);
+                    region_mass[0] += w * below_thermal;
+                    region_mass[1] += w * (below_epi - below_thermal);
+                    region_mass[2] += w * (1.0 - below_epi);
+                }
+                for (mass, (_, _, _, name)) in region_mass.iter().zip(regions.iter()) {
+                    if *mass > 0.0 {
+                        let frac = mass / total.max(f64::EPSILON);
+                        ui.monospace(format!("{name}: {frac:.3} of weight"));
+                    }
+                }
+
+                // Decade ticks.
+                let first_decade = e_lo.log10().ceil() as i32;
+                let last_decade = e_hi.log10().floor() as i32;
+                for decade in first_decade..=last_decade {
+                    let x = x_of(10f64.powi(decade));
+                    painter.text(
+                        egui::pos2(x, rect.bottom() + 4.0),
+                        egui::Align2::CENTER_TOP,
+                        format!("1e{decade}"),
+                        egui::FontId::monospace(10.0),
+                        theme.text_dim,
+                    );
+                }
+                painter.text(
+                    egui::pos2(rect.left() - 8.0, rect.top()),
+                    egui::Align2::RIGHT_CENTER,
+                    format!("{w_max:.2e}"),
+                    egui::FontId::monospace(10.0),
+                    theme.text_dim,
+                );
+                painter.text(
+                    egui::pos2(rect.left() - 8.0, rect.bottom()),
+                    egui::Align2::RIGHT_CENTER,
+                    format!("{w_floor:.0e}"),
+                    egui::FontId::monospace(10.0),
+                    theme.text_dim,
+                );
+                ui.monospace(format!(
+                    "bin weight (probability mass) vs energy [eV] · {} bins · Σw = {:.4}",
+                    bin_weights.len(),
+                    total
+                ));
+            }
+        }
+    });
+}
+
 fn show_transport_workspace(
     ui: &mut egui::Ui,
     case: Option<&ViewerCase>,
     panel: &mut PositionPanel,
+    spectrum: &mut SpectrumView,
     tour_targets: &mut TourTargets,
     theme: Theme,
 ) {
@@ -2146,6 +2424,14 @@ fn show_transport_workspace(
                 capability_label(ui, "Import", backend.can_import);
             });
         });
+
+    ui.add_space(12.0);
+    ui.heading("Source spectrum");
+    ui.label(
+        "Drop a beam-description or fixed-source-definition JSON — the energy histogram \
+         renders log-log with TECDOC-1223 region shading.",
+    );
+    show_spectrum(ui, spectrum, theme);
 
     ui.add_space(12.0);
     let gate_chain = ui.scope(|ui| {
