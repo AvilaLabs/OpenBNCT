@@ -42,6 +42,16 @@ own versions independent of the crate version.
   never landed on its cells and delivered ~zero dose. All three sites
   now share `PlaneAxis::in_plane_axes()` ordering; regression test
   `y_axis_disk_source_deposits_in_the_right_column` covers it.
+- FiR 1 K63 fine-spectrum source: `beams/fir1-k63-ineel-spectrum.json` —
+  a 120-bin energy histogram digitized from the measured INEEL
+  iterative-adjustment curve (INEEL/EXT-01-00204 Fig. 5), anchored to the
+  VTT LSL-M2 experimental region integrals; method + digitized markers +
+  disclosed anchor factors in
+  `beams/fir1-k63-spectrum-ineel-digitized.json`. PMMA rerun
+  (`*-ineel` artifacts): normalized χ² unchanged (~21), absolute χ²
+  25.3 vs 28.3 — the absolute-scale residual is NOT a source-shape
+  artifact; the deficit sits in transport/data fidelity or the port-rate
+  normalization. Hypothesis closed, better-provenanced source retained.
 - Coupled-photon verification, second phantom + mesh sensitivity: PMMA
   `sn photon-collapse`/`photon-solve` artifacts at 27- and 12-group
   meshes (`validation/fir1-k63-pmma-phantom/photon-{data,dose}-{12,27}g`).

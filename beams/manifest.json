@@ -1,13 +1,19 @@
 {
   "schema_version": "nctforge.beam-registry/0.1.0",
   "id": "nctforge.beam-registry.v1",
-  "note": "Facility beam descriptions published with OpenBNCT. Each entry is a literature reconstruction or measured characterization — never a commissioned facility model. Inspect with `nctforge beam info`; bind with `nctforge beam bind`; characterize with `nctforge beam qa`. references/ holds published QA values for comparison; qa/ holds generated nctforge.beam-quality reports.",
+  "note": "Facility beam descriptions published with OpenBNCT. Each entry is a literature reconstruction or measured characterization \u2014 never a commissioned facility model. Inspect with `nctforge beam info`; bind with `nctforge beam bind`; characterize with `nctforge beam qa`. references/ holds published QA values for comparison; qa/ holds generated nctforge.beam-quality reports.",
   "beams": [
     {
       "id": "nctforge.beam.fir1-k63.v1",
       "file": "fir1-k63.json",
       "facility": "FiR 1 (VTT, Espoo)",
       "provenance": "published_literature"
+    },
+    {
+      "id": "nctforge.beam.fir1-k63-ineel-spectrum.v1",
+      "file": "fir1-k63-ineel-spectrum.json",
+      "facility": "FiR 1 (VTT, Espoo)",
+      "provenance": "published_literature (digitized INEEL/EXT-01-00204 Fig.5 + VTT LSL-M2 anchors)"
     }
   ]
 }

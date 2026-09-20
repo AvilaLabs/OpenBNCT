@@ -1,0 +1,156 @@
+{
+ "schema_version": "openbnct.beam-spectrum-digitization/0.1.0",
+ "id": "openbnct.fir1-k63.ineel-fig5-digitized-spectrum.v1",
+ "beam": "nctforge.beam.fir1-k63.v1",
+ "method": {
+  "source_figure": "Figure 5, 'Measured free-beam neutron spectrum obtained by iterative adjustment for the FiR 1 epithermal neutron beam facility (14 cm aperture)', INEEL/EXT-01-00204 annual report (Nigg, Wemple, Seren, Seppala, Auterinen), report p.66",
+  "source_url": "https://www.osti.gov/servlets/purl/911030",
+  "digitization": "400-dpi render; disk-template blob detection of the INEEL-adjustment marker series; pixel-to-log axes calibrated on the plot frame (x: 1e-3..1e8 eV, y: 1e3..1e9 n/cm2-s per unit lethargy); 31 marker centers extracted",
+  "curve_construction": "piecewise log-log interpolation of the digitized markers; below 0.051 eV a room-temperature Maxwellian tail is added (foil set had suppressed low-energy sensitivity \u2014 boron-sphere method); region integrals anchored to the VTT LSL-M2 experimental values (Seppala 2002 Table 4): thermal 7.19e7, epithermal 1.07e9, fast 3.45e7 n/cm2-s",
+  "anchor_factors": {
+   "epi": 1.1403684398384373,
+   "fast": 1.3125208249380196,
+   "thermal_maxwellian_scale": 12072260297.771793
+  },
+  "validation": "epithermal-region integral of the digitized markers before anchoring: 9.38e8 vs published INEEL direct unfolding 9.32e8 (0.6%) and SAND-II 9.52e8"
+ },
+ "digitized_markers": [
+  {
+   "energy_ev": 0.05107515501105621,
+   "lethargy_flux": 3012559.9521543114
+  },
+  {
+   "energy_ev": 0.26687665376104935,
+   "lethargy_flux": 20437194.872440226
+  },
+  {
+   "energy_ev": 0.6576608330360961,
+   "lethargy_flux": 44634164.09610073
+  },
+  {
+   "energy_ev": 1.3944773796041818,
+   "lethargy_flux": 58803250.0801957
+  },
+  {
+   "energy_ev": 3.523572281942838,
+   "lethargy_flux": 90293003.9972111
+  },
+  {
+   "energy_ev": 8.054408089761674,
+   "lethargy_flux": 111887221.15874222
+  },
+  {
+   "energy_ev": 24.253116721448706,
+   "lethargy_flux": 108511737.72564308
+  },
+  {
+   "energy_ev": 71.22314832269501,
+   "lethargy_flux": 132419279.18860427
+  },
+  {
+   "energy_ev": 158.77835410785335,
+   "lethargy_flux": 132419279.18860427
+  },
+  {
+   "energy_ev": 336.667187784363,
+   "lethargy_flux": 122656846.8384483
+  },
+  {
+   "energy_ev": 1039.4773596625366,
+   "lethargy_flux": 102063199.74223515
+  },
+  {
+   "energy_ev": 2498.1937227204253,
+   "lethargy_flux": 68536224.64141163
+  },
+  {
+   "energy_ev": 5297.06873392534,
+   "lethargy_flux": 60632447.55337541
+  },
+  {
+   "energy_ev": 10953.799501652584,
+   "lethargy_flux": 34402132.63039766
+  },
+  {
+   "energy_ev": 18537.511532716137,
+   "lethargy_flux": 15512698.844986215
+  },
+  {
+   "energy_ev": 23225.992576230754,
+   "lethargy_flux": 6888703.179702745
+  },
+  {
+   "energy_ev": 25038.899236399782,
+   "lethargy_flux": 3302531.788851783
+  },
+  {
+   "energy_ev": 29100.27757496347,
+   "lethargy_flux": 1444259.4996872449
+  },
+  {
+   "energy_ev": 53091.46727524757,
+   "lethargy_flux": 2183967.240841377
+  },
+  {
+   "energy_ev": 89848.61250703363,
+   "lethargy_flux": 2394183.4696208187
+  },
+  {
+   "energy_ev": 148291.99410454743,
+   "lethargy_flux": 1239157.146241345
+  },
+  {
+   "energy_ev": 330588.56994936883,
+   "lethargy_flux": 912197.1096004874
+  },
+  {
+   "energy_ev": 878254.0840906803,
+   "lethargy_flux": 1583275.6807569622
+  },
+  {
+   "energy_ev": 2219176.727042643,
+   "lethargy_flux": 1337783.4204625196
+  },
+  {
+   "energy_ev": 2780447.7476208764,
+   "lethargy_flux": 898331.8694488676
+  },
+  {
+   "energy_ev": 5468689.727607022,
+   "lethargy_flux": 612547.3841572533
+  },
+  {
+   "energy_ev": 6682297.642070482,
+   "lethargy_flux": 369511.104643036
+  },
+  {
+   "energy_ev": 7766184.702723956,
+   "lethargy_flux": 154337.00438235744
+  },
+  {
+   "energy_ev": 9254861.646779895,
+   "lethargy_flux": 76292.76770895266
+  },
+  {
+   "energy_ev": 11028898.66513157,
+   "lethargy_flux": 25324.896075311277
+  },
+  {
+   "energy_ev": 12817816.369295757,
+   "lethargy_flux": 4092.355866844891
+  }
+ ],
+ "provenance": {
+  "kind": "published_literature",
+  "citations": [
+   {
+    "authors": "Nigg, D.W.; Wemple, C.A.; Seren, T.; Seppala, T.; Auterinen, I.",
+    "title": "Improved evaluation of the free-beam spectrum of the FiR 1 clinical epithermal-neutron beam facility for BNCT",
+    "venue": "INEEL BNCT Research Program Annual Report, INEEL/EXT-01-00204",
+    "year": 2001,
+    "url": "https://www.osti.gov/servlets/purl/911030"
+   }
+  ]
+ },
+ "notes": "Research-grade figure digitization, not a facility-qualified spectrum. Thermal tail below the figure's left edge is model-completed and carries the published +/-21% experimental uncertainty; fast-region anchor factor 1.31 is disclosed above."
+}

@@ -89,6 +89,31 @@ Findings on this 24 cm PMMA cylinder:
   upstream neutron deficit, not discretization — consistent with the
   water-phantom conclusion.
 
+## INEEL-spectrum source study (`*-ineel`)
+
+`beams/fir1-k63-ineel-spectrum.json` replaces the three-bin source
+histogram with a 120-bin spectrum digitized from the measured INEEL
+iterative-adjustment curve (INEEL/EXT-01-00204 Fig. 5; see
+`beams/fir1-k63-spectrum-ineel-digitized.json` for markers, method, and
+the disclosed thermal/fast region anchors). The PMMA rerun at identical
+solver settings (S8, `multigroup-data-28g.json`, cone split + transport
+correction) converged in 6 outers:
+
+- Peak-normalized thermal χ²: **20.95 vs 20.78** (three-bin) — the
+  shape agreement is unchanged.
+- Absolute thermal comparison χ²: 25.29 vs 28.31 — marginally better.
+- The computed profile still **overestimates** at 1–7 cm (~1.1–1.5×)
+  and underestimates deep (0.72× at 11.5 cm, 0.51× at 14.5 cm); the
+  fine spectrum actually lowers the deep tail further — the three-bin
+  tail was accidentally closer.
+
+Conclusion: the absolute-scale residual is **not** a source-shape
+artifact of the three-bin histogram. Within-bin collapse weighting was
+already adequate at 3 bins for this beam; the residual sits in
+transport/data fidelity and possibly the port-rate normalization. The
+real spectrum stays as the better-provenanced source model, and this
+hypothesis is now closed rather than assumed.
+
 ## Scope
 
 Research-grade cross-check only; declared three-group fixture data and a
