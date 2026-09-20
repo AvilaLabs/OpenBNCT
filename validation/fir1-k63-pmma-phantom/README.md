@@ -119,3 +119,43 @@ hypothesis is now closed rather than assumed.
 Research-grade cross-check only; declared three-group fixture data and a
 figure-digitized measurement series. Not clinical validation or
 commissioning evidence.
+
+## Anisotropic-scattering attribution (2026-09-20)
+
+`multigroup-data-28g-moments.json` is a fresh collapse of the same
+materials/boundaries as `multigroup-data-28g.json` that additionally
+emits `scatter_legendre_moments_per_cm` (l = 2..5, free-gas iso-CM
+kernel moments). Three solves on the INEEL-spectrum case:
+
+| Solve | Peak-normalized χ² vs measured thermal profile |
+|---|---|
+| S8 + transport correction (committed `*-1e` convention) | 20.95 |
+| S16 + P1 + l≤5 anisotropy (`*-ineel-s16-p5`) | 3.34 |
+| **S8 + P1 + l≤5 anisotropy (`*-ineel-s8-p5`)** | **1.92** |
+
+Findings:
+
+- **Anisotropic scattering was the dominant shape error.** The P1+P5
+  kernel drops normalized χ² ~11×; quadrature order S8→S16 does not
+  help (3.34 vs 1.92 — S8+P5 is marginally better).
+- What remains decomposes cleanly: (a) a *flat* absolute scale —
+  computed/measured ≈ 0.32-0.35 uniformly through 5 cm — consistent
+  with port-fluence-rate normalization, not transport shape; and
+  (b) a real deep-tail deficit: the computed profile still decays
+  too fast beyond ~6.5 cm (ratio falls to 0.037 at 14.5 cm).
+- The deep-tail residual is the next isolated question: this run
+  used non-TSL data, so bound-atom upscatter (H in Lucite) is
+  absent — a TSL+moments collapse tests whether upscatter restores
+  the deep thermal tail.
+
+Artifacts: `multigroup-data-28g-moments.json`,
+`multigroup-flux-28g-ineel-s8-p5.json`, `dose-28g-ineel-s8-p5.json`,
+`beam-quality-pmma-28g-ineel-s8-p5.json`,
+`measurement-comparison-pmma-28g-ineel-s8-p5.json`, and the
+S16 control pair `multigroup-flux-28g-ineel-s16-p5.json` /
+`dose-28g-ineel-s16-p5.json`. The QA advantage metrics remain
+degenerate on an unboronated phantom (documented limitation).
+
+Research-scope note: verification of a deterministic S_N solve
+against a digitized published measurement — not a commissioning or
+equivalence claim.

@@ -56,6 +56,14 @@ own versions independent of the crate version.
   thermal-peak depth moved 1.25→1.75 cm toward the measured 2.25 cm,
   yet the deep tail fell further — spectral resolution does not close
   the gap. Hypothesis closed, better-provenanced source retained.
+- Anisotropic-scattering attribution on PMMA: a moments-emitting
+  collapse (`multigroup-data-28g-moments.json`, l = 2..5) plus
+  `--p1 --anisotropy 5` solves decomposed the measured-profile
+  residual — peak-normalized χ² fell 20.95 → 1.92 at S8 (S16 adds
+  nothing: 3.34). The isotropic-scatter approximation was the
+  dominant *shape* error. What remains is a flat ~0.33 absolute
+  scale through 5 cm (port-rate normalization candidate) plus a
+  still-too-fast deep-tail decay beyond ~6.5 cm.
 - Coupled-photon verification, second phantom + mesh sensitivity: PMMA
   `sn photon-collapse`/`photon-solve` artifacts at 27- and 12-group
   meshes (`validation/fir1-k63-pmma-phantom/photon-{data,dose}-{12,27}g`).
