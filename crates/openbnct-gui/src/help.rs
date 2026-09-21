@@ -77,43 +77,27 @@ impl GuideKind {
         Self::Readiness,
     ];
 
+    // Long-form help is authored in English and fully translated to
+    // Japanese only; other languages fall back to English.
     fn title(self, language: Language) -> &'static str {
         match (language, self) {
-            (Language::English, Self::QuickStart) => "Quick start",
-            (Language::English, Self::Geometry) => "Inspect geometry",
-            (Language::English, Self::Readiness) => "Readiness & evidence",
-            (Language::English, Self::DoseMaps) => "Read dose & σ maps",
-            (Language::English, Self::Compare) => "Compare two bundles",
-            (Language::English, Self::SourceAndRun) => "Spectra & running jobs",
             (Language::Japanese, Self::QuickStart) => "クイックスタート",
             (Language::Japanese, Self::Geometry) => "ジオメトリの確認",
             (Language::Japanese, Self::Readiness) => "レディネスとエビデンス",
             (Language::Japanese, Self::DoseMaps) => "線量・σマップの読み方",
             (Language::Japanese, Self::Compare) => "2つのバンドルを比較",
             (Language::Japanese, Self::SourceAndRun) => "スペクトルとジョブ実行",
+            (_, Self::QuickStart) => "Quick start",
+            (_, Self::Geometry) => "Inspect geometry",
+            (_, Self::Readiness) => "Readiness & evidence",
+            (_, Self::DoseMaps) => "Read dose & σ maps",
+            (_, Self::Compare) => "Compare two bundles",
+            (_, Self::SourceAndRun) => "Spectra & running jobs",
         }
     }
 
     fn description(self, language: Language) -> &'static str {
         match (language, self) {
-            (Language::English, Self::QuickStart) => {
-                "Learn the shell, load gate, workspaces, and status language."
-            }
-            (Language::English, Self::Geometry) => {
-                "Review linked DICOM views, display controls, and the crosshair."
-            }
-            (Language::English, Self::Readiness) => {
-                "Trace why a capability is frozen, blocked, pending, or verified."
-            }
-            (Language::English, Self::DoseMaps) => {
-                "Drop a dose bundle, read component maps, contours, σ maps, and profiles."
-            }
-            (Language::English, Self::Compare) => {
-                "A/B two dose bundles — ratio slices, statistics, and provenance."
-            }
-            (Language::English, Self::SourceAndRun) => {
-                "Inspect a beam spectrum on web or native; run bounded commands on desktop."
-            }
             (Language::Japanese, Self::QuickStart) => {
                 "画面構成、読込ゲート、ワークスペース、ステータス表記を学びます。"
             }
@@ -132,23 +116,39 @@ impl GuideKind {
             (Language::Japanese, Self::SourceAndRun) => {
                 "ビームスペクトルを確認(Web/ネイティブ共通)。デスクトップでは範囲制限付きコマンド実行。"
             }
+            (_, Self::QuickStart) => "Learn the shell, load gate, workspaces, and status language.",
+            (_, Self::Geometry) => {
+                "Review linked DICOM views, display controls, and the crosshair."
+            }
+            (_, Self::Readiness) => {
+                "Trace why a capability is frozen, blocked, pending, or verified."
+            }
+            (_, Self::DoseMaps) => {
+                "Drop a dose bundle, read component maps, contours, σ maps, and profiles."
+            }
+            (_, Self::Compare) => {
+                "A/B two dose bundles — ratio slices, statistics, and provenance."
+            }
+            (_, Self::SourceAndRun) => {
+                "Inspect a beam spectrum on web or native; run bounded commands on desktop."
+            }
         }
     }
 
     fn steps(self, language: Language) -> &'static [TourStep] {
         match (language, self) {
-            (Language::English, Self::QuickStart) => &QUICK_START_STEPS,
-            (Language::English, Self::Geometry) => &GEOMETRY_STEPS,
-            (Language::English, Self::Readiness) => &READINESS_STEPS,
-            (Language::English, Self::DoseMaps) => &DOSE_MAP_STEPS,
-            (Language::English, Self::Compare) => &COMPARE_STEPS,
-            (Language::English, Self::SourceAndRun) => &SOURCE_RUN_STEPS,
             (Language::Japanese, Self::QuickStart) => &QUICK_START_STEPS_JA,
             (Language::Japanese, Self::Geometry) => &GEOMETRY_STEPS_JA,
             (Language::Japanese, Self::Readiness) => &READINESS_STEPS_JA,
             (Language::Japanese, Self::DoseMaps) => &DOSE_MAP_STEPS_JA,
             (Language::Japanese, Self::Compare) => &COMPARE_STEPS_JA,
             (Language::Japanese, Self::SourceAndRun) => &SOURCE_RUN_STEPS_JA,
+            (_, Self::QuickStart) => &QUICK_START_STEPS,
+            (_, Self::Geometry) => &GEOMETRY_STEPS,
+            (_, Self::Readiness) => &READINESS_STEPS,
+            (_, Self::DoseMaps) => &DOSE_MAP_STEPS,
+            (_, Self::Compare) => &COMPARE_STEPS,
+            (_, Self::SourceAndRun) => &SOURCE_RUN_STEPS,
         }
     }
 }
@@ -375,7 +375,7 @@ impl GuidedHelp {
 
         let mut open = true;
         let mut guide_to_start = None;
-        egui::Window::new(t!(language, "Help & guided tours", "ヘルプとガイドツアー"))
+        egui::Window::new(t!(language, en = "Help & guided tours", ja = "ヘルプとガイドツアー"))
             .id(egui::Id::new("openbnct-help-center"))
             .open(&mut open)
             .collapsible(false)
@@ -390,11 +390,7 @@ impl GuidedHelp {
                     .auto_shrink([false; 2])
                     .show(ui, |ui| {
                 ui.label(
-                    egui::RichText::new(t!(
-                        language,
-                        "CONTEXTUAL HELP",
-                        "コンテキストヘルプ"
-                    ))
+                    egui::RichText::new(t!(language, en = "CONTEXTUAL HELP", ja = "コンテキストヘルプ"))
                     .small()
                     .strong()
                     .color(theme.brand),
@@ -405,7 +401,7 @@ impl GuidedHelp {
 
                 ui.add_space(12.0);
                 ui.separator();
-                ui.heading(t!(language, "Walk me through it", "ガイドツアー"));
+                ui.heading(t!(language, en = "Walk me through it", ja = "ガイドツアー"));
                 for guide in GuideKind::ALL {
                     let enabled = guide != GuideKind::Geometry || case_loaded;
                     let response = ui.add_enabled(
@@ -422,11 +418,7 @@ impl GuidedHelp {
                     if guide == GuideKind::Geometry && !case_loaded {
                         ui.colored_label(
                             theme.warn_text,
-                            t!(
-                                language,
-                                "Load a verified case to enable this tour.",
-                                "症例を読み込むとこのツアーが有効になります。"
-                            ),
+                            t!(language, en = "Load a verified case to enable this tour.", ja = "症例を読み込むとこのツアーが有効になります。"),
                         );
                     }
                     ui.add_space(5.0);
@@ -434,18 +426,14 @@ impl GuidedHelp {
 
                 ui.add_space(8.0);
                 ui.separator();
-                ui.heading(t!(language, "Use cases", "ユースケース"));
-                ui.small(t!(
-                    language,
-                    "Concrete recipes — each names its inputs and what to check.",
-                    "具体的な手順レシピ — 入力と確認ポイントを明記。"
-                ));
+                ui.heading(t!(language, en = "Use cases", ja = "ユースケース"));
+                ui.small(t!(language, en = "Concrete recipes — each names its inputs and what to check.", ja = "具体的な手順レシピ — 入力と確認ポイントを明記。"));
                 for recipe in use_cases(language) {
                     ui.collapsing(egui::RichText::new(recipe.title).strong(), |ui| {
                         ui.small(
                             egui::RichText::new(format!(
                                 "{}: {}",
-                                t!(language, "Workspace", "ワークスペース"),
+                                t!(language, en = "Workspace", ja = "ワークスペース"),
                                 recipe.workspace
                             ))
                             .color(theme.text_dim),
@@ -459,7 +447,7 @@ impl GuidedHelp {
                                 theme.warn_text,
                                 format!(
                                     "{}: {watch}",
-                                    t!(language, "Watch", "注意")
+                                    t!(language, en = "Watch", ja = "注意")
                                 ),
                             );
                         }
@@ -468,20 +456,12 @@ impl GuidedHelp {
 
                 ui.add_space(8.0);
                 ui.separator();
-                ui.heading(t!(language, "Ask bundled help", "ヘルプ検索"));
-                ui.small(t!(
-                    language,
-                    "Answers stay on this device and come from reviewed, bundled guidance.                      No external model or service is contacted.",
-                    "回答はすべて同梱のレビュー済みガイドから生成 — 外部サービスは不使用。"
-                ));
+                ui.heading(t!(language, en = "Ask bundled help", ja = "ヘルプ検索"));
+                ui.small(t!(language, en = "Answers stay on this device and come from reviewed, bundled guidance.                      No external model or service is contacted.", ja = "回答はすべて同梱のレビュー済みガイドから生成 — 外部サービスは不使用。"));
                 let enter_pressed = ui.input(|input| input.key_pressed(egui::Key::Enter));
                 let response = ui.add(
                     egui::TextEdit::singleline(&mut self.question)
-                        .hint_text(t!(
-                            language,
-                            "Why is transport disabled?",
-                            "なぜ輸送実行は無効ですか?"
-                        ))
+                        .hint_text(t!(language, en = "Why is transport disabled?", ja = "なぜ輸送実行は無効ですか?"))
                         .desired_width(f32::INFINITY),
                 );
                 if response.changed() || (response.has_focus() && enter_pressed) {
@@ -489,11 +469,7 @@ impl GuidedHelp {
                 }
 
                 if self.question.trim().is_empty() {
-                    ui.small(t!(
-                        language,
-                        "Try one of these common questions:",
-                        "よくある質問から試してください:"
-                    ));
+                    ui.small(t!(language, en = "Try one of these common questions:", ja = "よくある質問から試してください:"));
                     for (index, entry) in faq(language).iter().enumerate().take(4) {
                         if ui.link(entry.question).clicked() {
                             self.question = entry.question.to_owned();
@@ -504,16 +480,8 @@ impl GuidedHelp {
                     show_answer(ui, faq(language)[index]);
                 } else {
                     egui::Frame::group(ui.style()).show(ui, |ui| {
-                        ui.strong(t!(
-                            language,
-                            "No bundled answer matched that question yet.",
-                            "その質問に一致する同梱回答はまだありません。"
-                        ));
-                        ui.label(t!(
-                            language,
-                            "Try asking about loading a case, geometry, status gates, OpenMC,                              dose, clinical use, or Python installation.",
-                            "症例の読み込み、ジオメトリ、ステータスゲート、OpenMC、線量、                             臨床利用、Python インストールなどで試してください。"
-                        ));
+                        ui.strong(t!(language, en = "No bundled answer matched that question yet.", ja = "その質問に一致する同梱回答はまだありません。"));
+                        ui.label(t!(language, en = "Try asking about loading a case, geometry, status gates, OpenMC,                              dose, clinical use, or Python installation.", ja = "症例の読み込み、ジオメトリ、ステータスゲート、OpenMC、線量、                             臨床利用、Python インストールなどで試してください。"));
                     });
                 }
                     });
@@ -612,11 +580,7 @@ impl GuidedHelp {
                                 |ui| {
                                     close = ui
                                         .button(egui::RichText::new("×").size(18.0))
-                                        .on_hover_text(t!(
-                                            language,
-                                            "End tour",
-                                            "ツアー終了"
-                                        ))
+                                        .on_hover_text(t!(language, en = "End tour", ja = "ツアー終了"))
                                         .clicked();
                                 },
                             );
@@ -631,22 +595,18 @@ impl GuidedHelp {
                         ui.heading(step.title);
                         ui.label(step.instruction);
                         ui.add_space(6.0);
-                        ui.small(t!(
-                            language,
-                            "The highlighted controls remain live. Use them now if useful, then continue.",
-                            "ハイライト中の操作は有効です。試してから次へ進めます。"
-                        ));
+                        ui.small(t!(language, en = "The highlighted controls remain live. Use them now if useful, then continue.", ja = "ハイライト中の操作は有効です。試してから次へ進めます。"));
                         ui.add_space(10.0);
                         ui.horizontal(|ui| {
                             go_back = ui
                                 .add_enabled(
                                     active.step_index > 0,
-                                    egui::Button::new(t!(language, "Back", "戻る")),
+                                    egui::Button::new(t!(language, en = "Back", ja = "戻る")),
                                 )
                                 .clicked();
                             ui.label(format!(
                                 "{} {} / {}",
-                                t!(language, "Step", "ステップ"),
+                                t!(language, en = "Step", ja = "ステップ"),
                                 active.step_index + 1,
                                 steps.len()
                             ));
@@ -655,9 +615,9 @@ impl GuidedHelp {
                                 |ui| {
                                     go_next = ui
                                         .button(if active.step_index + 1 == steps.len() {
-                                            t!(language, "Finish", "完了")
+                                            t!(language, en = "Finish", ja = "完了")
                                         } else {
-                                            t!(language, "Next", "次へ")
+                                            t!(language, en = "Next", ja = "次へ")
                                         })
                                         .clicked();
                                 },
@@ -695,30 +655,6 @@ impl GuidedHelp {
 
 fn workspace_help(workspace: HelpWorkspace, language: Language) -> (&'static str, &'static str) {
     match (language, workspace) {
-        (Language::English, HelpWorkspace::Overview) => (
-            "Research overview",
-            "Start here to understand the current scientific ceiling. Each readiness card is a scoped claim, not a project-wide pass or fail. Drop a case archive or bundle to begin.",
-        ),
-        (Language::English, HelpWorkspace::Geometry) => (
-            "Geometry",
-            "Inspect the accepted DICOM geometry in linked patient-space views. Click any plane to move the shared crosshair; ROI checkboxes and CT level/width change display only, never source data.",
-        ),
-        (Language::English, HelpWorkspace::Transport) => (
-            "Transport",
-            "Follow the ordered gate chain and backend capability flags, drop a beam-description JSON for the spectrum viewer, or run a bounded CLI command (desktop only).",
-        ),
-        (Language::English, HelpWorkspace::Plan) => (
-            "Exposure plan",
-            "Drop an exposure plan to inspect every detected issue, round-trip the schedule through CSV/XLSX, or read a plan-robustness report's violation probabilities. Accumulation runs through the CLI or Python.",
-        ),
-        (Language::English, HelpWorkspace::Dose) => (
-            "Dose components",
-            "Drop a dose bundle for component cards, the tri-planar map (log scale, contours, σ toggle), line profiles with measurement overlays, and the A/B compare zone. Physical and biological layers never merge.",
-        ),
-        (Language::English, HelpWorkspace::Evidence) => (
-            "Evidence",
-            "Inspect evidence one bounded claim at a time. Frozen project artifacts and a verified local run are intentionally different states; content bindings print alongside.",
-        ),
         (Language::Japanese, HelpWorkspace::Overview) => (
             "研究概要",
             "まずここで現在の科学的上限を把握してください。各レディネスカードは範囲を限定した主張であり、プロジェクト全体の合否ではありません。症例アーカイブやバンドルをドロップして開始します。",
@@ -743,20 +679,44 @@ fn workspace_help(workspace: HelpWorkspace, language: Language) -> (&'static str
             "エビデンス",
             "範囲を限定した主張を一件ずつ確認します。凍結済みプロジェクト成果物と検証済みローカル実行は意図的に異なる状態であり、コンテンツのハッシュ紐付けも併記されます。",
         ),
+        (_, HelpWorkspace::Overview) => (
+            "Research overview",
+            "Start here to understand the current scientific ceiling. Each readiness card is a scoped claim, not a project-wide pass or fail. Drop a case archive or bundle to begin.",
+        ),
+        (_, HelpWorkspace::Geometry) => (
+            "Geometry",
+            "Inspect the accepted DICOM geometry in linked patient-space views. Click any plane to move the shared crosshair; ROI checkboxes and CT level/width change display only, never source data.",
+        ),
+        (_, HelpWorkspace::Transport) => (
+            "Transport",
+            "Follow the ordered gate chain and backend capability flags, drop a beam-description JSON for the spectrum viewer, or run a bounded CLI command (desktop only).",
+        ),
+        (_, HelpWorkspace::Plan) => (
+            "Exposure plan",
+            "Drop an exposure plan to inspect every detected issue, round-trip the schedule through CSV/XLSX, or read a plan-robustness report's violation probabilities. Accumulation runs through the CLI or Python.",
+        ),
+        (_, HelpWorkspace::Dose) => (
+            "Dose components",
+            "Drop a dose bundle for component cards, the tri-planar map (log scale, contours, σ toggle), line profiles with measurement overlays, and the A/B compare zone. Physical and biological layers never merge.",
+        ),
+        (_, HelpWorkspace::Evidence) => (
+            "Evidence",
+            "Inspect evidence one bounded claim at a time. Frozen project artifacts and a verified local run are intentionally different states; content bindings print alongside.",
+        ),
     }
 }
 
 fn faq(language: Language) -> &'static [FaqEntry] {
     match language {
-        Language::English => &FAQ,
         Language::Japanese => &FAQ_JA,
+        _ => &FAQ,
     }
 }
 
 fn use_cases(language: Language) -> &'static [UseCase] {
     match language {
-        Language::English => &USE_CASES,
         Language::Japanese => &USE_CASES_JA,
+        _ => &USE_CASES,
     }
 }
 

@@ -5,15 +5,39 @@
 //! via [`t!`] so a translation never drifts from the code it labels;
 //! anything without a `ja` literal simply renders English.
 
-/// The workbench's UI languages.
+/// The workbench's UI languages — chosen for where BNCT research
+/// actually happens: English (lingua franca), Japanese (JCDS-II/KURNS
+/// ecosystem), Italian (Pavia/INFN prompt-gamma groups), Simplified
+/// Chinese (AB-BNCT programs), Spanish (CNEA/Bariloche).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Language {
     English,
     Japanese,
+    Italian,
+    ChineseSimplified,
+    Spanish,
 }
 
 impl Language {
-    pub const ALL: [Self; 2] = [Self::English, Self::Japanese];
+    pub const ALL: [Self; 5] = [
+        Self::English,
+        Self::Japanese,
+        Self::Italian,
+        Self::ChineseSimplified,
+        Self::Spanish,
+    ];
+
+    /// Short locale tag used by `t!` arm names and `localStorage`.
+    #[must_use]
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::English => "en",
+            Self::Japanese => "ja",
+            Self::Italian => "it",
+            Self::ChineseSimplified => "zh",
+            Self::Spanish => "es",
+        }
+    }
 
     /// Native name shown in the language picker.
     #[must_use]
@@ -21,15 +45,25 @@ impl Language {
         match self {
             Self::English => "English",
             Self::Japanese => "日本語",
+            Self::Italian => "Italiano",
+            Self::ChineseSimplified => "中文 (简体)",
+            Self::Spanish => "Español",
         }
     }
 
-    /// Map a locale tag (`ja-JP`, `en_US.UTF-8`, …) to a language;
-    /// unknown or empty values default to English.
+    /// Map a locale tag (`ja-JP`, `en_US.UTF-8`, `zh-CN`, …) to a
+    /// language; unknown or empty values default to English.
     #[must_use]
     pub fn from_locale(locale: &str) -> Self {
-        if locale.to_ascii_lowercase().starts_with("ja") {
+        let l = locale.to_ascii_lowercase();
+        if l.starts_with("ja") {
             Self::Japanese
+        } else if l.starts_with("it") {
+            Self::Italian
+        } else if l.starts_with("zh") {
+            Self::ChineseSimplified
+        } else if l.starts_with("es") {
+            Self::Spanish
         } else {
             Self::English
         }
@@ -41,10 +75,7 @@ impl Language {
     pub fn persist(self) {
         #[cfg(target_arch = "wasm32")]
         {
-            let key = match self {
-                Self::Japanese => "ja",
-                Self::English => "en",
-            };
+            let key = self.tag();
             if let Some(storage) =
                 web_sys::window().and_then(|window| window.local_storage().ok().flatten())
             {
@@ -69,11 +100,7 @@ impl Language {
                 if let Ok(search) = window.location().search() {
                     for pair in search.trim_start_matches('?').split('&') {
                         if let Some(value) = pair.strip_prefix("lang=") {
-                            return if value.starts_with("ja") {
-                                Self::Japanese
-                            } else {
-                                Self::English
-                            };
+                            return Self::from_locale(value);
                         }
                     }
                 }
@@ -98,16 +125,25 @@ impl Language {
     }
 }
 
-/// Pick the localized literal — `t!(lang, "English", "日本語")`. Sites
-/// with dynamic content take `format!` on the picked template instead.
+/// Pick the localized literal — `t!(lang, en = "English", ja = "日本語",
+/// it = "…", zh = "…", es = "…")`. Every arm is a named language tag;
+/// `en` is the fallback when the active language has no arm. Sites with
+/// dynamic content take `format!` on the picked template instead.
 #[macro_export]
 macro_rules! t {
-    ($lang:expr, $en:expr, $ja:expr) => {
-        match $lang {
-            $crate::i18n::Language::Japanese => $ja,
-            _ => $en,
+    ($lang:expr, $($l:ident = $v:expr),+ $(,)?) => {{
+        let tag = $crate::i18n::Language::tag($lang);
+        let mut picked: &str = "";
+        $(if tag == stringify!($l) {
+            picked = $v;
+        })+
+        if picked.is_empty() {
+            $(if stringify!($l) == "en" {
+                picked = $v;
+            })+
         }
-    };
+        picked
+    }};
 }
 
 #[cfg(test)]
@@ -128,8 +164,15 @@ mod tests {
 
     #[test]
     fn t_macro_dispatches_on_language() {
-        assert_eq!(crate::t!(Language::English, "a", "あ"), "a");
-        assert_eq!(crate::t!(Language::Japanese, "a", "あ"), "あ");
+        assert_eq!(crate::t!(Language::English, en = "a", ja = "あ"), "a");
+        assert_eq!(crate::t!(Language::Japanese, en = "a", ja = "あ"), "あ");
+        // Languages without an arm fall back to English.
+        assert_eq!(crate::t!(Language::Italian, en = "a", ja = "あ"), "a");
+        assert_eq!(crate::t!(Language::Spanish, en = "a", ja = "あ"), "a");
+        assert_eq!(
+            crate::t!(Language::ChineseSimplified, en = "a", ja = "あ", zh = "测"),
+            "测"
+        );
     }
 
     #[test]
