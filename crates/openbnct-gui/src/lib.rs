@@ -752,6 +752,25 @@ impl Default for DosePanel {
     }
 }
 
+/// The bundled example dose bundle — the layered-head-phantom 28-group
+/// physical bundle, zip-deflated so a first-time visitor (web or
+/// desktop) can see a populated workspace without having an artifact.
+const EXAMPLE_DOSE_ZIP: &[u8] = include_bytes!("../assets/example-dose-bundle.zip");
+/// The FiR 1 K63 literature beam-description — the bundled example for
+/// the transport spectrum viewer.
+const EXAMPLE_BEAM_JSON: &str = include_str!("../../../beams/fir1-k63.json");
+
+/// Unzip the embedded example dose bundle through the same byte path a
+/// dropped file takes.
+fn example_dose_bytes() -> Result<Vec<u8>, String> {
+    let mut archive = zip::ZipArchive::new(std::io::Cursor::new(EXAMPLE_DOSE_ZIP))
+        .map_err(|error| error.to_string())?;
+    let mut entry = archive.by_index(0).map_err(|error| error.to_string())?;
+    let mut bytes = Vec::new();
+    std::io::Read::read_to_end(&mut entry, &mut bytes).map_err(|error| error.to_string())?;
+    Ok(bytes)
+}
+
 impl DosePanel {
     fn load_bundle(&mut self) {
         match DoseArtifact::load(Path::new(self.bundle_path.trim())) {
@@ -3529,10 +3548,18 @@ fn show_spectrum(ui: &mut egui::Ui, spectrum: &mut SpectrumView, language: Langu
             );
         }
         let Some(source) = &spectrum.source else {
-            ui.label(t!(language, en = "No source loaded — drop a beam-description or fixed-source-definition .json.", ja = "線源未読込 — beam-description または fixed-source-definition .json をドロップ。",
-                it = "Nessuna sorgente caricata — trascina un .json beam-description o fixed-source-definition.",
-                zh = "未加载源 — 拖入 beam-description 或 fixed-source-definition 的 .json。",
-                es = "Ninguna fuente cargada — suelte un .json beam-description o fixed-source-definition."));
+            ui.label(t!(language, en = "No source loaded — drop a beam-description or fixed-source-definition .json, or load the bundled FiR 1 example.", ja = "線源未読込 — beam-description または fixed-source-definition .json をドロップ、または同梱の FiR 1 例を開く。",
+                it = "Nessuna sorgente caricata — trascina un .json beam-description o fixed-source-definition, oppure l'esempio FiR 1 incluso.",
+                zh = "未加载源 — 拖入 beam-description 或 fixed-source-definition 的 .json，或打开内置 FiR 1 示例。",
+                es = "Ninguna fuente cargada — suelte un .json beam-description o fixed-source-definition, o cargue el ejemplo FiR 1 incluido."));
+            if ui
+                .button(t!(language, en = "Load FiR 1 example", ja = "FiR 1 例を読み込む",
+                    it = "Carica esempio FiR 1", zh = "加载 FiR 1 示例",
+                    es = "Cargar ejemplo FiR 1"))
+                .clicked()
+            {
+                spectrum.load_bytes(EXAMPLE_BEAM_JSON.as_bytes());
+            }
             return;
         };
         ui.monospace(&spectrum.source_label);
@@ -5531,6 +5558,32 @@ fn show_dose_workspace(
             {
                 panel.load_bundle();
             }
+            if ui
+                .button(t!(
+                    language,
+                    en = "example",
+                    ja = "サンプル",
+                    it = "esempio",
+                    zh = "示例",
+                    es = "ejemplo"
+                ))
+                .on_hover_text(t!(
+                    language,
+                    en = "load the bundled layered-head dose bundle",
+                    ja = "同梱の layered-head 線量バンドルを読み込みます",
+                    it = "carica il bundle di dose layered-head incluso",
+                    zh = "加载内置的 layered-head 剂量束",
+                    es = "carga el paquete de dosis layered-head incluido"
+                ))
+                .clicked()
+            {
+                match example_dose_bytes() {
+                    Ok(bytes) => {
+                        let _ = panel.load_bundle_bytes(bytes);
+                    }
+                    Err(error) => panel.bundle_error = Some(error),
+                }
+            }
             if let Some(file) =
                 browse_file_button(ui, drop_sender, "dose bundle", &["json"], language)
             {
@@ -5551,11 +5604,36 @@ fn show_dose_workspace(
             .inner_margin(egui::Margin::same(14))
             .show(ui, |ui| {
                 status_badge(ui, GateState::Pending, "NO RESULT LOADED");
-                ui.label(
-                    "OpenBNCT does not render placeholder dose values. Load a validated \
-                     physical or biological dose bundle to inspect components, totals, \
-                     and DVHs.",
-                );
+                ui.label(t!(
+                    language,
+                    en = "OpenBNCT does not render placeholder dose values. Load a validated \
+                          physical or biological dose bundle — or load the bundled example.",
+                    ja = "OpenBNCT はプレースホルダ線量を描画しません。検証済みの物理/生物線量 \
+                          バンドルを読み込むか、同梱サンプルを開いてください。",
+                    it = "OpenBNCT non mostra valori di dose segnaposto. Carica un bundle di dose \
+                          fisico o biologico validato — oppure l'esempio incluso.",
+                    zh = "OpenBNCT 不渲染占位剂量值。请加载经过验证的物理/生物剂量束，或打开内置示例。",
+                    es = "OpenBNCT no muestra valores de dosis de marcador. Cargue un paquete de \
+                          dosis físico o biológico validado — o el ejemplo incluido."
+                ));
+                if ui
+                    .button(t!(
+                        language,
+                        en = "Load example bundle",
+                        ja = "サンプルバンドルを読み込む",
+                        it = "Carica bundle di esempio",
+                        zh = "加载示例剂量束",
+                        es = "Cargar paquete de ejemplo"
+                    ))
+                    .clicked()
+                {
+                    match example_dose_bytes() {
+                        Ok(bytes) => {
+                            let _ = panel.load_bundle_bytes(bytes);
+                        }
+                        Err(error) => panel.bundle_error = Some(error),
+                    }
+                }
             });
         return;
     };

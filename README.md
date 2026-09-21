@@ -37,7 +37,9 @@ reproducible by construction rather than by convention.
 - **Transport-neutral execution** — OpenMC as the first backend, a
   deterministic multigroup S_N solver (discrete-ordinates, P0–P5
   anisotropy, adjoint solves), MCNP and PHITS deck emitters, and
-  meshtal/tally importers — one interchange contract throughout.
+  meshtal/tally importers — one interchange contract throughout. The
+  deterministic path needs no external codes: OpenMC, MCNP, and PHITS are
+  optional interop, not prerequisites.
 - **Verification tooling** — gamma analysis, metamorphic oracles,
   measurement-record comparison, published-beam validation (FiR 1 K63),
   and a closed-form absorber oracle. Failed checks stay in the record.
@@ -71,6 +73,24 @@ Desktop builds are on the
 [releases page](https://github.com/AvilaLabs/OpenBNCT/releases/latest);
 from source: `cargo build --workspace`, `cargo run --bin openbnct-gui`.
 
+## Try it
+
+Solve the shipped layered-head benchmark with the deterministic solver —
+no external codes needed — then open the result in the workbench:
+
+```text
+git clone https://github.com/AvilaLabs/OpenBNCT && cd OpenBNCT
+openbnct sn solve --case benchmarks/synthetic/layered-head-phantom/case.json \
+    --data benchmarks/synthetic/layered-head-phantom/multigroup-data-28g.json \
+    --assignment benchmarks/synthetic/layered-head-phantom/assignment.json \
+    --dose dose.json --output flux.json
+```
+
+Or skip the terminal entirely: open
+[openbnct.avilalabs.org](https://openbnct.avilalabs.org) and press
+**Load example bundle** in the dose workspace — the bundled benchmark
+artifact is built into the app.
+
 ## Status
 
 Early research. The 600M-history OpenMC candidate for the frozen
@@ -90,6 +110,16 @@ carries the milestone detail.
 - [`conformance/`](conformance/) — public fixture suites
 - [`docs/adr/`](docs/adr/) — architecture decision records
 - [`docs/research/`](docs/research/) — technical baseline, cross-code recipe
+
+## Citing
+
+`CITATION.cff` at the repo root gives the citation; GitHub's "Cite this
+repository" sidebar renders it.
+
+## Questions
+
+[Issues](https://github.com/AvilaLabs/OpenBNCT/issues) and
+[discussions](https://github.com/AvilaLabs/OpenBNCT/discussions) are open.
 
 ## License
 
