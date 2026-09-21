@@ -54,3 +54,10 @@ identity.
 - CI gates include `cargo fmt --check` and clippy `-D warnings` — run
   both before pushing (`cargo fmt --all`, `cargo clippy --workspace
   --all-targets -- -D warnings`).
+
+## Positioning
+
+Reproducibility and provenance are engineering plumbing, not selling
+points — the owner's call: never lead with them in docs, pitches, or
+capability comparisons. Evaluate and describe the project by what
+researchers can compute, not by how the artifacts are hashed.

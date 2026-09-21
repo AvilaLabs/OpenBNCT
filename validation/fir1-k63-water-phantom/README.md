@@ -174,6 +174,29 @@ Reading:
   exists), so only thermal-fluence-max-depth is physically
   meaningful: computed 1.25 cm vs measured 2.25 cm.
 
+## Voxelwise gamma vs the OpenMC tally (results/gamma-sn-vs-openmc-5pct-20mm.json)
+
+`openbnct gamma` between the 20M-history OpenMC dose bundle and the
+S_N dose on the identical 26×26×94 grid. Two artifacts:
+
+- `dose-28g-tsl-p1-1e-shape-normalized-to-openmc.json` — the S_N bundle
+  with each component scaled by its measured ref/candidate sum ratio
+  (boron 2.59×, nitrogen 2.61×, photon 1.21×, hydrogen 4.3e-6×), so the
+  gamma evaluates *distribution shape* while the documented
+  normalization deficit is reported separately, not hidden.
+- `gamma-sn-vs-openmc-5pct-20mm.json` — Low γ at 5% dose-difference /
+  20 mm DTA (= one lateral voxel — 3 mm criteria are meaningless on a
+  20×20×5 mm grid), 10% low-dose cutoff, global normalization,
+  per-voxel γ embedded.
+
+Result: boron 76.7% pass (mean γ 1.11), nitrogen 76.1%, hydrogen
+62.8% (definitional-mismatch channel, not interpreted), photon 19.6%,
+physical_total 39.2%. The boron/nitrogen shape agreement is the
+physically meaningful number; photon γ is dominated by the known
+transported-photon production deficit (~56% of MC production retained)
+compounding boundary escape — a documented systematic, not a
+transport-shape error.
+
 Research-scope note: this is a verification comparison of a
 deterministic S_N solve against an independent Monte Carlo tally —
 not a commissioning or equivalence claim.
