@@ -574,6 +574,91 @@ class BiologicalLayerTest(unittest.TestCase):
                     }
                 )
 
+    def test_isoeffective_model_applies_via_binding(self) -> None:
+        """The G&S IsoE model loads, applies, and reports its G factor."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = openbnct.load_physical_dose_bundle(
+                _write(tmp, "dose.json", _physical_bundle_json())
+            )
+            model_path = _write(
+                tmp,
+                "isoe.json",
+                json.dumps(
+                    {
+                        "schema_version": "openbnct.isoeffective-model/0.1.0",
+                        "id": "test.isoe.v1",
+                        "input_unit": "gray_per_source_particle",
+                        "alpha_0": 0.172,
+                        "beta": 0.0615,
+                        "components": {
+                            "boron": {"rbe": 3.8, "rbe_beta": 1.0},
+                            "nitrogen": {"rbe": 3.2, "rbe_beta": 1.0},
+                            "hydrogen": {"rbe": 3.2, "rbe_beta": 1.0},
+                            "photon": {"rbe": 1.0, "rbe_beta": 1.0},
+                        },
+                        "irradiation": {
+                            "duration_s": 1800.0,
+                            "repair_rate_per_s": 0.01155,
+                        },
+                        "validity_domain": "test",
+                    }
+                ),
+            )
+            model = openbnct.load_isoeffective_model(model_path)
+            self.assertEqual(model.id, "test.isoe.v1")
+            biological = openbnct.apply_isoeffective(model, bundle, [])
+            self.assertEqual(biological.weight_semantics, "photon_isoeffective")
+            # Components still sum to the total (effect-share allocation).
+            per_voxel = zip(*(c.values for c in biological.components))
+            for s, t in zip(
+                (sum(v) for v in per_voxel),
+                biological.biological_total.values,
+            ):
+                self.assertAlmostEqual(s, t, places=20)
+
+    def test_mkm_model_applies_via_binding(self) -> None:
+        """The MKM path reaches the combined-effect inversion."""
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = openbnct.load_physical_dose_bundle(
+                _write(tmp, "dose.json", _physical_bundle_json())
+            )
+            component = {
+                "alpha_0": 0.2,
+                "beta": 0.05,
+                "lineal_energy": {
+                    "kind": "constant",
+                    "dose_mean_lineal_energy_kev_um": 100.0,
+                },
+            }
+            model_path = _write(
+                tmp,
+                "mkm.json",
+                json.dumps(
+                    {
+                        "schema_version": "openbnct.microdosimetric-model/0.1.0",
+                        "id": "test.mkm.v1",
+                        "input_unit": "gray_per_source_particle",
+                        "domain_radius_um": 1.0,
+                        "domain_density_g_cm3": 1.0,
+                        "components": {
+                            "boron": component,
+                            "nitrogen": component,
+                            "hydrogen": component,
+                            "photon": component,
+                        },
+                        "validity_domain": "test",
+                    }
+                ),
+            )
+            model = openbnct.load_microdosimetric_model(model_path)
+            biological = openbnct.apply_mkm_model(model, bundle, [], [])
+            self.assertEqual(
+                biological.weight_semantics, "microdosimetric_kinetic"
+            )
+            self.assertEqual(
+                biological.unit, "mkm_weighted_gray_per_source_particle"
+            )
+
     def test_photon_isoeffective_fractionated_total(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             bundle = openbnct.load_physical_dose_bundle(

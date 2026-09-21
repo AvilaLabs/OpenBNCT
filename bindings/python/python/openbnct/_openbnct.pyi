@@ -345,6 +345,24 @@ class BiologicalModel:
     def id(self) -> str: ...
     def to_json(self) -> str: ...
 
+class MicrodosimetricModel:
+    """A validated ``openbnct.microdosimetric-model/0.1.0`` artifact (linearized MKM)."""
+
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class IsoeffectiveModel:
+    """A validated ``openbnct.isoeffective-model/0.1.0`` artifact (G&S IsoE dose)."""
+
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    def to_json(self) -> str: ...
+
 class AppliedFractionation:
     """The fractionation schedule a model applied to a bundle's total."""
 
@@ -533,11 +551,22 @@ class SensitivitySweep:
 def load_physical_dose_bundle(path: str | PathLike[str]) -> PhysicalDoseBundle: ...
 def collect_run(working_directory: str | PathLike[str]) -> PhysicalDoseBundle:
     """Collect a completed OpenMC run directory into a dose bundle."""
-def load_biological_model(path: str | PathLike[str]) -> BiologicalModel: ...
+def load_biological_model(path: str | PathLike[str]) -> BiologicalModel:
+    """Load a ``openbnct.biological-model/0.2.0`` artifact."""
+def load_microdosimetric_model(
+    path: str | PathLike[str],
+) -> MicrodosimetricModel:
+    """Load an ``openbnct.microdosimetric-model/0.1.0`` artifact."""
+def load_isoeffective_model(path: str | PathLike[str]) -> IsoeffectiveModel:
+    """Load an ``openbnct.isoeffective-model/0.1.0`` artifact."""
 def load_bio_model_comparison(
     path: str | PathLike[str],
 ) -> BioModelComparison:
     """Read and validate a ``openbnct.bio-model-comparison/0.1.0`` artifact."""
+def make_microdosimetric_model(document: dict | str) -> MicrodosimetricModel:
+    """Validate a ``openbnct.microdosimetric-model/0.1.0`` document (dict or JSON)."""
+def make_isoeffective_model(document: dict | str) -> IsoeffectiveModel:
+    """Validate an ``openbnct.isoeffective-model/0.1.0`` document (dict or JSON)."""
 def make_biological_model(document: dict | str) -> BiologicalModel:
     """Validate a ``openbnct.biological-model/0.2.0`` document authored in
     Python (dict or JSON string) into a model object — the
@@ -548,6 +577,19 @@ def apply_model(
     region_masks: list[tuple[str, str | PathLike[str]]],
 ) -> BiologicalDoseBundle:
     """Apply a biological model; region_masks maps region names to mask JSON."""
+def apply_mkm_model(
+    model: MicrodosimetricModel,
+    physical: PhysicalDoseBundle,
+    region_masks: list[tuple[str, str | PathLike[str]]],
+    spectra: list[str | PathLike[str]],
+) -> BiologicalDoseBundle:
+    """Apply a linearized-MKM model; spectra are lineal-spectrum JSON paths."""
+def apply_isoeffective(
+    model: IsoeffectiveModel,
+    physical: PhysicalDoseBundle,
+    region_masks: list[tuple[str, str | PathLike[str]]],
+) -> BiologicalDoseBundle:
+    """Apply a González & Santa Cruz photon-isoeffective model."""
 def compute_dvh(
     physical: PhysicalDoseBundle,
     quantity: str,

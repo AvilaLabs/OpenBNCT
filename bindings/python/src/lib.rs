@@ -13,8 +13,9 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use openbnct_bio::{
-    AppliedFractionation, BiologicalDoseBundle, BiologicalModel, LinealSpectrum, LinealTallySpec,
-    RegionMask, apply_biological_model,
+    AppliedFractionation, BiologicalDoseBundle, BiologicalModel, IsoeffectiveModel, LinealSpectrum,
+    LinealTallySpec, MicrodosimetricModel, RegionMask, SpectrumInput, apply_biological_model,
+    apply_isoeffective_model, apply_microdosimetric_model,
 };
 use openbnct_boron::{BoronMicrodistribution, MicrodistributionCorrection};
 use openbnct_core::{ContentReference, PhysicalDoseBundle, ResampleMethod};
@@ -2456,6 +2457,13 @@ fn apply_model(
     physical: &PyPhysicalDoseBundle,
     region_masks: Vec<(String, PathBuf)>,
 ) -> PyResult<PyBiologicalDoseBundle> {
+    let masks = load_region_masks(region_masks)?;
+    let bundle = apply_biological_model(&model.inner, &model.bytes, &physical.inner, &masks)
+        .map_err(reject)?;
+    Ok(PyBiologicalDoseBundle { inner: bundle })
+}
+
+fn load_region_masks(region_masks: Vec<(String, PathBuf)>) -> PyResult<Vec<RegionMask>> {
     let mut masks = Vec::new();
     for (name, path) in region_masks {
         let mask: RegionMask =
@@ -2469,7 +2477,169 @@ fn apply_model(
         }
         masks.push(mask);
     }
-    let bundle = apply_biological_model(&model.inner, &model.bytes, &physical.inner, &masks)
+    Ok(masks)
+}
+
+/// A validated microdosimetric (linearized-MKM) model contract.
+#[pyclass(frozen, name = "MicrodosimetricModel")]
+struct PyMicrodosimetricModel {
+    inner: MicrodosimetricModel,
+    bytes: Vec<u8>,
+}
+
+#[pymethods]
+impl PyMicrodosimetricModel {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+}
+
+/// Load and validate an `openbnct.microdosimetric-model/0.1.0` artifact.
+#[pyfunction]
+fn load_microdosimetric_model(path: PathBuf) -> PyResult<PyMicrodosimetricModel> {
+    let bytes = fs::read(&path).map_err(reject)?;
+    let model: MicrodosimetricModel = serde_json::from_slice(&bytes).map_err(reject)?;
+    model.validate().map_err(reject)?;
+    Ok(PyMicrodosimetricModel {
+        inner: model,
+        bytes,
+    })
+}
+
+/// A validated González & Santa Cruz photon-isoeffective model contract.
+#[pyclass(frozen, name = "IsoeffectiveModel")]
+struct PyIsoeffectiveModel {
+    inner: IsoeffectiveModel,
+    bytes: Vec<u8>,
+}
+
+#[pymethods]
+impl PyIsoeffectiveModel {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+}
+
+/// Load and validate an `openbnct.isoeffective-model/0.1.0` artifact.
+#[pyfunction]
+fn load_isoeffective_model(path: PathBuf) -> PyResult<PyIsoeffectiveModel> {
+    let bytes = fs::read(&path).map_err(reject)?;
+    let model: IsoeffectiveModel = serde_json::from_slice(&bytes).map_err(reject)?;
+    model.validate().map_err(reject)?;
+    Ok(PyIsoeffectiveModel {
+        inner: model,
+        bytes,
+    })
+}
+
+/// Validate a microdosimetric-model document authored in Python (a `dict`
+/// matching `openbnct.microdosimetric-model/0.1.0`, or a JSON string).
+#[pyfunction]
+fn make_microdosimetric_model(document: Bound<'_, PyAny>) -> PyResult<PyMicrodosimetricModel> {
+    let json = if let Ok(text) = document.extract::<String>() {
+        text
+    } else {
+        let module = document.py().import("json").map_err(reject)?;
+        module
+            .call_method1("dumps", (&document,))
+            .and_then(|v| v.extract::<String>())
+            .map_err(reject)?
+    };
+    let bytes = json.into_bytes();
+    let model: MicrodosimetricModel = serde_json::from_slice(&bytes).map_err(reject)?;
+    model.validate().map_err(reject)?;
+    Ok(PyMicrodosimetricModel {
+        inner: model,
+        bytes,
+    })
+}
+
+/// Validate an isoeffective-model document authored in Python (a `dict`
+/// matching `openbnct.isoeffective-model/0.1.0`, or a JSON string).
+#[pyfunction]
+fn make_isoeffective_model(document: Bound<'_, PyAny>) -> PyResult<PyIsoeffectiveModel> {
+    let json = if let Ok(text) = document.extract::<String>() {
+        text
+    } else {
+        let module = document.py().import("json").map_err(reject)?;
+        module
+            .call_method1("dumps", (&document,))
+            .and_then(|v| v.extract::<String>())
+            .map_err(reject)?
+    };
+    let bytes = json.into_bytes();
+    let model: IsoeffectiveModel = serde_json::from_slice(&bytes).map_err(reject)?;
+    model.validate().map_err(reject)?;
+    Ok(PyIsoeffectiveModel {
+        inner: model,
+        bytes,
+    })
+}
+
+/// Apply a linearized-MKM model via the authoritative Rust path —
+/// combined-effect inversion, not per-component. `spectra` are
+/// `openbnct.lineal-spectrum/0.1.0` file paths for components declaring
+/// a spectrum source.
+#[pyfunction]
+fn apply_mkm_model(
+    model: &PyMicrodosimetricModel,
+    physical: &PyPhysicalDoseBundle,
+    region_masks: Vec<(String, PathBuf)>,
+    spectra: Vec<PathBuf>,
+) -> PyResult<PyBiologicalDoseBundle> {
+    let masks = load_region_masks(region_masks)?;
+    let mut spectrum_docs = Vec::with_capacity(spectra.len());
+    for path in &spectra {
+        let bytes = fs::read(path).map_err(reject)?;
+        let spectrum: LinealSpectrum = serde_json::from_slice(&bytes)
+            .map_err(|e| reject(format!("spectrum {}: {e}", path.display())))?;
+        spectrum_docs.push((spectrum, bytes));
+    }
+    let inputs: Vec<SpectrumInput<'_>> = spectrum_docs
+        .iter()
+        .map(|(spectrum, bytes)| SpectrumInput {
+            spectrum,
+            document_bytes: bytes,
+        })
+        .collect();
+    let bundle =
+        apply_microdosimetric_model(&model.inner, &model.bytes, &physical.inner, &masks, &inputs)
+            .map_err(reject)?;
+    Ok(PyBiologicalDoseBundle { inner: bundle })
+}
+
+/// Apply a González & Santa Cruz photon-isoeffective model via the
+/// authoritative Rust path — mixed-field exponent with √rbe_beta synergy
+/// and the Lea–Catcheside repair factor, inverted once against the
+/// photon LQ.
+#[pyfunction]
+fn apply_isoeffective(
+    model: &PyIsoeffectiveModel,
+    physical: &PyPhysicalDoseBundle,
+    region_masks: Vec<(String, PathBuf)>,
+) -> PyResult<PyBiologicalDoseBundle> {
+    let masks = load_region_masks(region_masks)?;
+    let bundle = apply_isoeffective_model(&model.inner, &model.bytes, &physical.inner, &masks)
         .map_err(reject)?;
     Ok(PyBiologicalDoseBundle { inner: bundle })
 }
@@ -3823,6 +3993,8 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBeamShapingAssembly>()?;
     m.add_class::<PyBsaSweepRecord>()?;
     m.add_class::<PyLinealSpectrum>()?;
+    m.add_class::<PyMicrodosimetricModel>()?;
+    m.add_class::<PyIsoeffectiveModel>()?;
     m.add_class::<PyLinealTallySpec>()?;
     m.add_class::<PyMetamorphicEvaluation>()?;
     m.add_class::<PyAnalyticOracle>()?;
@@ -3893,6 +4065,12 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load_beam_shaping_assembly, m)?)?;
     m.add_function(wrap_pyfunction!(load_bsa_sweep, m)?)?;
     m.add_function(wrap_pyfunction!(load_lineal_spectrum, m)?)?;
+    m.add_function(wrap_pyfunction!(load_microdosimetric_model, m)?)?;
+    m.add_function(wrap_pyfunction!(load_isoeffective_model, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_mkm_model, m)?)?;
+    m.add_function(wrap_pyfunction!(apply_isoeffective, m)?)?;
+    m.add_function(wrap_pyfunction!(make_microdosimetric_model, m)?)?;
+    m.add_function(wrap_pyfunction!(make_isoeffective_model, m)?)?;
     m.add_function(wrap_pyfunction!(load_lineal_tally_spec, m)?)?;
     m.add_function(wrap_pyfunction!(load_metamorphic_evaluation, m)?)?;
     m.add_function(wrap_pyfunction!(load_analytic_oracle, m)?)?;
