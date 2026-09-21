@@ -1619,11 +1619,15 @@ collapsed onto the multigroup mesh by overlap-weighted averaging.
 material's removal cross section (the default; MT=1 total XS);
 `--parameter dose_response --component boron` binds a reaction MT's
 covariance (e.g. MT=107, the ¹⁰B(n,α) channel) to that component's
-dose-response vector instead. NC-type parameter covariances — the form
-ENDF/B-VIII.1 uses for ¹⁰B MT=107 — are skipped with an explicit
-ledger entry in `provenance_note` rather than misread. A worked
-end-to-end example on the real ENDF/B-VIII.1 ¹⁰B evaluation ships under
-`examples/covariance/`:
+dose-response vector instead. NC-type LTY=0 references — the form
+ENDF/B-VIII.1 uses for ¹⁰B MT=107, where a reaction's covariance is
+declared as a coefficient-weighted sum of derived-quantity sections
+(MT ≥ 800) — are resolved by resampling contributors onto a union mesh;
+LTY ∈ {1,2,3} (cross-material covariances) remain skipped with an
+explicit ledger entry in `provenance_note`. A worked end-to-end
+example on the real ENDF/B-VIII.1 ¹⁰B evaluation ships under
+`examples/covariance/` — including the MT=107 (n,α) channel propagated
+to a 0.34% σ_rel boron-dose budget on the layered-head phantom:
 
 ```text
 openbnct openmc cov-endf   --tape n-005_B_010.endf --data transport/multigroup-data.json   --material MATERIAL-ID --mt 1 --parameter sigma_total   --output NEW-COVARIANCE.json

@@ -36,10 +36,28 @@ openbnct uq propagate \
 ```
 
 `--parameter dose_response --component boron` binds a reaction MT
-(e.g. MT=107 n,α) covariance to that component's dose-response vector
-instead of σ_t. Scope note: the MF33 reader handles NI-type
-sub-subsections with LB ∈ {0,1,5}; NC-type parameter covariances (the
-form ENDF/B-VIII.1 uses for ¹⁰B MT=107) are skipped with an explicit
-ledger entry in `provenance_note` rather than misread.
+covariance to that component's dose-response vector instead of σ_t —
+demonstrated by the second pair of artifacts, which carry the actual
+BNCT channel:
+
+3. `b10-endfb81-mt107-layered-head.covariance.json` — ENDF/B-VIII.1
+   ¹⁰B MF33 **MT=107 (n,α)** covariance. ENDF expresses it as NC-type
+   LTY=0 references to derived-quantity sections MT=800/801; the reader
+   resolves the references and combines their LB=5 covariances, then
+   collapses to the layered-head 28-group mesh as a `dose_response`
+   block on the boron component (0–1.7% per group; groups outside the
+   evaluated covariance mesh carry zero, meaning *no evaluated data*,
+   not *zero uncertainty*).
+
+4. `layered-head-endf-b10na-budget.json` — the propagation result on
+   the S₈ layered-head case: boron dose integral σ_rel = **0.34%**
+   entirely from the evaluated (n,α) covariance (dose-response
+   sensitivities are analytic — zero perturbed solves).
+
+Scope note: the MF33 reader handles NI-type sub-subsections with LB ∈
+{0,1,5} plus NC-type LTY=0 (coefficient×referenced-section resolution);
+LTY ∈ {1,2,3} cross-material covariances and LB ∈ {2,3,4,6} are
+skipped with an explicit ledger entry in `provenance_note` rather than
+misread.
 
 Research artifacts only — not evaluated-data qualification.

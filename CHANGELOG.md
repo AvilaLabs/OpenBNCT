@@ -35,7 +35,17 @@ own versions independent of the crate version.
 
 ### Added
 
-- `openbnct.isoeffective-model/0.1.0`: the González & Santa Cruz (2012)
+- `openmc cov-endf` NC-type LTY=0 resolution: a reaction's covariance
+  declared as coefficient-weighted references to derived-quantity
+  sections (MT ≥ 800) now resolves — contributors are resampled onto a
+  union mesh and summed. This unlocks real evaluated (n,α) covariance:
+  ENDF/B-VIII.1 ¹⁰B MT=107 propagates to a 0.34% σ_rel boron-dose
+  budget on the layered-head phantom (artifacts in
+  `examples/covariance/`). `--parameter dose_response --component`
+  binds reaction covariances to component kerma responses instead of
+  σ_t. LTY ∈ {1,2,3} cross-material covariances remain skipped with a
+  ledger entry.
+- `openbnct.isoeffective-model/0.1.0`:: the González & Santa Cruz (2012)
   photon-isoeffective dose — per-component dose-independent factors
   (`rbe`, `rbe_beta`), tissue photon LQ (`alpha_0`/`beta`, per-region
   overrides), and an `irradiation` block producing the Lea–Catcheside
