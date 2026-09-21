@@ -1610,6 +1610,25 @@ A committed demonstration covariance ships with NF-BNCT-003
 multigroup data). Declared covariances are inputs, not evaluations —
 the artifact's `provenance_note` must say where the numbers came from.
 
+`openbnct openmc cov-endf` derives the covariance artifact from a real
+evaluated nuclear-data file instead — an ENDF-6 tape's MF33
+cross-section covariance sections (NI-type sub-subsections, LB ∈
+{0,1,5}: diagonal absolute/relative and symmetric energy-grid matrices)
+collapsed onto the multigroup mesh by overlap-weighted averaging.
+`--parameter sigma_total` binds the collapsed covariance to the
+material's removal cross section (the default; MT=1 total XS);
+`--parameter dose_response --component boron` binds a reaction MT's
+covariance (e.g. MT=107, the ¹⁰B(n,α) channel) to that component's
+dose-response vector instead. NC-type parameter covariances — the form
+ENDF/B-VIII.1 uses for ¹⁰B MT=107 — are skipped with an explicit
+ledger entry in `provenance_note` rather than misread. A worked
+end-to-end example on the real ENDF/B-VIII.1 ¹⁰B evaluation ships under
+`examples/covariance/`:
+
+```text
+openbnct openmc cov-endf   --tape n-005_B_010.endf --data transport/multigroup-data.json   --material MATERIAL-ID --mt 1 --parameter sigma_total   --output NEW-COVARIANCE.json
+```
+
 ### Variance reduction
 
 `openbnct vr` manages weight-window variance reduction for the OpenMC

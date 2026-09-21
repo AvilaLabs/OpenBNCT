@@ -1,0 +1,32 @@
+{
+  "schema_version": "openbnct.dose-uncertainty-budget/0.1.0",
+  "id": "openbnct.nf-bnct-003.endf-budget.v1",
+  "case_id": "nf-bnct-003",
+  "component": "boron",
+  "response_integral": 0.00043217352870114937,
+  "entries": [
+    {
+      "source": "nuclear_data",
+      "parameter": "openbnct.nf-bnct-003.material.ideal-b10-absorber.v1.SigmaTotal",
+      "sensitivity": null,
+      "std_dev": null,
+      "variance_contribution": 6.820647510420256e-11,
+      "relative_contribution": 1.0
+    }
+  ],
+  "total_relative_std_dev": 0.019109733951322174,
+  "covariance": {
+    "id": "openbnct.covariance.openbnct.nf-bnct-003.material.ideal-b10-absorber.v1.mt1",
+    "sha256": "f2f56f5bc61e7136a627d499e1bb5b20e0e3cf915eeb294c9b19442d522c2f0e"
+  },
+  "multigroup_data": {
+    "id": "openbnct.nf-bnct-003.multigroup-data.v1",
+    "sha256": "a2018b2456fc308ea57a598239763fee8746ddcd6b292e59784b5dcb7d7d8f4a"
+  },
+  "case": {
+    "id": "nf-bnct-003",
+    "sha256": "c43c71c212600555782d343d1f33e92a23f2fe96b99d36b0b85ec3782adb3541"
+  },
+  "method_note": "central-difference sensitivities (δ_rel=0.001) on the deterministic solve times the declared covariance; diagonal entries independent, blocks dense group-correlated; scatter entries uncorrelated (declared-data limitation); 2 perturbed solves",
+  "qualification": "research-verification uncertainty accounting — declared covariances, first-order sensitivities, integrated response; not a clinical tolerance evaluation"
+}

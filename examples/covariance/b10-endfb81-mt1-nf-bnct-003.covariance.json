@@ -1,0 +1,23 @@
+{
+  "schema_version": "openbnct.multigroup-covariance/0.1.0",
+  "id": "openbnct.covariance.openbnct.nf-bnct-003.material.ideal-b10-absorber.v1.mt1",
+  "multigroup_data": {
+    "id": "openbnct.nf-bnct-003.multigroup-data.v1",
+    "sha256": "sha256:a2018b2456fc308ea57a598239763fee8746ddcd6b292e59784b5dcb7d7d8f4a"
+  },
+  "diagonal": [],
+  "blocks": [
+    {
+      "material_id": "openbnct.nf-bnct-003.material.ideal-b10-absorber.v1",
+      "parameter": "sigma_total",
+      "relative_std_dev": [
+        0.020010377307787076
+      ],
+      "correlation": [
+        1.0
+      ]
+    }
+  ],
+  "provenance_note": "ENDF/B-VIII.1 n-005_B_010 MF33 MT=1 total XS collapsed to the nf-bnct-003 1-group mesh (real evaluated covariance, not a declared demonstration)",
+  "qualification": "nuclear_data_covariance_research_only_not_clinical"
+}

@@ -2294,6 +2294,17 @@ enum OpenMcCommand {
         /// Reaction MT whose section to read; default 1 (total).
         #[arg(long, default_value = "1")]
         mt: i32,
+        /// Which multigroup parameter the covariance describes:
+        /// `sigma_total` (removal XS, e.g. MT=1) or `dose_response`
+        /// (reaction-kerma response, e.g. MT=107 binds the ¹⁰B(n,α)
+        /// covariance to the boron component's dose response).
+        /// `dose_response` requires `--component`.
+        #[arg(long, default_value = "sigma_total")]
+        parameter: String,
+        /// Dose component for `--parameter dose_response`
+        /// (`boron`, `nitrogen`, `hydrogen`, `photon`).
+        #[arg(long)]
+        component: Option<String>,
         /// Free-text provenance note (evaluation, source, reviewer).
         #[arg(long)]
         note: Option<String>,
@@ -5064,9 +5075,28 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 data,
                 material,
                 mt,
+                parameter,
+                component,
                 note,
                 output,
             } => {
+                let cov_parameter = match parameter.as_str() {
+                    "sigma_total" => openbnct_transport::CovarianceParameter::SigmaTotal,
+                    "dose_response" => openbnct_transport::CovarianceParameter::DoseResponse,
+                    other => {
+                        return Err(io::Error::other(format!(
+                            "--parameter must be sigma_total or dose_response (got {other:?})"
+                        ))
+                        .into());
+                    }
+                };
+                if cov_parameter == openbnct_transport::CovarianceParameter::DoseResponse
+                    && component.is_none()
+                {
+                    return Err(
+                        io::Error::other("--parameter dose_response requires --component").into(),
+                    );
+                }
                 let tape_bytes = fs::read(&tape)?;
                 let tape_text = String::from_utf8_lossy(&tape_bytes);
                 let parsed = openbnct_openmc::endf_mf33::parse_mf33(&tape_text, Some(mt))
@@ -5105,8 +5135,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                     blocks.push(openbnct_transport::CovarianceBlock {
                         material_id: material.clone(),
-                        parameter: openbnct_transport::CovarianceParameter::SigmaTotal,
-                        component: None,
+                        parameter: cov_parameter,
+                        component: component.clone(),
                         relative_std_dev: rel,
                         correlation: corr,
                     });
