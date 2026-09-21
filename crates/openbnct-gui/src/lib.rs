@@ -5344,7 +5344,11 @@ fn show_uncertainty_budget(
                         for entry in entries.iter().take(12) {
                             ui.monospace(&entry.parameter);
                             ui.monospace(&entry.source);
-                            ui.monospace(format!("{:.4}", entry.std_dev));
+                            ui.monospace(if entry.std_dev.is_nan() {
+                                "—".to_owned()
+                            } else {
+                                format!("{:.4}", entry.std_dev)
+                            });
                             ui.monospace(format!("{:.1}%", entry.relative_contribution * 100.0));
                             ui.end_row();
                         }

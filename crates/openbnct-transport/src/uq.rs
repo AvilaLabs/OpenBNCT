@@ -131,8 +131,19 @@ pub struct BudgetEntry {
     /// Human-readable parameter address, e.g. `absorber.sigma_total[0]`.
     pub parameter: String,
     /// Absolute sensitivity `∂R/∂θ` (Gy·cm² per parameter unit).
+    /// `NaN` for whole-block and statistical entries — serialized as
+    /// `null` and read back as `NaN` so the contract round-trips.
+    #[serde(
+        serialize_with = "serialize_nan_as_null",
+        deserialize_with = "deserialize_null_as_nan"
+    )]
     pub sensitivity: f64,
-    /// Absolute standard deviation of the parameter.
+    /// Absolute standard deviation of the parameter; `NaN` like
+    /// `sensitivity` when a per-parameter σ is not applicable.
+    #[serde(
+        serialize_with = "serialize_nan_as_null",
+        deserialize_with = "deserialize_null_as_nan"
+    )]
     pub std_dev: f64,
     /// `Sᵀ·C·S` contribution of this entry (or block) — can be negative
     /// only for correlated blocks reported as a whole.
@@ -168,6 +179,21 @@ pub struct DoseUncertaintyBudget {
     pub fluxes: Vec<ContentReference>,
     pub method_note: String,
     pub qualification: String,
+}
+
+/// `NaN` ↔ `null`: block/statistical budget entries carry no
+/// per-parameter sensitivity, and serde_json would otherwise write
+/// `null` that `f64` deserialization refuses — breaking round-trip.
+fn serialize_nan_as_null<S: serde::Serializer>(value: &f64, s: S) -> Result<S::Ok, S::Error> {
+    if value.is_nan() {
+        s.serialize_none()
+    } else {
+        s.serialize_f64(*value)
+    }
+}
+
+fn deserialize_null_as_nan<'de, D: serde::Deserializer<'de>>(d: D) -> Result<f64, D::Error> {
+    Ok(Option::<f64>::deserialize(d)?.unwrap_or(f64::NAN))
 }
 
 impl MultigroupCovariance {
@@ -893,6 +919,14 @@ mod tests {
             cref("c"),
         )
         .unwrap();
+        // The emitted JSON must round-trip: block entries serialize
+        // their not-applicable sensitivity/std_dev as null.
+        let json = serde_json::to_string(&derivation.budget).unwrap();
+        assert!(json.contains("\"sensitivity\":null"));
+        let back: DoseUncertaintyBudget = serde_json::from_str(&json).unwrap();
+        assert!(back.entries[0].sensitivity.is_nan());
+        back.validate().unwrap();
+
         // Recompute the block variance independently: (Σ_g S_g·σ_g)²
         // with S_g from independent central differences.
         let cell_volume = 0.001_f64; // 1 mm³
