@@ -20,6 +20,10 @@ reproducible by construction rather than by convention.
 
 ![The dose workspace: component cards, content hash, and the tri-planar dose map](docs/screenshots/dose-workspace.png)
 
+| | |
+|---|---|
+| ![Transport workspace — FiR 1 K63 beam spectrum with TECDOC-1223 region shading](docs/screenshots/transport-spectrum.png) | ![Plan workspace — validated exposure plan with optimized field weights](docs/screenshots/plan-workspace.png) |
+
 > **Research software** — not a medical device, not commissioned for any
 > treatment facility, not for clinical decisions. See
 > [DISCLAIMER.md](docs/DISCLAIMER.md).

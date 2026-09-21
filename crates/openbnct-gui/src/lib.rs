@@ -2220,14 +2220,20 @@ impl OpenBnctApp {
                 }
                 self.workspace = WorkspaceTab::Dose;
             }
-            DropTarget::Plan => match bytes {
-                Ok(b) => self.panels.plan.load_bytes(&b),
-                Err(error) => self.panels.plan.error = Some(error),
-            },
-            DropTarget::NiftiVolume => match bytes {
-                Ok(b) => self.panels.nifti.inspect_bytes(&b),
-                Err(error) => self.panels.nifti.error = Some(error),
-            },
+            DropTarget::Plan => {
+                match bytes {
+                    Ok(b) => self.panels.plan.load_bytes(&b),
+                    Err(error) => self.panels.plan.error = Some(error),
+                }
+                self.workspace = WorkspaceTab::Plan;
+            }
+            DropTarget::NiftiVolume => {
+                match bytes {
+                    Ok(b) => self.panels.nifti.inspect_bytes(&b),
+                    Err(error) => self.panels.nifti.error = Some(error),
+                }
+                self.workspace = WorkspaceTab::Dose;
+            }
             DropTarget::Measurement => {
                 match bytes {
                     Ok(b) => self.panels.dose.load_measurement_bytes(&b),
