@@ -24,4 +24,4 @@ you need only part of the workspace. The binaries are `openbnct-cli`
 (`cargo install openbnct-cli`) and `openbnct-gui`.
 
 Research software — not for clinical use. See the repository's
-`DISCLAIMER.md` and `ROADMAP.md`.
+`docs/DISCLAIMER.md` and `docs/ROADMAP.md`.

@@ -22,7 +22,7 @@ classifiers = [
 
 [project.urls]
 Repository = "https://github.com/AvilaLabs/OpenBNCT"
-Disclaimer = "https://github.com/AvilaLabs/OpenBNCT/blob/main/DISCLAIMER.md"
+Disclaimer = "https://github.com/AvilaLabs/OpenBNCT/blob/main/docs/DISCLAIMER.md"
 
 [tool.maturin]
 module-name = "openbnct._openbnct"

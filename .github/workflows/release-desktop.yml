@@ -77,7 +77,7 @@ jobs:
           mkdir -p "$stage"
           cp "target/${{ matrix.target }}/release/openbnct" \
              "target/${{ matrix.target }}/release/openbnct-gui" "$stage/"
-          cp README.md DISCLAIMER.md "$stage/"
+          cp README.md "$stage/" && cp docs/DISCLAIMER.md "$stage/"
           tar -czf "$stage.tar.gz" "$stage"
           mv "$stage.tar.gz" dist.tar.gz
 
@@ -89,7 +89,7 @@ jobs:
           New-Item -ItemType Directory -Path $stage | Out-Null
           Copy-Item "target/${{ matrix.target }}/release/openbnct.exe",
                     "target/${{ matrix.target }}/release/openbnct-gui.exe" $stage
-          Copy-Item README.md, DISCLAIMER.md $stage
+          Copy-Item README.md $stage; Copy-Item docs/DISCLAIMER.md $stage
           Compress-Archive -Path $stage -DestinationPath dist.zip
 
       - name: Attest build provenance

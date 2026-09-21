@@ -4,8 +4,8 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/openbnct-core.svg)](https://crates.io/crates/openbnct-core)
 [![PyPI](https://img.shields.io/pypi/v/openbnct.svg)](https://pypi.org/project/openbnct/)
-[![Status: early research](https://img.shields.io/badge/status-early_research-orange.svg)](ROADMAP.md)
-[![Clinical use: not validated](https://img.shields.io/badge/clinical_use-not_validated-red.svg)](DISCLAIMER.md)
+[![Status: early research](https://img.shields.io/badge/status-early_research-orange.svg)](docs/ROADMAP.md)
+[![Clinical use: not validated](https://img.shields.io/badge/clinical_use-not_validated-red.svg)](docs/DISCLAIMER.md)
 
 [English](README.md) | **日本語**
 
@@ -14,7 +14,7 @@
   <a href="https://github.com/AvilaLabs/OpenBNCT/releases/latest"><img src="https://img.shields.io/badge/%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-%E3%83%87%E3%82%B9%E3%82%AF%E3%83%88%E3%83%83%E3%83%97%E7%89%88-1f2937?style=for-the-badge" alt="デスクトップ版をダウンロード"></a>
 </p>
 
-*（旧称 NCTForge。クレート名・`openbnct` CLI/Python パッケージ・`openbnct.*` スキーマ識別子へ全面改称済みです。凍結済みベンチマーク証跡を含む改名前の `nctforge.*` アーティファクトは、コントラクト名前空間エイリアスにより引き続き読み込み可能です。[ARCHITECTURE.md](ARCHITECTURE.md) を参照。）*
+*（旧称 NCTForge。クレート名・`openbnct` CLI/Python パッケージ・`openbnct.*` スキーマ識別子へ全面改称済みです。凍結済みベンチマーク証跡を含む改名前の `nctforge.*` アーティファクトは、コントラクト名前空間エイリアスにより引き続き読み込み可能です。[ARCHITECTURE.md](docs/ARCHITECTURE.md) を参照。）*
 
 OpenBNCT は、ホウ素中性子捕捉療法（BNCT）の研究および独立検証を目的とした、
 輸送コードに依存しない DICOM ネイティブのオープンソース・ワークベンチです。
@@ -71,7 +71,7 @@ OpenBNCT は、ホウ素中性子捕捉療法（BNCT）の研究および独立�
   `openbnct.beam-field-set` マニフェスト）、および S_N ordinate
   sweep の rayon 並列化まで含みます。
 
-開発段階と合格条件については [ロードマップ（英語）](ROADMAP.md) を参照してください。
+開発段階と合格条件については [ロードマップ（英語）](docs/ROADMAP.md) を参照してください。
 
 ## 設計上の特徴
 
@@ -95,10 +95,10 @@ OpenBNCT の中心的な役割は、特定施設の臨床 TPS を置き換える
 ## 関連資料
 
 - [英語版 README](README.md)
-- [開発ロードマップ](ROADMAP.md)
+- [開発ロードマップ](docs/ROADMAP.md)
 - [技術ベースライン](docs/research/TECHNICAL_BASELINE.md)
-- [アーキテクチャ](ARCHITECTURE.md)
-- [免責事項](DISCLAIMER.md)
+- [アーキテクチャ](docs/ARCHITECTURE.md)
+- [免責事項](docs/DISCLAIMER.md)
 - [コントリビューションガイド](CONTRIBUTING.md)
 
 日本語での Issue、技術的なフィードバック、用語・文書の改善提案も歓迎します。

@@ -450,7 +450,7 @@ hypothesis.
 - [ADR 0005: OpenMC 0.16 estimator boundary](../adr/0005-openmc-016-estimator-boundary.md)
 - [ADR 0007: Partial-KERMA response generation](../adr/0007-partial-kerma-response-generation.md)
 - [ADR 0009: Deterministic OpenMC input deck](../adr/0009-deterministic-openmc-input-deck.md)
-- [OpenBNCT roadmap](../../ROADMAP.md)
+- [OpenBNCT roadmap](../ROADMAP.md)
 - [OpenMC tally methods and statistics](https://docs.openmc.org/en/stable/methods/tallies.html)
 - [OpenMC variance-reduction guide](https://docs.openmc.org/en/stable/usersguide/variance_reduction.html)
 - [OpenMC 0.16.0 release notes](https://docs.openmc.org/en/stable/releasenotes/0.16.0.html)

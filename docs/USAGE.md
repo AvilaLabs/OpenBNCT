@@ -1,8 +1,8 @@
 # Usage reference
 
 Detailed command and workflow reference for the OpenBNCT CLI, GUI, and Python
-surfaces. For project status see [ROADMAP.md](../ROADMAP.md); for the research
-boundary see [DISCLAIMER.md](../DISCLAIMER.md).
+surfaces. For project status see [ROADMAP.md](ROADMAP.md); for the research
+boundary see [DISCLAIMER.md](DISCLAIMER.md).
 
 ## Workspace
 
@@ -103,7 +103,7 @@ contextual guidance, bundled offline answers, and guided tours that dim the
 application and spotlight live workflow controls. Interactive transport actions
 stay disabled until the upstream response gates are qualified, and the interface
 never shows placeholder dose values. See [ADR
-0014](../docs/adr/0014-evidence-aware-workbench-shell.md).
+0014](adr/0014-evidence-aware-workbench-shell.md).
 
 `pip install openbnct` is the primary distribution path for scientific
 users, backed by the same Rust implementation through PyO3 and maturin. The
@@ -114,8 +114,8 @@ publishing — TestPyPI on manual dispatch, PyPI on `v*` tags; all 15
 `openbnct*` crates are on crates.io (`cargo install openbnct-cli`). Cargo
 remains the native source/developer path, while desktop releases will ship as
 native artifacts. See [ADR
-0015](../docs/adr/0015-python-and-native-distribution.md) and [ADR
-0027](../docs/adr/0027-first-bounded-python-api.md).
+0015](adr/0015-python-and-native-distribution.md) and [ADR
+0027](adr/0027-first-bounded-python-api.md).
 
 ### Independent DICOM validation
 
@@ -146,7 +146,7 @@ directory. It writes a resumable `.part` file and a JSON receipt without
 overwriting completed output. The official processed archive currently has no
 published digest, so its receipt deliberately remains `acquisition_only`; a
 locally calculated SHA-256 is byte identity, not scientific qualification. See
-[ADR 0010](../docs/adr/0010-verifiable-nuclear-data-acquisition.md).
+[ADR 0010](adr/0010-verifiable-nuclear-data-acquisition.md).
 
 After selective extraction, independently verify the checked manifest and the
 material-specific capabilities with:
@@ -177,7 +177,7 @@ cargo run --bin openbnct -- njoy prepare \
 The command executes no external processor and refuses an existing output
 directory. The frozen benchmark copy is under
 `benchmarks/synthetic/nf-bnct-001/transport/njoy/`; see [ADR
-0011](../docs/adr/0011-deterministic-njoy-input-preparation.md).
+0011](adr/0011-deterministic-njoy-input-preparation.md).
 
 ### Controlled NJOY execution evidence
 
@@ -197,8 +197,8 @@ cargo run --bin openbnct -- njoy verify-execution \
 
 The first canonical receipt is intentionally
 `execution_observed_diagnostics_failed`, not a response table or reference
-result. See [ADR 0012](../docs/adr/0012-controlled-njoy-execution-evidence.md) and
-the [structured finding summary](../docs/research/NJOY2016_78_KINEMATIC_FINDINGS.md).
+result. See [ADR 0012](adr/0012-controlled-njoy-execution-evidence.md) and
+the [structured finding summary](research/NJOY2016_78_KINEMATIC_FINDINGS.md).
 
 Derive the separately versioned data-suitability gate from a verified root:
 
@@ -212,7 +212,7 @@ cargo run --bin openbnct -- njoy assess-execution \
 The canonical assessment is `transported_photon_kerma_rejected`: O-17 and O-18
 have no photon-production files, N-15 lacks File 12, and O-16 has a potentially
 incomplete discrete photon sequence. See [ADR
-0013](../docs/adr/0013-transported-photon-kerma-suitability.md).
+0013](adr/0013-transported-photon-kerma-suitability.md).
 
 That immutable v0.1 report records the processor messages conservatively.
 Source-aware v0.2 evidence subsequently recognizes valid File 13 alternatives,
@@ -230,20 +230,20 @@ the source-data-blocked C-13/O-18 runs from 43 O-17 findings. All 43 O-17
 excesses now reproduce NJOY's printed per-reaction energy-balance accounting,
 but that same-processor attribution waives none of them and cannot replace an
 independent physical validation; the candidate remains rejected. See [ADR
-0017](../docs/adr/0017-source-aware-photon-production-suitability.md), [ADR
-0019](../docs/adr/0019-independent-mf6-capture-photon-balance.md), and [ADR
-0020](../docs/adr/0020-content-bound-transport-domain-suitability.md), followed by
-[ADR 0021](../docs/adr/0021-independent-law7-implicit-residual-balance.md).
+0017](adr/0017-source-aware-photon-production-suitability.md), [ADR
+0019](adr/0019-independent-mf6-capture-photon-balance.md), and [ADR
+0020](adr/0020-content-bound-transport-domain-suitability.md), followed by
+[ADR 0021](adr/0021-independent-law7-implicit-residual-balance.md).
 The processor attribution is frozen in [ADR
-0022](../docs/adr/0022-law7-processor-attribution.md), and the integrated decision
+0022](adr/0022-law7-processor-attribution.md), and the integrated decision
 is specified by [ADR
-0023](../docs/adr/0023-reaction-evidence-aware-suitability.md), and the bounded
+0023](adr/0023-reaction-evidence-aware-suitability.md), and the bounded
 work queue by [ADR
-0025](../docs/adr/0025-diagnostic-triage-of-remaining-njoy-findings.md), and the
+0025](adr/0025-diagnostic-triage-of-remaining-njoy-findings.md), and the
 O-17 attribution and response-path pause by [ADR
-0026](../docs/adr/0026-o17-processor-energy-balance-attribution.md); that pause is
+0026](adr/0026-o17-processor-energy-balance-attribution.md); that pause is
 superseded by [ADR
-0031](../docs/adr/0031-o17-diagnostic-queue-dispositioned.md), under which the
+0031](adr/0031-o17-diagnostic-queue-dispositioned.md), under which the
 first component response tables are generated from the receipt-bound
 production HEATR output and sealed `independently_reviewed` by deterministic
 in-house regeneration.
@@ -1770,8 +1770,8 @@ deeper independent gates uncomputable — a preserved source-format finding. All
 three published evaluated libraries are now rejected under the controlled
 chain, so the response path resumes only with a reviewed independent O-17
 calculation. See
-[ADR 0028](../docs/adr/0028-mixed-evaluated-neutron-source-selections.md) and
-[ADR 0029](../docs/adr/0029-tendl2025-mixed-source-candidate.md).
+[ADR 0028](adr/0028-mixed-evaluated-neutron-source-selections.md) and
+[ADR 0029](adr/0029-tendl2025-mixed-source-candidate.md).
 
 The derived diagnostic-triage gate is also a live dogfood case for Avila Core.
 OpenBNCT keeps the domain verification and emits a deterministic machine
@@ -1781,5 +1781,5 @@ A second integration binds the candidate-comparison check so a rejected
 candidate is a verified result rather than a process failure. See the
 [integration case](../integrations/avila-core/njoy-evidence-aware/README.md), the
 [candidate-comparison case](../integrations/avila-core/njoy-candidate-comparison/README.md),
-and [ADR 0024](../docs/adr/0024-avila-core-evidence-loop.md).
+and [ADR 0024](adr/0024-avila-core-evidence-loop.md).
 

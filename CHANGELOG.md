@@ -179,4 +179,4 @@ remains readable for compatibility).
   literature; scalar figures of merit are compared, and the profile
   comparison machinery is ready for a traceable digitization.
 - No clinical qualification, equivalence, commissioning, or regulatory
-  suitability is claimed. See `DISCLAIMER.md`.
+  suitability is claimed. See `docs/DISCLAIMER.md`.

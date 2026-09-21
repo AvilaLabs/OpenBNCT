@@ -50,7 +50,7 @@ identity.
 - The workspace `publish = true` is now lifted: all 15 `openbnct-*`
   crates are on crates.io at v0.1.0; the `openbnct` wheel is on PyPI.
 - Research software: no clinical qualification, equivalence,
-  commissioning, or regulatory claims. See `DISCLAIMER.md`.
+  commissioning, or regulatory claims. See `docs/DISCLAIMER.md`.
 - CI gates include `cargo fmt --check` and clippy `-D warnings` — run
   both before pushing (`cargo fmt --all`, `cargo clippy --workspace
   --all-targets -- -D warnings`).

@@ -4,7 +4,7 @@
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/openbnct-core.svg)](https://crates.io/crates/openbnct-core)
 [![PyPI](https://img.shields.io/pypi/v/openbnct.svg)](https://pypi.org/project/openbnct/)
-[![Clinical use: not validated](https://img.shields.io/badge/clinical_use-not_validated-red.svg)](DISCLAIMER.md)
+[![Clinical use: not validated](https://img.shields.io/badge/clinical_use-not_validated-red.svg)](docs/DISCLAIMER.md)
 
 **English** | [日本語](README.ja.md)
 
@@ -22,7 +22,7 @@ reproducible by construction rather than by convention.
 
 > **Research software** — not a medical device, not commissioned for any
 > treatment facility, not for clinical decisions. See
-> [DISCLAIMER.md](DISCLAIMER.md).
+> [DISCLAIMER.md](docs/DISCLAIMER.md).
 
 ## What it does
 
@@ -75,7 +75,7 @@ not promoted to a reference output until an independently implemented
 transport path reproduces it. MCNP/PHITS interop is verified at benchmark
 scale on documented-format bundles; real-engine acceptance remains open.
 The FiR 1 in-phantom comparisons keep their misses in the record —
-that gap is evidence, not a defect to hide. [ROADMAP.md](ROADMAP.md)
+that gap is evidence, not a defect to hide. [docs/ROADMAP.md](docs/ROADMAP.md)
 carries the milestone detail.
 
 ## Documentation

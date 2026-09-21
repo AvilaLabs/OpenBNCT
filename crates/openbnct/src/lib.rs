@@ -10,7 +10,7 @@
 //!
 //! Research software — no clinical qualification, equivalence,
 //! commissioning, or regulatory suitability is claimed. See the
-//! repository `DISCLAIMER.md`.
+//! repository `docs/DISCLAIMER.md`.
 
 #![forbid(unsafe_code)]
 
