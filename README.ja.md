@@ -2,10 +2,17 @@
 
 [![CI](https://github.com/AvilaLabs/OpenBNCT/actions/workflows/ci.yml/badge.svg)](https://github.com/AvilaLabs/OpenBNCT/actions/workflows/ci.yml)
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![crates.io](https://img.shields.io/crates/v/openbnct-core.svg)](https://crates.io/crates/openbnct-core)
+[![PyPI](https://img.shields.io/pypi/v/openbnct.svg)](https://pypi.org/project/openbnct/)
 [![Status: early research](https://img.shields.io/badge/status-early_research-orange.svg)](ROADMAP.md)
 [![Clinical use: not validated](https://img.shields.io/badge/clinical_use-not_validated-red.svg)](DISCLAIMER.md)
 
 [English](README.md) | **日本語**
+
+<p align="left">
+  <a href="https://openbnct.avilalabs.org"><img src="https://img.shields.io/badge/%E3%83%96%E3%83%A9%E3%82%A6%E3%82%B6%E3%81%A7%E9%96%8B%E3%81%8F-openbnct.avilalabs.org-0d9488?style=for-the-badge" alt="ブラウザで開く"></a>
+  <a href="https://github.com/AvilaLabs/OpenBNCT/releases/latest"><img src="https://img.shields.io/badge/%E3%83%80%E3%82%A6%E3%83%B3%E3%83%AD%E3%83%BC%E3%83%89-%E3%83%87%E3%82%B9%E3%82%AF%E3%83%88%E3%83%83%E3%83%97%E7%89%88-1f2937?style=for-the-badge" alt="デスクトップ版をダウンロード"></a>
+</p>
 
 *（旧称 NCTForge。クレート名・`openbnct` CLI/Python パッケージ・`openbnct.*` スキーマ識別子へ全面改称済みです。凍結済みベンチマーク証跡を含む改名前の `nctforge.*` アーティファクトは、コントラクト名前空間エイリアスにより引き続き読み込み可能です。[ARCHITECTURE.md](ARCHITECTURE.md) を参照。）*
 
