@@ -91,6 +91,12 @@ Or skip the terminal entirely: open
 **Load example bundle** in the dose workspace — the bundled benchmark
 artifact is built into the app.
 
+To bring your own phantom: a segmented NIfTI labelmap plus a
+label→material table becomes a transport case in one command
+(`import labelmap`); a digitized facility spectrum becomes a
+beam-description with `beam build`. See
+[`docs/BYOC.md`](docs/BYOC.md).
+
 ## Status
 
 Early research. The 600M-history OpenMC candidate for the frozen

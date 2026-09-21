@@ -999,6 +999,55 @@ enum BeamCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Emit a `openbnct.beam-description/0.1.0` from a binned spectrum
+    /// CSV plus declared port geometry — the on-ramp for a group that
+    /// has measured or digitized its own facility spectrum.
+    Build {
+        /// Beam document identifier, e.g. `mylab.beam.thermal-column.v1`.
+        #[arg(long)]
+        id: String,
+        /// Human-readable beam name.
+        #[arg(long)]
+        name: String,
+        /// Facility and host institution.
+        #[arg(long)]
+        facility: String,
+        /// CSV of `e_low_ev,e_high_ev,weight` rows; a single header line
+        /// is tolerated. Edges must tile without gaps and weights are
+        /// normalized internally.
+        #[arg(long)]
+        spectrum_csv: PathBuf,
+        /// World axis the port plane is perpendicular to (x, y, or z).
+        #[arg(long, default_value = "z")]
+        port_axis: String,
+        /// Port plane offset along that axis, cm.
+        #[arg(long, default_value_t = 0.0)]
+        port_offset_cm: f64,
+        /// Circular port radius, cm.
+        #[arg(long)]
+        radius_cm: f64,
+        /// In-plane port center `u,v` in cm.
+        #[arg(long, value_delimiter = ',', default_values_t = [0.0, 0.0])]
+        center_uv_cm: Vec<f64>,
+        /// Divergence half-angle in degrees (0 = parallel beam).
+        #[arg(long, default_value_t = 0.0)]
+        divergence_deg: f64,
+        /// Optional declared fluence rate through the port, cm^-2 s^-1.
+        #[arg(long)]
+        fluence_rate_cm2_s: Option<f64>,
+        /// Provenance note recorded verbatim as the derivation — say
+        /// where the spectrum numbers came from.
+        #[arg(long)]
+        note: Option<String>,
+        /// `authors;title;venue;year` citation for the spectrum source —
+        /// repeatable, at least one required (an internal characterization
+        /// memo is a valid citation).
+        #[arg(long = "cite", required = true)]
+        citations: Vec<String>,
+        /// New output path for the beam-description JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Characterize a beam: TECDOC-1223-style in-air metrics (exact from
     /// the declared source) plus optional in-phantom metrics from a dose
     /// bundle and an optional reference-value comparison.
@@ -1611,6 +1660,40 @@ enum ImportCommand {
         #[arg(long)]
         file: PathBuf,
         /// New output path for the external dose bundle.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Build a `openbnct.material-assignment` from a NIfTI labelmap plus
+    /// a materials table — the on-ramp for segmented phantoms exported
+    /// from 3D Slicer, ITK-SNAP, or a Python pipeline.
+    ///
+    /// `--materials` is a JSON object mapping integer labels to inline
+    /// `openbnct.material-definition` objects; label `0` is the
+    /// background/base material. Every nonzero label in the labelmap
+    /// must have an entry.
+    Labelmap {
+        /// Integer-labeled NIfTI-1 image (`.nii` or `.nii.gz`); voxels
+        /// must be exact integer labels within 1e-6.
+        #[arg(long)]
+        nifti: PathBuf,
+        /// JSON `{"label": material-definition}` map.
+        #[arg(long)]
+        materials: PathBuf,
+        /// Existing transport-case JSON to bind (grid must match the
+        /// labelmap exactly; base material comes from the case).
+        #[arg(long)]
+        case: Option<PathBuf>,
+        /// Emit a scaffold transport-case JSON here — grid from the
+        /// labelmap, label-0 material as base, and a mono-thermal disk
+        /// source on the -z face meant to be replaced via `beam bind`.
+        /// Required when `--case` is absent.
+        #[arg(long)]
+        case_output: Option<PathBuf>,
+        /// Case identifier; required with `--case-output`, otherwise
+        /// taken from `--case`.
+        #[arg(long)]
+        case_id: Option<String>,
+        /// New output path for the material-assignment JSON.
         #[arg(long)]
         output: PathBuf,
     },
@@ -3676,6 +3759,110 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 write_new_json(&output, &bound)?;
                 println!("bound {} onto {}", beam.id, bound.case_id);
                 println!("case: {}", output.display());
+            }
+            BeamCommand::Build {
+                id,
+                name,
+                facility,
+                spectrum_csv,
+                port_axis,
+                port_offset_cm,
+                radius_cm,
+                center_uv_cm,
+                divergence_deg,
+                fluence_rate_cm2_s,
+                note,
+                citations,
+                output,
+            } => {
+                use openbnct_transport::{
+                    AngularDistribution, BeamDescription, BeamProvenance, EnergyDistribution,
+                    FixedSourceDefinition, NormalizationBasis, ParticleType, PortGeometry,
+                    PortShape, SourceSpatialDistribution,
+                };
+                let axis = match port_axis.as_str() {
+                    "x" => openbnct_transport::PlaneAxis::X,
+                    "y" => openbnct_transport::PlaneAxis::Y,
+                    "z" => openbnct_transport::PlaneAxis::Z,
+                    other => {
+                        return Err(format!("--port-axis must be x, y, or z (got {other:?})").into());
+                    }
+                };
+                if center_uv_cm.len() != 2 {
+                    return Err("--center-uv-cm takes exactly two values u,v".into());
+                }
+                let (edges, weights) = read_spectrum_csv(&spectrum_csv)?;
+                let beam = BeamDescription {
+                    schema_version: openbnct_transport::BEAM_DESCRIPTION_SCHEMA.into(),
+                    id: id.clone(),
+                    name,
+                    facility,
+                    port: PortGeometry {
+                        axis,
+                        offset_cm: port_offset_cm,
+                        shape: PortShape::Circle {
+                            center_uv_cm: [center_uv_cm[0], center_uv_cm[1]],
+                            radius_cm,
+                        },
+                    },
+                    source: FixedSourceDefinition {
+                        schema_version: "openbnct.fixed-source-definition/0.1.0".into(),
+                        id: id.clone(),
+                        particle: ParticleType::Neutron,
+                        source_sites_per_history: 1,
+                        statistical_weight_per_site: 1.0,
+                        space: SourceSpatialDistribution::UniformDisk {
+                            axis,
+                            offset_cm: port_offset_cm,
+                            center_uv_cm: [center_uv_cm[0], center_uv_cm[1]],
+                            radius_cm,
+                        },
+                        angle: AngularDistribution::IsotropicCone {
+                            axis_unit_vector: match axis {
+                                openbnct_transport::PlaneAxis::X => [1.0, 0.0, 0.0],
+                                openbnct_transport::PlaneAxis::Y => [0.0, 1.0, 0.0],
+                                openbnct_transport::PlaneAxis::Z => [0.0, 0.0, 1.0],
+                            },
+                            half_angle_rad: divergence_deg.to_radians(),
+                        },
+                        energy: EnergyDistribution::TabulatedHistogram {
+                            energy_boundaries_ev: edges,
+                            bin_weights: weights,
+                        },
+                    },
+                    normalization: match fluence_rate_cm2_s {
+                        Some(rate) => NormalizationBasis::FluenceRateAtPort {
+                            fluence_rate_cm2_s: rate,
+                        },
+                        None => NormalizationBasis::PerSourceParticle,
+                    },
+                    provenance: BeamProvenance::MeasuredCharacterization {
+                        citations: citations
+                            .iter()
+                            .map(|raw| {
+                                let f: Vec<&str> = raw.splitn(5, ';').collect();
+                                openbnct_transport::Citation {
+                                    authors: f.first().unwrap_or(&"").trim().into(),
+                                    title: f.get(1).unwrap_or(&"").trim().into(),
+                                    venue: f.get(2).unwrap_or(&"").trim().into(),
+                                    year: f.get(3).and_then(|y| y.trim().parse().ok()).unwrap_or(0),
+                                    doi: None,
+                                    url: None,
+                                }
+                            })
+                            .collect(),
+                        derivation_note: note.unwrap_or_else(|| {
+                            format!(
+                                "user-declared beam built by `openbnct beam build` from {}",
+                                spectrum_csv.display()
+                            )
+                        }),
+                    },
+                };
+                beam.validate()
+                    .map_err(|error| format!("beam description invalid: {error}"))?;
+                write_new_json(&output, &beam)?;
+                println!("beam: {}", output.display());
             }
             BeamCommand::Qa {
                 beam,
@@ -7418,6 +7605,16 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     document.producer.normalization
                 );
                 println!("fractions: {}", bundle.fraction_count());
+            }
+            ImportCommand::Labelmap {
+                nifti,
+                materials,
+                case,
+                case_output,
+                case_id,
+                output,
+            } => {
+                cmd_import_labelmap(nifti, materials, case, case_output, case_id, output)?;
             }
         },
         Some(Command::Export(args)) => match args.command {
@@ -11257,4 +11454,235 @@ impl ResponseTableArtifacts {
             execution_directory: &self.execution_directory,
         }
     }
+}
+
+/// Parse a binned spectrum CSV (`e_low_ev,e_high_ev,weight` per row; one
+/// optional header line). Edges must be positive and tile contiguously.
+fn read_spectrum_csv(path: &Path) -> Result<(Vec<f64>, Vec<f64>), io::Error> {
+    let text = fs::read_to_string(path)?;
+    let mut edges = Vec::new();
+    let mut weights = Vec::new();
+    for (lineno, raw) in text.lines().enumerate() {
+        let line = raw.trim();
+        if line.is_empty() || line.starts_with('#') {
+            continue;
+        }
+        let fields: Vec<&str> = line.split(',').map(str::trim).collect();
+        let parsed: Option<(f64, f64, f64)> = (fields.len() == 3)
+            .then(|| {
+                match (
+                    fields[0].parse::<f64>(),
+                    fields[1].parse::<f64>(),
+                    fields[2].parse::<f64>(),
+                ) {
+                    (Ok(lo), Ok(hi), Ok(w)) => Some((lo, hi, w)),
+                    _ => None,
+                }
+            })
+            .flatten();
+        let Some((lo, hi, weight)) = parsed else {
+            if lineno == 0 {
+                continue; // tolerate one header line
+            }
+            return Err(io::Error::other(format!(
+                "{}:{lineno}: expected `e_low_ev,e_high_ev,weight`",
+                path.display()
+            )));
+        };
+        if !(lo > 0.0 && hi > lo && weight.is_finite() && weight >= 0.0) {
+            return Err(io::Error::other(format!(
+                "{}:{lineno}: require 0 < e_low < e_high and weight >= 0",
+                path.display()
+            )));
+        }
+        if let Some(last) = edges.last() {
+            if (lo - last).abs() > 1e-9 * lo.max(1.0) {
+                return Err(io::Error::other(format!(
+                    "{}:{lineno}: bin edge {lo} does not continue from {last} \
+                     (bins must tile without gaps)",
+                    path.display()
+                )));
+            }
+            edges.push(hi);
+        } else {
+            edges.push(lo);
+            edges.push(hi);
+        }
+        weights.push(weight);
+    }
+    if weights.is_empty() || weights.iter().all(|w| *w == 0.0) {
+        return Err(io::Error::other(format!(
+            "{}: no positive-weight bins",
+            path.display()
+        )));
+    }
+    Ok((edges, weights))
+}
+
+/// `import labelmap`: NIfTI labelmap + materials table → material
+/// assignment, with an optional scaffold transport case.
+fn cmd_import_labelmap(
+    nifti: PathBuf,
+    materials: PathBuf,
+    case: Option<PathBuf>,
+    case_output: Option<PathBuf>,
+    case_id: Option<String>,
+    output: PathBuf,
+) -> Result<(), io::Error> {
+    use openbnct_transport::{
+        MaterialAssignment, MaterialDefinition, MaterialRegion, MaterialRegionShape,
+    };
+    use std::collections::BTreeMap;
+
+    if case.is_none() && (case_output.is_none() || case_id.is_none()) {
+        return Err(io::Error::other(
+            "--case-output and --case-id are required when --case is absent",
+        ));
+    }
+    let image = read_nifti_file(&nifti).map_err(|e| io::Error::other(e.to_string()))?;
+    let geometry = &image.geometry;
+    let [nx, ny, nz] = geometry.shape;
+    let material_table: BTreeMap<String, MaterialDefinition> =
+        serde_json::from_slice(&fs::read(&materials)?)
+            .map_err(|error| io::Error::other(format!("materials JSON: {error}")))?;
+
+    // Every voxel must be an integer label; group indices by label.
+    let mut label_voxels: BTreeMap<u32, Vec<[u32; 3]>> = BTreeMap::new();
+    for (linear, value) in image.values.iter().enumerate() {
+        let rounded = value.round();
+        if (value - rounded).abs() > 1e-6 || !(0.0..=(u32::MAX as f64)).contains(&rounded) {
+            return Err(io::Error::other(format!(
+                "labelmap voxel {linear} is {value} — integer labels required"
+            )));
+        }
+        let label = rounded as u32;
+        if label == 0 {
+            continue; // background → base material
+        }
+        let k = linear / (nx as usize * ny as usize);
+        let j = (linear / nx as usize) % ny as usize;
+        let i = linear % nx as usize;
+        label_voxels
+            .entry(label)
+            .or_default()
+            .push([i as u32, j as u32, k as u32]);
+    }
+    let missing: Vec<u32> = label_voxels
+        .keys()
+        .filter(|label| !material_table.contains_key(&label.to_string()))
+        .copied()
+        .collect();
+    if !missing.is_empty() {
+        return Err(io::Error::other(format!(
+            "materials table has no entry for labels {missing:?}"
+        )));
+    }
+    let nz = nz as usize;
+    let _ = nz;
+
+    let (case_id, base_material) = match &case {
+        Some(path) => {
+            let existing: openbnct_transport::TransportCase =
+                serde_json::from_slice(&fs::read(path)?)?;
+            let case_grid = &existing.geometry;
+            let spacing_ok = (0..3).all(|axis| {
+                (case_grid.spacing_mm[axis] - geometry.spacing_mm[axis]).abs() < 1e-6
+                    && (case_grid.origin_mm[axis] - geometry.origin_mm[axis]).abs() < 1e-3
+            });
+            if case_grid.shape != geometry.shape || !spacing_ok {
+                return Err(io::Error::other(
+                    "labelmap grid does not match the bound case geometry",
+                ));
+            }
+            (existing.case_id.clone(), existing.material.clone())
+        }
+        None => {
+            let base = material_table.get("0").cloned().ok_or_else(|| {
+                io::Error::other("materials table needs a \"0\" entry for the base material")
+            })?;
+            (case_id.unwrap(), base)
+        }
+    };
+
+    let regions: Vec<MaterialRegion> = label_voxels
+        .into_iter()
+        .map(|(label, indices)| {
+            let material = material_table[&label.to_string()].clone();
+            MaterialRegion {
+                name: material.id.clone(),
+                material,
+                shape: MaterialRegionShape::VoxelSet { indices },
+            }
+        })
+        .collect();
+    let assignment = MaterialAssignment {
+        schema_version: openbnct_transport::MATERIAL_ASSIGNMENT_SCHEMA.into(),
+        case_id: case_id.clone(),
+        base_material,
+        regions,
+        provenance_id: format!(
+            "nifti:sha256:{}",
+            openbnct_evidence::sha256_hex(&fs::read(&nifti)?)
+        ),
+    };
+    write_new_json(&output, &assignment)?;
+    println!(
+        "assignment: {} ({} regions, bound to {case_id})",
+        output.display(),
+        assignment.regions.len()
+    );
+
+    if let Some(case_path) = case_output {
+        let scaffold = scaffold_case_from_labelmap(&image, &assignment, &case_id)?;
+        write_new_json(&case_path, &scaffold)?;
+        println!(
+            "scaffold case: {} (edit the source — it is a placeholder)",
+            case_path.display()
+        );
+    }
+    Ok(())
+}
+
+/// Scaffold transport case for `import labelmap`: labelmap grid, the
+/// label-0 material as base, and a mono-thermal disk source on the -z
+/// face. The source is an explicit placeholder — users replace it with a
+/// real beam via `beam build` + `beam bind`.
+fn scaffold_case_from_labelmap(
+    image: &openbnct_nifti::NiftiImage,
+    assignment: &openbnct_transport::MaterialAssignment,
+    case_id: &str,
+) -> Result<openbnct_transport::TransportCase, io::Error> {
+    use openbnct_transport::{
+        AngularDistribution, EnergyDistribution, FixedSourceDefinition, SourceSpatialDistribution,
+        TransportCase,
+    };
+    let geometry = &image.geometry;
+    let radius_cm = 0.05
+        * (geometry.shape[0] as f64 * geometry.spacing_mm[0])
+            .min(geometry.shape[1] as f64 * geometry.spacing_mm[1]);
+    Ok(TransportCase {
+        schema_version: "openbnct.transport-case/0.1.0".into(),
+        case_id: case_id.into(),
+        geometry: geometry.clone(),
+        material: assignment.base_material.clone(),
+        source: FixedSourceDefinition {
+            schema_version: "openbnct.fixed-source-definition/0.1.0".into(),
+            id: format!("{case_id}.scaffold-source"),
+            particle: openbnct_transport::ParticleType::Neutron,
+            source_sites_per_history: 1,
+            statistical_weight_per_site: 1.0,
+            space: SourceSpatialDistribution::UniformDisk {
+                axis: openbnct_transport::PlaneAxis::Z,
+                offset_cm: geometry.origin_mm[2] / 10.0,
+                center_uv_cm: [0.0, 0.0],
+                radius_cm,
+            },
+            angle: AngularDistribution::IsotropicCone {
+                axis_unit_vector: [0.0, 0.0, 1.0],
+                half_angle_rad: 0.15,
+            },
+            energy: EnergyDistribution::Monoenergetic { energy_ev: 0.0253 },
+        },
+        requested_histories: 1,
+    })
 }
