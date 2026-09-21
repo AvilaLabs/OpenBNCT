@@ -3045,6 +3045,7 @@ fn show_workbench(
                         show_overview(
                             ui,
                             case.as_deref(),
+                            &mut panels.dose,
                             workspace,
                             language,
                             tour_targets,
@@ -3127,6 +3128,7 @@ fn show_workspace_heading(ui: &mut egui::Ui, theme: Theme, title: &str, subtitle
 fn show_overview(
     ui: &mut egui::Ui,
     case: Option<&ViewerCase>,
+    dose: &mut DosePanel,
     workspace: &mut WorkspaceTab,
     language: Language,
     tour_targets: &mut TourTargets,
@@ -3182,6 +3184,29 @@ fn show_overview(
                 it = "Rivedi evidenza",
                 zh = "查看证据",
                 es = "Revisar evidencia")).clicked() { *workspace = WorkspaceTab::Evidence; }
+                if dose.bundle.is_none() && ui
+                    .button(t!(language, en = "Open the example dose bundle",
+                        ja = "サンプル線量バンドルを開く",
+                        it = "Apri il bundle di dose di esempio",
+                        zh = "打开示例剂量束",
+                        es = "Abrir paquete de dosis de ejemplo"))
+                    .on_hover_text(t!(language,
+                        en = "bundled layered-head benchmark — no files needed",
+                        ja = "同梱の layered-head ベンチマーク — ファイル不要",
+                        it = "benchmark layered-head incluso — nessun file necessario",
+                        zh = "内置 layered-head 基准 — 无需文件",
+                        es = "benchmark layered-head incluido — sin archivos"))
+                    .clicked()
+                {
+                    match example_dose_bytes() {
+                        Ok(bytes) => {
+                            if dose.load_bundle_bytes(bytes).is_ok() {
+                                *workspace = WorkspaceTab::Dose;
+                            }
+                        }
+                        Err(error) => dose.bundle_error = Some(error),
+                    }
+                }
             });
         });
     ui.add_space(20.0);
