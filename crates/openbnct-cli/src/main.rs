@@ -383,9 +383,10 @@ enum EndpointCommand {
         /// TCP endpoint-evaluation JSON.
         #[arg(long)]
         tcp: PathBuf,
-        /// NTCP endpoint-evaluation JSON.
-        #[arg(long)]
-        ntcp: PathBuf,
+        /// NTCP endpoint-evaluation JSON — repeatable for multi-OAR
+        /// P₊ = TCP·Π(1−NTCPᵢ); each may name a different region.
+        #[arg(long = "ntcp", required = true)]
+        ntcp: Vec<PathBuf>,
         /// `p_plus` (TCP·(1−NTCP)) or `difference` (TCP−NTCP).
         #[arg(long)]
         combination: String,
@@ -3785,7 +3786,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     "y" => openbnct_transport::PlaneAxis::Y,
                     "z" => openbnct_transport::PlaneAxis::Z,
                     other => {
-                        return Err(format!("--port-axis must be x, y, or z (got {other:?})").into());
+                        return Err(
+                            format!("--port-axis must be x, y, or z (got {other:?})").into()
+                        );
                     }
                 };
                 if center_uv_cm.len() != 2 {
@@ -6879,6 +6882,19 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         })
                         .collect();
                     apply_microdosimetric_model(&model, &model_bytes, &physical, &masks, &inputs)?
+                } else if openbnct_core::schema_matches(
+                    &schema,
+                    openbnct_bio::ISOEFFECTIVE_MODEL_SCHEMA,
+                ) {
+                    if !spectra.is_empty() {
+                        return Err(io::Error::other(
+                            "--spectrum applies only to openbnct.microdosimetric-model/0.1.0 models",
+                        )
+                        .into());
+                    }
+                    let model: openbnct_bio::IsoeffectiveModel =
+                        serde_json::from_slice(&model_bytes)?;
+                    openbnct_bio::apply_isoeffective_model(&model, &model_bytes, &physical, &masks)?
                 } else {
                     if !spectra.is_empty() {
                         return Err(io::Error::other(
@@ -7094,7 +7110,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                 };
                 let bundle =
-                    bed_from_external(&dose_bundle, alpha_beta, &overrides, &masks, quantity)?;
+                    bed_from_external(&dose_bundle, alpha_beta, &overrides, &masks, quantity, &[])?;
                 write_new_json(&output, &bundle)?;
                 println!(
                     "{} field at {}",
@@ -7250,11 +7266,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 id: dose.display().to_string(),
                 sha256: openbnct_evidence::sha256_file(&dose)?,
             };
-            let histogram = match schema
-                .get("schema_version")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-            {
+            let dose_schema = openbnct_core::normalize_contract_id(
+                schema
+                    .get("schema_version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default(),
+            );
+            let histogram = match dose_schema.as_str() {
                 openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
                     let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
                     let (values, unit) = dose_values(&bundle, &quantity)?;
@@ -9377,11 +9395,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 id: dose.display().to_string(),
                 sha256: openbnct_evidence::sha256_file(&dose)?,
             };
-            let report = match schema
-                .get("schema_version")
-                .and_then(|v| v.as_str())
-                .unwrap_or_default()
-            {
+            let dose_schema = openbnct_core::normalize_contract_id(
+                schema
+                    .get("schema_version")
+                    .and_then(|v| v.as_str())
+                    .unwrap_or_default(),
+            );
+            let report = match dose_schema.as_str() {
                 openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
                     let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
                     let (values, unit) = dose_values(&bundle, &quantity)?;
@@ -9547,11 +9567,18 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 output,
             } => {
                 let tcp_bytes = fs::read(&tcp)?;
-                let ntcp_bytes = fs::read(&ntcp)?;
                 let tcp_eval: openbnct_bio::EndpointEvaluation =
                     serde_json::from_slice(&tcp_bytes)?;
-                let ntcp_eval: openbnct_bio::EndpointEvaluation =
-                    serde_json::from_slice(&ntcp_bytes)?;
+                let mut ntcp_inputs = Vec::with_capacity(ntcp.len());
+                for path in &ntcp {
+                    let bytes = fs::read(path)?;
+                    let eval: openbnct_bio::EndpointEvaluation = serde_json::from_slice(&bytes)?;
+                    ntcp_inputs.push((eval, bytes));
+                }
+                let ntcp_refs: Vec<(&openbnct_bio::EndpointEvaluation, &[u8])> = ntcp_inputs
+                    .iter()
+                    .map(|(eval, bytes)| (eval, bytes.as_slice()))
+                    .collect();
                 let combination = match combination.as_str() {
                     "p_plus" => openbnct_bio::UtcpCombination::PPlus,
                     "difference" => openbnct_bio::UtcpCombination::Difference,
@@ -9562,11 +9589,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         .into());
                     }
                 };
-                let evaluation = openbnct_bio::combine_utcp(
+                let evaluation = openbnct_bio::combine_utcp_multi(
                     &tcp_eval,
                     &tcp_bytes,
-                    &ntcp_eval,
-                    &ntcp_bytes,
+                    &ntcp_refs,
                     combination,
                 )?;
                 write_new_json(&output, &evaluation)?;
@@ -11063,10 +11089,13 @@ enum DoseBundle {
 /// Load a dose bundle whose `schema_version` is a known dose contract.
 fn load_dose_bundle(bytes: &[u8]) -> Result<DoseBundle, Box<dyn Error>> {
     let schema: serde_json::Value = serde_json::from_slice(bytes)?;
-    match schema
-        .get("schema_version")
-        .and_then(|v| v.as_str())
-        .unwrap_or_default()
+    match openbnct_core::normalize_contract_id(
+        schema
+            .get("schema_version")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
+    )
+    .as_str()
     {
         openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
             Ok(DoseBundle::Physical(serde_json::from_slice(bytes)?))

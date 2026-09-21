@@ -1805,13 +1805,14 @@ fn load_bed_bundle(path: PathBuf) -> PyResult<PyBedBundle> {
 /// each region needs a matching `(name, mask_path)` entry in `region_masks`.
 /// `quantity` is `"bed"` or `"eqd2"` (default).
 #[pyfunction]
-#[pyo3(signature = (dose, alpha_beta, region_alpha_beta=None, region_masks=None, quantity="eqd2"))]
+#[pyo3(signature = (dose, alpha_beta, region_alpha_beta=None, region_masks=None, quantity="eqd2", region_priority=None))]
 fn bed_from_external_dose(
     dose: &PyExternalDoseBundle,
     alpha_beta: f64,
     region_alpha_beta: Option<HashMap<String, f64>>,
     region_masks: Option<Vec<(String, PathBuf)>>,
     quantity: &str,
+    region_priority: Option<Vec<String>>,
 ) -> PyResult<PyBedBundle> {
     let masks = load_named_masks(region_masks.unwrap_or_default())?;
     let overrides: BTreeMap<String, f64> =
@@ -1832,6 +1833,7 @@ fn bed_from_external_dose(
             &overrides,
             &masks,
             quantity,
+            &region_priority.unwrap_or_default(),
         )
         .map_err(reject)?,
     })

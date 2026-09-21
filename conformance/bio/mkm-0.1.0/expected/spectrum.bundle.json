@@ -41,60 +41,60 @@
       "component": "boron",
       "unit": "mkm_weighted_gray_per_source_particle",
       "values": [
-        6.767756068104162e-12,
-        6.767756068104162e-12
+        6.767756068102709e-12,
+        6.767756068102709e-12
       ],
       "absolute_standard_uncertainty": [
-        6.767756068088142e-14,
-        6.767756068088142e-14
+        6.767756068085239e-14,
+        6.767756068085239e-14
       ]
     },
     {
       "component": "nitrogen",
       "unit": "mkm_weighted_gray_per_source_particle",
       "values": [
-        3.0941035830433273e-13,
-        3.0941035830433273e-13
+        3.094103583036394e-13,
+        3.094103583036394e-13
       ],
       "absolute_standard_uncertainty": [
-        3.094103583043129e-15,
-        3.094103583043129e-15
+        3.0941035830292614e-15,
+        3.0941035830292614e-15
       ]
     },
     {
       "component": "hydrogen",
       "unit": "mkm_weighted_gray_per_source_particle",
       "values": [
-        6.367629478804353e-14,
-        6.367629478804353e-14
+        6.367629478790219e-14,
+        6.367629478790219e-14
       ],
       "absolute_standard_uncertainty": [
-        6.367629478804299e-16,
-        6.367629478804299e-16
+        6.367629478776031e-16,
+        6.367629478776031e-16
       ]
     },
     {
       "component": "photon",
       "unit": "mkm_weighted_gray_per_source_particle",
       "values": [
-        3.082057768728247e-13,
-        3.082057768728247e-13
+        3.0820577687217175e-13,
+        3.0820577687217175e-13
       ],
       "absolute_standard_uncertainty": [
-        3.0820577687282287e-15,
-        3.0820577687282287e-15
+        3.082057768715172e-15,
+        3.082057768715172e-15
       ]
     }
   ],
   "total": {
     "unit": "mkm_weighted_gray_per_source_particle",
     "values": [
-      7.449048498069363e-12,
-      7.449048498069363e-12
+      7.449048498066422e-12,
+      7.449048498066422e-12
     ],
     "absolute_standard_uncertainty": [
-      7.449048498053321e-14,
-      7.449048498053321e-14
+      7.449048498047443e-14,
+      7.449048498047443e-14
     ],
     "uncertainty_method": "correlated_component_sum"
   },

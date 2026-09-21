@@ -1,6 +1,6 @@
 {
   "suite": "openbnct.endpoint-conformance/0.1.0",
-  "description": "Endpoint-model scoring and UTCP combination fixtures. All parameters are analytic stand-ins for conformance testing — not clinical models. Golden evaluations are byte-fixed: each embeds the SHA-256 of its model document, and UTCP goldens embed the SHA-256 of the pretty-printed source evaluations.",
+  "description": "Endpoint-model scoring and UTCP combination fixtures. All parameters are analytic stand-ins for conformance testing \u2014 not clinical models. Golden evaluations are byte-fixed: each embeds the SHA-256 of its model document, and UTCP goldens embed the SHA-256 of the pretty-printed source evaluations.",
   "cases": [
     {
       "id": "logistic-tcp-mean",
@@ -107,7 +107,7 @@
       "description": "Mask length shorter than the dose volume must fail selection."
     },
     {
-      "id": "reject-utcp-region-mismatch",
+      "id": "utcp-cross-region-p-plus",
       "kind": "utcp",
       "tcp_model": "cases/model-logistic-tcp.json",
       "ntcp_model": "cases/model-logistic-ntcp-eud.json",
@@ -115,9 +115,9 @@
       "mask": "cases/mask-all.json",
       "ntcp_mask": "cases/mask-partial.json",
       "combination": "p_plus",
-      "expect": "reject",
-      "error": "utcp_mismatch",
-      "description": "UTCP inputs evaluated over different regions cannot combine."
+      "expect": "ok",
+      "description": "UTCP combines tumor TCP with a different-region OAR NTCP \u2014 the standard P+ pairing.",
+      "bundle": "expected/utcp-cross-region-p-plus.json"
     }
   ]
 }

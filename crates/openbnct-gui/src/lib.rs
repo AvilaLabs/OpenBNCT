@@ -433,11 +433,13 @@ impl DoseArtifact {
         let sha256 = sha256_hex(&bytes);
         let schema: serde_json::Value =
             serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
-        let artifact = match schema
-            .get("schema_version")
-            .and_then(|value| value.as_str())
-            .unwrap_or_default()
-        {
+        let normalized = openbnct_core::normalize_contract_id(
+            schema
+                .get("schema_version")
+                .and_then(|value| value.as_str())
+                .unwrap_or_default(),
+        );
+        let artifact = match normalized.as_str() {
             openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
                 let bundle: PhysicalDoseBundle =
                     serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
@@ -1702,11 +1704,13 @@ fn classify_dropped_json(bytes: &[u8]) -> DropTarget {
     let Ok(schema) = serde_json::from_slice::<serde_json::Value>(bytes) else {
         return DropTarget::DoseBundle;
     };
-    match schema
-        .get("schema_version")
-        .and_then(|value| value.as_str())
-        .unwrap_or_default()
-    {
+    let normalized = openbnct_core::normalize_contract_id(
+        schema
+            .get("schema_version")
+            .and_then(|value| value.as_str())
+            .unwrap_or_default(),
+    );
+    match normalized.as_str() {
         s if s.starts_with("openbnct.exposure-plan/") => DropTarget::Plan,
         s if s.starts_with("nctforge.measurement-record/")
             || s.starts_with("openbnct.measurement-record/") =>

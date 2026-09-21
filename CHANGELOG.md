@@ -6,7 +6,44 @@ own versions independent of the crate version.
 
 ## [Unreleased]
 
+### Fixed — biology layer (external review)
+
+- Overlapping region masks no longer resolve alphabetically: every
+  voxel matching more than one declared region is a hard error naming
+  the regions unless the model declares `region_priority` (new optional
+  field on `biological-model/0.2.0`, `microdosimetric-model/0.1.0`, and
+  `isoeffective-model/0.1.0`; earliest name wins). Nested-ROI cases —
+  tumor inside an OAR mask — previously took the lexicographically
+  first region's weights/LQ silently.
+- `endpoint utcp` now accepts TCP and NTCP evaluations over *different*
+  regions — the standard uncomplicated-control pairing (tumor TCP ×
+  OAR NTCP). `--ntcp` is repeatable: `p_plus` computes
+  `TCP·Π(1−NTCPᵢ)`; the evaluation records `tcp_region`,
+  `ntcp_regions`, `ntcp_terms`, and content bindings for every input.
+- MKM photon-equivalent dose is now computed by combining the
+  mixed-field effect first and inverting the photon LQ once
+  (`X = Σ(α₀+βᵢ·z̄₁D,ᵢ)·dᵢ + (Σ√βᵢ·dᵢ)²` — Zaider–Rossi √β cross
+  terms), instead of inverting each component separately and summing.
+  The old path overestimated isoeffective dose ~10–20% at clinical
+  dose levels (Jensen gap). Per-component volumes now report each
+  component's effect-share of the isoeffective dose and still sum to
+  the total exactly. `endpoint evaluate`/`dose-metrics`/DVH acceptors
+  now normalize legacy `nctforge.*` schema ids consistently.
+- `BiologicalModel` gained `component_weight_uncertainty` (σ_w/w per
+  component): declared CBE/RBE uncertainty folds into the biological
+  total σ in quadrature with the transport uncertainty.
+
 ### Added
+
+- `openbnct.isoeffective-model/0.1.0`: the González & Santa Cruz (2012)
+  photon-isoeffective dose — per-component dose-independent factors
+  (`rbe`, `rbe_beta`), tissue photon LQ (`alpha_0`/`beta`, per-region
+  overrides), and an `irradiation` block producing the Lea–Catcheside
+  repair factor `G = 2(μT−1+e^(−μT))/(μT)²` for protracted delivery.
+  `X = α_γ·Σrbeᵢ·dᵢ + G·β_γ·(Σ√rbeβᵢ·dᵢ)²` is inverted once against
+  the photon LQ. Fixed-weight `photon_isoeffective` semantics on
+  `biological-model` remains supported but is now documented as the
+  dose-independent-factor approximation, not the IsoE formalism.
 
 - Rayon-parallel S_N ordinate sweep in `openbnct-transport`: angular
   flux stored `[ordinate][cell]` so each direction owns an exclusive

@@ -296,6 +296,7 @@ mod tests {
             regions_applied: vec![],
             qualification: "test".into(),
             microdosimetry: None,
+            isoeffective: None,
         }
     }
 

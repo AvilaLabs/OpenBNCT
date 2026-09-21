@@ -1053,6 +1053,8 @@ mod tests {
             .into_iter()
             .collect(),
             region_weights,
+            region_priority: Vec::new(),
+            component_weight_uncertainty: BTreeMap::new(),
             derivation: None,
             validity_domain: Some("unit test".into()),
             fractionation: None,

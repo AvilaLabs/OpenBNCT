@@ -128,6 +128,7 @@ pub fn bed_from_external(
     region_alpha_beta: &BTreeMap<String, f64>,
     regions: &[RegionMask],
     quantity: BedQuantity,
+    region_priority: &[String],
 ) -> Result<BedBundle, BioError> {
     if !(alpha_beta.is_finite() && alpha_beta > 0.0) {
         return Err(BioError::Invalid(format!(
@@ -164,11 +165,16 @@ pub fn bed_from_external(
             )));
         }
     }
+    let ab_order = crate::ordered_region_names(region_alpha_beta.keys(), region_priority);
+    let ab_assignment = crate::resolve_regions(
+        &ab_order,
+        &masks,
+        region_priority,
+        voxel_count,
+        "region_alpha_beta",
+    )?;
     let ratio_of = |voxel: usize| -> f64 {
-        region_alpha_beta
-            .keys()
-            .find(|name| masks[name.as_str()][voxel])
-            .map_or(alpha_beta, |name| region_alpha_beta[name])
+        ab_assignment[voxel].map_or(alpha_beta, |i| region_alpha_beta[&ab_order[i]])
     };
 
     let fractions = dose.fraction_count();
@@ -416,12 +422,13 @@ mod tests {
             vec![60.0, 60.0],
             ExternalFractionation::Uniform { count: 30 },
         );
-        let bed = bed_from_external(&dose, 10.0, &BTreeMap::new(), &[], BedQuantity::Bed).unwrap();
+        let bed =
+            bed_from_external(&dose, 10.0, &BTreeMap::new(), &[], BedQuantity::Bed, &[]).unwrap();
         assert!((bed.values[0] - 72.0).abs() < 1e-9);
         // σ_BED = σ_D · (1 + 2D/(nr)) = 0.1 · (1 + 0.4) = 0.14.
         assert!((bed.absolute_standard_uncertainty.as_ref().unwrap()[0] - 0.14).abs() < 1e-9);
         let eqd2 =
-            bed_from_external(&dose, 10.0, &BTreeMap::new(), &[], BedQuantity::Eqd2).unwrap();
+            bed_from_external(&dose, 10.0, &BTreeMap::new(), &[], BedQuantity::Eqd2, &[]).unwrap();
         assert!((eqd2.values[0] - 60.0).abs() < 1e-9);
         assert_eq!(eqd2.fractions, 30);
         assert_eq!(
@@ -439,9 +446,11 @@ mod tests {
                 doses: vec![vec![1.0, 1.0], vec![2.0, 2.0], vec![3.0, 3.0]],
             },
         );
-        let bed = bed_from_external(&dose, 3.0, &BTreeMap::new(), &[], BedQuantity::Bed).unwrap();
+        let bed =
+            bed_from_external(&dose, 3.0, &BTreeMap::new(), &[], BedQuantity::Bed, &[]).unwrap();
         assert!((bed.values[0] - 32.0 / 3.0).abs() < 1e-9);
-        let eqd2 = bed_from_external(&dose, 3.0, &BTreeMap::new(), &[], BedQuantity::Eqd2).unwrap();
+        let eqd2 =
+            bed_from_external(&dose, 3.0, &BTreeMap::new(), &[], BedQuantity::Eqd2, &[]).unwrap();
         assert!((eqd2.values[0] - 6.4).abs() < 1e-9);
         // σ: d(BED)/dD = 1 + 2·(1+4+9)/(6·3) = 1 + 14/9 ≈ 2.5556; EQD2 /(5/3).
         let sigma = eqd2.absolute_standard_uncertainty.unwrap()[0];
@@ -460,7 +469,8 @@ mod tests {
             name: "tumor".into(),
             voxels: vec![true, false],
         };
-        let eqd2 = bed_from_external(&dose, 10.0, &overrides, &[mask], BedQuantity::Eqd2).unwrap();
+        let eqd2 =
+            bed_from_external(&dose, 10.0, &overrides, &[mask], BedQuantity::Eqd2, &[]).unwrap();
         // Voxel 0: r=4 → BED=10·3·(1+0.75)=52.5, EQD2=52.5/1.5=35.
         assert!((eqd2.values[0] - 35.0).abs() < 1e-9);
         // Voxel 1: r=10 → BED=10·3·1.3=39, EQD2=39/1.2=32.5.
@@ -472,8 +482,10 @@ mod tests {
         let dose = external(vec![1.0], ExternalFractionation::Uniform { count: 1 });
         let mut overrides = BTreeMap::new();
         overrides.insert("tumor".to_string(), 4.0);
-        assert!(bed_from_external(&dose, 10.0, &overrides, &[], BedQuantity::Bed).is_err());
-        assert!(bed_from_external(&dose, 0.0, &BTreeMap::new(), &[], BedQuantity::Bed).is_err());
+        assert!(bed_from_external(&dose, 10.0, &overrides, &[], BedQuantity::Bed, &[]).is_err());
+        assert!(
+            bed_from_external(&dose, 0.0, &BTreeMap::new(), &[], BedQuantity::Bed, &[]).is_err()
+        );
     }
 
     fn bnct_bundle() -> BiologicalDoseBundle {
@@ -501,6 +513,7 @@ mod tests {
             regions_applied: vec![],
             qualification: "research".into(),
             microdosimetry: None,
+            isoeffective: None,
         }
     }
 
@@ -523,6 +536,7 @@ mod tests {
             &BTreeMap::new(),
             &[],
             BedQuantity::Eqd2,
+            &[],
         )
         .unwrap();
         let combined = combine_biological_doses(
@@ -557,6 +571,7 @@ mod tests {
             &BTreeMap::new(),
             &[],
             BedQuantity::Eqd2,
+            &[],
         )
         .unwrap();
         // Fixed-per-component weighting is not photon-isoeffective.
@@ -576,6 +591,7 @@ mod tests {
             &BTreeMap::new(),
             &[],
             BedQuantity::Bed,
+            &[],
         )
         .unwrap();
         assert!(
@@ -622,7 +638,7 @@ mod tests {
         };
         dose4.absolute_standard_uncertainty = Some(vec![0.1; 4]);
         let ext =
-            bed_from_external(&dose4, 10.0, &BTreeMap::new(), &[], BedQuantity::Eqd2).unwrap();
+            bed_from_external(&dose4, 10.0, &BTreeMap::new(), &[], BedQuantity::Eqd2, &[]).unwrap();
         // Without --resample the mismatched grid rejects.
         assert!(
             combine_biological_doses(&primary, &ext, reference("a"), reference("b"), None, "x")

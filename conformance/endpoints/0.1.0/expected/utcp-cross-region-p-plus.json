@@ -8,17 +8,17 @@
     "id": "endpoint-fixture-dose",
     "sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
   },
-  "probability": 0.05721807952767194,
+  "probability": 0.10660584463523089,
   "utcp": {
-    "combination": "difference",
+    "combination": "p_plus",
     "tcp": 0.15108808290155445,
-    "ntcp": 0.09387000337388252,
+    "ntcp": 0.29441261952676423,
     "tcp_region": "whole-region",
     "ntcp_regions": [
-      "whole-region"
+      "partial-region"
     ],
     "ntcp_terms": [
-      0.09387000337388249
+      0.29441261952676423
     ],
     "tcp_evaluation": {
       "id": "endpoint-fixture.endpoint-evaluation",
@@ -26,12 +26,12 @@
     },
     "ntcp_evaluation": {
       "id": "endpoint-fixture.endpoint-evaluation",
-      "sha256": "d20cde81b0847bdd3ed5bb3cb3c376ce3b5ee2253e7fd7363cb1a901dabba8dd"
+      "sha256": "d02c2f98f4d20f9b427e4c4629dff3415552ed0965492ccf137090bde9f69816"
     },
     "ntcp_evaluations": [
       {
         "id": "endpoint-fixture.endpoint-evaluation",
-        "sha256": "d20cde81b0847bdd3ed5bb3cb3c376ce3b5ee2253e7fd7363cb1a901dabba8dd"
+        "sha256": "d02c2f98f4d20f9b427e4c4629dff3415552ed0965492ccf137090bde9f69816"
       }
     ]
   },

@@ -277,6 +277,11 @@ pub struct MicrodosimetricModel {
     /// without a matching mask is an error.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub region_lq: BTreeMap<String, MkmLq>,
+    /// Explicit precedence for overlapping region masks, earliest wins —
+    /// required when voxels could match more than one declared region
+    /// (see [`crate::BiologicalModel::region_priority`]).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub region_priority: Vec<String>,
     /// Evidence reference for where the parameter set came from.
     pub derivation: Option<ContentReference>,
     /// Mandatory free-text validity domain: cell system, dose range,
@@ -360,6 +365,25 @@ impl MicrodosimetricModel {
                 }
             }
         }
+        {
+            let declared: std::collections::BTreeSet<&str> = self
+                .region_lq
+                .keys()
+                .chain(
+                    self.fractionation
+                        .iter()
+                        .flat_map(|f| f.region_alpha_beta.keys()),
+                )
+                .map(String::as_str)
+                .collect();
+            for name in &self.region_priority {
+                if !declared.contains(name.as_str()) {
+                    return Err(BioError::Invalid(format!(
+                        "region_priority names {name:?}, which is not a declared region"
+                    )));
+                }
+            }
+        }
         for (region, lq) in &self.region_lq {
             if region.trim().is_empty() {
                 return Err(BioError::Invalid("region name is empty".into()));
@@ -421,6 +445,28 @@ pub fn domain_mean_specific_energy_gy(y_kev_um: f64, radius_um: f64, density_g_c
     y_j_per_m / (rho * PI * r_m * r_m)
 }
 
+/// Invert the photon LQ `X = α₀·D + β·D²` once for a combined
+/// mixed-field effect X — the stable root `2X/(α₀ + √(α₀²+4βX))` with
+/// `dD/dX = 1/(α₀ + 2βD)`.
+fn invert_lq(x: f64, alpha_0: f64, beta: f64) -> (f64, f64) {
+    if x <= 0.0 {
+        return (0.0, if alpha_0 > 0.0 { 1.0 / alpha_0 } else { 0.0 });
+    }
+    if beta <= 0.0 {
+        return (
+            if alpha_0 > 0.0 { x / alpha_0 } else { 0.0 },
+            if alpha_0 > 0.0 { 1.0 / alpha_0 } else { 0.0 },
+        );
+    }
+    let root = (alpha_0 * alpha_0 + 4.0 * beta * x).sqrt();
+    let dose = if alpha_0 > 0.0 {
+        2.0 * x / (alpha_0 + root)
+    } else {
+        (x / beta).sqrt()
+    };
+    (dose, 1.0 / (alpha_0 + 2.0 * beta * dose))
+}
+
 /// Per-component photon-equivalent dose and its dose derivative.
 ///
 /// `X = α*·d + β·d²` is the component's survival exponent under the
@@ -429,6 +475,11 @@ pub fn domain_mean_specific_energy_gy(y_kev_um: f64, radius_um: f64, density_g_c
 /// `2X/(α₀ + √(α₀² + 4βX))` avoids cancellation at small X; the β→0
 /// limit is `X/α₀`. The derivative `dD/dd = (α* + 2βd)/√(α₀² + 4βX)`
 /// propagates first-order dose uncertainty.
+///
+/// Retained for tests — the production path combines components in
+/// effect space and inverts once via [`invert_lq`]; summing these
+/// per-component values is *not* the mixed-field answer.
+#[cfg(test)]
 fn photon_equivalent_dose(d: f64, alpha_0: f64, beta: f64, z1d: f64) -> (f64, f64) {
     let alpha_star = alpha_0 + beta * z1d;
     let effect = alpha_star * d + beta * d * d;
@@ -525,15 +576,19 @@ pub fn apply_microdosimetric_model(
             )));
         }
     }
+    let lq_order = crate::ordered_region_names(model.region_lq.keys(), &model.region_priority);
+    let lq_assignment = crate::resolve_regions(
+        &lq_order,
+        &masks,
+        &model.region_priority,
+        voxel_count,
+        "region_lq",
+    )?;
     let lq_of = |voxel: usize| -> Option<(f64, f64)> {
-        model
-            .region_lq
-            .keys()
-            .find(|name| masks[name.as_str()][voxel])
-            .map(|name| {
-                let lq = &model.region_lq[name];
-                (lq.alpha_0, lq.beta)
-            })
+        lq_assignment[voxel].map(|i| {
+            let lq = &model.region_lq[&lq_order[i]];
+            (lq.alpha_0, lq.beta)
+        })
     };
 
     // Resolve each component's dose-mean lineal energy once per apply:
@@ -575,57 +630,94 @@ pub fn apply_microdosimetric_model(
         .fractionation
         .as_ref()
         .map_or(1.0, |f| f.source_particles_per_fraction);
-    let mut components = Vec::new();
-    for volume in &physical.components {
-        let parameters = &model.components[component_name(volume.component)];
-        let z1d = domain_mean_specific_energy_gy(
-            resolved_y[component_name(volume.component)],
-            model.domain_radius_um,
-            model.domain_density_g_cm3,
-        );
-        let mut values = Vec::with_capacity(voxel_count);
-        let mut sigmas = volume
-            .absolute_standard_uncertainty
-            .as_ref()
-            .map(|_| Vec::with_capacity(voxel_count));
-        for voxel in 0..voxel_count {
-            // Region LQ overrides replace α₀/β for every component
-            // inside the mask; lineal energy is beam physics and stays.
-            let (alpha_0, beta) = lq_of(voxel).unwrap_or((parameters.alpha_0, parameters.beta));
-            // Without fractionation the transform applies to the raw
-            // (per-particle or gray) dose; with fractionation it applies
-            // to the per-fraction dose d·p and the total rescales later.
-            let (dose, derivative) =
-                photon_equivalent_dose(volume.values[voxel] * p, alpha_0, beta, z1d);
-            values.push(dose);
-            if let (Some(sigmas), Some(source)) = (
-                sigmas.as_mut(),
-                volume.absolute_standard_uncertainty.as_ref(),
-            ) {
-                sigmas.push(source[voxel] * p * derivative);
-            }
-        }
-        components.push(WeightedDoseVolume {
+    // Mixed-field MKM: components combine in *effect* space, then the
+    // photon-equivalent dose is inverted once. Inverting each component
+    // separately and summing (as this code originally did) double-counts
+    // the quadratic cross terms and overstates the total by ~10-20% at
+    // single-fraction BNCT doses. The combined exponent is
+    //   X = Σᵢ (α₀ᵢ + βᵢ·z̄₁Dᵢ)·dᵢ + (Σᵢ √βᵢ·dᵢ)²
+    // — the Zaider–Rossi √β synergistic form, which reduces to
+    // β·(Σdᵢ)² under MKM's domain-invariant common β. Each component's
+    // reported value is its effect-share of the isoeffective dose, so
+    // the components still sum to the total exactly.
+    let component_z1d: Vec<f64> = physical
+        .components
+        .iter()
+        .map(|volume| {
+            domain_mean_specific_energy_gy(
+                resolved_y[component_name(volume.component)],
+                model.domain_radius_um,
+                model.domain_density_g_cm3,
+            )
+        })
+        .collect();
+    let component_count = physical.components.len();
+    let mut components: Vec<WeightedDoseVolume> = physical
+        .components
+        .iter()
+        .map(|volume| WeightedDoseVolume {
             component: volume.component,
             unit: unit.clone(),
-            values,
-            absolute_standard_uncertainty: sigmas,
-        });
-    }
-
-    // Biological total: sum of photon-equivalent components; sigma is
-    // the fully-correlated linear sum, matching the weight-model
-    // convention (components share transport histories).
+            values: vec![0.0; voxel_count],
+            absolute_standard_uncertainty: volume
+                .absolute_standard_uncertainty
+                .as_ref()
+                .map(|_| vec![0.0; voxel_count]),
+        })
+        .collect();
     let mut total_values = vec![0.0; voxel_count];
-    let mut have_sigma = true;
+    let have_sigma = physical
+        .components
+        .iter()
+        .all(|v| v.absolute_standard_uncertainty.is_some());
     let mut total_sigma = vec![0.0; voxel_count];
-    for component in &components {
-        for voxel in 0..voxel_count {
-            total_values[voxel] += component.values[voxel];
-            if let Some(sigma) = &component.absolute_standard_uncertainty {
-                total_sigma[voxel] += sigma[voxel];
+    let photon_params = &model.components[component_name(DoseComponent::Photon)];
+    for voxel in 0..voxel_count {
+        // Region LQ overrides replace α₀/β for every component inside the
+        // mask; the override is also the photon reference for inversion.
+        let region_lq = lq_of(voxel);
+        let (ref_alpha, ref_beta) =
+            region_lq.unwrap_or((photon_params.alpha_0, photon_params.beta));
+        let mut effect = 0.0;
+        let mut sqrt_beta_d = 0.0;
+        let mut alpha_star = vec![0.0; component_count];
+        let mut betas = vec![0.0; component_count];
+        let mut doses = vec![0.0; component_count];
+        for (index, volume) in physical.components.iter().enumerate() {
+            let d = volume.values[voxel] * p;
+            let (a0, b) = region_lq.unwrap_or_else(|| {
+                let params = &model.components[component_name(volume.component)];
+                (params.alpha_0, params.beta)
+            });
+            alpha_star[index] = a0 + b * component_z1d[index];
+            betas[index] = b;
+            doses[index] = d;
+            effect += alpha_star[index] * d;
+            sqrt_beta_d += b.sqrt() * d;
+        }
+        effect += sqrt_beta_d * sqrt_beta_d;
+        let (d_iso, dd_dx) = invert_lq(effect, ref_alpha, ref_beta);
+        total_values[voxel] = d_iso;
+        for (index, volume) in physical.components.iter().enumerate() {
+            // Share sᵢ = α*ᵢ·dᵢ + √βᵢ·dᵢ·(Σ√βⱼ·dⱼ): the linear term plus
+            // this component's portion of every cross term touching it.
+            let share =
+                alpha_star[index] * doses[index] + betas[index].sqrt() * doses[index] * sqrt_beta_d;
+            components[index].values[voxel] = if effect > 0.0 {
+                d_iso * share / effect
             } else {
-                have_sigma = false;
+                0.0
+            };
+            if let (Some(sigmas), Some(source)) = (
+                components[index].absolute_standard_uncertainty.as_mut(),
+                volume.absolute_standard_uncertainty.as_ref(),
+            ) {
+                // ∂D/∂dᵢ(raw) = (∂X/∂dᵢ)·(∂d/∂raw)·(dD/dX); per-component
+                // sigmas are marginal contributions summing to total σ.
+                let dx_ddi = alpha_star[index] + 2.0 * betas[index].sqrt() * sqrt_beta_d;
+                let sigma = source[voxel] * p * dd_dx * dx_ddi;
+                sigmas[voxel] = sigma;
+                total_sigma[voxel] += sigma;
             }
         }
     }
@@ -645,14 +737,21 @@ pub fn apply_microdosimetric_model(
                 )));
             }
         }
+        let ab_order = crate::ordered_region_names(
+            fractionation.region_alpha_beta.keys(),
+            &model.region_priority,
+        );
+        let ab_assignment = crate::resolve_regions(
+            &ab_order,
+            &masks,
+            &model.region_priority,
+            voxel_count,
+            "region_alpha_beta",
+        )?;
         let alpha_beta_of = |voxel: usize| -> f64 {
-            fractionation
-                .region_alpha_beta
-                .keys()
-                .find(|name| masks[name.as_str()][voxel])
-                .map_or(fractionation.default_alpha_beta, |name| {
-                    fractionation.region_alpha_beta[name]
-                })
+            ab_assignment[voxel].map_or(fractionation.default_alpha_beta, |i| {
+                fractionation.region_alpha_beta[&ab_order[i]]
+            })
         };
         for voxel in 0..voxel_count {
             // `total_values` currently holds the per-fraction
@@ -707,6 +806,7 @@ pub fn apply_microdosimetric_model(
             dose_mean_lineal_energy_kev_um: resolved_y,
             spectra_applied,
         }),
+        isoeffective: None,
     };
     bundle.validate()?;
     Ok(bundle)
@@ -784,6 +884,7 @@ mod tests {
         };
         MicrodosimetricModel {
             schema_version: MICRODOSIMETRIC_MODEL_SCHEMA.into(),
+            region_priority: Vec::new(),
             id: "test.mkm.v1".into(),
             input_unit: DoseUnit::GrayPerSourceParticle,
             domain_radius_um: 1.0,
@@ -888,9 +989,10 @@ mod tests {
             .unwrap();
         assert!(photon.values[0] > 3.0e-13 && photon.values[0] < 3.5e-13);
         assert!(boron.values[0] > photon.values[0]);
-        // Total is the correlated sum of photon-equivalent components.
+        // Total is the combined-effect isoeffective dose; components are
+        // effect-shares summing to it (within f64 accumulation order).
         let sum: f64 = bundle.components.iter().map(|c| c.values[0]).sum();
-        assert_eq!(bundle.total.values[0], sum);
+        assert!((bundle.total.values[0] - sum).abs() / bundle.total.values[0] < 1e-12);
     }
 
     #[test]
@@ -908,22 +1010,40 @@ mod tests {
         assert_eq!(bundle.total.unit, "mkm_weighted_eqd2");
         // Boron per-fraction dose = 1.0 Gy → X = α*·1 + 0.05·1² with
         // α* = 0.2 + 0.05·z̄(200 keV/µm); D_pe = 2X/(0.2 + √(0.04 + 0.2X)).
-        let boron = bundle
-            .components
-            .iter()
-            .find(|c| c.component == DoseComponent::Boron)
-            .unwrap();
-        let z1d = domain_mean_specific_energy_gy(200.0, 1.0, 1.0);
-        let x = (0.2 + 0.05 * z1d) + 0.05;
-        let expected = 2.0 * x / (0.2 + (0.04_f64 + 4.0 * 0.05 * x).sqrt());
-        assert!(
-            (boron.values[0] - expected).abs() / expected < 1e-9,
-            "boron D_pe {} vs {expected}",
-            boron.values[0]
-        );
-        // Component volumes carry per-fraction photon-equivalent dose;
-        // the total carries the EQD2 rescale, so it exceeds n·ΣD_pe.
+        // Combined-field check: X = Σ(α*ᵢ·dᵢ) + β(Σdᵢ)² on the
+        // per-fraction doses (per-particle values × 1e12 particles).
+        let z1d = |name: &str| {
+            let y = &model.components[name].lineal_energy;
+            let LinealEnergySource::Constant {
+                dose_mean_lineal_energy_kev_um,
+                ..
+            } = y
+            else {
+                unreachable!("test model uses constant lineal energies")
+            };
+            domain_mean_specific_energy_gy(*dose_mean_lineal_energy_kev_um, 1.0, 1.0)
+        };
+        let d: BTreeMap<&str, f64> = [
+            ("boron", 1.0),
+            ("nitrogen", 0.2),
+            ("hydrogen", 0.05),
+            ("photon", 0.3),
+        ]
+        .into_iter()
+        .collect();
+        let mut x = 0.0;
+        for name in model.components.keys() {
+            x += (0.2 + 0.05 * z1d(name)) * d[name.as_str()];
+        }
+        x += 0.05 * d.values().sum::<f64>().powi(2);
+        let expected_pf = 2.0 * x / (0.2 + (0.04_f64 + 4.0 * 0.05 * x).sqrt());
         let per_fraction_sum: f64 = bundle.components.iter().map(|c| c.values[0]).sum();
+        assert!(
+            (per_fraction_sum - expected_pf).abs() / expected_pf < 1e-9,
+            "per-fraction D_pe {per_fraction_sum} vs {expected_pf}"
+        );
+        // Component volumes carry the per-fraction isoeffective shares;
+        // the total carries the EQD2 rescale.
         let eqd2 = 30.0 * per_fraction_sum * (1.0 + per_fraction_sum / 10.0) / 1.2;
         assert!(
             (bundle.total.values[0] - eqd2).abs() / eqd2 < 1e-9,
@@ -1033,6 +1153,8 @@ mod tests {
             weights.insert(name.to_string(), 1.0);
         }
         let model = BiologicalModel {
+            region_priority: Vec::new(),
+            component_weight_uncertainty: BTreeMap::new(),
             schema_version: crate::BIOLOGICAL_MODEL_SCHEMA.into(),
             id: "mismarked".into(),
             weight_semantics: WeightSemantics::MicrodosimetricKinetic,

@@ -231,10 +231,26 @@ pub enum UtcpCombination {
 pub struct UtcpComponents {
     pub combination: UtcpCombination,
     pub tcp: f64,
+    /// Effective complication probability across the OAR inputs:
+    /// `1 − Π(1 − NTCPᵢ)` under independence (equals the single NTCP
+    /// when one evaluation was supplied).
     pub ntcp: f64,
+    /// Region the TCP was evaluated on — the target.
+    #[serde(default)]
+    pub tcp_region: String,
+    /// Regions the NTCP inputs were evaluated on — the organs at risk.
+    /// The standard P₊ pairs a tumor TCP with *different* OAR regions.
+    #[serde(default)]
+    pub ntcp_regions: Vec<String>,
+    /// Per-OAR NTCP inputs in declaration order.
+    #[serde(default)]
+    pub ntcp_terms: Vec<f64>,
     /// Content bindings of the two source evaluations.
     pub tcp_evaluation: ContentReference,
     pub ntcp_evaluation: ContentReference,
+    /// Bindings of every NTCP input (multi-OAR combinations).
+    #[serde(default)]
+    pub ntcp_evaluations: Vec<ContentReference>,
 }
 
 /// The endpoint an evaluation scored — `utcp` marks a combination record.
@@ -447,6 +463,7 @@ pub fn evaluate_endpoint(
 /// Both evaluations must describe the same case, region, dose quantity,
 /// and dose source — otherwise the combination would silently mix
 /// different distributions.
+/// Single-OAR convenience wrapper over [`combine_utcp_multi`].
 pub fn combine_utcp(
     tcp: &EndpointEvaluation,
     tcp_bytes: &[u8],
@@ -454,37 +471,70 @@ pub fn combine_utcp(
     ntcp_bytes: &[u8],
     combination: UtcpCombination,
 ) -> Result<EndpointEvaluation, BioError> {
+    combine_utcp_multi(tcp, tcp_bytes, &[(ntcp, ntcp_bytes)], combination)
+}
+
+/// Combine one TCP evaluation with one or more NTCP evaluations —
+/// P₊ = TCP · Π(1 − NTCPᵢ) under independence, the standard
+/// tumor-vs-organs-at-risk pairing. TCP and NTCP may be evaluated on
+/// *different* regions (they normally are); the regions are recorded,
+/// not required to agree. Case, quantity, and dose source must agree.
+pub fn combine_utcp_multi(
+    tcp: &EndpointEvaluation,
+    tcp_bytes: &[u8],
+    ntcps: &[(&EndpointEvaluation, &[u8])],
+    combination: UtcpCombination,
+) -> Result<EndpointEvaluation, BioError> {
     tcp.validate()?;
-    ntcp.validate()?;
-    if tcp.endpoint != EvaluatedEndpoint::Tcp || ntcp.endpoint != EvaluatedEndpoint::Ntcp {
+    if tcp.endpoint != EvaluatedEndpoint::Tcp {
         return Err(BioError::Invalid(
-            "UTCP needs a primary tcp evaluation and a primary ntcp evaluation".into(),
+            "UTCP needs a primary tcp evaluation".into(),
         ));
     }
-    if tcp.model.is_none() || ntcp.model.is_none() {
+    if tcp.model.is_none() {
         return Err(BioError::Invalid(
             "UTCP inputs must carry their model bindings".into(),
         ));
     }
-    for (label, left, right) in [
-        ("case_id", tcp.case_id.as_str(), ntcp.case_id.as_str()),
-        ("region", tcp.region.as_str(), ntcp.region.as_str()),
-        ("quantity", tcp.quantity.as_str(), ntcp.quantity.as_str()),
-        (
-            "dose_source.sha256",
-            tcp.dose_source.sha256.as_str(),
-            ntcp.dose_source.sha256.as_str(),
-        ),
-    ] {
-        if left != right {
-            return Err(BioError::Invalid(format!(
-                "UTCP inputs disagree on {label}: {left:?} vs {right:?}"
-            )));
+    if ntcps.is_empty() {
+        return Err(BioError::Invalid(
+            "UTCP needs at least one ntcp evaluation".into(),
+        ));
+    }
+    for (ntcp, _) in ntcps {
+        ntcp.validate()?;
+        if ntcp.endpoint != EvaluatedEndpoint::Ntcp {
+            return Err(BioError::Invalid(
+                "UTCP needs a primary ntcp evaluation".into(),
+            ));
+        }
+        if ntcp.model.is_none() {
+            return Err(BioError::Invalid(
+                "UTCP inputs must carry their model bindings".into(),
+            ));
+        }
+        for (label, left, right) in [
+            ("case_id", tcp.case_id.as_str(), ntcp.case_id.as_str()),
+            ("quantity", tcp.quantity.as_str(), ntcp.quantity.as_str()),
+            (
+                "dose_source.sha256",
+                tcp.dose_source.sha256.as_str(),
+                ntcp.dose_source.sha256.as_str(),
+            ),
+        ] {
+            if left != right {
+                return Err(BioError::Invalid(format!(
+                    "UTCP inputs disagree on {label}: {left:?} vs {right:?}"
+                )));
+            }
         }
     }
+    // Π(1 − NTCPᵢ): independence of OAR complications.
+    let oar_free: f64 = ntcps.iter().map(|(n, _)| 1.0 - n.probability).product();
+    let effective_ntcp = 1.0 - oar_free;
     let probability = match combination {
-        UtcpCombination::PPlus => tcp.probability * (1.0 - ntcp.probability),
-        UtcpCombination::Difference => tcp.probability - ntcp.probability,
+        UtcpCombination::PPlus => tcp.probability * oar_free,
+        UtcpCombination::Difference => tcp.probability - effective_ntcp,
     };
     let evaluation = EndpointEvaluation {
         schema_version: ENDPOINT_EVALUATION_SCHEMA.into(),
@@ -499,15 +549,25 @@ pub fn combine_utcp(
         utcp: Some(UtcpComponents {
             combination,
             tcp: tcp.probability,
-            ntcp: ntcp.probability,
+            ntcp: effective_ntcp,
+            tcp_region: tcp.region.clone(),
+            ntcp_regions: ntcps.iter().map(|(n, _)| n.region.clone()).collect(),
+            ntcp_terms: ntcps.iter().map(|(n, _)| n.probability).collect(),
             tcp_evaluation: ContentReference {
                 id: format!("{}.{}", tcp.case_id, "endpoint-evaluation"),
                 sha256: format!("{:x}", Sha256::digest(tcp_bytes)),
             },
             ntcp_evaluation: ContentReference {
-                id: format!("{}.{}", ntcp.case_id, "endpoint-evaluation"),
-                sha256: format!("{:x}", Sha256::digest(ntcp_bytes)),
+                id: format!("{}.{}", ntcps[0].0.case_id, "endpoint-evaluation"),
+                sha256: format!("{:x}", Sha256::digest(ntcps[0].1)),
             },
+            ntcp_evaluations: ntcps
+                .iter()
+                .map(|(n, bytes)| ContentReference {
+                    id: format!("{}.{}", n.case_id, "endpoint-evaluation"),
+                    sha256: format!("{:x}", Sha256::digest(bytes)),
+                })
+                .collect(),
         }),
         qualification: "synthetic_research_only_not_clinical".into(),
     };
@@ -748,7 +808,8 @@ mod tests {
         assert_eq!(utcp.tcp, tcp.probability);
         assert_eq!(utcp.ntcp, ntcp.probability);
 
-        // Mismatched regions are rejected.
+        // Cross-region pairing — tumor TCP × cord NTCP — is the standard
+        // P₊ use case and must succeed; both regions are recorded.
         let other_region = evaluate_endpoint(
             &ntcp_model,
             &ntcp_bytes,
@@ -761,15 +822,41 @@ mod tests {
             source(),
         )
         .unwrap();
-        assert!(
-            combine_utcp(
-                &tcp,
-                &tcp_bytes,
-                &other_region,
-                &ntcp_bytes,
-                UtcpCombination::PPlus
-            )
-            .is_err()
-        );
+        let cross = combine_utcp(
+            &tcp,
+            &tcp_bytes,
+            &other_region,
+            &ntcp_bytes,
+            UtcpCombination::PPlus,
+        )
+        .unwrap();
+        let utcp = cross.utcp.unwrap();
+        assert_eq!(utcp.tcp_region, "tumor");
+        assert_eq!(utcp.ntcp_regions, ["cord"]);
+
+        // Multi-OAR product: P₊ = TCP · Π(1 − NTCPᵢ).
+        let cord2 = evaluate_endpoint(
+            &ntcp_model,
+            &ntcp_bytes,
+            "case",
+            &mask("cord2", &[true]),
+            "physical_total",
+            "gray",
+            &[20.0],
+            1.0,
+            source(),
+        )
+        .unwrap();
+        let multi = combine_utcp_multi(
+            &tcp,
+            &tcp_bytes,
+            &[(&other_region, &ntcp_bytes), (&cord2, &ntcp_bytes)],
+            UtcpCombination::PPlus,
+        )
+        .unwrap();
+        let expected =
+            tcp.probability * (1.0 - other_region.probability) * (1.0 - cord2.probability);
+        assert!((multi.probability - expected).abs() < 1e-12);
+        assert_eq!(multi.utcp.as_ref().unwrap().ntcp_regions, ["cord", "cord2"]);
     }
 }

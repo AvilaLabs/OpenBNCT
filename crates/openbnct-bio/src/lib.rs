@@ -20,6 +20,7 @@
 mod bed;
 mod compare;
 mod endpoint;
+mod isoeffective;
 mod lineal_tally;
 mod mkm;
 mod sweep;
@@ -41,7 +42,11 @@ pub use compare::{
 pub use endpoint::{
     AppliedDoseStatistic, DoseStatistic, ENDPOINT_EVALUATION_SCHEMA, ENDPOINT_MODEL_SCHEMA,
     EndpointEvaluation, EndpointFunction, EndpointKind, EndpointModel, EvaluatedEndpoint,
-    UtcpCombination, UtcpComponents, combine_utcp, evaluate_endpoint,
+    UtcpCombination, UtcpComponents, combine_utcp, combine_utcp_multi, evaluate_endpoint,
+};
+pub use isoeffective::{
+    ISOEFFECTIVE_MODEL_SCHEMA, Irradiation, IsoeApplied, IsoeComponent, IsoeffectiveModel,
+    apply_isoeffective_model,
 };
 pub use lineal_tally::{
     LINEAL_TALLY_SPEC_SCHEMA, LinealComponent, LinealTallyError, LinealTallySpec,
@@ -129,6 +134,19 @@ pub struct BiologicalModel {
     /// matching mask is an error.
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
     pub region_weights: BTreeMap<String, WeightMap>,
+    /// Explicit precedence for overlapping region masks, earliest wins.
+    /// Required whenever any voxel could match more than one declared
+    /// region — without it, overlap is a hard error rather than silently
+    /// resolving alphabetically (a `brain` mask would shadow `tumor`).
+    /// Names not listed here resolve after listed ones, alphabetically.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub region_priority: Vec<String>,
+    /// Optional relative standard uncertainty (σ_w/w) per component
+    /// weight — CBE/RBE factors carry real uncertainty and usually
+    /// dominate the BNCT budget. Propagated in quadrature with the
+    /// transport σ: σ² += Σᵢ (wᵢ·dᵢ·σ_wᵢ/wᵢ)².
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub component_weight_uncertainty: BTreeMap<String, f64>,
     /// Evidence reference for where the weight values came from.
     pub derivation: Option<ContentReference>,
     /// Free-text description of the model's validity domain (dose range,
@@ -174,6 +192,48 @@ impl BiologicalModel {
                 return Err(BioError::Invalid("region name is empty".into()));
             }
             check(weights, "region_weights")?;
+        }
+        let component_names: BTreeSet<&str> = [
+            DoseComponent::Boron,
+            DoseComponent::Nitrogen,
+            DoseComponent::Hydrogen,
+            DoseComponent::Photon,
+        ]
+        .iter()
+        .map(|c| component_name(*c))
+        .collect();
+        for (name, rel) in &self.component_weight_uncertainty {
+            if !component_names.contains(name.as_str()) {
+                return Err(BioError::Invalid(format!(
+                    "component_weight_uncertainty names {name:?}, not a dose component"
+                )));
+            }
+            if !rel.is_finite() || *rel < 0.0 {
+                return Err(BioError::Invalid(format!(
+                    "component_weight_uncertainty[{name}] must be finite and non-negative"
+                )));
+            }
+        }
+        // Priority names must name declared regions — a typo'd entry
+        // would silently change precedence.
+        {
+            let declared: BTreeSet<&str> = self
+                .region_weights
+                .keys()
+                .chain(
+                    self.fractionation
+                        .iter()
+                        .flat_map(|f| f.region_alpha_beta.keys()),
+                )
+                .map(String::as_str)
+                .collect();
+            for name in &self.region_priority {
+                if !declared.contains(name.as_str()) {
+                    return Err(BioError::Invalid(format!(
+                        "region_priority names {name:?}, which is not a declared region"
+                    )));
+                }
+            }
         }
         if self.weight_semantics == WeightSemantics::MicrodosimetricKinetic {
             return Err(BioError::Invalid(
@@ -311,6 +371,11 @@ pub struct BiologicalDoseBundle {
     /// energies and consumed spectra so the result is checkable.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub microdosimetry: Option<mkm::MkmApplied>,
+    /// IsoE provenance block — present exactly when the bundle was
+    /// produced by an `openbnct.isoeffective-model/0.1.0` artifact;
+    /// records the applied repair factor and delivery structure.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub isoeffective: Option<isoeffective::IsoeApplied>,
 }
 
 impl BiologicalDoseBundle {
@@ -374,6 +439,61 @@ fn weighted_unit(unit: DoseUnit) -> String {
     }
 }
 
+/// Order declared region names: `priority` entries first (in listed
+/// order), then the rest alphabetically. Map key order is already
+/// alphabetical — `region_priority` is the only explicit precedence.
+pub(crate) fn ordered_region_names<'a>(
+    declared: impl Iterator<Item = &'a String>,
+    priority: &[String],
+) -> Vec<String> {
+    let declared: BTreeSet<String> = declared.cloned().collect();
+    // Only priority entries that name a region declared in *this* map —
+    // a region may hold an α/β override without a weight override.
+    let mut names: Vec<String> = priority
+        .iter()
+        .filter(|name| declared.contains(*name))
+        .cloned()
+        .collect();
+    let rest: Vec<String> = declared
+        .into_iter()
+        .filter(|name| !names.contains(name))
+        .collect();
+    names.extend(rest);
+    names
+}
+
+/// Resolve each voxel to its winning region under `ordered` precedence.
+/// Any voxel matching more than one region is a hard error unless
+/// `priority` was declared — silent alphabetical resolution mislabels
+/// nested ROIs (tumor inside brain).
+pub(crate) fn resolve_regions(
+    ordered: &[String],
+    masks: &BTreeMap<&str, &Vec<bool>>,
+    priority: &[String],
+    voxel_count: usize,
+    context: &str,
+) -> Result<Vec<Option<usize>>, BioError> {
+    let mut assignment = vec![None; voxel_count];
+    let mut overlapping: BTreeSet<Vec<String>> = BTreeSet::new();
+    for (voxel, slot) in assignment.iter_mut().enumerate() {
+        let matching: Vec<usize> = (0..ordered.len())
+            .filter(|&i| masks[ordered[i].as_str()][voxel])
+            .collect();
+        if matching.len() > 1 {
+            overlapping.insert(matching.iter().map(|&i| ordered[i].clone()).collect());
+        }
+        *slot = matching.first().copied();
+    }
+    if !overlapping.is_empty() && priority.is_empty() {
+        let sets: Vec<String> = overlapping.iter().map(|set| set.join("+")).collect();
+        return Err(BioError::Invalid(format!(
+            "{context}: voxels match multiple regions ({}). Resolution order              is ambiguous — declare `region_priority` in the model or make the              masks disjoint first (`openbnct mask subtract`).",
+            sets.join(", ")
+        )));
+    }
+    Ok(assignment)
+}
+
 /// Apply a biological model to a physical dose bundle.
 ///
 /// `regions` supplies the masks named by `model.region_weights` and by
@@ -428,13 +548,18 @@ pub fn apply_biological_model(
         }
     }
 
-    // Per-voxel effective region: first matching mask in region_weights order.
+    // Per-voxel effective region: declared `region_priority` order, then
+    // alphabetical; overlap without a declared priority is an error.
+    let weight_order = ordered_region_names(model.region_weights.keys(), &model.region_priority);
+    let weight_assignment = resolve_regions(
+        &weight_order,
+        &masks,
+        &model.region_priority,
+        voxel_count,
+        "region_weights",
+    )?;
     let region_of = |voxel: usize| -> Option<&str> {
-        model
-            .region_weights
-            .keys()
-            .find(|name| masks[name.as_str()][voxel])
-            .map(String::as_str)
+        weight_assignment[voxel].map(|i| weight_order[i].as_str())
     };
 
     let unit = weighted_unit(model.input_unit);
@@ -480,6 +605,25 @@ pub fn apply_biological_model(
         }
     }
 
+    // Declared weight uncertainties add in quadrature — CBE/RBE factors
+    // are model inputs, not transport-correlated, and typically dominate.
+    // Only folded in when transport σ exists: a σ built from weight
+    // uncertainty alone would understate (transport σ unknown ≠ zero).
+    if have_sigma && !model.component_weight_uncertainty.is_empty() {
+        for (voxel, sigma) in total_sigma.iter_mut().enumerate() {
+            let mut variance = 0.0;
+            for volume in &physical.components {
+                let name = component_name(volume.component);
+                if let Some(rel) = model.component_weight_uncertainty.get(name) {
+                    let weight = model.weight_for(volume.component, region_of(voxel));
+                    let term = weight * volume.values[voxel] * rel;
+                    variance += term * term;
+                }
+            }
+            *sigma = (*sigma * *sigma + variance).sqrt();
+        }
+    }
+
     // Fractionated models turn the linear weighted total into a
     // photon-isoeffective EQD2: per-fraction dose d = w·particles, BED =
     // n·d·(1 + d/(α/β)), EQD2 = BED/(1 + 2/(α/β)), with per-region α/β.
@@ -500,14 +644,21 @@ pub fn apply_biological_model(
                 )));
             }
         }
+        let ab_order = ordered_region_names(
+            fractionation.region_alpha_beta.keys(),
+            &model.region_priority,
+        );
+        let ab_assignment = resolve_regions(
+            &ab_order,
+            &masks,
+            &model.region_priority,
+            voxel_count,
+            "region_alpha_beta",
+        )?;
         let alpha_beta_of = |voxel: usize| -> f64 {
-            fractionation
-                .region_alpha_beta
-                .keys()
-                .find(|name| masks[name.as_str()][voxel])
-                .map_or(fractionation.default_alpha_beta, |name| {
-                    fractionation.region_alpha_beta[name]
-                })
+            ab_assignment[voxel].map_or(fractionation.default_alpha_beta, |i| {
+                fractionation.region_alpha_beta[&ab_order[i]]
+            })
         };
         for voxel in 0..voxel_count {
             let ratio = alpha_beta_of(voxel);
@@ -554,6 +705,7 @@ pub fn apply_biological_model(
         regions_applied,
         qualification: "synthetic_research_only_not_clinical".into(),
         microdosimetry: None,
+        isoeffective: None,
     };
     bundle.validate()?;
     Ok(bundle)
@@ -629,6 +781,8 @@ mod tests {
         weights.insert("hydrogen".into(), 1.0);
         weights.insert("photon".into(), 1.0);
         BiologicalModel {
+            region_priority: Vec::new(),
+            component_weight_uncertainty: BTreeMap::new(),
             schema_version: BIOLOGICAL_MODEL_SCHEMA.into(),
             id: "test.model.v1".into(),
             weight_semantics: WeightSemantics::FixedPerComponent,
@@ -689,6 +843,63 @@ mod tests {
             .unwrap();
         assert_eq!(boron.values, vec![5.0e-12, 3.8e-12]);
         assert_eq!(bundle.regions_applied, vec!["tumor"]);
+    }
+
+    #[test]
+    fn overlapping_region_masks_require_declared_priority() {
+        // tumor inside brain — nested ROIs are the common case; without
+        // priority this must error, not silently pick `brain`.
+        let mut model = model();
+        let mut tumor = WeightMap::new();
+        tumor.insert("boron".into(), 5.0);
+        tumor.insert("nitrogen".into(), 2.5);
+        tumor.insert("hydrogen".into(), 1.0);
+        tumor.insert("photon".into(), 1.0);
+        model.region_weights.insert("tumor".into(), tumor);
+        let mut brain = model.component_weights.clone();
+        brain.insert("boron".into(), 1.3);
+        model.region_weights.insert("brain".into(), brain);
+        let masks = vec![
+            RegionMask {
+                name: "tumor".into(),
+                voxels: vec![true, false],
+            },
+            RegionMask {
+                name: "brain".into(),
+                voxels: vec![true, true],
+            },
+        ];
+        let bytes = serde_json::to_vec_pretty(&model).unwrap();
+        let err = apply_biological_model(&model, &bytes, &physical_bundle(), &masks).unwrap_err();
+        assert!(format!("{err}").contains("multiple regions"));
+
+        // Declared priority resolves the overlap deterministically.
+        model.region_priority = vec!["tumor".into(), "brain".into()];
+        let bundle = apply_biological_model(&model, &bytes, &physical_bundle(), &masks).unwrap();
+        let boron = bundle
+            .components
+            .iter()
+            .find(|c| c.component == DoseComponent::Boron)
+            .unwrap();
+        assert!(
+            (boron.values[0] - 5.0e-12).abs() < 1e-20 && (boron.values[1] - 1.3e-12).abs() < 1e-20
+        );
+    }
+
+    #[test]
+    fn weight_uncertainty_folds_into_total_sigma_in_quadrature() {
+        let mut model = model();
+        model
+            .component_weight_uncertainty
+            .insert("boron".into(), 0.10);
+        let bytes = serde_json::to_vec_pretty(&model).unwrap();
+        let bundle = apply_biological_model(&model, &bytes, &physical_bundle(), &[]).unwrap();
+        // transport σ (correlated linear) ⊕ weight σ (w·d·rel, quadrature).
+        let transport: f64 = 3.8e-14 + 2.5 * 2.0e-15 + 5.0e-16 + 3.0e-15;
+        let weight: f64 = 3.8 * 1.0e-12 * 0.10;
+        let expected = (transport * transport + weight * weight).sqrt();
+        let sigma = bundle.total.absolute_standard_uncertainty.as_ref().unwrap()[0];
+        assert!((sigma - expected).abs() / expected < 1.0e-12);
     }
 
     #[test]

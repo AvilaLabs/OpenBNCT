@@ -357,6 +357,8 @@ mod tests {
             ("photon".into(), 1.0),
         ]);
         BiologicalModel {
+            region_priority: Vec::new(),
+            component_weight_uncertainty: BTreeMap::new(),
             schema_version: crate::BIOLOGICAL_MODEL_SCHEMA.into(),
             id: "test.model.v1".into(),
             weight_semantics: WeightSemantics::FixedPerComponent,

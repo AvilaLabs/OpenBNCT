@@ -12,7 +12,14 @@
   "utcp": {
     "combination": "p_plus",
     "tcp": 0.15108808290155445,
-    "ntcp": 0.09387000337388249,
+    "ntcp": 0.09387000337388252,
+    "tcp_region": "whole-region",
+    "ntcp_regions": [
+      "whole-region"
+    ],
+    "ntcp_terms": [
+      0.09387000337388249
+    ],
     "tcp_evaluation": {
       "id": "endpoint-fixture.endpoint-evaluation",
       "sha256": "fbecf95d9bd98f5b60b3afdf0b8c3bdd8aaeaf9e9ff45bd2357ec4eaf18b9ee7"
@@ -20,7 +27,13 @@
     "ntcp_evaluation": {
       "id": "endpoint-fixture.endpoint-evaluation",
       "sha256": "d20cde81b0847bdd3ed5bb3cb3c376ce3b5ee2253e7fd7363cb1a901dabba8dd"
-    }
+    },
+    "ntcp_evaluations": [
+      {
+        "id": "endpoint-fixture.endpoint-evaluation",
+        "sha256": "d20cde81b0847bdd3ed5bb3cb3c376ce3b5ee2253e7fd7363cb1a901dabba8dd"
+      }
+    ]
   },
   "qualification": "synthetic_research_only_not_clinical"
 }

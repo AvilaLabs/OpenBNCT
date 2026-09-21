@@ -344,6 +344,8 @@ mod tests {
                 ("photon".into(), 1.0),
             ]),
             region_weights: Default::default(),
+            region_priority: Vec::new(),
+            component_weight_uncertainty: BTreeMap::new(),
             derivation: None,
             validity_domain: Some("test".into()),
             fractionation: None,

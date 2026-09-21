@@ -676,8 +676,14 @@ total is then transformed to a photon-isoeffective EQD2,
 `n·d·(1 + d/(α/β)) / (1 + 2/(α/β))` with `d` the per-fraction dose, while
 component volumes keep their linear weighted values and the applied
 schedule is recorded in the bundle. Weight and α/β region selections are
-independent — each uses the first matching mask in its own map's order.
-Models carry a free-text `validity_domain` for provenance.
+independent, resolved in `region_priority` order (then alphabetically).
+If any voxel could match more than one declared region, the model must
+declare `region_priority` — overlapping masks without it are an error,
+since silent alphabetical resolution would shadow nested ROIs (tumor
+inside `brain` would take `brain` weights). `component_weight_uncertainty`
+(σ_w/w per component) propagates declared CBE/RBE uncertainty into the
+biological σ in quadrature with the transport uncertainty. Models carry
+a free-text `validity_domain` for provenance.
 
 A second, separately versioned model family covers stochastic
 microdosimetry: `openbnct.microdosimetric-model/0.1.0` artifacts carry
@@ -726,13 +732,32 @@ openbnct bio lineal-tally \
   --id openbnct.case.lineal-spectrum.v1 --output NEW-SPECTRUM.json
 ```
 
-Each physical component is converted to a photon-equivalent dose via the
-MKM effective `α* = α₀ + β·z̄₁D` with `z̄₁D = ȳ_D/(ρ·π·r_d²)`, and the
-total sums them; the emitted bundle marks `microdosimetric_kinetic`
-semantics, an `mkm_weighted_*` unit, and a `microdosimetry` block binding
-the resolved lineal energies and spectrum hashes. MKM outputs are
+The components combine in *effect* space under the mixed-field MKM —
+`X = Σᵢ (α₀ + β·z̄₁D,ᵢ)·dᵢ + (Σᵢ √βᵢ·dᵢ)²` (Zaider–Rossi √β synergy) —
+and the photon-equivalent dose inverts `α₀·D + β·D² = X` once; summing
+per-component inversions would double-count the quadratic cross terms.
+Component volumes report each component's effect-share of the
+isoeffective dose (they still sum to the total exactly); the emitted
+bundle marks `microdosimetric_kinetic` semantics, an `mkm_weighted_*`
+unit, and a `microdosimetry` block binding the resolved lineal energies
+and spectrum hashes. MKM outputs are
 research artifacts — they assert no clinical RBE/CBE/Gy-Eq claim, and a
 weight model cannot claim `microdosimetric_kinetic` semantics.
+
+A third model family implements the González & Santa Cruz (2012)
+photon-isoeffective dose: `openbnct.isoeffective-model/0.1.0` declares
+per-component dose-independent factors (`rbe` for the linear term — the
+boron CBE — and `rbe_beta` for the quadratic term, photon pinned to
+1.0/1.0), the tissue's photon-reference `alpha_0`/`beta`, optional
+per-region factor and reference-LQ tables, and an optional `irradiation`
+block (`duration_s`, `repair_rate_per_s`) producing the Lea–Catcheside
+repair factor `G = 2(μT−1+e^(−μT))/(μT)²`. The model equates the
+mixed-field exponent `X = α_γ·Σ rbeᵢ·dᵢ + G·β_γ·(Σ √rbeβᵢ·dᵢ)²` to the
+photon LQ and inverts once — unlike fixed-weight `photon_isoeffective`
+semantics, this is the full IsoE formalism including component synergy
+and protracted-delivery repair. Bundles carry `photon_isoeffective`
+semantics, `isoeffective_*` units, and an `isoeffective` provenance
+block recording the applied G.
 
 The NF-BNCT-001 specification's exclusion of CBE/RBE/Gy-Eq claims is
 preserved: biological bundles exist only when a model artifact is supplied,
@@ -1274,10 +1299,12 @@ emitting `openbnct.endpoint-evaluation/0.1.0`. Three functions exist:
 per-fraction `d`, BED, surviving clonogens; requires a
 `*_per_source_particle` unit), `logistic` (`1/(1+(D50/D)^(4γ50))`), and
 `probit` (Lyman `Φ((D−TD50)/(m·TD50))`) — the last two over a declared
-scalar statistic (mean/min/max/EUD). `endpoint utcp` combines a TCP and an
-NTCP evaluation over the same case/region/quantity/dose source under
-`p_plus` (`TCP·(1−NTCP)`) or `difference`, rejecting mismatched
-ingredients. Demonstration models live in `examples/endpoint/`; all
+scalar statistic (mean/min/max/EUD). `endpoint utcp` combines a TCP evaluation with
+one or more NTCP evaluations over the same case/quantity/dose source
+under `p_plus` (`TCP·Π(1−NTCPᵢ)`) or `difference` — the standard
+uncomplicated-control pairing puts TCP on the target and each NTCP on a
+*different* organ at risk, so `--ntcp` is repeatable and regions are
+recorded, not required to match. Demonstration models live in `examples/endpoint/`; all
 probabilities are synthetic research values:
 
 ```text
