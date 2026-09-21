@@ -38,6 +38,7 @@ use thiserror::Error;
 use crate::model::TransportCase;
 use crate::multigroup::{
     MultigroupData, MultigroupError, MultigroupFlux, SnOptions, cell_materials, solve_multigroup,
+    solve_multigroup_unchecked,
 };
 
 /// Central-difference step as a fraction of the parameter value.
@@ -406,14 +407,22 @@ pub fn propagate_uncertainty(
             let delta = FD_REL_STEP * theta.abs().max(FD_ABS_FLOOR);
             let mut data_hi = data.clone();
             set(&mut data_hi, theta + delta);
-            data_hi.validate()?;
-            let flux_hi =
-                solve_multigroup(case, &data_hi, options, data_ref.clone(), case_ref.clone())?;
+            let flux_hi = solve_multigroup_unchecked(
+                case,
+                &data_hi,
+                options,
+                data_ref.clone(),
+                case_ref.clone(),
+            )?;
             let mut data_lo = data.clone();
             set(&mut data_lo, theta - delta);
-            data_lo.validate()?;
-            let flux_lo =
-                solve_multigroup(case, &data_lo, options, data_ref.clone(), case_ref.clone())?;
+            let flux_lo = solve_multigroup_unchecked(
+                case,
+                &data_lo,
+                options,
+                data_ref.clone(),
+                case_ref.clone(),
+            )?;
             solves += 2;
             Ok((integrate(&flux_hi) - integrate(&flux_lo)) / (2.0 * delta))
         };

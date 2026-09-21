@@ -4937,7 +4937,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     schema_version: openbnct_transport::MULTIGROUP_COVARIANCE_SCHEMA.into(),
                     id: format!("openbnct.covariance.{}.mt{}", material, mt),
                     multigroup_data: openbnct_core::ContentReference {
-                        id: format!("multigroup-data:{}", mg.id),
+                        id: mg.id.clone(),
                         sha256: format!("sha256:{}", openbnct_evidence::sha256_hex(&data_bytes)),
                     },
                     diagonal,

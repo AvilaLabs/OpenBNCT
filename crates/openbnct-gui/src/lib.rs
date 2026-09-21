@@ -656,6 +656,8 @@ struct DosePanel {
     /// component — also selectable as a dose-map quantity.
     prompt_gamma: Option<openbnct_transport::PromptGammaSource>,
     prompt_gamma_error: Option<String>,
+    uncertainty_budget: Option<openbnct_transport::DoseUncertaintyBudget>,
+    uncertainty_budget_error: Option<String>,
     mask_path: String,
     quantity: String,
     histogram: Option<DoseVolumeHistogram>,
@@ -684,6 +686,8 @@ impl Default for DosePanel {
             compare_cache_key: None,
             prompt_gamma: None,
             prompt_gamma_error: None,
+            uncertainty_budget: None,
+            uncertainty_budget_error: None,
             mask_path: String::new(),
             quantity: String::new(),
             histogram: None,
@@ -1525,6 +1529,9 @@ enum DropTarget {
     /// A derived `openbnct.prompt-gamma-source` document — loads into the
     /// dose panel's prompt-gamma slot and selects the map quantity.
     PromptGamma,
+    /// A `dose-uncertainty-budget` report — budget table in the dose
+    /// workspace.
+    UncertaintyBudget,
     Unsupported,
 }
 
@@ -1634,6 +1641,7 @@ fn classify_dropped_json(bytes: &[u8]) -> DropTarget {
         }
         s if s.contains("plan-robustness/") => DropTarget::Robustness,
         s if s.contains("prompt-gamma-source/") => DropTarget::PromptGamma,
+        s if s.contains("dose-uncertainty-budget/") => DropTarget::UncertaintyBudget,
         _ => DropTarget::DoseBundle,
     }
 }
@@ -1901,6 +1909,7 @@ impl OpenBnctApp {
                         .clicked()
                     {
                         self.language = candidate;
+                        candidate.persist();
                     }
                 }
                 ui.separator();
@@ -2156,6 +2165,25 @@ impl OpenBnctApp {
                     Err(error) => self.panels.plan.robustness_error = Some(error),
                 }
                 self.workspace = WorkspaceTab::Plan;
+            }
+            DropTarget::UncertaintyBudget => {
+                match bytes
+                    .map_err(|e| e.clone())
+                    .and_then(|b| {
+                        serde_json::from_slice::<openbnct_transport::DoseUncertaintyBudget>(&b)
+                            .map_err(|e| e.to_string())
+                    })
+                    .and_then(|budget| budget.validate().map(|_| budget).map_err(|e| e.to_string()))
+                {
+                    Ok(budget) => {
+                        self.panels.dose.uncertainty_budget = Some(budget);
+                        self.panels.dose.uncertainty_budget_error = None;
+                    }
+                    Err(error) => {
+                        self.panels.dose.uncertainty_budget_error = Some(error);
+                    }
+                }
+                self.workspace = WorkspaceTab::Dose;
             }
             DropTarget::PromptGamma => {
                 match bytes
@@ -3758,6 +3786,38 @@ fn show_transport_workspace(
             ui.label(t!(language, "timeout s", "タイムアウト秒"));
             ui.add(egui::TextEdit::singleline(&mut run.timeout_s).desired_width(50.0));
         });
+        // Command presets — the discoverable surface for controls that
+        // would otherwise need `--help` knowledge (like --threads).
+        ui.horizontal_wrapped(|ui| {
+            ui.label(t!(language, "presets:", "プリセット:"));
+            for (label, args) in [
+                ("sn solve", "sn solve --case case.json --data data.json --output flux.json"),
+                (
+                    "openmc run",
+                    "openmc run --case case.json --component-profile cp.json --material mat.json --source src.json --response-set rs.json --nuclear-data-manifest nd.json --execution-profile ep.json --nuclear-data-root xs/ --openmc openmc --threads 4 --working-directory runs/case --dose-output dose.json",
+                ),
+                (
+                    "uq propagate",
+                    "uq propagate --case case.json --data data.json --covariance cov.json --component boron --output budget.json",
+                ),
+                (
+                    "plan directions",
+                    "plan directions --case case.json --aim-mask tumor.json --data data.json --top 6",
+                ),
+                ("prompt-gamma", "prompt-gamma --dose dose.json --id pg --output pg.json"),
+            ] {
+                if ui
+                    .small_button(label)
+                    .on_hover_text(args)
+                    .clicked()
+                {
+                    run.args = args.to_owned();
+                    if run.program.trim().is_empty() {
+                        run.program = "openbnct".into();
+                    }
+                }
+            }
+        });
         ui.horizontal(|ui| {
             if ui
                 .add_enabled(
@@ -4726,6 +4786,79 @@ fn show_dose_compare(ui: &mut egui::Ui, panel: &mut DosePanel, language: Languag
 /// research consumes — a physics source term, not an image. The derived
 /// map is selectable as a dose-map quantity and exportable as the
 /// versioned `prompt-gamma-source` artifact.
+/// Render a dropped `dose-uncertainty-budget` report: total relative σ
+/// up front, then the top variance contributors — the "where does the
+/// uncertainty come from" table the artifact exists to answer.
+fn show_uncertainty_budget(
+    ui: &mut egui::Ui,
+    panel: &mut DosePanel,
+    language: Language,
+    theme: Theme,
+) {
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        if let Some(error) = &panel.uncertainty_budget_error {
+            ui.colored_label(theme.error, error.clone());
+        }
+        match &panel.uncertainty_budget {
+            None => {
+                ui.label(t!(
+                    language,
+                    "Drop a dose-uncertainty-budget JSON (from `uq propagate`) to inspect the variance decomposition.",
+                    "dose-uncertainty-budget JSON（`uq propagate` 出力）をドロップすると分散分解を表示します。"
+                ));
+            }
+            Some(budget) => {
+                ui.label(format!(
+                    "{}: {} · {} {:.4} Gy·cm² · {} ±{:.1}%",
+                    t!(language, "component", "成分"),
+                    budget.component,
+                    t!(language, "response", "応答"),
+                    budget.response_integral,
+                    t!(language, "total σ", "総 σ"),
+                    budget.total_relative_std_dev * 100.0
+                ));
+                ui.label(
+                    egui::RichText::new(&budget.method_note)
+                        .small()
+                        .weak(),
+                );
+                let mut entries: Vec<&openbnct_transport::BudgetEntry> =
+                    budget.entries.iter().collect();
+                entries.sort_by(|a, b| {
+                    b.relative_contribution
+                        .abs()
+                        .partial_cmp(&a.relative_contribution.abs())
+                        .unwrap_or(std::cmp::Ordering::Equal)
+                });
+                egui::Grid::new("uq-budget")
+                    .num_columns(4)
+                    .striped(true)
+                    .show(ui, |ui| {
+                        ui.monospace(t!(language, "parameter", "パラメータ"));
+                        ui.monospace(t!(language, "source", "ソース"));
+                        ui.monospace(t!(language, "σ param", "パラメータ σ"));
+                        ui.monospace(t!(language, "variance share", "分散寄与"));
+                        ui.end_row();
+                        for entry in entries.iter().take(12) {
+                            ui.monospace(&entry.parameter);
+                            ui.monospace(&entry.source);
+                            ui.monospace(format!("{:.4}", entry.std_dev));
+                            ui.monospace(format!("{:.1}%", entry.relative_contribution * 100.0));
+                            ui.end_row();
+                        }
+                    });
+                if budget.entries.len() > 12 {
+                    ui.small(format!(
+                        "… {} {}",
+                        budget.entries.len() - 12,
+                        t!(language, "more entries", "件の追加項目")
+                    ));
+                }
+            }
+        }
+    });
+}
+
 fn show_prompt_gamma(ui: &mut egui::Ui, panel: &mut DosePanel, language: Language, theme: Theme) {
     egui::Frame::group(ui.style()).show(ui, |ui| {
         let physical = panel
@@ -4992,6 +5125,9 @@ fn show_dose_workspace(
     ui.add_space(12.0);
     ui.heading(t!(language, "Prompt-gamma source", "即発ガンマ線源"));
     show_prompt_gamma(ui, panel, language, theme);
+    ui.add_space(12.0);
+    ui.heading(t!(language, "Uncertainty budget", "不確かさバジェット"));
+    show_uncertainty_budget(ui, panel, language, theme);
     if panel.compare_zone != egui::Rect::NOTHING {
         tour_targets.set(TourTarget::CompareZone, panel.compare_zone);
     }

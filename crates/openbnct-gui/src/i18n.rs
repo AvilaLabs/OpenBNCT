@@ -35,8 +35,27 @@ impl Language {
         }
     }
 
+    /// Persist the View-menu choice — `localStorage` on the web so a
+    /// reload keeps the language; a no-op on native (which has env
+    /// configuration and no canonical settings file to write yet).
+    pub fn persist(self) {
+        #[cfg(target_arch = "wasm32")]
+        {
+            let key = match self {
+                Self::Japanese => "ja",
+                Self::English => "en",
+            };
+            if let Some(storage) =
+                web_sys::window().and_then(|window| window.local_storage().ok().flatten())
+            {
+                let _ = storage.set_item("openbnct-lang", key);
+            }
+        }
+    }
+
     /// Detect the preferred language: `OPENBNCT_LANG` env var beats
-    /// `?lang=` URL param (web) which beats `navigator.language`/`LANG`.
+    /// `?lang=` URL param (web) which beats a persisted View-menu choice
+    /// (web localStorage) which beats `navigator.language`/`LANG`.
     #[must_use]
     pub fn detect() -> Self {
         if let Ok(explicit) = std::env::var("OPENBNCT_LANG")
@@ -57,6 +76,14 @@ impl Language {
                             };
                         }
                     }
+                }
+                if let Some(saved) = window
+                    .local_storage()
+                    .ok()
+                    .flatten()
+                    .and_then(|storage| storage.get_item("openbnct-lang").ok().flatten())
+                {
+                    return Self::from_locale(&saved);
                 }
                 if let Some(nav) = window.navigator().language() {
                     return Self::from_locale(&nav);

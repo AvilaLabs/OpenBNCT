@@ -1410,6 +1410,22 @@ pub fn solve_multigroup(
 ) -> Result<MultigroupFlux, MultigroupError> {
     case.validate()?;
     data.validate()?;
+    solve_multigroup_unchecked(case, data, options, data_ref, case_ref)
+}
+
+/// Solver body without input validation — crate-private, for the UQ
+/// finite-difference probes whose perturbed cross sections are
+/// mathematical probes, not declared data: a perturbed σ_t may sit
+/// below its group's scatter row sum without invalidating the probe.
+/// Callers must validate the nominal case/data first (the UQ path does
+/// at the top of `propagate_uncertainty`).
+pub(crate) fn solve_multigroup_unchecked(
+    case: &TransportCase,
+    data: &MultigroupData,
+    options: &SnOptions,
+    data_ref: ContentReference,
+    case_ref: ContentReference,
+) -> Result<MultigroupFlux, MultigroupError> {
     let geometry = &case.geometry;
     let n_cells = geometry.voxel_count()?;
     let groups = data.group_count();
