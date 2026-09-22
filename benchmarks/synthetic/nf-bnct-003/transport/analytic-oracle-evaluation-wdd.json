@@ -1,0 +1,30 @@
+{
+  "schema_version": "openbnct.analytic-oracle-evaluation/0.1.0",
+  "id": "openbnct.nf-bnct-003.analytic-oracle-evaluation.wdd.v1",
+  "case_id": "nf-bnct-003",
+  "oracle": {
+    "id": "openbnct.nf-bnct-003.analytic-oracle.v1",
+    "sha256": "a1265f4b0f98fce2874702e4063f6c2a0c2e89e71af5a1a7a4fc956d05661d45"
+  },
+  "inputs": [
+    {
+      "id": "benchmarks/synthetic/nf-bnct-003/transport/dose-theta-wdd.json",
+      "sha256": "03e5ba2b6ce4c9b9a6aa54ee27486e23b99bf022a54630f3625b0fd86b4e81be"
+    }
+  ],
+  "quantity": "component:boron",
+  "axis": "z",
+  "fit_window_cm": [
+    -8.0,
+    8.0
+  ],
+  "bins_evaluated": 32,
+  "fitted_slope_per_cm": -0.23079999999999995,
+  "expected_slope_per_cm": -0.2308,
+  "relative_deviation": 2.4051625316836146e-16,
+  "relative_tolerance": 0.02,
+  "log_residual_rms": 1.0877919644084146e-15,
+  "passed": true,
+  "qualification": "research-only: analytic-consistency evidence, not clinical or equivalence qualification",
+  "provenance_id": "sn-s8-nf-bnct-003"
+}
