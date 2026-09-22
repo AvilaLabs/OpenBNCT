@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Beam-shaping assemblies (`openbnct.beam-shaping-assembly/0.1.0`) and
 //! assembly sweeps (`openbnct.bsa-sweep/0.1.0`).

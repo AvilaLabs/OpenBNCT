@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! DICOM PET series import with body-weight SUV (SUVbw) quantification.
 //!

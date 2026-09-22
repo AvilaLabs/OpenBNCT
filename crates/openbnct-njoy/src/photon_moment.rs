@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Independent ENDF File 13/File 15 continuum photon-energy moments.
 //!

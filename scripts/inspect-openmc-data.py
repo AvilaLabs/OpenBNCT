@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
 
 """Create a case-scoped NCTForge manifest by inspecting OpenMC HDF5 data.
 

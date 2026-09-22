@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Boron-10 subcellular microdistribution artifacts
 //! (`openbnct.boron-microdistribution/0.1.0`,

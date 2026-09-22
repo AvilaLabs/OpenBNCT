@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Browser entry point. The app code is target-agnostic — this module
 //! only hosts it on a canvas. Filesystems and child processes do not

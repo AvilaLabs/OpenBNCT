@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Endpoint response models: tumor-control and normal-tissue-complication
 //! probability functions over a dose distribution, plus the combined UTCP

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Public conformance suite for `openbnct.component-dose-interchange/0.1.0`.
 //!

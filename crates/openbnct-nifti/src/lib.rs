@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! NIfTI-1 image import and export with explicit affine semantics.
 //!

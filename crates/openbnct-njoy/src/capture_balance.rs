@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Independent source-level energy accounting for MF=6/MT=102 photons.
 //!

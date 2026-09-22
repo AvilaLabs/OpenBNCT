@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Target-split artifact IO. Native builds read and write real
 //! filesystem paths; the web build cannot touch a filesystem, so

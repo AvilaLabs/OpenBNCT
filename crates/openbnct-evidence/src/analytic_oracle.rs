@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Analytic transport oracles (`openbnct.analytic-oracle/0.1.0`,
 //! `openbnct.analytic-oracle-evaluation/0.1.0`).

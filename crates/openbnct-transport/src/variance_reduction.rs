@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Versioned variance-reduction contracts (`openbnct.variance-reduction`,
 //! `openbnct.weight-windows`).

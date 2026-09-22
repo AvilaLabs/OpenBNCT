@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Comparison of independently calculated source moments with NJOY's bounded-
 //! precision diagnostic printout.

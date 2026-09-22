@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! CADIS / FW-CADIS weight-window derivation from the in-house adjoint
 //! S_N solve (`openbnct.weight-windows` output, transport-neutral input).

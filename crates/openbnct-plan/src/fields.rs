@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Versioned manifest for a multi-field beam sweep
 //! (`openbnct.beam-field-set/0.1.0`).

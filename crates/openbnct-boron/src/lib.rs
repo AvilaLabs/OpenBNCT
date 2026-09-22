@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! PET-derived boron-10 field modeling (`openbnct.boron-uptake-model/0.1.0`,
 //! `openbnct.boron-field/0.1.0`).

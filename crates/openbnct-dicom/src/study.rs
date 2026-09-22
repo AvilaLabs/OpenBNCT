@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! General-purpose DICOM study import — the research-case counterpart
 //! of the frozen NF-BNCT-001 benchmark verifier.

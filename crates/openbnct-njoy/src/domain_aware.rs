@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Transport-domain-aware interpretation of source-aware NJOY diagnostics.
 

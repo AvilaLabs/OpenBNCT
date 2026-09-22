@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
 
 """Compare controlled NJOY MT 301 PENDF data with inspected OpenMC HDF5 data."""
 

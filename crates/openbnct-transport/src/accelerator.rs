@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Parametric accelerator-target neutron sources
 //! (`openbnct.accelerator-source/0.1.0`).

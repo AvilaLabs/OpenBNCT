@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Facade crate re-exporting the OpenBNCT library crates under stable
 //! namespaced paths (`openbnct::core`, `openbnct::transport`, …).

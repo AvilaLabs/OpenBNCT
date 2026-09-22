@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Tabular CSV/XLSX interchange for `openbnct.exposure-plan` documents
 //! plus deterministic exposure-weight optimization.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Public adapter conformance suite: replays the NIfTI cases in
 //! `conformance/adapters/0.1.0/manifest.json` through `read_nifti_file` →

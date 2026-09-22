@@ -137,7 +137,7 @@ Exit evidence:
 
 - backend-neutral case and physical-dose contracts;
 - OpenMC isolated behind a transport interface;
-- Apache-2.0 and contribution policy;
+- MIT license and contribution policy;
 - research and Avify Dose IP boundaries;
 - synthetic-data-only repository policy;
 - documented feasibility risks and acceptance gates.

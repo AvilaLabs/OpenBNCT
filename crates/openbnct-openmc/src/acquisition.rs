@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Fail-closed acquisition of externally published OpenMC nuclear data.
 //!

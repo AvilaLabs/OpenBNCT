@@ -1,7 +1,7 @@
 # OpenBNCT
 
 [![CI](https://github.com/AvilaLabs/OpenBNCT/actions/workflows/ci.yml/badge.svg)](https://github.com/AvilaLabs/OpenBNCT/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/openbnct-core.svg)](https://crates.io/crates/openbnct-core)
 [![PyPI](https://img.shields.io/pypi/v/openbnct.svg)](https://pypi.org/project/openbnct/)
 [![Status: early research](https://img.shields.io/badge/status-early_research-orange.svg)](docs/ROADMAP.md)
@@ -105,4 +105,4 @@ OpenBNCT の中心的な役割は、特定施設の臨床 TPS を置き換える
 
 ## ライセンス
 
-OpenBNCT は [Apache License 2.0](LICENSE) で公開されています。
+OpenBNCT は [MIT License](LICENSE) で公開されています。

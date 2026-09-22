@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Public conformance suite for `openbnct.microdosimetric-model/0.1.0` →
 //! `openbnct.biological-dose-bundle/0.2.0` application.

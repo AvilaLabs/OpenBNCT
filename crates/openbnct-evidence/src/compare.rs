@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Cross-code dose comparison (`openbnct.dose-comparison/0.1.0`).
 //!

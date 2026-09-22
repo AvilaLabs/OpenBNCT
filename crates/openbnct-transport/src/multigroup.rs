@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Deterministic multigroup discrete-ordinates transport
 //! (`openbnct.multigroup-data/0.1.0`, `openbnct.multigroup-flux/0.1.0`).

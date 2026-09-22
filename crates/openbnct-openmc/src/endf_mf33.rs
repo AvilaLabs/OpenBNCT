@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Minimal ENDF-6 MF33 (cross-section covariance) reader feeding the
 //! `openbnct.multigroup-covariance` contract — the nuclear-data

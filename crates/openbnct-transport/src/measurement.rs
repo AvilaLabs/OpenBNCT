@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Measurement record import and measurement-vs-computation comparison
 //! (`openbnct.measurement-record`, `openbnct.measurement-comparison`).

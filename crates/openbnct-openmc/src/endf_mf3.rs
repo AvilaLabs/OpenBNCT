@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Minimal ENDF-6 fixed-format reader for incident-neutron MF3
 //! pointwise cross sections, plus the MF1 AWR mass.

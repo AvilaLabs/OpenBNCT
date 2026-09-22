@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Receipt-bound attribution of the deuterium LAW=7 implicit-residual
 //! calculation to NJOY2016.78's printed one-particle approximation, energy-

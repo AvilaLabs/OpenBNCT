@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Rigid co-registration contracts (`openbnct.registration/0.1.0`).
 //!

@@ -6,6 +6,14 @@ own versions independent of the crate version.
 
 ## [Unreleased]
 
+### Changed
+
+- Project license changed from Apache-2.0 to MIT (LICENSE, all SPDX
+  headers, crate/Python package metadata, badges, NOTICE, and the
+  contributing/disclaimer/citation references). The IP-boundary review
+  obligation in `docs/IP_BOUNDARY.md` is unchanged; the doc now states
+  that MIT carries no express patent grant.
+
 ### Fixed — transport solver
 
 - The S_N sweep's spatial closure is now theta-weighted diamond

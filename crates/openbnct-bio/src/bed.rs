@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! BED/EQD2 conversion of external photon/hadron dose (`openbnct.bed-bundle/0.1.0`)
 //! and combined-treatment evaluation (`openbnct.combined-dose/0.1.0`).

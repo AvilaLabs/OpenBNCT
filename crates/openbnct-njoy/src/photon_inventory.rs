@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Deterministic, source-bound inventory of ENDF photon-production records.
 //!

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! A compact, deterministic result for external evidence-loop orchestrators.
 //!

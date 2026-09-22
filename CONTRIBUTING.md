@@ -6,7 +6,7 @@ licensing provenance.
 
 ## License and certification
 
-All contributions are submitted under Apache-2.0. Commits must include a
+All contributions are submitted under the MIT license. Commits must include a
 Developer Certificate of Origin sign-off:
 
 ```text

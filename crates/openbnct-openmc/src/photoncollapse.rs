@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Coupled photon multigroup collapse: turns the processed
 //! photon-atomic library (`photo_<Elem>.h5` — incoherent, coherent,

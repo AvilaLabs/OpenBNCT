@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Receipt-bound comparison of independent MF=6 capture photon moments with
 //! NJOY's bounded-precision photon and synthesized-recoil print tables.

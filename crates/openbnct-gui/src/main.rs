@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {

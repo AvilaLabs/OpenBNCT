@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Receipt-bound attribution of NJOY kinematic diagnostics to the printed
 //! File 6 energy-balance remainders that are included in MT=301.

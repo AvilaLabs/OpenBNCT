@@ -13,7 +13,7 @@ estimates require independent verification by appropriately qualified experts.
 Do not use OpenBNCT output as the sole or primary basis for patient care,
 clinical decisions, treatment delivery, or regulatory submissions.
 
-The Apache-2.0 license permits use for any purpose; this document describes the
+The MIT license permits use for any purpose; this document describes the
 software's actual qualification boundary and does not create a field-of-use
 license restriction.
 

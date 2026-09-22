@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Evidence-aware transported-photon suitability layered over immutable v0.3
 //! domain evidence, the H-2 LAW=7 attribution, and the independent N-15

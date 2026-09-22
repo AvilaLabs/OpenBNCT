@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Deterministic writer for the public `NF-BNCT-001` geometry benchmark.
 //!

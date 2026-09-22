@@ -26,6 +26,7 @@ discussion in an issue, or acceptance as a contribution:
 - robust dose-bound certification or certificate-checking mechanisms;
 - any other workflow that may practice an Avify Dose claim.
 
-Apache-2.0 contains an express patent license for claims necessarily infringed
-by a contribution. MIT or another license must not be treated as a substitute
-for reviewing this boundary.
+The project is MIT-licensed. MIT carries no express patent grant, so the
+license provides no protection for patent claims necessarily infringed by a
+contribution — the boundary above stands on its own, and license choice is
+not a substitute for reviewing it.

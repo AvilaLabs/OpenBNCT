@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Metamorphic transport oracles (`openbnct.metamorphic-evaluation/0.1.0`).
 //!

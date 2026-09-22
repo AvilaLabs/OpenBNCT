@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# SPDX-License-Identifier: Apache-2.0
+# SPDX-License-Identifier: MIT
 """Worked OpenBNCT research workflow — the Python parity surface end to end.
 
 Two halves, both runnable today against committed artifacts:

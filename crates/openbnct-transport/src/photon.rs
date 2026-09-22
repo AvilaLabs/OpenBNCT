@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Coupled photon transport: multigroup photon data carrying the
 //! neutron→photon production map, and the two-pass solve that couples a

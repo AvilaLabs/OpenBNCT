@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Organ-limited irradiation-time evaluation over a per-source-particle
 //! dose endpoint.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! External photon/hadron dose import (`openbnct.external-dose/0.1.0`) and
 //! dose-field resampling.

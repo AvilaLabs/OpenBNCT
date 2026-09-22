@@ -1,7 +1,7 @@
 # OpenBNCT
 
 [![CI](https://github.com/AvilaLabs/OpenBNCT/actions/workflows/ci.yml/badge.svg)](https://github.com/AvilaLabs/OpenBNCT/actions/workflows/ci.yml)
-[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![crates.io](https://img.shields.io/crates/v/openbnct-core.svg)](https://crates.io/crates/openbnct-core)
 [![PyPI](https://img.shields.io/pypi/v/openbnct.svg)](https://pypi.org/project/openbnct/)
 [![Clinical use: not validated](https://img.shields.io/badge/clinical_use-not_validated-red.svg)](docs/DISCLAIMER.md)
@@ -129,5 +129,5 @@ repository" sidebar renders it.
 
 ## License
 
-Apache-2.0. The repository must not implement Avify Dose patent subject
+MIT. The repository must not implement Avify Dose patent subject
 matter without an IP review — see [docs/IP_BOUNDARY.md](docs/IP_BOUNDARY.md).

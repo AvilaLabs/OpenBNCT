@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Deterministic comparison of a response-treatment candidate against a
 //! rejected transported-photon suitability baseline.

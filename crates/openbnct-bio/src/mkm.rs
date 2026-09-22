@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Microdosimetric-kinetic model (MKM) family — a stochastic
 //! microdosimetry model kept deliberately distinct from the

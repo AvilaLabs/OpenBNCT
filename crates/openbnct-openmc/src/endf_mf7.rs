@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Minimal ENDF-6 fixed-format reader for MF7/MT4 thermal scattering
 //! law data — incoherent-inelastic S(α,β) tables.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 use std::collections::{BTreeMap, BTreeSet};
 use std::path::{Path, PathBuf};

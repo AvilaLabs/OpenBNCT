@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Nuclear-data uncertainty propagation through the deterministic
 //! multigroup path (`openbnct.multigroup-covariance/0.1.0` in,

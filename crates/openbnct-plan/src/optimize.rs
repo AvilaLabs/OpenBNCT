@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Inverse planning v1: non-negative beam-weight optimization against
 //! dose-volume objectives (`openbnct.inverse-plan-objective/0.1.0`,

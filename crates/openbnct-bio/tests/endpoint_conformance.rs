@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Public conformance suite for `openbnct.endpoint-model/0.1.0` →
 //! `openbnct.endpoint-evaluation/0.1.0` scoring and UTCP combination.

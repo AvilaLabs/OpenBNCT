@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Independent oracle for the frozen `NF-BNCT-001` DICOM geometry case.
 

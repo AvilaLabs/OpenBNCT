@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! UI language selection — English is the authoring language, Japanese
 //! the first localization target. Strings stay inline at the call site

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Fail-closed triage of the kinematic findings that remain after the v0.4
 //! reaction-evidence-aware assessment.

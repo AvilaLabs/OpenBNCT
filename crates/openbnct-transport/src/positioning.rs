@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Research positioning helpers: tumor-centroid aiming, skin-entry
 //! geometry, and source-to-anatomy transforms.

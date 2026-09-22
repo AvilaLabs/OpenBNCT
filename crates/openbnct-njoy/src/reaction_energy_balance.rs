@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Independent reaction-level energy-balance calculation for ENDF File 6
 //! multi-product LAW=1 evaluations.

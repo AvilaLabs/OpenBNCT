@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Smoke-check the MF7/MT4 parser against a real TSL tape.
 //! Usage: cargo run -p openbnct-openmc --example parse_tsl -- <tape>

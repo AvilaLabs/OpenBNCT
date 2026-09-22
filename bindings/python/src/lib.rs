@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Narrow PyO3 boundary over the authoritative NCTForge Rust crates.
 //!

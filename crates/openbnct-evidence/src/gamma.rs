@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Gamma-index evaluation (`openbnct.gamma-evaluation/0.1.0`).
 //!

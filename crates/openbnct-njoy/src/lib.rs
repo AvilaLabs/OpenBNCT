@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! Deterministic preparation, controlled execution, and evidence assessment
 //! for NJOY2016 partial-KERMA processing runs.

@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: Apache-2.0
+// SPDX-License-Identifier: MIT
 
 //! IAEA TECDOC-1223-style beam quality characterization
 //! (`openbnct.beam-quality`).

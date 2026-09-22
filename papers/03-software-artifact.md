@@ -22,7 +22,7 @@ Its function is to give the artifact a stable, citable identity.
 
 ## Required evidence
 
-- [x] Apache-2.0 license
+- [x] MIT license
 - [x] Contribution guidelines
 - [x] Automated tests in CI
 - [ ] `pip install openbnct` providing both the module and the CLI, so the tool
