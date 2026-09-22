@@ -52,7 +52,7 @@ pub use metrics::{
 };
 pub use pk::{
     PK_IRRADIATION_SCHEMA, PK_MODEL_SCHEMA, PK_SAMPLES_SCHEMA, PkIrradiationReport, PkModel,
-    PkRegion, PkRegionResult, PkSample, PkSampleSeries, PkSamples, fit_pk_model,
+    PkRegion, PkRegionResult, PkSample, PkSampleSeries, PkSamples, PkTimeUncertainty, fit_pk_model,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

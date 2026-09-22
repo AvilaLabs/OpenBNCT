@@ -8,6 +8,11 @@ own versions independent of the crate version.
 
 ### Added — pharmacokinetics
 
+- `irradiation-time --pk-samples --pk-bootstrap N` propagates PK fit
+  uncertainty into the beam-off answer: each replicate perturbs the
+  draws by the fit's residual RMS, refits, and re-solves `t*`, emitting
+  a P05/P50/P95 interval per region. Seeded by the samples' SHA-256 —
+  identical inputs reproduce the interval byte-for-byte.
 - `openbnct pk` fits measured concentration draws
   (`openbnct.pk-samples/0.1.0`) into a `pk-model` artifact —
   monoexponential via log-linear least squares, biexponential via a

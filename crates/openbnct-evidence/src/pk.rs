@@ -355,28 +355,6 @@ impl PkModel {
         Ok(())
     }
 
-    /// Concentration scaling factor integral
-    /// `(1/C_plan)·∫₀ᵗ C(τ) dτ` for `region`; returns 1.0·t-equivalent
-    /// (constant concentration at the planned value) when the region
-    /// has no declared curve.
-    fn boron_time_integral(&self, region: &str, t: f64) -> f64 {
-        let Some(pk) = self.regions.iter().find(|r| r.region == region) else {
-            return t;
-        };
-        pk.amplitudes_ppm
-            .iter()
-            .zip(pk.rates_per_s.iter())
-            .map(|(a, l)| {
-                if *l == 0.0 {
-                    a * t
-                } else {
-                    a * (1.0 - (-l * t).exp()) / l
-                }
-            })
-            .sum::<f64>()
-            / pk.planned_concentration_ppm
-    }
-
     /// Concentration ratio `C_r(t)/C_plan` at time `t` (1.0 when the
     /// region has no declared curve).
     fn concentration_ratio(&self, region: &str, t: f64) -> f64 {
@@ -416,6 +394,27 @@ pub struct PkRegionResult {
     /// Boron concentration ratio `C(t*)/C_plan` at the solved beam-off
     /// time — how far washout carried the region below plan.
     pub concentration_ratio_at_beam_off: Option<f64>,
+    /// Parametric-bootstrap interval over the PK fit residuals —
+    /// present only when the evaluation was given the fitted samples.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub time_uncertainty: Option<PkTimeUncertainty>,
+}
+
+/// Bootstrap spread of a region's solved beam-off time. Deterministic:
+/// the replicate seed derives from the SHA-256 of the samples document
+/// plus the region name, so identical inputs reproduce the interval.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PkTimeUncertainty {
+    /// Number of parametric-bootstrap replicates attempted.
+    pub replicates: u32,
+    /// Replicates that converged to a finite beam-off time.
+    pub converged: u32,
+    /// RNG seed — SHA-256-derived, recorded for audit.
+    pub seed: u64,
+    pub p05_s: f64,
+    pub p50_s: f64,
+    pub p95_s: f64,
 }
 
 /// Deterministic PK-aware organ-limited irradiation-time evaluation.
@@ -463,6 +462,7 @@ impl PkIrradiationReport {
         masks: &[RegionMask],
         limits: &[OrganLimit],
         source_strength: f64,
+        bootstrap: Option<(&PkSamples, u32)>,
     ) -> Result<Self, ManifestError> {
         pk.validate()?;
         if !unit.ends_with("per_source_particle") {
@@ -574,110 +574,46 @@ impl PkIrradiationReport {
                 Some(limit.limit / static_statistic)
             };
 
-            // Implicit solve D(t) = limit under the PK curve. D is
-            // monotonically non-decreasing in t for non-negative maps.
-            let max_time_s = if pk_modeled {
-                // Asymptote: D(t) = S·t·stat(O + (I(t)/t)·B) grows
-                // without bound whenever the non-boron map delivers a
-                // nonzero rate over the mask (O·t term) or the curve
-                // carries a constant (λ=0) amplitude. Only a mask with
-                // O ≡ 0 and a fully-decaying curve has a finite
-                // asymptote S·I∞·stat(B).
-                let o_selected = openbnct_core::masked_values(&mask.name, &other, &mask.voxels)
-                    .map_err(|e| invalid(&limit.region, e))?;
-                let o_rate = statistic(limit.metric, &o_selected, &limit.region)?;
-                let i_inf = pk
-                    .regions
-                    .iter()
-                    .find(|r| r.region == limit.region)
-                    .map(|r| {
-                        r.amplitudes_ppm
-                            .iter()
-                            .zip(r.rates_per_s.iter())
-                            .map(|(a, l)| {
-                                if *l == 0.0 {
-                                    if *a > 0.0 { f64::INFINITY } else { 0.0 }
-                                } else {
-                                    a / l
-                                }
-                            })
-                            .sum::<f64>()
-                            / r.planned_concentration_ppm
-                    })
-                    .unwrap_or(f64::INFINITY);
-                if o_rate == 0.0 && i_inf.is_finite() {
-                    let b_selected =
-                        openbnct_core::masked_values(&mask.name, boron_values, &mask.voxels)
-                            .map_err(|e| invalid(&limit.region, e))?;
-                    let b_rate = statistic(limit.metric, &b_selected, &limit.region)?;
-                    let asymptote = source_strength * i_inf * b_rate;
-                    if asymptote < limit.limit {
-                        regions.push(PkRegionResult {
-                            region: limit.region.clone(),
-                            metric: limit.metric,
-                            limit: limit.limit,
-                            region_voxel_count: voxel_count,
-                            pk_modeled,
-                            max_time_s: None,
-                            static_max_time_s,
-                            relative_deviation: None,
-                            concentration_ratio_at_beam_off: None,
-                        });
-                        continue;
+            // Implicit solve D(t) = limit under the PK curve.
+            let pk_region = pk.regions.iter().find(|r| r.region == limit.region);
+            let max_time_s = match pk_region {
+                Some(region) => solve_pk_time(
+                    region,
+                    mask,
+                    &limit.region,
+                    limit.metric,
+                    &other,
+                    boron_values,
+                    static_max_time_s,
+                    limit.limit,
+                    source_strength,
+                )?,
+                None => static_max_time_s,
+            };
+
+            // Parametric bootstrap over the fit residuals, when the
+            // caller passed the samples the model was fit from.
+            let time_uncertainty = match (bootstrap, pk_region) {
+                (Some((samples, replicates)), Some(region_pk)) => {
+                    let series = samples.regions.iter().find(|s| s.region == limit.region);
+                    match series {
+                        Some(series) => Some(pk_bootstrap_interval(
+                            series,
+                            region_pk,
+                            mask,
+                            &limit.region,
+                            limit.metric,
+                            &other,
+                            boron_values,
+                            limit.limit,
+                            source_strength,
+                            samples,
+                            replicates,
+                        )?),
+                        None => None,
                     }
                 }
-                // Bracket: the static answer is a bound when f ≤ 1
-                // (decay curves), but a rising curve can allow longer —
-                // grow the bracket geometrically until D(hi) ≥ limit.
-                let mut lo = 0.0_f64;
-                let mut hi = static_max_time_s.unwrap_or(1.0).max(1.0e-3);
-                for _ in 0..200 {
-                    let f_int = pk.boron_time_integral(&limit.region, hi);
-                    let d = endpoint_at_scaled(
-                        mask,
-                        &limit.region,
-                        limit.metric,
-                        &other,
-                        boron_values,
-                        hi,
-                        f_int,
-                        source_strength,
-                    )?;
-                    if d >= limit.limit {
-                        break;
-                    }
-                    lo = hi;
-                    hi *= 2.0;
-                    if hi > 1.0e9 {
-                        return Err(ManifestError::Invalid(format!(
-                            "region {:?}: cannot bracket irradiation time below 1e9 s",
-                            limit.region
-                        )));
-                    }
-                }
-                // Bisection — 80 iterations is far past f64 resolution.
-                for _ in 0..80 {
-                    let mid = 0.5 * (lo + hi);
-                    let f_int = pk.boron_time_integral(&limit.region, mid);
-                    let d = endpoint_at_scaled(
-                        mask,
-                        &limit.region,
-                        limit.metric,
-                        &other,
-                        boron_values,
-                        mid,
-                        f_int,
-                        source_strength,
-                    )?;
-                    if d >= limit.limit {
-                        hi = mid;
-                    } else {
-                        lo = mid;
-                    }
-                }
-                Some(hi)
-            } else {
-                static_max_time_s
+                _ => None,
             };
 
             let relative_deviation = match (max_time_s, static_max_time_s) {
@@ -699,6 +635,7 @@ impl PkIrradiationReport {
                 static_max_time_s,
                 relative_deviation,
                 concentration_ratio_at_beam_off,
+                time_uncertainty,
             });
         }
 
@@ -732,9 +669,265 @@ impl PkIrradiationReport {
                 "declared PK curves are evaluated from beam-on; T/N ratios are assumed constant within each region over the irradiation".into(),
                 "endpoint accumulates linearly with delivered source particles at constant source strength; anatomy and the endpoint map are static".into(),
                 "region limits apply to the stated max/mean/D_x statistic only; no inter-fraction recovery or repopulation is modeled".into(),
-                "PK curves are declared research inputs with a stated basis; they are not fitted, validated, or clinically qualified here".into(),
+                "PK curves are declared research inputs with a stated basis; when samples are supplied the intervals are a parametric bootstrap over the fit residuals — not a clinical confidence statement".into(),
             ],
         })
+    }
+}
+
+/// Solve `D(t) = limit` for one region under its PK curve.
+/// `Ok(None)` when the bounded asymptote cannot reach the limit.
+#[allow(clippy::too_many_arguments)]
+fn solve_pk_time(
+    pk_region: &PkRegion,
+    mask: &RegionMask,
+    region: &str,
+    metric: LimitMetric,
+    other: &[f64],
+    boron: &[f64],
+    static_time: Option<f64>,
+    limit: f64,
+    source_strength: f64,
+) -> Result<Option<f64>, ManifestError> {
+    let invalid = |e: openbnct_core::ValidationError| {
+        ManifestError::Invalid(format!("region {region:?}: {e}"))
+    };
+    let statistic = |values: &[f64]| -> Result<f64, ManifestError> {
+        match metric {
+            LimitMetric::Max => Ok(values.iter().copied().fold(0.0, f64::max)),
+            LimitMetric::Mean => Ok(openbnct_core::mean(values)),
+            LimitMetric::DoseCoverage { percent } => {
+                openbnct_core::dose_covering_percent(values, f64::from(percent)).map_err(invalid)
+            }
+        }
+    };
+
+    // Asymptote: D(t) = S·t·stat(O + (I(t)/t)·B) grows without bound
+    // whenever the non-boron map delivers a nonzero rate over the mask
+    // (O·t term) or the curve carries a constant (λ=0) amplitude. Only
+    // a mask with O ≡ 0 and a fully-decaying curve has a finite
+    // asymptote S·I∞·stat(B).
+    let o_selected = openbnct_core::masked_values(region, other, &mask.voxels).map_err(invalid)?;
+    let o_rate = statistic(&o_selected)?;
+    let i_inf = pk_region
+        .amplitudes_ppm
+        .iter()
+        .zip(pk_region.rates_per_s.iter())
+        .map(|(a, l)| {
+            if *l == 0.0 {
+                if *a > 0.0 { f64::INFINITY } else { 0.0 }
+            } else {
+                a / l
+            }
+        })
+        .sum::<f64>()
+        / pk_region.planned_concentration_ppm;
+    if o_rate == 0.0 && i_inf.is_finite() {
+        let b_selected =
+            openbnct_core::masked_values(region, boron, &mask.voxels).map_err(invalid)?;
+        let asymptote = source_strength * i_inf * statistic(&b_selected)?;
+        if asymptote < limit {
+            return Ok(None);
+        }
+    }
+
+    let integral = |t: f64| {
+        pk_region
+            .amplitudes_ppm
+            .iter()
+            .zip(pk_region.rates_per_s.iter())
+            .map(|(a, l)| {
+                if *l == 0.0 {
+                    a * t
+                } else {
+                    a * (1.0 - (-l * t).exp()) / l
+                }
+            })
+            .sum::<f64>()
+            / pk_region.planned_concentration_ppm
+    };
+
+    // Bracket: grow geometrically until D(hi) ≥ limit.
+    let mut lo = 0.0_f64;
+    let mut hi = static_time.unwrap_or(1.0).max(1.0e-3);
+    for _ in 0..200 {
+        let d = endpoint_at_scaled(
+            mask,
+            region,
+            metric,
+            other,
+            boron,
+            hi,
+            integral(hi),
+            source_strength,
+        )?;
+        if d >= limit {
+            break;
+        }
+        lo = hi;
+        hi *= 2.0;
+        if hi > 1.0e9 {
+            return Err(ManifestError::Invalid(format!(
+                "region {region:?}: cannot bracket irradiation time below 1e9 s"
+            )));
+        }
+    }
+    // Bisection — 80 iterations is far past f64 resolution.
+    for _ in 0..80 {
+        let mid = 0.5 * (lo + hi);
+        let d = endpoint_at_scaled(
+            mask,
+            region,
+            metric,
+            other,
+            boron,
+            mid,
+            integral(mid),
+            source_strength,
+        )?;
+        if d >= limit {
+            hi = mid;
+        } else {
+            lo = mid;
+        }
+    }
+    Ok(Some(hi))
+}
+
+/// Deterministic PRNG (xorshift64*) + Box–Muller — bootstrap
+/// replicates must be reproducible for a content-bound artifact.
+struct XorShift64(u64);
+
+impl XorShift64 {
+    fn next_u64(&mut self) -> u64 {
+        let mut x = self.0;
+        x ^= x >> 12;
+        x ^= x << 25;
+        x ^= x >> 27;
+        self.0 = x;
+        x.wrapping_mul(0x2545_F491_4F6C_DD1D)
+    }
+
+    fn uniform(&mut self) -> f64 {
+        (self.next_u64() >> 11) as f64 * (1.0 / 9_007_199_254_740_992.0)
+    }
+
+    fn gauss(&mut self) -> f64 {
+        let u1 = self.uniform().max(1e-300);
+        let u2 = self.uniform();
+        (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()
+    }
+}
+
+/// Parametric bootstrap: perturb each draw by the base fit's residual
+/// RMS (Gaussian, seeded by the samples hash), refit, and re-solve
+/// `t*`. Returns the P05/P50/P95 interval over converged replicates.
+#[allow(clippy::too_many_arguments)]
+fn pk_bootstrap_interval(
+    series: &PkSampleSeries,
+    base_region: &PkRegion,
+    mask: &RegionMask,
+    region: &str,
+    metric: LimitMetric,
+    other: &[f64],
+    boron: &[f64],
+    limit: f64,
+    source_strength: f64,
+    samples_doc: &PkSamples,
+    replicates: u32,
+) -> Result<PkTimeUncertainty, ManifestError> {
+    let exponentials = base_region.amplitudes_ppm.len();
+    let fitted = |t: f64| {
+        base_region
+            .amplitudes_ppm
+            .iter()
+            .zip(base_region.rates_per_s.iter())
+            .map(|(a, l)| a * (-l * t).exp())
+            .sum::<f64>()
+    };
+    let residual_rms = (series
+        .samples
+        .iter()
+        .map(|s| (s.concentration_ppm - fitted(s.time_s)).powi(2))
+        .sum::<f64>()
+        / series.samples.len() as f64)
+        .sqrt();
+
+    // Seed: SHA-256 of the samples document ⊕ region-name hash —
+    // identical inputs reproduce the interval byte-for-byte.
+    let doc_bytes = serde_json::to_vec(samples_doc)
+        .map_err(|e| ManifestError::Invalid(format!("pk-samples serialize: {e}")))?;
+    let doc_hash = crate::sha256_hex(&doc_bytes);
+    let seed = u64::from_str_radix(&doc_hash[..16], 16).unwrap_or(0x9E37_79B9_7F4A_7C15)
+        ^ region.bytes().fold(0xCBF2_9CE4_8422_2325_u64, |h, b| {
+            (h ^ u64::from(b)).wrapping_mul(0x100_0000_01B3)
+        });
+    let mut rng = XorShift64(seed.max(1));
+
+    let mut times = Vec::new();
+    for _ in 0..replicates {
+        let perturbed: Vec<PkSample> = series
+            .samples
+            .iter()
+            .map(|s| PkSample {
+                time_s: s.time_s,
+                concentration_ppm: (fitted(s.time_s) + residual_rms * rng.gauss()).max(1e-9),
+            })
+            .collect();
+        let Ok((amplitudes, rates, _)) = fit_series(&perturbed, exponentials) else {
+            continue;
+        };
+        let candidate = PkRegion {
+            region: region.into(),
+            planned_concentration_ppm: base_region.planned_concentration_ppm,
+            amplitudes_ppm: amplitudes,
+            rates_per_s: rates,
+        };
+        if let Ok(Some(t)) = solve_pk_time(
+            &candidate,
+            mask,
+            region,
+            metric,
+            other,
+            boron,
+            None,
+            limit,
+            source_strength,
+        ) {
+            times.push(t);
+        }
+    }
+    times.sort_by(f64::total_cmp);
+    if times.is_empty() {
+        return Err(ManifestError::Invalid(format!(
+            "region {region:?}: no bootstrap replicates converged"
+        )));
+    }
+    let percentile = |p: f64| {
+        let pos = p / 100.0 * (times.len() - 1) as f64;
+        let (lo, frac) = (pos.floor() as usize, pos.fract());
+        times[lo] * (1.0 - frac) + times[(lo + 1).min(times.len() - 1)] * frac
+    };
+    Ok(PkTimeUncertainty {
+        replicates,
+        converged: times.len() as u32,
+        seed,
+        p05_s: percentile(5.0),
+        p50_s: percentile(50.0),
+        p95_s: percentile(95.0),
+    })
+}
+
+/// Fit one series to `exponentials` decaying exponentials —
+/// `(amplitudes, rates, residual_rms)`.
+fn fit_series(
+    samples: &[PkSample],
+    exponentials: usize,
+) -> Result<(Vec<f64>, Vec<f64>, f64), ManifestError> {
+    match exponentials {
+        1 => fit_monoexponential("bootstrap", samples),
+        2 => fit_biexponential("bootstrap", samples),
+        _ => Err(ManifestError::Invalid("exponentials must be 1 or 2".into())),
     }
 }
 
@@ -842,6 +1035,7 @@ mod tests {
             &masks,
             &limits,
             1.0,
+            None,
         )
         .unwrap();
         let r = &report.regions[0];
@@ -876,6 +1070,7 @@ mod tests {
             &masks,
             &limits,
             1.0,
+            None,
         )
         .unwrap();
         let r = &report.regions[0];
@@ -938,6 +1133,62 @@ mod tests {
     }
 
     #[test]
+    fn bootstrap_interval_brackets_point_estimate() {
+        // Draws with scatter → finite, ordered interval; seed recorded.
+        let base = decaying_model();
+        let lambda = base.regions[0].rates_per_s[0];
+        let amp = base.regions[0].amplitudes_ppm[0];
+        let mut state = 0x9E37u64;
+        let mut noise = || {
+            state ^= state >> 12;
+            state ^= state << 25;
+            state ^= state >> 27;
+            (state.wrapping_mul(0x2545_F491_4F6C_DD1D) >> 11) as f64 / 9_007_199_254_740_992.0 - 0.5
+        };
+        // Draws stay inside the decay timescale so no replicate hits
+        // the positivity clamp or drags the log-linear fit.
+        let pts: Vec<(f64, f64)> = [2.0f64, 8.0, 15.0, 25.0, 40.0]
+            .iter()
+            .map(|t| (*t, amp * (-lambda * t).exp() * (1.0 + 0.03 * noise())))
+            .collect();
+        let samples = samples_doc(&pts);
+
+        // boron = 2.0 → asymptote ≈ I∞·2 ≈ 20 ≫ limit 3 — replicate
+        // scatter stays clear of the bounded-asymptote boundary.
+        let total = vec![2.0];
+        let boron = vec![2.0];
+        let masks = vec![RegionMask {
+            name: "A".into(),
+            voxels: vec![true],
+        }];
+        let limits = vec![OrganLimit {
+            region: "A".into(),
+            metric: LimitMetric::Mean,
+            limit: 3.0,
+        }];
+        let report = PkIrradiationReport::evaluate(
+            "case",
+            "physical_total",
+            source(),
+            pk_ref(),
+            &base,
+            "gray_per_source_particle",
+            &total,
+            &boron,
+            &masks,
+            &limits,
+            1.0,
+            Some((&samples, 64)),
+        )
+        .unwrap();
+        let u = report.regions[0].time_uncertainty.as_ref().unwrap();
+        assert_eq!(u.replicates, 64);
+        assert!(u.converged > 32);
+        assert!(u.p05_s <= u.p50_s && u.p50_s <= u.p95_s);
+        assert!(u.p05_s <= report.regions[0].max_time_s.unwrap() * 1.05);
+    }
+
+    #[test]
     fn bounded_asymptote_marks_unbounded() {
         // Boron fully washes out; asymptotic boron dose cannot reach
         // the limit — region reported unbounded, not an error.
@@ -961,6 +1212,7 @@ mod tests {
             &masks,
             &limits,
             1.0,
+            None,
         )
         .unwrap();
         assert_eq!(report.regions[0].max_time_s, None);

@@ -351,6 +351,14 @@ enum Command {
         /// `physical_total`, `biological_total`, or `component:boron`.
         #[arg(long)]
         pk_model: Option<PathBuf>,
+        /// PkSamples JSON (`openbnct.pk-samples/0.1.0`) the PK model was
+        /// fit from — enables a parametric-bootstrap `t*` interval per
+        /// region. Requires `--pk-model`.
+        #[arg(long, requires = "pk_model")]
+        pk_samples: Option<PathBuf>,
+        /// Bootstrap replicates for `--pk-samples` (default 256).
+        #[arg(long, requires = "pk_samples", default_value = "256")]
+        pk_bootstrap: u32,
         /// New output path for the irradiation-time report JSON.
         #[arg(long)]
         output: PathBuf,
@@ -9578,6 +9586,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             limits,
             masks,
             pk_model,
+            pk_samples,
+            pk_bootstrap,
             output,
         }) => {
             let dose_bytes = fs::read(&dose)?;
@@ -9700,6 +9710,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                 };
 
+                let samples_doc = match &pk_samples {
+                    Some(path) => Some((
+                        serde_json::from_slice::<openbnct_evidence::PkSamples>(&fs::read(path)?)?,
+                        pk_bootstrap,
+                    )),
+                    None => None,
+                };
                 let report = openbnct_evidence::PkIrradiationReport::evaluate(
                     &case_id,
                     &quantity,
@@ -9712,10 +9729,23 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     &region_masks,
                     &organ_limits,
                     source_strength,
+                    samples_doc.as_ref().map(|(s, n)| (s, *n)),
                 )?;
                 write_new_json(&output, &report)?;
                 println!("pk irradiation-time report at {}", output.display());
                 for region in &report.regions {
+                    if let Some(u) = &region.time_uncertainty {
+                        println!(
+                            "{} {:?}: t* {:.6e} s [P05 {:.6e}, P95 {:.6e}] over {}/{} replicates",
+                            region.region,
+                            region.metric,
+                            u.p50_s,
+                            u.p05_s,
+                            u.p95_s,
+                            u.converged,
+                            u.replicates
+                        );
+                    }
                     match (region.max_time_s, region.static_max_time_s) {
                         (Some(pk_t), Some(static_t)) => println!(
                             "{} {:?} limit {}: pk {:.6e} s vs static {:.6e} s ({:+.1}%)",
