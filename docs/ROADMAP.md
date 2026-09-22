@@ -1311,6 +1311,62 @@ Each item is evidence-gated; none implies a clinical claim.
   Acceptance: emitted deck executes under PHITS and matches the
   OpenMC/MCNP reference on a frozen case within declared tolerances.
 
+## R11 — Physics-fidelity frontier and release pipeline (draft)
+
+Draft scope, 2026-09-21. The theta-weighted diamond closure (landed
+post-R10) removed a compensating error in the S_N sweep and exposed the
+real residual discrepancies below — these are measurable gaps against
+independent engines, ordered by leverage. None implies a clinical claim.
+
+- **R11-01 — epithermal-reservoir / diffusion-length investigation.**
+  Under conservative transport the FiR-1 cylindrical phantom
+  over-predicts the deep thermal tail ~2–5× (the clamp-era solve
+  under-predicted; any honest closure exposes the excess). The restored
+  flux is concentrated in the epithermal band (~30× vs the clamped
+  solve at 14 cm) — effective diffusion length ~4.6 cm vs ~3.4 cm
+  implied by the digitized ⁶Li-response measurement. Suspects in order:
+  thermal/epithermal removal in the collapsed 28-group data, source
+  within-bin weighting of the 3-bin histogram (91% epithermal bin), and
+  digitized-measurement fidelity. Evidence-gate: a committed re-solve
+  that closes the deep-tail ratio to the measured band's uncertainty,
+  or a documented data-side cause with corrected collapse.
+- **R11-02 — water-phantom photon-channel deficit.** Transported
+  photon dose at FiR-1 water phantom sits at 0.465× the 20M-history
+  OpenMC tally; the voxelwise γ record (5%/20mm) shows photon the
+  weakest channel (19.6% pass; boron 76.7%). Requires the θ-WDD solve
+  on the 63k-cell phantom and an n→γ production/deposition accounting
+  pass. Blocked mainly by solve cost on a laptop.
+- **R11-03 — θ-WDD + P1 iteration stiffness.** The weighted closure
+  under P1 in-scatter converges far slower than the clamp-era map
+  (committed solve: 39 outers; WDD+P1 did not reach 1e-4 within ~5h).
+  Candidates: Anderson depth/memory tuning, diffusion-synthetic
+  acceleration, or a coarser-mesh preconditioner. Needed before the
+  P1 validation suite re-runs under the new closure.
+- **R11-04 — VR chi-square gate seeds (R6-09 remainder).** Two
+  ~196M-history OpenMC runs outstanding for the
+  variance-reduction acceptance gate (~27h each on this workstation).
+  Pure compute; no code work.
+- **R11-05 — licensed-engine execution gates.** The MCNP and PHITS
+  emitters produce decks, but end-to-end execution requires licensed
+  users. External dependency — track, don't block.
+- **R11-06 — ENDF NC-type LTY 1–3 covariances.** Cross-material and
+  weighting-function NC subsections are currently skipped with a ledger
+  entry; only LTY=0 (derived-quantity reference) resolves. Extend if a
+  real evaluation needs them.
+
+## Release pipeline
+
+- **0.2.0 cut** — first release containing the in-house S_N solver,
+  photon transport, the verification surfaces (gamma/analytic/
+  metamorphic oracles), the planning stack, the GUI workbench, and the
+  MIT license. Release notes must state plainly that the closure fix
+  changes solver answers on optically thick cells — same-version
+  fluxes will not reproduce 0.1.x outputs.
+- **Software-artifact paper** — `papers/03-software-artifact.md` is a
+  checklist, not a writeup; the publication-grade artifact (validated
+  γ figures, covariance chain, oracle results) is the credibility
+  deliverable.
+
 ## Deferred beyond the research platform
 
 - patient-specific clinical decisions;

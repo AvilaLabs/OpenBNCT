@@ -7,8 +7,8 @@ authors:
 url: "https://github.com/AvilaLabs/OpenBNCT"
 repository-code: "https://github.com/AvilaLabs/OpenBNCT"
 license: MIT
-version: "0.1.1"
-date-released: "2026-09-16"
+version: "0.2.0"
+date-released: "2026-09-22"
 keywords:
   - boron neutron capture therapy
   - BNCT

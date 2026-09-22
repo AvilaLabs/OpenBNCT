@@ -15,8 +15,8 @@ categories.workspace = true
 [dependencies]
 hdf5-pure = "=0.44.0"
 md-5.workspace = true
-openbnct-core = { path = "../openbnct-core", version = "0.1.1" }
-openbnct-transport = { path = "../openbnct-transport", version = "0.1.1" }
+openbnct-core = { path = "../openbnct-core", version = "0.2.0" }
+openbnct-transport = { path = "../openbnct-transport", version = "0.2.0" }
 quick-xml.workspace = true
 reqwest.workspace = true
 serde.workspace = true

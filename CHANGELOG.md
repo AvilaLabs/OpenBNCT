@@ -4,7 +4,7 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
-## [Unreleased]
+## [0.2.0] — 2026-09-22
 
 ### Changed
 
@@ -57,6 +57,73 @@ own versions independent of the crate version.
   total σ in quadrature with the transport uncertainty.
 
 ### Added
+
+- `openbnct sn` — the in-house deterministic multigroup discrete-ordinates
+  solver and data pipeline, new since 0.1.1: `sn collapse` folds processed
+  pointwise HDF5 evaluations into `openbnct.multigroup-data/0.1.0`
+  (P0+P1 transfer matrices, l≤5 Legendre moments, S(α,β) bound-atom
+  thermal kernel for H in water/Lucite with upscatter, self-shielding,
+  boron microdistribution); `sn solve` sweeps level-symmetric quadrature
+  on the case grid with an uncollided-beam split, voxel fill-fraction
+  material blending, transport correction, thermal-upscatter outer
+  iteration with Anderson acceleration, symmetric group sweep, and
+  Rayon-parallel ordinate loops; `sn fold` reuses a flux artifact;
+  `sn photon-collapse`/`sn photon-solve` run the one-way-coupled n→γ
+  problem (photon σt, Klein–Nishina, coherent, pair→annihilation, kerma)
+  through the same sweep. Adjoint solves drive CADIS importance maps
+  (`vr`) and plan-direction scoring.
+- `openbnct accelerator` (parametric accelerator-target neutron source)
+  and `openbnct bsa` (beam-shaping-assembly rasterize + parameter sweep).
+- Verification surfaces: `openbnct gamma` (Low γ index between dose
+  bundles on a frozen case), `openbnct analytic` (declared closed-form
+  oracles — the NF-BNCT-003 exponential-attenuation oracle fits at
+  2.4e-16 relative deviation under the weighted-diamond closure), and
+  `openbnct metamorphic` (symmetry-relation oracles).
+- `openbnct prompt-gamma` (`openbnct.prompt-gamma-source/0.1.0`):
+  voxelwise 478 keV production map from a dose bundle's boron component
+  — the physics source term Compton-camera / BNCT-SPECT verification
+  research consumes; committed layered-head artifact under
+  `examples/prompt-gamma/`.
+- `openbnct export phits`: PHITS input-deck emitter on the same
+  transport-neutral case (Z-disk/monoenergetic emit subset with named
+  refusals for unrepresentable features).
+- `openbnct dicom import-mr` (MR series → rescaled-intensity NIfTI on
+  the shared geometry path), RTSTRUCT ROI-contour → `RoiMask`
+  rasterization, and `openbnct dicom calibrate` (above).
+- `openbnct import labelmap` (NIfTI labelmap + materials table →
+  case + assignment — the on-ramp for segmented phantoms from 3D
+  Slicer / ITK-SNAP) and `openbnct beam build` (binned CSV →
+  `beam-description`); walkthrough in `docs/BYOC.md`.
+- `openbnct plan directions`: azimuth×elevation candidate enumeration
+  ranked by tissue-path length to the aim mask — the zero-transport
+  pre-filter — with optional adjoint-importance scoring when multigroup
+  data is supplied; emits `plan fields --beam` spec lines directly.
+- `openbnct` Python bindings for the full biology layer:
+  `load_isoeffective_model`/`make_isoeffective_model`/`apply_isoeffective`
+  and `load_microdosimetric_model`/`make_microdosimetric_model`/
+  `apply_mkm_model` (dict-authored constructors share the file path's
+  validation), with `MicrodosimetricModel`/`IsoeffectiveModel` classes
+  and `.pyi` stubs.
+- The dual-target workbench (`openbnct-gui`): one egui codebase compiled
+  to native and wasm32 — deployed to GitHub Pages — with WebGL fallback
+  where WebGPU is unavailable. Tri-planar dose-map viewer driven by the
+  bundle's own grid, line-profile plots with peak-normalized
+  measurement overlay, log-log source-spectrum viewer with TECDOC
+  region integrals, per-component σ-map toggle and plan-robustness
+  violation cards, A/B dose-bundle diff with ratio map, a bounded
+  native run panel (cgroup-scoped child processes with cancel +
+  deadline and solver presets), five-language UI
+  (EN/JA/IT/ES/zh-Hans), an accessibility pass (labelled canvases,
+  keyboard crosshair, reduce-motion), and bundled example artifacts so
+  a cold visitor lands on a real dose bundle.
+
+### Fixed
+
+- Dose-uncertainty-budget NaN fields round-trip as JSON null (the GUI
+  renders them as an em-dash).
+- Finite-difference perturbation validation in the UQ path tightened —
+  invalid step specifications are rejected instead of silently
+  producing degenerate sensitivities.
 
 - `openmc cov-endf` NC-type LTY=0 resolution: a reaction's covariance
   declared as coefficient-weighted references to derived-quantity

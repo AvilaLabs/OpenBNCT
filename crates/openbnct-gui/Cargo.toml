@@ -25,15 +25,15 @@ crate-type = ["cdylib", "rlib"]
 base64.workspace = true
 eframe.workspace = true
 image.workspace = true
-openbnct-bio = { path = "../openbnct-bio", version = "0.1.1" }
-openbnct-core = { path = "../openbnct-core", version = "0.1.1" }
-openbnct-dicom = { path = "../openbnct-dicom", version = "0.1.1" }
-openbnct-evidence = { path = "../openbnct-evidence", version = "0.1.1" }
-openbnct-nifti = { path = "../openbnct-nifti", version = "0.1.1" }
-openbnct-openmc = { path = "../openbnct-openmc", version = "0.1.1" }
-openbnct-plan = { path = "../openbnct-plan", version = "0.1.1" }
-openbnct-transport = { path = "../openbnct-transport", version = "0.1.1" }
-openbnct-view = { path = "../openbnct-view", version = "0.1.1" }
+openbnct-bio = { path = "../openbnct-bio", version = "0.2.0" }
+openbnct-core = { path = "../openbnct-core", version = "0.2.0" }
+openbnct-dicom = { path = "../openbnct-dicom", version = "0.2.0" }
+openbnct-evidence = { path = "../openbnct-evidence", version = "0.2.0" }
+openbnct-nifti = { path = "../openbnct-nifti", version = "0.2.0" }
+openbnct-openmc = { path = "../openbnct-openmc", version = "0.2.0" }
+openbnct-plan = { path = "../openbnct-plan", version = "0.2.0" }
+openbnct-transport = { path = "../openbnct-transport", version = "0.2.0" }
+openbnct-view = { path = "../openbnct-view", version = "0.2.0" }
 rfd = "0.17.2"
 serde_json.workspace = true
 # deflate-only — pure-Rust inflate via miniz_oxide keeps the web target clean.

@@ -4,7 +4,7 @@ build-backend = "maturin"
 
 [project]
 name = "openbnct"
-version = "0.1.1"
+version = "0.2.0"
 description = "Transport-neutral BNCT research verification workbench (research software, not a dose calculator)"
 readme = "README.md"
 requires-python = ">=3.10"

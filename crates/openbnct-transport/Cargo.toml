@@ -13,7 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
-openbnct-core = { path = "../openbnct-core", version = "0.1.1" }
+openbnct-core = { path = "../openbnct-core", version = "0.2.0" }
 rayon.workspace = true
 serde.workspace = true
 thiserror.workspace = true
