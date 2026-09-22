@@ -4,6 +4,26 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
+## Unreleased
+
+### Added — interoperability
+
+- `openbnct import openpint` ingests an OpenPINT Excel treatment
+  workbook (`PlanConfig.from_excel` layout) in one pass: the `bnct`
+  sheet's component NIfTIs lift into a physical dose bundle, every
+  `GTV`/`CTV`/`PTV`/`HOM`/`OAR` structure mask rasterizes to a
+  `RegionMask` on the bundle grid, and a
+  `openbnct.openpint-plan-summary/0.1.0` artifact records per-structure
+  boron concentrations, OAR dose constraints, optional hadron courses,
+  and the workbook's SHA-256.
+
+### Added — examples
+
+- `examples/notebooks/` — a three-notebook Jupyter cookbook against the
+  published wheel (quickstart, biological modeling, evaluated-covariance
+  uncertainty), executed in place so committed outputs are evidence they
+  run.
+
 ## [0.2.0] — 2026-09-22
 
 ### Changed

@@ -39,6 +39,7 @@ use thiserror::Error;
 
 pub mod directions;
 pub mod fields;
+pub mod openpint;
 pub mod optimize;
 pub mod robustness;
 

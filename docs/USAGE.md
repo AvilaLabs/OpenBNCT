@@ -942,6 +942,33 @@ convention. NIfTI headers carry no producer identity, so
 sform/qform choice) is recorded in the normalization string. Uncertainty
 is `null` when no sigma volume is supplied — never invented.
 
+### OpenPINT treatment workbooks
+
+`openbnct import openpint` ingests a whole OpenPINT Excel workbook — the
+`.xlsx` layout `PlanConfig.from_excel` consumes — in one pass: the `bnct`
+sheet's component NIfTIs lift into a physical dose bundle, every
+`GTV`/`CTV`/`PTV`/`HOM`/`OAR` mask rasterizes to a `RegionMask` on the
+bundle grid (nearest-neighbour when the mask's geometry differs), and a
+`openpint-plan-summary/0.1.0` artifact records per-structure boron
+concentrations, OAR `max_dose`/`mean_dose` constraints, optional hadron
+courses, and the workbook's SHA-256 as provenance:
+
+```text
+openbnct import openpint \
+  --workbook plan.xlsx \
+  --case-id my-case \
+  --unit gray_per_source_particle \
+  --normalization "OpenPINT MCNP6 tallies resampled to CT grid" \
+  --producer-version 7d035fb \
+  --out imported/
+```
+
+Paths in the workbook resolve relative to the workbook's directory.
+Component keys map `B10`→boron, `N14`→nitrogen, `n`→hydrogen, `g`→photon;
+unknown keys are rejected. The emitted bundle is a standard
+`physical-dose-bundle` — every downstream surface (DVH, biological
+models, gamma comparison, planning) applies unchanged.
+
 ### External-dose and combined-treatment evaluation
 
 `openbnct import dose` ingests a `openbnct.external-dose/0.1.0` document —

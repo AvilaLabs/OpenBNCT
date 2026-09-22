@@ -1654,6 +1654,45 @@ enum ImportCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Import an OpenPINT Excel treatment workbook.
+    ///
+    /// Reads the `bnct` sheet (component dose NIfTI paths), the structure
+    /// sheets (`GTV`/`CTV`/`PTV`/`HOM`/`OAR` — mask NIfTIs plus per-structure
+    /// boron concentration and OAR dose constraints), and the optional `ct`
+    /// sheet. Workbook paths resolve relative to the workbook's directory.
+    /// The four component volumes lift into a physical dose bundle; each
+    /// structure mask rasterizes onto the bundle's grid (nearest-neighbour
+    /// when geometries differ) as a `RegionMask` JSON. A plan-summary JSON
+    /// records boron concentrations, OAR constraints, and the workbook's
+    /// SHA-256 as provenance.
+    #[command(name = "openpint")]
+    OpenPint {
+        /// OpenPINT `.xlsx` workbook in `PlanConfig.from_excel` layout.
+        #[arg(long)]
+        workbook: PathBuf,
+        /// Accumulated case identifier.
+        #[arg(long)]
+        case_id: String,
+        /// `gray_per_source_particle` or `gray` — the dose semantics of the
+        /// component NIfTIs (OpenPINT MCNP6/PHITS tallies are
+        /// per-source-particle).
+        #[arg(long)]
+        unit: String,
+        /// Declared dose semantics: normalization basis and any folding or
+        /// kerma-response treatment applied by the producing pipeline.
+        #[arg(long)]
+        normalization: String,
+        /// OpenPINT version label; workbooks do not record one.
+        #[arg(long)]
+        producer_version: Option<String>,
+        /// Optional DICOM frame-of-reference UID carried into the bundle.
+        #[arg(long)]
+        frame_of_reference_uid: Option<String>,
+        /// Output directory for `physical-dose-bundle.json`, one
+        /// `<name>.mask.json` per structure, and `openpint-plan-summary.json`.
+        #[arg(long)]
+        out: PathBuf,
+    },
     /// Import a `openbnct.external-dose/0.1.0` document (single absolute-dose
     /// field with declared fractionation, e.g. a photon/hadron course).
     Dose {
@@ -7637,6 +7676,144 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     document.producer.version,
                     document.producer.normalization
                 );
+            }
+            ImportCommand::OpenPint {
+                workbook,
+                case_id,
+                unit,
+                normalization,
+                producer_version,
+                frame_of_reference_uid,
+                out,
+            } => {
+                let bytes = fs::read(&workbook)?;
+                let workbook_sha256 = openbnct_evidence::sha256_hex(&bytes);
+                let plan = openbnct_plan::openpint::parse_openpint_workbook(&bytes)
+                    .map_err(|error| io::Error::other(format!("openpint workbook: {error}")))?;
+                let base = workbook.parent().unwrap_or_else(|| Path::new("."));
+                let resolve = |path: &std::path::Path| {
+                    if path.is_absolute() {
+                        path.to_path_buf()
+                    } else {
+                        base.join(path)
+                    }
+                };
+
+                let mut sources = Vec::new();
+                for (key, rel) in &plan.bnct_components {
+                    let component = match key.as_str() {
+                        "B10" => openbnct_core::DoseComponent::Boron,
+                        "N14" => openbnct_core::DoseComponent::Nitrogen,
+                        "n" => openbnct_core::DoseComponent::Hydrogen,
+                        "g" => openbnct_core::DoseComponent::Photon,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "openpint bnct sheet: unknown component key {other:?} \
+                                 (expected B10, N14, n, g)"
+                            ))
+                            .into());
+                        }
+                    };
+                    sources.push(openbnct_nifti::NiftiComponentSource {
+                        component,
+                        file: resolve(rel),
+                        sigma_file: None,
+                    });
+                }
+                let document = openbnct_nifti::interchange_from_niftis(
+                    &sources,
+                    &case_id,
+                    parse_dose_unit(&unit)?,
+                    &normalization,
+                    "openpint",
+                    producer_version.clone(),
+                    frame_of_reference_uid,
+                )
+                .map_err(|error| io::Error::other(format!("nifti import: {error}")))?;
+                let document_bytes = serde_json::to_vec_pretty(&document)?;
+                let document_sha256 = openbnct_evidence::sha256_hex(&document_bytes);
+                let bundle = openbnct_core::import_component_dose(&document, &document_sha256)
+                    .map_err(|error| io::Error::other(format!("interchange import: {error}")))?;
+
+                fs::create_dir_all(&out)?;
+                let bundle_path = out.join("physical-dose-bundle.json");
+                write_new_json(&bundle_path, &bundle)?;
+                println!("imported dose bundle at {}", bundle_path.display());
+
+                let mut structure_rows = Vec::new();
+                for structure in &plan.structures {
+                    let image = openbnct_nifti::read_nifti_file(&resolve(&structure.mask_path))
+                        .map_err(|error| {
+                            io::Error::other(format!(
+                                "mask {}: {error}",
+                                structure.mask_path.display()
+                            ))
+                        })?;
+                    let mask = if openbnct_core::grid_geometry_equivalent(
+                        &image.geometry,
+                        &bundle.geometry,
+                    ) {
+                        openbnct_nifti::to_mask(&image, &structure.name)
+                    } else {
+                        let values = openbnct_nifti::resample_to_grid(
+                            &image,
+                            &bundle.geometry,
+                            openbnct_nifti::Interpolation::Nearest,
+                        );
+                        RegionMask {
+                            name: structure.name.clone(),
+                            voxels: values.iter().map(|v| *v != 0.0).collect(),
+                        }
+                    };
+                    let included = mask.included_voxel_count();
+                    if included == 0 {
+                        return Err(io::Error::other(format!(
+                            "structure {} rasterizes to an empty mask",
+                            structure.name
+                        ))
+                        .into());
+                    }
+                    let mask_path = out.join(format!("{}.mask.json", structure.name));
+                    write_new_json(&mask_path, &mask)?;
+                    println!(
+                        "  mask {} → {} ({} voxels, boron {})",
+                        structure.name,
+                        mask_path.display(),
+                        included,
+                        structure.boron_conc
+                    );
+                    structure_rows.push(serde_json::json!({
+                        "name": structure.name,
+                        "roi_type": structure.roi_type.sheet_name(),
+                        "mask_artifact": mask_path.display().to_string(),
+                        "mask_sha256": openbnct_evidence::sha256_file(&mask_path)
+                            .unwrap_or_default(),
+                        "source_mask_path": structure.mask_path.display().to_string(),
+                        "boron_conc": structure.boron_conc,
+                        "max_dose": structure.max_dose,
+                        "mean_dose": structure.mean_dose,
+                    }));
+                }
+
+                let summary = serde_json::json!({
+                    "schema_version": "openbnct.openpint-plan-summary/0.1.0",
+                    "id": format!("openpint-import-{}", &workbook_sha256[..16]),
+                    "case_id": case_id,
+                    "workbook_sha256": workbook_sha256,
+                    "ct_path": plan.ct_path.as_ref().map(|p| resolve(p).display().to_string()),
+                    "dose_bundle": bundle_path.display().to_string(),
+                    "dose_bundle_sha256": bundle.provenance_id,
+                    "structures": structure_rows,
+                    "hadron_courses": plan.hadron_courses.iter().map(|c| serde_json::json!({
+                        "name": c.name,
+                        "dose_path": resolve(&c.dose_path).display().to_string(),
+                        "fractions": c.fractions,
+                    })).collect::<Vec<_>>(),
+                    "qualification": "research_only_not_clinical",
+                });
+                let summary_path = out.join("openpint-plan-summary.json");
+                write_new_json(&summary_path, &summary)?;
+                println!("plan summary at {}", summary_path.display());
             }
             ImportCommand::Dose { file, output } => {
                 let bytes = fs::read(&file)?;
