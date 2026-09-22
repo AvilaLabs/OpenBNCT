@@ -355,6 +355,24 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Pharmacokinetic boron-concentration tooling.
+    Pk {
+        /// PkSamples JSON (`openbnct.pk-samples/0.1.0`) — measured
+        /// concentration draws per region.
+        #[arg(long)]
+        samples: PathBuf,
+        /// Identifier for the emitted PK model artifact.
+        #[arg(long)]
+        id: String,
+        /// Exponential terms to fit per region (1 or 2).
+        #[arg(long, default_value = "2")]
+        exponentials: usize,
+        /// New output path for the fitted PK model JSON
+        /// (`openbnct.pk-model/0.1.0`), consumable by
+        /// `irradiation-time --pk-model`.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -9788,6 +9806,26 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     ),
                     None => println!("no region bounds the irradiation (all endpoint rates zero)"),
                 }
+            }
+        }
+        Some(Command::Pk {
+            samples,
+            id,
+            exponentials,
+            output,
+        }) => {
+            let samples_doc: openbnct_evidence::PkSamples =
+                serde_json::from_slice(&fs::read(&samples)?)?;
+            let model = openbnct_evidence::fit_pk_model(&samples_doc, &id, exponentials)?;
+            write_new_json(&output, &model)?;
+            println!("pk model at {}", output.display());
+            for region in &model.regions {
+                println!(
+                    "{}: {} exponential terms, planned {} ppm",
+                    region.region,
+                    region.amplitudes_ppm.len(),
+                    region.planned_concentration_ppm
+                );
             }
         }
         Some(Command::Metrics {

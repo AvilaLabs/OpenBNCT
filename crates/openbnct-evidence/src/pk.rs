@@ -37,7 +37,245 @@ use crate::ManifestError;
 use crate::limits::{LimitMetric, OrganLimit};
 
 pub const PK_MODEL_SCHEMA: &str = "openbnct.pk-model/0.1.0";
+pub const PK_SAMPLES_SCHEMA: &str = "openbnct.pk-samples/0.1.0";
 pub const PK_IRRADIATION_SCHEMA: &str = "openbnct.pk-irradiation-report/0.1.0";
+
+/// One measured blood/tissue draw: concentration at `time_s` since
+/// beam-on (or since whatever epoch the downstream model declares).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PkSample {
+    pub time_s: f64,
+    pub concentration_ppm: f64,
+}
+
+/// One region's measured concentration series.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PkSampleSeries {
+    pub region: String,
+    /// Concentration the dose map was computed at. When omitted the
+    /// fitted value at t=0 is used.
+    #[serde(default)]
+    pub planned_concentration_ppm: Option<f64>,
+    pub samples: Vec<PkSample>,
+}
+
+/// `openbnct.pk-samples/0.1.0` — measured concentration draws per
+/// region, the input to [`fit_pk_model`].
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PkSamples {
+    pub schema_version: String,
+    pub id: String,
+    pub regions: Vec<PkSampleSeries>,
+    /// Free-text provenance (assay method, draw protocol, …). Required.
+    pub basis: String,
+}
+
+impl PkSamples {
+    pub fn validate(&self) -> Result<(), ManifestError> {
+        if !openbnct_core::schema_matches(&self.schema_version, PK_SAMPLES_SCHEMA) {
+            return Err(ManifestError::Invalid(format!(
+                "unsupported pk-samples schema {:?}",
+                self.schema_version
+            )));
+        }
+        if self.id.trim().is_empty() || self.basis.trim().is_empty() {
+            return Err(ManifestError::Invalid(
+                "pk-samples id and basis must be non-empty".into(),
+            ));
+        }
+        for series in &self.regions {
+            if series.samples.is_empty() {
+                return Err(ManifestError::Invalid(format!(
+                    "region {:?}: no samples",
+                    series.region
+                )));
+            }
+            for s in &series.samples {
+                if !s.time_s.is_finite()
+                    || s.time_s < 0.0
+                    || !s.concentration_ppm.is_finite()
+                    || s.concentration_ppm <= 0.0
+                {
+                    return Err(ManifestError::Invalid(format!(
+                        "region {:?}: sample times must be finite ≥0 and concentrations finite positive",
+                        series.region
+                    )));
+                }
+            }
+            if let Some(planned) = series.planned_concentration_ppm
+                && (!planned.is_finite() || planned <= 0.0)
+            {
+                return Err(ManifestError::Invalid(format!(
+                    "region {:?}: planned_concentration_ppm must be finite positive",
+                    series.region
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Fit each sample series to a sum of `exponentials` decaying
+/// exponentials, producing a [`PkModel`].
+///
+/// Monoexponential fits are exact (log-linear least squares).
+/// Biexponential fits use separable least squares: a log-spaced rate
+/// grid is scanned, amplitudes solved by 2×2 linear least squares at
+/// each pair, and the best residual kept — robust without a nonlinear
+/// optimizer, and deterministic for a versioned artifact. Negative
+/// fitted amplitudes are rejected (a rising compartment would break the
+/// dose monotonicity the solver assumes).
+pub fn fit_pk_model(
+    samples: &PkSamples,
+    model_id: &str,
+    exponentials: usize,
+) -> Result<PkModel, ManifestError> {
+    samples.validate()?;
+    if !(1..=2).contains(&exponentials) {
+        return Err(ManifestError::Invalid("exponentials must be 1 or 2".into()));
+    }
+    let mut regions = Vec::with_capacity(samples.regions.len());
+    for series in &samples.regions {
+        if series.samples.len() < exponentials + 1 {
+            return Err(ManifestError::Invalid(format!(
+                "region {:?}: {} samples cannot constrain {} exponentials",
+                series.region,
+                series.samples.len(),
+                exponentials
+            )));
+        }
+        let (amplitudes, rates, rms) = if exponentials == 1 {
+            fit_monoexponential(&series.region, &series.samples)?
+        } else {
+            fit_biexponential(&series.region, &series.samples)?
+        };
+        let planned = series
+            .planned_concentration_ppm
+            .unwrap_or_else(|| amplitudes.iter().sum());
+        regions.push(PkRegion {
+            region: series.region.clone(),
+            planned_concentration_ppm: planned,
+            amplitudes_ppm: amplitudes,
+            rates_per_s: rates,
+        });
+        let _ = rms; // carried via basis below
+    }
+    Ok(PkModel {
+        schema_version: PK_MODEL_SCHEMA.into(),
+        id: model_id.into(),
+        basis: format!("fitted from {} ({})", samples.id, samples.basis),
+        regions,
+    })
+}
+
+/// ln C = ln a − λt → closed-form weighted least squares.
+fn fit_monoexponential(
+    region: &str,
+    samples: &[PkSample],
+) -> Result<(Vec<f64>, Vec<f64>, f64), ManifestError> {
+    let n = samples.len() as f64;
+    let (mut sx, mut sy, mut sxx, mut sxy) = (0.0, 0.0, 0.0, 0.0);
+    for s in samples {
+        let y = s.concentration_ppm.ln();
+        sx += s.time_s;
+        sy += y;
+        sxx += s.time_s * s.time_s;
+        sxy += s.time_s * y;
+    }
+    let det = n * sxx - sx * sx;
+    if det.abs() < f64::EPSILON {
+        return Err(ManifestError::Invalid(format!(
+            "region {region:?}: sample times are degenerate"
+        )));
+    }
+    let intercept = (sy * sxx - sx * sxy) / det;
+    let slope = (n * sxy - sx * sy) / det;
+    let (a, lambda) = (intercept.exp(), -slope);
+    if !(a.is_finite() && a > 0.0 && lambda.is_finite() && lambda >= 0.0) {
+        return Err(ManifestError::Invalid(format!(
+            "region {region:?}: samples do not fit a decaying exponential (slope {slope})"
+        )));
+    }
+    let rms = (samples
+        .iter()
+        .map(|s| (s.concentration_ppm - a * (-lambda * s.time_s).exp()).powi(2))
+        .sum::<f64>()
+        / n)
+        .sqrt();
+    Ok((vec![a], vec![lambda], rms))
+}
+
+/// Variable-projection-lite: scan a log-spaced (λ₁, λ₂) grid; at each
+/// pair solve the 2×2 normal equations for amplitudes; keep the least
+/// residual. Deterministic; rates span the sample time window.
+fn fit_biexponential(
+    region: &str,
+    samples: &[PkSample],
+) -> Result<(Vec<f64>, Vec<f64>, f64), ManifestError> {
+    let t_min = samples
+        .iter()
+        .map(|s| s.time_s)
+        .fold(f64::INFINITY, f64::min);
+    let t_max = samples.iter().map(|s| s.time_s).fold(0.0, f64::max);
+    let span = (t_max - t_min).max(1.0);
+    // Rates from "decays within the window" to "nearly constant".
+    let rate_lo = 0.05 / span;
+    let rate_hi = 20.0 / span;
+    let n_grid = 60usize;
+    let log_step = (rate_hi / rate_lo).ln() / (n_grid - 1) as f64;
+    let rate_at = |i: usize| rate_lo * (log_step * i as f64).exp();
+
+    let mut best: Option<(f64, f64, f64, f64, f64)> = None; // sse, a1, l1, a2, l2
+    for i in 0..n_grid {
+        for j in (i + 1)..n_grid {
+            let (l1, l2) = (rate_at(i), rate_at(j));
+            // Normal equations for amplitudes over the basis e^{-λt}.
+            let (mut g11, mut g12, mut g22, mut h1, mut h2) = (0.0, 0.0, 0.0, 0.0, 0.0);
+            for s in samples {
+                let (e1, e2) = ((-l1 * s.time_s).exp(), (-l2 * s.time_s).exp());
+                g11 += e1 * e1;
+                g12 += e1 * e2;
+                g22 += e2 * e2;
+                h1 += e1 * s.concentration_ppm;
+                h2 += e2 * s.concentration_ppm;
+            }
+            let det = g11 * g22 - g12 * g12;
+            if det.abs() < f64::EPSILON {
+                continue;
+            }
+            let a1 = (h1 * g22 - h2 * g12) / det;
+            let a2 = (h2 * g11 - h1 * g12) / det;
+            if a1 <= 0.0 || a2 <= 0.0 {
+                continue; // rising compartment — rejected
+            }
+            let sse: f64 = samples
+                .iter()
+                .map(|s| {
+                    (s.concentration_ppm
+                        - a1 * (-l1 * s.time_s).exp()
+                        - a2 * (-l2 * s.time_s).exp())
+                    .powi(2)
+                })
+                .sum();
+            if best.is_none_or(|b| sse < b.0) {
+                best = Some((sse, a1, l1, a2, l2));
+            }
+        }
+    }
+    let Some((sse, a1, l1, a2, l2)) = best else {
+        return Err(ManifestError::Invalid(format!(
+            "region {region:?}: no decaying biexponential fits the samples"
+        )));
+    };
+    Ok((
+        vec![a1, a2],
+        vec![l1, l2],
+        (sse / samples.len() as f64).sqrt(),
+    ))
+}
 
 /// One region's concentration curve and planning normalization.
 ///
@@ -644,6 +882,59 @@ mod tests {
         assert!(!r.pk_modeled);
         assert_eq!(r.max_time_s, r.static_max_time_s);
         assert_eq!(r.relative_deviation, Some(0.0));
+    }
+
+    fn samples_doc(concentrations: &[(f64, f64)]) -> PkSamples {
+        PkSamples {
+            schema_version: PK_SAMPLES_SCHEMA.into(),
+            id: "test.samples.v1".into(),
+            basis: "unit test".into(),
+            regions: vec![PkSampleSeries {
+                region: "A".into(),
+                planned_concentration_ppm: None,
+                samples: concentrations
+                    .iter()
+                    .map(|(time_s, concentration_ppm)| PkSample {
+                        time_s: *time_s,
+                        concentration_ppm: *concentration_ppm,
+                    })
+                    .collect(),
+            }],
+        }
+    }
+
+    #[test]
+    fn monoexponential_fit_recovers_lambda() {
+        // C(t) = 25·e^(−0.05t), noiseless draws.
+        let samples = samples_doc(
+            &[10.0f64, 40.0, 90.0]
+                .iter()
+                .map(|t| (*t, 25.0 * (-0.05 * *t).exp()))
+                .collect::<Vec<_>>(),
+        );
+        let model = fit_pk_model(&samples, "m.v1", 1).unwrap();
+        let r = &model.regions[0];
+        assert!((r.amplitudes_ppm[0] - 25.0).abs() < 1e-6);
+        assert!((r.rates_per_s[0] - 0.05).abs() < 1e-9);
+        assert!((r.planned_concentration_ppm - 25.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn biexponential_fit_recovers_both_rates() {
+        // C(t) = 22·e^(−0.004t) + 8·e^(−0.0002t), noiseless.
+        let samples = samples_doc(
+            &[60.0f64, 180.0, 300.0, 480.0, 720.0, 900.0, 1200.0]
+                .iter()
+                .map(|t| (*t, 22.0 * (-0.004 * *t).exp() + 8.0 * (-0.0002 * *t).exp()))
+                .collect::<Vec<_>>(),
+        );
+        let model = fit_pk_model(&samples, "m.v1", 2).unwrap();
+        let r = &model.regions[0];
+        let mut rates = r.rates_per_s.clone();
+        rates.sort_by(f64::total_cmp);
+        assert!((rates[0] - 0.0002).abs() < 0.0001);
+        assert!((rates[1] - 0.004).abs() < 0.0005);
+        assert!((r.amplitudes_ppm.iter().sum::<f64>() - 30.0).abs() < 0.5);
     }
 
     #[test]

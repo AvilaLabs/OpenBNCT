@@ -8,6 +8,12 @@ own versions independent of the crate version.
 
 ### Added — pharmacokinetics
 
+- `openbnct pk` fits measured concentration draws
+  (`openbnct.pk-samples/0.1.0`) into a `pk-model` artifact —
+  monoexponential via log-linear least squares, biexponential via a
+  deterministic separable-least-squares rate grid with nonnegativity
+  rejection. Blood-draw series become a hash-bindable model instead of
+  a hand-built curve.
 - `openbnct irradiation-time --pk-model` integrates the boron dose
   component under declared per-region concentration curves
   (`openbnct.pk-model/0.1.0`: `C(t) = Σ aᵢ·e^(−λᵢt)` ppm, normalized to
