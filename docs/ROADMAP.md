@@ -1318,18 +1318,21 @@ post-R10) removed a compensating error in the S_N sweep and exposed the
 real residual discrepancies below — these are measurable gaps against
 independent engines, ordered by leverage. None implies a clinical claim.
 
-- **R11-01 — epithermal-reservoir / diffusion-length investigation.**
-  Under conservative transport the FiR-1 cylindrical phantom
-  over-predicts the deep thermal tail ~2–5× (the clamp-era solve
-  under-predicted; any honest closure exposes the excess). The restored
-  flux is concentrated in the epithermal band (~30× vs the clamped
-  solve at 14 cm) — effective diffusion length ~4.6 cm vs ~3.4 cm
-  implied by the digitized ⁶Li-response measurement. Suspects in order:
-  thermal/epithermal removal in the collapsed 28-group data, source
-  within-bin weighting of the 3-bin histogram (91% epithermal bin), and
-  digitized-measurement fidelity. Evidence-gate: a committed re-solve
-  that closes the deep-tail ratio to the measured band's uncertainty,
-  or a documented data-side cause with corrected collapse.
+- **R11-01 — deep-tail reservoir mechanism: documented data-side
+  cause.** Decomposition of the committed TSL+P1 flux and the
+  collapsed 28-group data (see `validation/fir1-k63-cylindrical-
+  phantom/README.md`, "Deep-tail reservoir decomposition") shows the
+  deep thermal tail is sustained by the **fast halo**, not the
+  epithermal reservoir: every group below 30 keV decays at κ ≳ 0.9/cm
+  while the >1 MeV groups carry κ ≈ 0.15–0.44 and supply 57% of the
+  flux at 22.5 cm. The measured tail (κ = 0.32) is bracketed by the
+  anisotropy treatment (P0+trcorr κ ≈ 0.24–0.27 vs P1+TSL κ = 0.43)
+  and modulated ~45% by the undeclared within-bin shape of the 3-bin
+  source's fast bin — committed A/B solves under 1/E vs fission
+  weighting (`*-tsl-trcorr-1e` vs `*-tsl-trcorr-fission`). Closure
+  requires a published fine-group K63 spectrum (Seppälä 2002 tabulates
+  only the 3-group integrals) or a declared intermediate weighting,
+  plus a converged P_l solve.
 - **R11-02 — water-phantom photon-channel deficit.** Transported
   photon dose at FiR-1 water phantom sits at 0.465× the 20M-history
   OpenMC tally; the voxelwise γ record (5%/20mm) shows photon the

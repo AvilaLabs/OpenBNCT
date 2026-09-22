@@ -234,3 +234,85 @@ thermal data (effective diffusion length ~4.6 cm vs ~3.4 cm implied by
 the measured profile), not a spatial-scheme artifact. Committed
 artifacts are retained unchanged as the clamp-era record; subsequent
 solves use the weighted closure.
+
+## Deep-tail reservoir decomposition (R11-01)
+
+Post-closure the residual deep-tail discrepancy was recorded as an
+epithermal-reservoir question. Decomposing the committed flux and the
+collapsed data directly localizes it further — the tail is not carried
+by the epithermal reservoir at all but by the **fast halo**, whose
+content is set by an undeclared quantity: the within-bin shape of the
+3-bin source histogram's fast bin (10 keV–16.9 MeV, 2.96% of the
+beam).
+
+### Per-group decay constants (from `multigroup-data-28g-tsl-v4`)
+
+Diffusion-length proxy `κ = √(3·Σ_rem·Σ_tr)` per group, water:
+
+| band | groups | κ (/cm) | L (cm) |
+|---|---|---|---|
+| fast >1 MeV | 0–6 | 0.15–0.44 | 2.3–6.9 |
+| fast 30 keV–1 MeV | 7–13 | 0.50–1.07 | 0.9–2.0 |
+| epithermal 10 eV–30 keV | 14–21 | 0.91–1.32 | 0.8–1.1 |
+| epithermal 1–10 eV | 21–22 | 0.91–1.31 | 0.8–1.1 |
+| thermal <1 eV | 23–27 | 1.49–5.37 | 0.19–0.67 |
+
+The epithermal reservoir — every group below 30 keV — decays at
+κ ≳ 0.9, far steeper than the measured deep-tail slope
+(κ_meas = 0.32 /cm → L = 3.2 cm from a log-linear fit over the
+6.5–14.5 cm bins). Only the MeV groups penetrate that deep.
+
+### Solved-flux band decomposition (`multigroup-flux-28g-tsl-p1-1e`)
+
+Central-axis flux by band (fraction of total at depth):
+
+- z = 0.5 cm: thermal 44%, epithermal (<30 keV) 54%, fast 1.6%
+- z = 14.5 cm: thermal 71%, epithermal 7%, fast 23%
+- z = 22.5 cm: thermal 33%, epithermal 10%, **fast 57%**
+
+The thermal tail is sustained locally by the penetrating fast halo
+downscattering in place — the "reservoir" is the >30 keV content, not
+the epithermal band. Apparent thermal decay in the committed solve is
+κ ≈ 0.43/cm (L ≈ 2.3 cm) — steeper than measured 0.32/cm, consistent
+with the observed under-prediction at depth (0.25–0.46× beyond 11 cm).
+
+### Within-bin weighting bracket (committed sensitivity solves)
+
+The 3-bin histogram declares only integrals; `collapse_consistent`
+spreads each bin's weight 1/E (Maxwellian below 0.5 eV). Over the
+7.4-decade fast bin that places ~38% of the fast weight above 1 MeV.
+`beam-fission-fast-variant.json` / `case-fission-fast-variant.json`
+declare the same integrals but subdivide the fast bin 8-way under a
+√E·exp(−E/1.3 MeV) fission spectrum (~67% of the fast bin above
+1 MeV). Both were solved identically: v4 TSL data, v2-fraction
+assignment, S8, P0 + extended transport correction,
+`--convergence 1e-3 --anderson 5`:
+
+| artifact | within-bin | 14.5 cm ratio (computed/measured) | apparent κ |
+|---|---|---|---|
+| `multigroup-flux-28g-tsl-trcorr-1e` | 1/E | 3.4× | 0.27 |
+| `multigroup-flux-28g-tsl-trcorr-fission` | fission | 4.9× | 0.24 |
+| `multigroup-flux-28g-tsl-p1-1e` (P1 path) | 1/E | 0.28× | 0.43 |
+| measured | — | — | 0.32 |
+
+### Conclusion
+
+- The within-bin fast-spectrum shape is a **first-order lever**: a
+  physically-motivated fission weighting moves the deep tail by ~45%
+  relative to the 1/E convention on identical data and transport path.
+  The 3-bin histogram cannot express the real K63 fast tail — this is
+  a source-declaration fidelity limit, and the measured FiR 1 adjusted
+  spectrum is not publicly tabulated (Seppälä 2002 publishes only the
+  3-group integrals used here).
+- The anisotropy treatment is the **larger** lever: P1 in-scatter
+  steepens the deep tail to κ = 0.43 while the extended transport
+  correction leaves κ ≈ 0.24–0.27 — the measured 0.32 is bracketed
+  between the two paths on the same data.
+- The digitized TLD points at 11.5–14.5 cm are 1.7–3.9% of peak with
+  figure-digitization fidelity — the smallest anchor of the three.
+
+R11-01 evidence gate status: **documented data-side cause** — the deep
+tail is fast-halo-sustained and its slope is controlled jointly by the
+undeclared fast-bin within-bin shape and the anisotropy treatment. A
+published fine-group K63 spectrum (or a declared intermediate
+weighting) plus a converged P_l solve would close the residual.
