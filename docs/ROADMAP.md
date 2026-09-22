@@ -1342,9 +1342,20 @@ independent engines, ordered by leverage. None implies a clinical claim.
 - **R11-03 — θ-WDD + P1 iteration stiffness.** The weighted closure
   under P1 in-scatter converges far slower than the clamp-era map
   (committed solve: 39 outers; WDD+P1 did not reach 1e-4 within ~5h).
-  Candidates: Anderson depth/memory tuning, diffusion-synthetic
-  acceleration, or a coarser-mesh preconditioner. Needed before the
-  P1 validation suite re-runs under the new closure.
+  Measured and rejected (2026-09-22): a thermal-block sub-iteration —
+  re-sweeping the upscatter-coupled suffix (g24–27, the only
+  significant S(α,β) upscatters) to self-consistency inside each
+  outer — implemented and unit-tested green but removed: the stiff
+  mode's ~0.85/sweep contraction needs ~60 block passes per outer at
+  real sweep cost, so per-outer time swamps the saved outer count
+  (first outer alone exceeded the 24-outer baseline's total runtime).
+  Anderson depth tuning also saturates: depth 12 converged in the
+  same 24 outers as depth 5 at 1e-3 on the cylindrical-phantom case.
+  Remaining candidates: a true diffusion-synthetic preconditioner on
+  the thermal block (the slow mode is the near-conservative
+  σ_a/σ_s ≈ 0.02–0.1 sub-eV block — DSA is the standard answer) or a
+  coarser-mesh multigroup preconditioner. Needed before the P1
+  validation suite re-runs under the new closure.
 - **R11-04 — VR chi-square gate seeds (R6-09 remainder).** Two
   ~196M-history OpenMC runs outstanding for the
   variance-reduction acceptance gate (~27h each on this workstation).
