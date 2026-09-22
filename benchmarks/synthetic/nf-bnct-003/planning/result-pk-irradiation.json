@@ -1,0 +1,41 @@
+{
+  "schema_version": "openbnct.pk-irradiation-report/0.1.0",
+  "case_id": "nf-bnct-003",
+  "quantity": "physical_total",
+  "source": {
+    "id": "benchmarks/synthetic/nf-bnct-003/transport/dose-theta-wdd.json",
+    "sha256": "03e5ba2b6ce4c9b9a6aa54ee27486e23b99bf022a54630f3625b0fd86b4e81be"
+  },
+  "pk_model": {
+    "id": "benchmarks/synthetic/nf-bnct-003/planning/pk-model-bpa-washout.json",
+    "sha256": "ebbe968fcd2e2c4e0b8c46efb628c661852f42fb369104839df77150a66dc0dc"
+  },
+  "endpoint_unit": "gray_per_source_particle",
+  "source_strength_per_s": 100000.0,
+  "regions": [
+    {
+      "region": "phantom",
+      "metric": "mean",
+      "limit": 10.0,
+      "region_voxel_count": 640,
+      "pk_modeled": true,
+      "max_time_s": 23.119367917707706,
+      "static_max_time_s": 18.511082860727566,
+      "relative_deviation": 0.24894735179198557,
+      "concentration_ratio_at_beam_off": 0.6297783427854514
+    }
+  ],
+  "limiting": {
+    "region": "phantom",
+    "metric": "mean",
+    "max_time_s": 23.119367917707706,
+    "max_source_particles": 2311936.7917707707
+  },
+  "assumptions": [
+    "boron dose scales linearly with regional 10B concentration; other components are concentration-independent",
+    "declared PK curves are evaluated from beam-on; T/N ratios are assumed constant within each region over the irradiation",
+    "endpoint accumulates linearly with delivered source particles at constant source strength; anatomy and the endpoint map are static",
+    "region limits apply to the stated max/mean/D_x statistic only; no inter-fraction recovery or repopulation is modeled",
+    "PK curves are declared research inputs with a stated basis; they are not fitted, validated, or clinically qualified here"
+  ]
+}

@@ -1,0 +1,1 @@
+{"schema_version": "openbnct.pk-model/0.1.0", "id": "demo.bpa-washout.v1", "basis": "synthetic demonstration; monoexponential washout, \u03bb=0.02/s", "regions": [{"region": "phantom", "planned_concentration_ppm": 30.0, "amplitudes_ppm": [30.0], "rates_per_s": [0.02]}]}

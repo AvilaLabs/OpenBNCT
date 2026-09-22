@@ -6,6 +6,24 @@ own versions independent of the crate version.
 
 ## Unreleased
 
+### Added — pharmacokinetics
+
+- `openbnct irradiation-time --pk-model` integrates the boron dose
+  component under declared per-region concentration curves
+  (`openbnct.pk-model/0.1.0`: `C(t) = Σ aᵢ·e^(−λᵢt)` ppm, normalized to
+  the concentration the dose map was computed at) and solves the
+  *implicit* beam-off time `D(t) = limit` by bisection — replacing the
+  fixed-concentration assumption every shipped BNCT TPS makes, which a
+  published PK-vs-fixed-T/N comparison shows deviates up to ~11% in
+  tumor dose (JRR rraf038). The time-scaled map `O + f(t)·B` is
+  evaluated per solver iteration so `D_x`/max statistics stay exact;
+  regions without a declared curve fall back to constant-concentration.
+  Reports (`openbnct.pk-irradiation-report/0.1.0`) pair each PK answer
+  with the static answer, the relative deviation, and the concentration
+  ratio at beam-off, all hash-bound to both the dose artifact and the
+  PK model. A worked demonstration on the boron-loaded `nf-bnct-003`
+  case lands in `benchmarks/synthetic/nf-bnct-003/planning/`.
+
 ### Added — interoperability
 
 - `openbnct irradiation-time` accepts `dN` dose-coverage limits

@@ -345,6 +345,12 @@ enum Command {
         /// RegionMask binding `NAME=path`; repeatable.
         #[arg(long = "mask", required = true)]
         masks: Vec<String>,
+        /// PK model JSON (`openbnct.pk-model/0.1.0`): integrates the
+        /// boron component under declared regional concentration curves
+        /// and solves the implicit beam-off time. Requires
+        /// `physical_total`, `biological_total`, or `component:boron`.
+        #[arg(long)]
+        pk_model: Option<PathBuf>,
         /// New output path for the irradiation-time report JSON.
         #[arg(long)]
         output: PathBuf,
@@ -9553,6 +9559,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             source_strength,
             limits,
             masks,
+            pk_model,
             output,
         }) => {
             let dose_bytes = fs::read(&dose)?;
@@ -9623,68 +9630,164 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     .and_then(|v| v.as_str())
                     .unwrap_or_default(),
             );
-            let report = match dose_schema.as_str() {
-                openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
-                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
-                    let (values, unit) = dose_values(&bundle, &quantity)?;
-                    openbnct_evidence::IrradiationTimeReport::evaluate(
-                        &bundle.case_id,
-                        &quantity,
-                        source,
-                        unit,
-                        values,
-                        &region_masks,
-                        &organ_limits,
-                        source_strength,
-                    )?
+            if let Some(pk_path) = &pk_model {
+                let pk: openbnct_evidence::PkModel = serde_json::from_slice(&fs::read(pk_path)?)?;
+                let pk_ref = openbnct_core::ContentReference {
+                    id: pk_path.display().to_string(),
+                    sha256: openbnct_evidence::sha256_file(pk_path)?,
+                };
+                let (case_id, total_values, boron_values, unit) = match dose_schema.as_str() {
+                    openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
+                        let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+                        let (total, total_unit) = dose_values(&bundle, &quantity)?;
+                        let (total, boron, unit) = pk_boron_split(
+                            &quantity,
+                            total,
+                            total_unit,
+                            bundle.components.iter().map(|v| {
+                                (
+                                    v.component,
+                                    v.values.as_slice(),
+                                    match v.unit {
+                                        openbnct_core::DoseUnit::Gray => "gray",
+                                        openbnct_core::DoseUnit::GrayPerSourceParticle => {
+                                            "gray_per_source_particle"
+                                        }
+                                    },
+                                )
+                            }),
+                        )?;
+                        (bundle.case_id.clone(), total, boron, unit)
+                    }
+                    openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
+                        let bundle: openbnct_bio::BiologicalDoseBundle =
+                            serde_json::from_slice(&dose_bytes)?;
+                        let (total, total_unit) = biological_dose_values(&bundle, &quantity)?;
+                        let (total, boron, unit) = pk_boron_split(
+                            &quantity,
+                            total,
+                            total_unit,
+                            bundle
+                                .components
+                                .iter()
+                                .map(|v| (v.component, v.values.as_slice(), v.unit.as_str())),
+                        )?;
+                        (bundle.case_id.clone(), total, boron, unit)
+                    }
+                    other => {
+                        return Err(io::Error::other(format!(
+                            "unsupported dose bundle schema {other:?}"
+                        ))
+                        .into());
+                    }
+                };
+
+                let report = openbnct_evidence::PkIrradiationReport::evaluate(
+                    &case_id,
+                    &quantity,
+                    source,
+                    pk_ref,
+                    &pk,
+                    &unit,
+                    &total_values,
+                    &boron_values,
+                    &region_masks,
+                    &organ_limits,
+                    source_strength,
+                )?;
+                write_new_json(&output, &report)?;
+                println!("pk irradiation-time report at {}", output.display());
+                for region in &report.regions {
+                    match (region.max_time_s, region.static_max_time_s) {
+                        (Some(pk_t), Some(static_t)) => println!(
+                            "{} {:?} limit {}: pk {:.6e} s vs static {:.6e} s ({:+.1}%)",
+                            region.region,
+                            region.metric,
+                            region.limit,
+                            pk_t,
+                            static_t,
+                            region.relative_deviation.unwrap_or(0.0) * 100.0,
+                        ),
+                        (None, _) => println!(
+                            "{} {:?} limit {}: asymptote below limit -> unbounded",
+                            region.region, region.metric, region.limit,
+                        ),
+                        _ => println!(
+                            "{} {:?} limit {}: zero endpoint rate -> unbounded",
+                            region.region, region.metric, region.limit,
+                        ),
+                    }
                 }
-                openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
-                    let bundle: openbnct_bio::BiologicalDoseBundle =
-                        serde_json::from_slice(&dose_bytes)?;
-                    let (values, unit) = biological_dose_values(&bundle, &quantity)?;
-                    openbnct_evidence::IrradiationTimeReport::evaluate(
-                        &bundle.case_id,
-                        &quantity,
-                        source,
-                        unit,
-                        values,
-                        &region_masks,
-                        &organ_limits,
-                        source_strength,
-                    )?
+                if let Some(limiting) = &report.limiting {
+                    println!(
+                        "limiting structure: {} ({:?}), max {:.6e} s",
+                        limiting.region, limiting.metric, limiting.max_time_s
+                    );
                 }
-                other => {
-                    return Err(io::Error::other(format!(
-                        "unsupported dose bundle schema {other:?}"
-                    ))
-                    .into());
+            } else {
+                let report = match dose_schema.as_str() {
+                    openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
+                        let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+                        let (values, unit) = dose_values(&bundle, &quantity)?;
+                        openbnct_evidence::IrradiationTimeReport::evaluate(
+                            &bundle.case_id,
+                            &quantity,
+                            source,
+                            unit,
+                            values,
+                            &region_masks,
+                            &organ_limits,
+                            source_strength,
+                        )?
+                    }
+                    openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
+                        let bundle: openbnct_bio::BiologicalDoseBundle =
+                            serde_json::from_slice(&dose_bytes)?;
+                        let (values, unit) = biological_dose_values(&bundle, &quantity)?;
+                        openbnct_evidence::IrradiationTimeReport::evaluate(
+                            &bundle.case_id,
+                            &quantity,
+                            source,
+                            unit,
+                            values,
+                            &region_masks,
+                            &organ_limits,
+                            source_strength,
+                        )?
+                    }
+                    other => {
+                        return Err(io::Error::other(format!(
+                            "unsupported dose bundle schema {other:?}"
+                        ))
+                        .into());
+                    }
+                };
+                write_new_json(&output, &report)?;
+                println!("irradiation-time report at {}", output.display());
+                for region in &report.regions {
+                    match (region.max_time_s, region.max_source_particles) {
+                        (Some(time), Some(particles)) => println!(
+                            "{} {:?} limit {}: {:.6e} endpoint/s -> max {:.6e} s ({:.6e} particles)",
+                            region.region,
+                            region.metric,
+                            region.limit,
+                            region.endpoint_rate_per_s,
+                            time,
+                            particles,
+                        ),
+                        _ => println!(
+                            "{} {:?} limit {}: zero endpoint rate -> unbounded",
+                            region.region, region.metric, region.limit,
+                        ),
+                    }
                 }
-            };
-            write_new_json(&output, &report)?;
-            println!("irradiation-time report at {}", output.display());
-            for region in &report.regions {
-                match (region.max_time_s, region.max_source_particles) {
-                    (Some(time), Some(particles)) => println!(
-                        "{} {:?} limit {}: {:.6e} endpoint/s -> max {:.6e} s ({:.6e} particles)",
-                        region.region,
-                        region.metric,
-                        region.limit,
-                        region.endpoint_rate_per_s,
-                        time,
-                        particles,
+                match &report.limiting {
+                    Some(limiting) => println!(
+                        "limiting structure: {} ({:?}), max {:.6e} s",
+                        limiting.region, limiting.metric, limiting.max_time_s
                     ),
-                    _ => println!(
-                        "{} {:?} limit {}: zero endpoint rate -> unbounded",
-                        region.region, region.metric, region.limit,
-                    ),
+                    None => println!("no region bounds the irradiation (all endpoint rates zero)"),
                 }
-            }
-            match &report.limiting {
-                Some(limiting) => println!(
-                    "limiting structure: {} ({:?}), max {:.6e} s",
-                    limiting.region, limiting.metric, limiting.max_time_s
-                ),
-                None => println!("no region bounds the irradiation (all endpoint rates zero)"),
             }
         }
         Some(Command::Metrics {
@@ -11361,6 +11464,63 @@ impl DoseBundle {
             }
         }
     }
+}
+
+/// Split a resolved endpoint map into `(total, boron, unit)` for the
+/// PK-aware irradiation-time path: `boron` is the boron component map
+/// that the PK curve scales, and `total` is the quantity the limits
+/// apply to. `component:boron` scales itself; other `component:*`
+/// quantities carry no boron (zero map — the PK solve then reduces to
+/// the constant-rate answer).
+type ComponentSlice<'a> = (openbnct_core::DoseComponent, &'a [f64], &'a str);
+
+#[allow(clippy::type_complexity)]
+fn pk_boron_split<'a>(
+    quantity: &str,
+    total_values: &'a [f64],
+    total_unit: &str,
+    components: impl Iterator<Item = ComponentSlice<'a>> + Clone,
+) -> Result<(Vec<f64>, Vec<f64>, String), Box<dyn Error>> {
+    let find = |component| {
+        components
+            .clone()
+            .find(|(c, _, _)| *c == component)
+            .map(|(_, v, u)| (v, u))
+            .ok_or_else(|| io::Error::other(format!("bundle lacks {component:?} component")))
+    };
+    let (boron_values, boron_unit) = find(openbnct_core::DoseComponent::Boron)?;
+    Ok(match quantity {
+        "component:boron" => (
+            boron_values.to_vec(),
+            boron_values.to_vec(),
+            boron_unit.to_string(),
+        ),
+        q if q.starts_with("component:") => {
+            let component = match &q["component:".len()..] {
+                "nitrogen" => openbnct_core::DoseComponent::Nitrogen,
+                "hydrogen" => openbnct_core::DoseComponent::Hydrogen,
+                "photon" => openbnct_core::DoseComponent::Photon,
+                other => {
+                    return Err(
+                        io::Error::other(format!("unknown dose component {other:?}")).into(),
+                    );
+                }
+            };
+            let (values, unit) = find(component)?;
+            (values.to_vec(), vec![0.0; values.len()], unit.to_string())
+        }
+        "physical_total" | "biological_total" => (
+            total_values.to_vec(),
+            boron_values.to_vec(),
+            total_unit.to_string(),
+        ),
+        other => {
+            return Err(io::Error::other(format!(
+                "--pk-model needs a total or component:* quantity, not {other:?}"
+            ))
+            .into());
+        }
+    })
 }
 
 fn dose_values<'a>(

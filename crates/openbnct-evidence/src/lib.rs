@@ -20,6 +20,7 @@ mod gamma;
 mod limits;
 mod metamorphic;
 mod metrics;
+mod pk;
 
 pub use analytic_oracle::{
     ANALYTIC_EVALUATION_SCHEMA, ANALYTIC_ORACLE_SCHEMA, AnalyticLaw, AnalyticOracle,
@@ -48,6 +49,9 @@ pub use metamorphic::{
 };
 pub use metrics::{
     CoverageMetric, DOSE_METRICS_SCHEMA, EudMetric, RegionDoseMetrics, VolumeMetric,
+};
+pub use pk::{
+    PK_IRRADIATION_SCHEMA, PK_MODEL_SCHEMA, PkIrradiationReport, PkModel, PkRegion, PkRegionResult,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
