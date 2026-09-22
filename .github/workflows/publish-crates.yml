@@ -77,11 +77,32 @@ jobs:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
         run: |
           set -u
-          ORDER="openbnct-core openbnct-evidence openbnct-nifti openbnct-phits \
-                 openbnct-plan openbnct-transport openbnct-view openbnct-bio \
-                 openbnct-boron openbnct-dicom openbnct-mcnp openbnct-openmc \
-                 openbnct-gui openbnct-njoy openbnct-cli openbnct"
+          # Dependency order is computed from cargo metadata — a hand-written
+          # list drifts silently the moment a crate gains a new workspace dep.
+          ORDER=$(python3 - <<'EOF'
+          import json, subprocess
+          meta = json.loads(subprocess.check_output(
+              ["cargo", "metadata", "--format-version", "1", "--no-deps"],
+              text=True))
+          pkgs = {p["name"]: p for p in meta["packages"]
+                  if p["name"].startswith("openbnct")}
+          order, seen = [], set()
+          def visit(name):
+              if name in seen:
+                  return
+              seen.add(name)
+              for dep in pkgs[name]["dependencies"]:
+                  if dep["name"] in pkgs:
+                      visit(dep["name"])
+              order.append(name)
+          for name in pkgs:
+              visit(name)
+          print(" ".join(order))
+          EOF
+          )
+          echo "publish order: $ORDER"
           VERSION=$(python3 -c "import tomllib,pathlib;print(tomllib.loads(pathlib.Path('Cargo.toml').read_text())['workspace']['package']['version'])")
+          FAILED=""
           for crate in $ORDER; do
             code=$(curl -s -o /dev/null -w "%{http_code}" \
               -H "User-Agent: openbnct-release (github.com/AvilaLabs/OpenBNCT)" \
@@ -90,8 +111,17 @@ jobs:
               echo "$crate $VERSION already published — skipping"
               continue
             fi
+            ok=""
             for attempt in 1 2 3 4 5 6; do
-              if cargo publish --locked --package "$crate"; then break; fi
+              if cargo publish --locked --package "$crate"; then ok=1; break; fi
               echo "retry $attempt for $crate (index lag or rate limit)"; sleep 90
             done
+            if [ -z "$ok" ]; then
+              echo "::error::$crate failed to publish after 6 attempts"
+              FAILED="$FAILED $crate"
+            fi
           done
+          if [ -n "$FAILED" ]; then
+            echo "::error::crates not published:$FAILED"
+            exit 1
+          fi
