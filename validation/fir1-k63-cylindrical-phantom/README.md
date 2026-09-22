@@ -213,3 +213,24 @@ Research-grade cross-check only. The multigroup data is a declared
 three-group fixture — not an evaluation-derived library — and the
 measured series is digitized from a figure. Neither constitutes clinical
 validation or commissioning evidence.
+
+## Spatial-closure change (post-commit note)
+
+The committed fluxes above were produced under diamond difference with
+a positivity clamp: when the DD extrapolation went negative on cells
+several mean-free-paths thick, the outgoing edge was set to zero,
+annihilating particles and under-transporting the deep tail. The solver
+now uses theta-weighted diamond difference with the per-axis weight
+`θ(τ) = (τ − (1−e^{−τ})) / (τ·(1−e^{−τ}))` chosen to reproduce exact
+exponential transmission for a pure absorber (θ → ½ recovers DD on
+thin cells, θ → 1 as τ grows; positive and conservative by
+construction). A conservative re-solve (P0, S8, same data/assignment)
+lifts the deep tail to roughly 2–5× measured — the same
+transport-deepening direction already recorded for the extended
+transport correction (χ² 2858). The closure was therefore acting as a
+compensating error: the residual deep-tail discrepancy under
+conservative transport is a diffusivity question in the collapsed
+thermal data (effective diffusion length ~4.6 cm vs ~3.4 cm implied by
+the measured profile), not a spatial-scheme artifact. Committed
+artifacts are retained unchanged as the clamp-era record; subsequent
+solves use the weighted closure.

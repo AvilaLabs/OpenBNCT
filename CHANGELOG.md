@@ -6,6 +6,21 @@ own versions independent of the crate version.
 
 ## [Unreleased]
 
+### Fixed — transport solver
+
+- The S_N sweep's spatial closure is now theta-weighted diamond
+  difference with the weight chosen per cell/direction/group from the
+  axis optical thickness to reproduce exact exponential transmission
+  for a pure absorber (`θ(τ) = (τ−(1−e^{−τ}))/(τ(1−e^{−τ}))`; θ→½ on
+  thin cells, recovering plain DD). The previous positivity clamp
+  zeroed negative extrapolated edges — annihilating particles on cells
+  several mean-free-paths thick and systematically under-transporting
+  the deep dose tail; a first step-difference fixup was trialled and
+  rejected for over-transmission at moderate τ. The θ weight depends
+  only on (σ, Δ, μ) so forward and adjoint sweeps stay dual (adjoint
+  reciprocity test preserved). Affects all solves through the shared
+  sweep — forward, adjoint, photon, and perturbed UQ runs.
+
 ### Fixed — biology layer (external review)
 
 - Overlapping region masks no longer resolve alphabetically: every

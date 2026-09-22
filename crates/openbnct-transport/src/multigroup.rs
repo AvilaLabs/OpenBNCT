@@ -1380,14 +1380,43 @@ fn sweep_group(
                         dir[1].abs() * face_area[1],
                         dir[2].abs() * face_area[2],
                     );
-                    let denom = st * volume + 2.0 * (ax + ay + az);
-                    let psi_avg = (q * volume
-                        + 2.0 * (ax * psi_in[0] + ay * psi_in[1] + az * psi_in[2]))
-                        / denom.max(1e-30);
-                    let psi_avg = psi_avg.max(0.0);
+                    // Theta-weighted diamond difference: psi_avg =
+                    // theta*psi_out + (1-theta)*psi_in per axis, with the
+                    // weight chosen from the axis optical thickness to
+                    // reproduce exact exponential transmission for a pure
+                    // absorber: theta(tau) = (tau - (1-e^-tau)) /
+                    // (tau*(1-e^-tau)) — theta -> 1/2 (plain DD, 2nd-order
+                    // accurate) on thin cells and -> 1 (step) as tau grows.
+                    // Plain DD's outgoing edge goes negative for tau >~ 2,
+                    // and a clamp annihilates particles, systematically
+                    // over-attenuating the deep tail; the optimal weight
+                    // keeps the closure positive by construction for the
+                    // dominant pure-absorber channel and conserves the
+                    // local balance exactly. The weight depends only on
+                    // (sigma, delta, mu) — identical for forward and
+                    // adjoint sweeps — so the discrete maps stay dual.
+                    let area = [ax, ay, az];
+                    let mut theta = [0.5_f64; 3];
+                    let mut denom_w = st * volume;
+                    let mut numer_w = q * volume;
+                    for a in 0..3 {
+                        let mu = dir[a].abs().max(1e-30);
+                        let tau = st * dx[a] / mu;
+                        theta[a] = if tau > 1e-6 {
+                            let e = (-tau.min(700.0)).exp();
+                            ((tau - (1.0 - e)) / (tau * (1.0 - e))).clamp(0.5, 1.0)
+                        } else {
+                            0.5
+                        };
+                        let w = area[a] / theta[a];
+                        denom_w += w;
+                        numer_w += w * psi_in[a];
+                    }
+                    let psi_avg = (numer_w / denom_w.max(1e-30)).max(0.0);
                     psi_d[cell] = psi_avg;
                     for a in 0..3 {
-                        edge[a][cell] = (2.0 * psi_avg - psi_in[a]).max(0.0);
+                        edge[a][cell] =
+                            ((psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a]).max(0.0);
                     }
                 }
             }
@@ -2939,9 +2968,11 @@ pub(crate) mod tests {
     }
 
     #[test]
-    fn pure_absorber_boundary_flux_matches_diamond_difference() {
+    fn pure_absorber_boundary_flux_matches_exact_exponential() {
         // With the split disabled the beam rides the nearest ordinate —
-        // the DD sweep must reproduce the Padé per-cell ratio along ξ.
+        // the theta-weighted sweep reproduces exact exponential
+        // attenuation along ξ for a pure absorber (the DD Padé ratio is
+        // the thin-cell limit of the same closure).
         let case = slab_case();
         let sigma = 0.2308_f64;
         let mg = data(&[sigma], vec![0.0]);
@@ -2953,13 +2984,13 @@ pub(crate) mod tests {
 
         let xi = 0.8688903007222012_f64;
         let dz = 0.1_f64;
-        let expected_ratio = (2.0 * xi - sigma * dz) / (2.0 * xi + sigma * dz);
+        let expected_ratio = (-sigma * dz / xi).exp();
         let column = |k: usize| flux.flux[5 + 16 * k][0];
         for k in 2..18 {
             let ratio = column(k + 1) / column(k);
             assert!(
                 (ratio - expected_ratio).abs() < 1e-9,
-                "cell {k}: ratio {ratio} vs DD Padé {expected_ratio}"
+                "cell {k}: ratio {ratio} vs exact exponential {expected_ratio}"
             );
         }
     }

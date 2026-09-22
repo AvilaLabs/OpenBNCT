@@ -1112,7 +1112,10 @@ the oracle is consistency evidence, not a correctness proof.
 ### Deterministic multigroup transport (S_N)
 
 `openbnct sn solve` is the in-house deterministic transport path — a
-3-D Cartesian diamond-difference discrete-ordinates solver over the
+3-D Cartesian discrete-ordinates solver (diamond difference with a
+step-characteristic fixup on cells whose optical thickness exceeds the
+diamond positivity bound — unconditionally positive AND conservative,
+unlike a plain clamp which annihilates particles) over the
 transport case's regular grid, consuming a declared
 `openbnct.multigroup-data/0.1.0` artifact (group structure plus
 per-material total and scatter cross sections, optionally flux→dose
@@ -1552,7 +1555,7 @@ the covariance artifact.
 
 Sensitivities are central finite differences of the actual discrete
 solve — two perturbed solves per declared parameter — because the
-positivity-clamped diamond-difference operator is nonlinear and a
+diamond-difference-with-characteristic-fixup operator is nonlinear and a
 continuous-adjoint inner product is only first-order-faithful to it
 (measured ~25–40% pointwise on coarse meshes; adjoint importance
 remains the right machinery for CADIS ratios). Response entries are

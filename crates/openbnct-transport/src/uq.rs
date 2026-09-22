@@ -415,7 +415,7 @@ pub fn propagate_uncertainty(
 
     // Sensitivities. Nuclear-data entries go through a central finite
     // difference of the actual solver — two solves per parameter —
-    // because the positivity-clamped DD operator is nonlinear and the
+    // because the SC-fixup DD operator is nonlinear and the
     // continuous-adjoint inner product is only first-order-faithful to
     // it. Response entries are linear in R and exact analytically.
     let integrate = |flux: &MultigroupFlux| -> f64 {
