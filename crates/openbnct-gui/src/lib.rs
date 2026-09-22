@@ -760,7 +760,7 @@ impl Default for DosePanel {
 const EXAMPLE_DOSE_ZIP: &[u8] = include_bytes!("../assets/example-dose-bundle.zip");
 /// The FiR 1 K63 literature beam-description — the bundled example for
 /// the transport spectrum viewer.
-const EXAMPLE_BEAM_JSON: &str = include_str!("../../../beams/fir1-k63.json");
+const EXAMPLE_BEAM_JSON: &str = include_str!("../assets/fir1-k63.json");
 
 /// Unzip the embedded example dose bundle through the same byte path a
 /// dropped file takes.

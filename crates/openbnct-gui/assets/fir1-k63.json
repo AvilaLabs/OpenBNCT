@@ -1,0 +1,65 @@
+{
+  "schema_version": "nctforge.beam-description/0.1.0",
+  "id": "nctforge.beam.fir1-k63.v1",
+  "name": "FiR 1 K63 epithermal neutron beam",
+  "facility": "FiR 1 Triga Mk II research reactor, VTT Technical Research Centre of Finland (Espoo)",
+  "port": {
+    "axis": "z",
+    "offset_cm": 0.0,
+    "shape": {
+      "kind": "circle",
+      "center_uv_cm": [0.0, 0.0],
+      "radius_cm": 7.0
+    }
+  },
+  "source": {
+    "schema_version": "nctforge.fixed-source-definition/0.1.0",
+    "id": "nctforge.beam.fir1-k63.v1",
+    "particle": "neutron",
+    "source_sites_per_history": 1,
+    "statistical_weight_per_site": 1.0,
+    "space": {
+      "kind": "uniform_disk",
+      "axis": "z",
+      "offset_cm": 0.0,
+      "center_uv_cm": [0.0, 0.0],
+      "radius_cm": 7.0
+    },
+    "angle": {
+      "kind": "isotropic_cone",
+      "axis_unit_vector": [0.0, 0.0, 1.0],
+      "half_angle_rad": 0.1491
+    },
+    "energy": {
+      "kind": "tabulated_histogram",
+      "energy_boundaries_ev": [1.0e-5, 0.5, 1.0e4, 1.69e7],
+      "bin_weights": [0.0611, 0.9093, 0.0296]
+    }
+  },
+  "normalization": {
+    "kind": "fluence_rate_at_port",
+    "fluence_rate_cm2_s": 1.1769e9
+  },
+  "provenance": {
+    "kind": "published_literature",
+    "citations": [
+      {
+        "authors": "Seppälä, T.",
+        "title": "FiR 1 epithermal neutron beam model and dose calculation for treatment planning in BNCT",
+        "venue": "University of Helsinki, Report Series in Physics HU-P-D103",
+        "year": 2002,
+        "doi": null,
+        "url": "http://hdl.handle.net/10138/23247"
+      },
+      {
+        "authors": "IAEA",
+        "title": "Current status of neutron capture therapy",
+        "venue": "IAEA-TECDOC-1223, International Atomic Energy Agency",
+        "year": 2001,
+        "doi": null,
+        "url": "https://www.iaea.org/publications/6422/current-status-of-neutron-capture-therapy"
+      }
+    ],
+    "derivation_note": "Measured (Seppälä 2002, Table 4, K63 port): group-integrated fluence rates thermal 7.19e7, epithermal (0.5 eV-10 keV) 1.07e9, fast (>10 keV) 3.45e7 n cm^-2 s^-1 at the 14 cm aperture; bin weights are the measured group fractions of the 1.1769e9 total. Assumed, not measured: within-group spectral shape is uniform per bin (the resolved spectrum is published only as figures); beam divergence is a uniform-in-solid-angle cone with half-angle atan(7/46.6) = 0.1491 rad, the geometric bound of the 46.6 cm Bi collimator; position is uniform over the aperture. Group boundaries follow the IAEA TECDOC-1223 convention (thermal <0.5 eV, epithermal 0.5 eV-10 keV, fast >10 keV); the 1.69e7 eV upper edge is the fission-spectrum endpoint used by the source reference. This is a literature reconstruction, not a validated facility model: the published J/Phi = 0.77 beam-quality ratio is a separate measured quantity and is not encoded here."
+  }
+}
