@@ -8,6 +8,12 @@ own versions independent of the crate version.
 
 ### Added — interoperability
 
+- `openbnct irradiation-time` accepts `dN` dose-coverage limits
+  (`--limit brain=d2:13`, `d50:2.5`) — the `D_x` volume-quantile
+  endpoints OpenPINT's limiting-OAR constraint scheme uses
+  (`LimitMetric::DoseCoverage`). A committed reproduction of their
+  published brain-limited endpoint on the layered-head phantom lands in
+  `benchmarks/synthetic/layered-head-phantom/planning/`.
 - `openbnct import openpint` ingests an OpenPINT Excel treatment
   workbook (`PlanConfig.from_excel` layout) in one pass: the `bnct`
   sheet's component NIfTIs lift into a physical dose bundle, every

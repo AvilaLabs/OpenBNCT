@@ -1,0 +1,57 @@
+{
+  "schema_version": "openbnct.irradiation-time-report/0.1.0",
+  "case_id": "openbnct.layered-head-phantom.v1",
+  "quantity": "biological_total",
+  "source": {
+    "id": "benchmarks/synthetic/layered-head-phantom/planning/biological-dose-fixed-weights.json",
+    "sha256": "cd66b285cbb38d918c29db351cd7e14e1daa3a958f05ff76dfb9680349621777"
+  },
+  "endpoint_unit": "weighted_gray_per_source_particle",
+  "source_strength_per_s": 1000000000.0,
+  "regions": [
+    {
+      "region": "brain-oar",
+      "metric": {
+        "dose_coverage": {
+          "percent": 2
+        }
+      },
+      "limit": 13.0,
+      "region_voxel_count": 4664,
+      "endpoint_per_source_particle": 1.0273185428102445e-8,
+      "endpoint_rate_per_s": 10.273185428102446,
+      "max_source_particles": 1265430288.4904923,
+      "max_time_s": 1.2654302884904924
+    },
+    {
+      "region": "brain-oar",
+      "metric": {
+        "dose_coverage": {
+          "percent": 50
+        }
+      },
+      "limit": 2.5,
+      "region_voxel_count": 4664,
+      "endpoint_per_source_particle": 2.6404091410861554e-9,
+      "endpoint_rate_per_s": 2.6404091410861557,
+      "max_source_particles": 946822960.5399727,
+      "max_time_s": 0.9468229605399726
+    }
+  ],
+  "limiting": {
+    "region": "brain-oar",
+    "metric": {
+      "dose_coverage": {
+        "percent": 50
+      }
+    },
+    "max_time_s": 0.9468229605399726,
+    "max_source_particles": 946822960.5399727
+  },
+  "assumptions": [
+    "endpoint accumulates linearly with delivered source particles at constant source strength",
+    "anatomy, material assignment, and the endpoint map are static over the irradiation",
+    "region limits apply to the stated max/mean/D_x statistic only; no inter-fraction recovery or repopulation is modeled",
+    "biological endpoints use the bundle's weighted unit and model validity domain unchanged"
+  ]
+}

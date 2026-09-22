@@ -27,6 +27,11 @@ pub enum LimitMetric {
     Max,
     /// Mean endpoint value across the region's voxels.
     Mean,
+    /// `D_x` dose coverage: the endpoint level exceeded by at most
+    /// `(100 - percent)` of region voxels — `dose_covering_percent`
+    /// semantics. `dose_coverage: 2` is the hottest-2% dose (`D2`), the
+    /// volume-quantile endpoint OpenPINT's limiting-OAR constraint uses.
+    DoseCoverage { percent: u16 },
 }
 
 /// One region's endpoint limit, in the endpoint's own dose unit.
@@ -142,12 +147,19 @@ impl IrradiationTimeReport {
                 .ok_or_else(|| {
                     ManifestError::Invalid(format!("no mask for limit region {:?}", limit.region))
                 })?;
-            let summary = mask.summarize(values).map_err(|error| {
-                ManifestError::Invalid(format!("region {:?}: {error}", limit.region))
-            })?;
+            let selected = openbnct_core::masked_values(&mask.name, values, &mask.voxels).map_err(
+                |error| ManifestError::Invalid(format!("region {:?}: {error}", limit.region)),
+            )?;
             let statistic = match limit.metric {
-                LimitMetric::Max => summary.maximum,
-                LimitMetric::Mean => summary.mean,
+                LimitMetric::Max => selected.iter().copied().fold(0.0, f64::max),
+                LimitMetric::Mean => openbnct_core::mean(&selected),
+                LimitMetric::DoseCoverage { percent } => {
+                    openbnct_core::dose_covering_percent(&selected, f64::from(percent)).map_err(
+                        |error| {
+                            ManifestError::Invalid(format!("region {:?}: {error}", limit.region))
+                        },
+                    )?
+                }
             };
             if statistic < 0.0 {
                 return Err(ManifestError::Invalid(format!(
@@ -165,7 +177,7 @@ impl IrradiationTimeReport {
                 region: limit.region.clone(),
                 metric: limit.metric,
                 limit: limit.limit,
-                region_voxel_count: summary.voxel_count as u64,
+                region_voxel_count: selected.len() as u64,
                 endpoint_per_source_particle: statistic,
                 endpoint_rate_per_s: statistic * source_strength,
                 max_source_particles,
@@ -202,7 +214,7 @@ impl IrradiationTimeReport {
             assumptions: vec![
                 "endpoint accumulates linearly with delivered source particles at constant source strength".into(),
                 "anatomy, material assignment, and the endpoint map are static over the irradiation".into(),
-                "region limits apply to the stated max/mean statistic only; no inter-fraction recovery or repopulation is modeled".into(),
+                "region limits apply to the stated max/mean/D_x statistic only; no inter-fraction recovery or repopulation is modeled".into(),
                 "biological endpoints use the bundle's weighted unit and model validity domain unchanged".into(),
             ],
         })
@@ -380,5 +392,43 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn dose_coverage_limit_uses_volume_quantile() {
+        // 100 voxels: 98 at 1.0/particle, 2 at 10.0/particle inside "A".
+        // D50 reads the median 1.0, D1 the hottest-1% 10.0 — the quantile
+        // endpoint decouples from both voxel-max and voxel-mean.
+        let mut values = vec![1.0; 98];
+        values.extend([10.0, 10.0]);
+        let masks = [mask("A", &[true; 100])];
+        let limits = [
+            OrganLimit {
+                region: "A".into(),
+                metric: LimitMetric::DoseCoverage { percent: 50 },
+                limit: 5.0,
+            },
+            OrganLimit {
+                region: "A".into(),
+                metric: LimitMetric::DoseCoverage { percent: 1 },
+                limit: 5.0,
+            },
+        ];
+        let report = IrradiationTimeReport::evaluate(
+            "case",
+            "physical_total",
+            source(),
+            "gray_per_source_particle",
+            &values,
+            &masks,
+            &limits,
+            1.0e9,
+        )
+        .unwrap();
+        let d50 = &report.regions[0];
+        let d1 = &report.regions[1];
+        assert_eq!(d50.endpoint_per_source_particle, 1.0);
+        assert_eq!(d1.endpoint_per_source_particle, 10.0);
+        assert!(d50.max_time_s.unwrap() > d1.max_time_s.unwrap());
     }
 }

@@ -142,7 +142,25 @@ while both OAR bounds hold with margin. The propagation is first-order
 and fully-correlated across voxels; sources declared on multiple beams
 are independent (a conservative documented convention).
 
-## Scope
+## OpenPINT endpoint reproduction (`result-openpint-endpoint.json`)
+
+Cross-implementation check of the limiting-OAR irradiation-time endpoint
+from the OpenPINT methods paper (arXiv:2606.21476, eq. 4): on the
+biologically weighted dose map, `t = min(13/Ḋ2, 2.5/Ḋ50)` — brain D2 ≤ 13
+Gy-w and D50 ≤ 2.5 Gy-w. `irradiation-time` accepts the same endpoints as
+`dN` limits (`brain-oar=d2:13`, `brain-oar=d50:2.5`).
+
+Inputs: `biological-dose-fixed-weights.json` (the committed
+`fixed-component-weights` model applied to `dose-28g-1e`, tumor bound as
+`core`, brain at default weights) at a declared 1e9 source particles/s.
+
+Result: **D50 binds at 0.947 s** (t_D2 = 1.265 s, t_D50 = 0.947 s). In
+OpenPINT's published benchmark cases D2 was the tighter constraint; on
+this phantom the median binds — a legitimate contrast, since the two
+volumes' hot-spot-to-median ratios differ. At t_brain the tumor receives
+D50 ≈ 3.7 Gy-w, D98 ≈ 2.8 Gy-w (scaled from the report's per-particle
+rates). The report carries the dose bundle's SHA-256 and the endpoint
+assumptions verbatim.
 
 ## Scope
 

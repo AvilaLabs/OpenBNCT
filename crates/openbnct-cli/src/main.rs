@@ -337,7 +337,8 @@ enum Command {
         /// Source strength in source particles per second.
         #[arg(long)]
         source_strength: f64,
-        /// Region limit `NAME=max|mean:LIMIT` in endpoint dose units;
+        /// Region limit `NAME=max|mean|dN:LIMIT` in endpoint dose
+        /// units (`dN` = `D_x` volume-coverage percent, e.g. `d2`).
         /// repeatable.
         #[arg(long = "limit", required = true)]
         limits: Vec<String>,
@@ -9574,17 +9575,31 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             let mut organ_limits = Vec::with_capacity(limits.len());
             for entry in &limits {
                 let (name, rest) = entry.split_once('=').ok_or_else(|| {
-                    io::Error::other("--limit entries must be NAME=max|mean:LIMIT")
+                    io::Error::other("--limit entries must be NAME=max|mean|dN:LIMIT")
                 })?;
                 let (metric, value) = rest.split_once(':').ok_or_else(|| {
-                    io::Error::other("--limit entries must be NAME=max|mean:LIMIT")
+                    io::Error::other("--limit entries must be NAME=max|mean|dN:LIMIT")
                 })?;
                 let metric = match metric {
                     "max" => openbnct_evidence::LimitMetric::Max,
                     "mean" => openbnct_evidence::LimitMetric::Mean,
+                    other if other.starts_with('d') && other.len() > 1 => {
+                        let percent: u16 = other[1..].parse().map_err(|_| {
+                            io::Error::other(format!(
+                                "--limit {name}: invalid dose-coverage metric {other:?} (dN, N in 1..=100)"
+                            ))
+                        })?;
+                        if !(1..=100).contains(&percent) {
+                            return Err(io::Error::other(format!(
+                                "--limit {name}: dose-coverage percent {percent} out of 1..=100"
+                            ))
+                            .into());
+                        }
+                        openbnct_evidence::LimitMetric::DoseCoverage { percent }
+                    }
                     other => {
                         return Err(io::Error::other(format!(
-                            "--limit {name}: unknown metric {other:?} (max|mean)"
+                            "--limit {name}: unknown metric {other:?} (max|mean|dN)"
                         ))
                         .into());
                     }
