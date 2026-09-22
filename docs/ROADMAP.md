@@ -1351,11 +1351,20 @@ independent engines, ordered by leverage. None implies a clinical claim.
   (first outer alone exceeded the 24-outer baseline's total runtime).
   Anderson depth tuning also saturates: depth 12 converged in the
   same 24 outers as depth 5 at 1e-3 on the cylindrical-phantom case.
-  Remaining candidates: a true diffusion-synthetic preconditioner on
-  the thermal block (the slow mode is the near-conservative
-  σ_a/σ_s ≈ 0.02–0.1 sub-eV block — DSA is the standard answer) or a
-  coarser-mesh multigroup preconditioner. Needed before the P1
-  validation suite re-runs under the new closure.
+  Per-group residual diagnostics confirm the slow mode lives entirely
+  in the sub-eV S(α,β) block g24–27 (residual 0.09–0.54 vs ~1e-3
+  elsewhere) and is *spatial* diffusion of the near-conservative
+  thermal flux — not intra-cell energy redistribution: a per-cell
+  block rebalance is provably vacuous (symmetric Gauss-Seidel leaves
+  the block self-consistent to machine precision each outer). A naive
+  7-point diffusion-synthetic correction implemented on that basis
+  diverged (residual → 1e29) — the classical inconsistent-
+  discretization DSA instability: the diffusion operator must be
+  derived consistently from the θ-WDD discretization (Alcouffe-style
+  consistent DSA), not posed independently. Remaining candidate:
+  consistent-DSA on the thermal block, or accept Anderson-5 as the
+  production configuration. Needed before the P1 validation suite
+  re-runs under the new closure.
 - **R11-04 — VR chi-square gate seeds (R6-09 remainder).** Two
   ~196M-history OpenMC runs outstanding for the
   variance-reduction acceptance gate (~27h each on this workstation).
