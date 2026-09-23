@@ -4000,6 +4000,17 @@ fn avify_verify(
         "receipt_path": output.receipt_path,
         "elapsed_s": output.outcome.elapsed.as_secs_f64(),
         "engine_version": output.receipt.engine.version,
+        "timing": {
+            "export_s": output.receipt.timing.export_s,
+            "engine_s": output.receipt.timing.engine_s,
+            "bind_s": output.receipt.timing.bind_s,
+            "total_s": output.receipt.timing.total_s,
+        },
+        "resources": {
+            "available_parallelism": output.receipt.resources.available_parallelism,
+            "threads": output.receipt.engine.threads,
+            "timeout_s": output.receipt.engine.timeout_s,
+        },
         // The certificate is a passthrough document (Deserialize-only
         // in the connector) — embed the engine's bytes verbatim.
         "certificate": serde_json::from_slice::<serde_json::Value>(
@@ -4039,6 +4050,17 @@ fn avify_status(receipt: PathBuf) -> PyResult<String> {
         "engine_argv0": receipt.engine.argv0,
         "certificate_sha256": receipt.certificate.sha256,
         "engine_elapsed_s": receipt.engine_elapsed_s,
+        "timing": {
+            "export_s": receipt.timing.export_s,
+            "engine_s": receipt.timing.engine_s,
+            "bind_s": receipt.timing.bind_s,
+            "total_s": receipt.timing.total_s,
+        },
+        "resources": {
+            "available_parallelism": receipt.resources.available_parallelism,
+            "threads": receipt.engine.threads,
+            "timeout_s": receipt.engine.timeout_s,
+        },
         "stale": openbnct_avify::is_stale(&states),
         "inputs": per_input,
     }))

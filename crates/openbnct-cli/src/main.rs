@@ -4414,6 +4414,28 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     receipt.engine.argv0.join(" "),
                     &receipt.certificate.sha256[..16]
                 );
+                // Measured timing breakdown — absent on pre-0.2.1
+                // receipts stays absent rather than printing zeros.
+                if receipt.timing.total_s > 0.0 {
+                    println!(
+                        "  timing (measured): export {:.1}s, engine {:.1}s, bind {:.1}s — total {:.1}s",
+                        receipt.timing.export_s,
+                        receipt.timing.engine_s,
+                        receipt.timing.bind_s,
+                        receipt.timing.total_s
+                    );
+                }
+                if let Some(n) = receipt.resources.available_parallelism {
+                    let threads = receipt
+                        .engine
+                        .threads
+                        .map(|t| t.to_string())
+                        .unwrap_or_else(|| "engine default".into());
+                    println!(
+                        "  resources: {n} logical cores; engine threads {threads}, bound {}s",
+                        receipt.engine.timeout_s
+                    );
+                }
                 let mut stale = false;
                 for (name, state) in &states {
                     let label = match state {

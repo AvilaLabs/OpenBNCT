@@ -1538,6 +1538,12 @@ impl AvifyPanel {
                     .ok();
                 self.load_arrays(&outdir);
                 self.status = Some("loaded".into());
+                if let Ok(r) = openbnct_avify::AvifyRunReceipt::load(&receipt) {
+                    self.status = Some(format!(
+                        "loaded — engine {} · {:.0}s total (engine {:.0}s)",
+                        r.engine.version, r.timing.total_s, r.timing.engine_s
+                    ));
+                }
             }
             Err(e) => self.status = Some(format!("load certificate: {e}")),
         }

@@ -195,6 +195,8 @@ fn receipt_roundtrip_and_staleness() {
         EngineRecord {
             argv0: vec!["avify-dose".into()],
             version: "avify-dose 0.1.0".into(),
+            threads: Some(2),
+            timeout_s: 600,
         },
         BoundInput {
             path: dir.join("certificate.json"),

@@ -59,6 +59,13 @@ pub struct AvifyRunReceipt {
     pub certificate: BoundInput,
     /// Total connector wall time for the engine call, seconds.
     pub engine_elapsed_s: f64,
+    /// Measured wall-time breakdown (added post-0.1.0 — absent on
+    /// older receipts).
+    #[serde(default)]
+    pub timing: TimingRecord,
+    /// Host resources at run start.
+    #[serde(default)]
+    pub resources: ResourceRecord,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -67,6 +74,39 @@ pub struct EngineRecord {
     /// First line of `<argv0> --version`, or "unknown" if the engine
     /// did not answer (pre-versioning builds still run).
     pub version: String,
+    /// OpenMC threads passed through to the engine, if any.
+    #[serde(default)]
+    pub threads: Option<u32>,
+    /// The connector's wall bound on the engine call.
+    #[serde(default)]
+    pub timeout_s: u64,
+}
+
+/// Wall-time breakdown — preparation, the engine call, and the
+/// binding/reporting tail. Every entry is measured by the connector;
+/// nothing is estimated.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct TimingRecord {
+    /// Case/assignment/spec load + voxel-plan export + plan JSON write.
+    #[serde(default)]
+    pub export_s: f64,
+    /// The bounded engine subprocess.
+    #[serde(default)]
+    pub engine_s: f64,
+    /// Hash binding, receipt write, certificate parse.
+    #[serde(default)]
+    pub bind_s: f64,
+    /// Connector-side total (≈ export + engine + bind).
+    #[serde(default)]
+    pub total_s: f64,
+}
+
+/// The host's parallelism at run start — the resource-allocation
+/// record R12-05 asks for.
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct ResourceRecord {
+    #[serde(default)]
+    pub available_parallelism: Option<usize>,
 }
 
 impl AvifyRunReceipt {
@@ -166,5 +206,12 @@ pub fn receipt_for_run(
         engine,
         certificate,
         engine_elapsed_s,
+        timing: TimingRecord {
+            engine_s: engine_elapsed_s,
+            ..TimingRecord::default()
+        },
+        resources: ResourceRecord {
+            available_parallelism: std::thread::available_parallelism().map(|n| n.get()).ok(),
+        },
     }
 }

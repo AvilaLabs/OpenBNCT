@@ -1517,6 +1517,14 @@ implementation, or public technical disclosure, including connector behavior.
   failures rather than selectively reporting gains. Acceptance: displayed
   totals and comparisons reconcile with execution records; missing timings
   remain missing rather than becoming zero or a fabricated speedup.
+  **Status (2026-09-23, partial):** the run receipt now records a measured
+  `timing` breakdown (export / engine / bind / total wall seconds), the
+  threads and timeout bound passed to the engine, and the host's
+  `available_parallelism`; `avify status` and the Python surface print
+  them, and absent fields on older receipts stay absent. Per-run
+  histories/wall-time/seed come through the certificate. Still open:
+  first-run vs reuse accounting and the labelled measured/estimated
+  comparison display.
 - **R12-06 — Demonstrate value against a declared baseline.**
   Begin with one understandable synthetic case and a named conventional
   workflow. Declare the research task, result-quality checks, tolerances,

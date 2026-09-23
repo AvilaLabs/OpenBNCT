@@ -13,11 +13,14 @@ use openbnct_transport::{MaterialAssignment, TransportCase};
 use crate::error::AvifyError;
 use crate::plan::AvifyPlan;
 use crate::receipt::{
-    AvifyRunReceipt, BoundInput, EngineRecord, bind_inputs, hex_sha256, receipt_for_run,
+    AvifyRunReceipt, BoundInput, EngineRecord, TimingRecord, bind_inputs, hex_sha256,
+    receipt_for_run,
 };
 use crate::run::{EngineInvocation, VerifyOutcome};
 use crate::spec::AvifySpec;
 use crate::voxel::{VoxelPlanExport, export_voxel_plan};
+
+use std::time::Instant;
 
 /// Everything `verify` produced, for callers that render results.
 #[derive(Debug)]
@@ -82,9 +85,12 @@ pub fn verify_pipeline(
     timeout_s: u64,
     threads: Option<u32>,
 ) -> Result<VerifyPipelineOutput, AvifyError> {
+    let run_start = Instant::now();
     std::fs::create_dir_all(outdir)?;
     let prefix = verify_prefix(outdir);
+    let export_start = Instant::now();
     let (export, plan_path) = export_pipeline(case_path, assignment_path, spec_path, &prefix)?;
+    let export_s = export_start.elapsed().as_secs_f64();
 
     let argv0: Vec<String> = engine_cmd.split_whitespace().map(String::from).collect();
     if argv0.is_empty() {
@@ -96,6 +102,7 @@ pub fn verify_pipeline(
     let engine_version = invocation.engine_version();
     let outcome = invocation.verify(&prefix, &plan_path, outdir, threads)?;
 
+    let bind_start = Instant::now();
     let abs = |p: &Path| std::fs::canonicalize(p).unwrap_or_else(|_| p.to_path_buf());
     let inputs = bind_inputs(&[
         ("case", &abs(case_path)),
@@ -111,16 +118,24 @@ pub fn verify_pipeline(
         path: abs(&outcome.certificate_path),
         sha256: hex_sha256(&std::fs::read(&outcome.certificate_path)?),
     };
-    let receipt = receipt_for_run(
+    let mut receipt = receipt_for_run(
         inputs,
         exported,
         EngineRecord {
             argv0: invocation.argv0.clone(),
             version: engine_version,
+            threads,
+            timeout_s,
         },
         certificate_bound,
         outcome.elapsed.as_secs_f64(),
     );
+    receipt.timing = TimingRecord {
+        export_s,
+        engine_s: outcome.elapsed.as_secs_f64(),
+        bind_s: bind_start.elapsed().as_secs_f64(),
+        total_s: run_start.elapsed().as_secs_f64(),
+    };
     let receipt_path = outdir.join("avify-run.json");
     receipt.write(&receipt_path)?;
     Ok(VerifyPipelineOutput {
