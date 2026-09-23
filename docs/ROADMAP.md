@@ -1407,6 +1407,100 @@ independent engines, ordered by leverage. None implies a clinical claim.
   entry; only LTY=0 (derived-quantity reference) resolves. Extend if a
   real evaluation needs them.
 
+## R12 — Optional Avify Dose integration (planned; IP review required)
+
+**Adopted:** 2026-09-22, at the project owner's direction.
+
+Let researchers run supported Avify Dose analyses from their current OpenBNCT
+case, understand the returned results through clear visuals, and see the
+computation time and work required to obtain them. This milestone records a
+product objective; Avify Dose's supported inputs, outputs, and performance
+remain to be established. No integration or speedup is claimed as delivered.
+
+The licensing intent is to retain Avify Dose as a separately licensed,
+proprietary product and preserve the owner's patent rights, while OpenBNCT
+remains MIT-licensed and useful without Avify Dose. This roadmap does not
+authorize contributing protected methods to the MIT implementation or grant
+rights to Avify Dose. The recorded review required by
+[`IP_BOUNDARY.md`](IP_BOUNDARY.md) precedes patent-sensitive design,
+implementation, or public technical disclosure, including connector behavior.
+
+- **R12-01 — Define the supported use case and review the IP boundary.**
+  Obtain a non-confidential input/output example and identify the research
+  question, supported domain, output meaning, and conventional comparison
+  workflow. Record the patent and licensing review of the engine, connector,
+  result handling, examples, and documentation before detailed integration
+  design. Keep proprietary source and distribution separate from OpenBNCT;
+  repository or process separation alone does not establish patent clearance.
+  Acceptance: a reviewed scope states what can be implemented and published,
+  with unresolved capabilities and restrictions explicit.
+- **R12-02 — Optional engine connection through shared Rust contracts.**
+  After review, define a versioned, SHA-256 content-bound interchange for
+  approved inputs, returned results, execution status, and timing records.
+  Reuse OpenBNCT's case geometry, regions, units, and dose semantics; reject
+  incompatible or stale results. Rust crates remain authoritative for the
+  public integration, with GUI, CLI, and Python using that implementation;
+  protected computation remains in the separately licensed Avify Dose engine.
+  Start by evaluating a local desktop companion. Any later hosted option must
+  make data transfer explicit and preserve the browser's local-only behavior
+  when the integration is unused. Acceptance: a reviewed synthetic example
+  completes an end-to-end exchange; unavailable engines, incompatible
+  versions, and licensing failures produce actionable messages without
+  disabling ordinary OpenBNCT workflows.
+- **R12-03 — Avify Dose workspace and continuous case workflow.**
+  Provide an optional dedicated workspace, reachable from Dose and Plan,
+  carrying over applicable case inputs without manual re-entry. Explain the
+  research question and assumptions before execution; show meaningful
+  progress, elapsed time, cancellation, and explicit completion/failure states.
+  Changed inputs mark existing results as stale. Acceptance: a researcher can
+  launch, inspect, save, and reopen an approved analysis from the workbench;
+  process execution has bounded waits, termination/reaping, cancellation-race
+  coverage, and the local workload limits required by `AGENTS.md`.
+- **R12-04 — Clear scientific results and linked visuals.**
+  Pair a plain-language result explanation with synchronized spatial views
+  and region/metric comparisons supported by the reviewed output contract.
+  Use explicit units, legends, shared scales where comparable, and labels
+  that remain understandable without color alone. Distinguish nominal values,
+  sampled ranges, statistical uncertainty, and any engine-supported bounds;
+  do not imply a probability or guarantee the output does not establish.
+  If separate extrema cannot occur together, do not present their composite
+  as one realizable distribution. Acceptance: users can identify what changed,
+  where it matters, and which assumptions limit the interpretation, using an
+  annotated synthetic walkthrough. All displays remain research-only.
+- **R12-05 — Computation time and work reporting.**
+  Show end-to-end elapsed time and a breakdown of preparation, transport,
+  Avify computation, transfer, and result processing where applicable. Record
+  actual transport-run counts, available CPU/compute time, hardware and
+  resource allocation, engine versions, numerical settings, and reuse of
+  existing inputs. Separate first-run cost from subsequent reuse, and elapsed
+  time from cumulative compute time. An optional conventional comparison
+  reports time saved as baseline time minus Avify workflow time, and speedup
+  as baseline time divided by Avify workflow time, only for valid comparable
+  completed runs with positive durations. Label comparisons **measured**,
+  **estimated** (with the estimation basis), or **unavailable**; running Avify
+  alone does not measure savings. Include overhead and retain slowdowns and
+  failures rather than selectively reporting gains. Acceptance: displayed
+  totals and comparisons reconcile with execution records; missing timings
+  remain missing rather than becoming zero or a fabricated speedup.
+- **R12-06 — Demonstrate value against a declared baseline.**
+  Begin with one understandable synthetic case and a named conventional
+  workflow. Declare the research task, result-quality checks, tolerances,
+  hardware/resources, cache/reuse conditions, timing boundaries, and repetition
+  protocol before execution. Compare equivalent tasks at comparable accuracy
+  and report timing variation, quality checks, and limitations alongside
+  savings. If the methods establish different kinds of answers, show what
+  each establishes under a fixed compute budget rather than an equivalence
+  or speedup claim. Acceptance: a shareable, reviewed walkthrough presents
+  the ordinary result, the additional supported Avify insight, and measured
+  computation costs; publish new evidence without regenerating frozen results.
+
+Delivery order: complete R12-01 first, then the reviewed connection and run
+records, then the workspace and visuals, then the comparative demonstration.
+An explanatory mockup or integration milestone does not establish scientific
+novelty, performance superiority, clinical qualification, or a patent grant.
+Avify Dose integration is optional and does not gate independent OpenBNCT
+releases or move protected optimization into the open-source engine.
+
 ## Release pipeline
 
 - **0.2.0 cut** — first release containing the in-house S_N solver,
@@ -1427,5 +1521,7 @@ independent engines, ordered by leverage. None implies a clinical claim.
 - automated segmentation or contour editing;
 - facility commissioning claims;
 - regulatory submission;
-- optimization involving Avify Dose patent subject matter;
+- implementation of Avify Dose patent subject matter in the MIT engine
+  (R12 tracks separately licensed integration under the existing IP review
+  requirement);
 - any claim of clinical equivalence to a certified TPS.
