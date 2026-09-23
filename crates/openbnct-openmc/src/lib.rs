@@ -105,11 +105,17 @@ pub struct OpenMcBackendConfig {
     pub nuclear_data_root: PathBuf,
 }
 
+/// Default wall-clock bound on one `openmc` execution: 48 hours — long
+/// enough for multi-hour production runs, finite so a hung process is
+/// killed and reaped rather than waited on forever.
+pub const DEFAULT_OPENMC_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(48 * 3600);
+
 #[derive(Debug, Clone)]
 pub struct OpenMcBackend {
     executable: PathBuf,
     environment: Vec<(String, String)>,
     config: Option<OpenMcBackendConfig>,
+    timeout: std::time::Duration,
 }
 
 impl OpenMcBackend {
@@ -118,7 +124,16 @@ impl OpenMcBackend {
             executable: executable.into(),
             environment: Vec::new(),
             config: None,
+            timeout: DEFAULT_OPENMC_TIMEOUT,
         }
+    }
+
+    /// Bound `execute` to `timeout` of wall-clock time; on expiry the
+    /// process is killed and reaped and `execute` returns
+    /// [`OpenMcError::Timeout`].
+    pub fn with_timeout(mut self, timeout: std::time::Duration) -> Self {
+        self.timeout = timeout;
+        self
     }
 
     /// Attach the artifact set `prepare` generates decks from.
@@ -251,14 +266,39 @@ impl TransportBackend for OpenMcBackend {
         let mut command = std::process::Command::new(&self.executable);
         command
             .current_dir(directory)
+            .stdin(std::process::Stdio::null())
             .stdout(std::process::Stdio::from(stdout))
             .stderr(std::process::Stdio::from(stderr));
         for (key, value) in &self.environment {
             command.env(key, value);
         }
-        let status = command
-            .status()
+        let mut child = command
+            .spawn()
             .map_err(|e| OpenMcError::Io(format!("spawn {}: {e}", self.executable.display())))?;
+        // Bounded wait: poll, and on the deadline kill + reap so neither a
+        // hung run nor a zombie outlives this call.
+        // A timeout too large to represent as an Instant means no deadline.
+        let deadline = std::time::Instant::now().checked_add(self.timeout);
+        let mut pause = std::time::Duration::from_millis(10);
+        let status = loop {
+            match child.try_wait() {
+                Ok(Some(status)) => break status,
+                Ok(None) if deadline.is_some_and(|d| std::time::Instant::now() >= d) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(OpenMcError::Timeout(self.timeout.as_secs()));
+                }
+                Ok(None) => {
+                    std::thread::sleep(pause);
+                    pause = (pause * 2).min(std::time::Duration::from_millis(500));
+                }
+                Err(e) => {
+                    let _ = child.kill();
+                    let _ = child.wait();
+                    return Err(OpenMcError::Io(format!("wait for openmc: {e}")));
+                }
+            }
+        };
         let finished = unix_seconds();
         let exit_code = status.code().unwrap_or(-1);
 
@@ -356,6 +396,11 @@ pub enum OpenMcError {
     Io(String),
     #[error("manifest error: {0}")]
     Manifest(String),
+    #[error(
+        "openmc did not finish within {0} s and was killed; its logs remain in the run \
+         directory"
+    )]
+    Timeout(u64),
     #[error(transparent)]
     Input(#[from] OpenMcInputError),
     #[error(transparent)]
@@ -486,6 +531,38 @@ mod tests {
             serde_json::from_slice(&std::fs::read(run_dir.join(OPENMC_RUN_RECEIPT_FILE)).unwrap())
                 .unwrap();
         assert_eq!(receipt.exit_code, 3);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn execute_kills_and_reaps_a_run_past_its_timeout() {
+        let temp = tempfile::tempdir().unwrap();
+        let pid_file = temp.path().join("openmc.pid");
+        let path = temp.path().join("hung-openmc.sh");
+        std::fs::write(
+            &path,
+            format!(
+                "#!/bin/sh\necho $$ > {}\nexec sleep 60\n",
+                pid_file.display()
+            ),
+        )
+        .unwrap();
+        {
+            use std::os::unix::fs::PermissionsExt;
+            std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o755)).unwrap();
+        }
+        let (backend, _files, _data) = configured_backend(&path);
+        let backend = backend.with_timeout(std::time::Duration::from_millis(300));
+        let run_dir = temp.path().join("run");
+        let prepared = backend.prepare(&case(), &run_dir).unwrap();
+        let started = std::time::Instant::now();
+        let error = backend.execute(&prepared).unwrap_err();
+        assert!(matches!(error, OpenMcError::Timeout(0)), "{error}");
+        assert!(started.elapsed() < std::time::Duration::from_secs(20));
+        // Killed and reaped: the pid is gone, not a zombie; no receipt.
+        let pid = std::fs::read_to_string(&pid_file).unwrap();
+        assert!(!Path::new(&format!("/proc/{}", pid.trim())).exists());
+        assert!(!run_dir.join(OPENMC_RUN_RECEIPT_FILE).exists());
     }
 
     #[test]
