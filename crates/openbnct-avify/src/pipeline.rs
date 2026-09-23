@@ -87,6 +87,10 @@ pub fn verify_pipeline(
 ) -> Result<VerifyPipelineOutput, AvifyError> {
     let run_start = Instant::now();
     std::fs::create_dir_all(outdir)?;
+    // Cold vs repeat: a run in an outdir that already holds a
+    // certificate isn't paying the first-run setup again — the honest
+    // timing distinction R12-05 asks for.
+    let cold_start = !outdir.join("certificate.json").is_file();
     let prefix = verify_prefix(outdir);
     let export_start = Instant::now();
     let (export, plan_path) = export_pipeline(case_path, assignment_path, spec_path, &prefix)?;
@@ -100,6 +104,27 @@ pub fn verify_pipeline(
     }
     let invocation = EngineInvocation { argv0, timeout_s };
     let engine_version = invocation.engine_version();
+
+    let mut warnings = Vec::new();
+    let spec: AvifySpec = load_json(spec_path)?;
+    if let Some(pin) = &spec.engine_version
+        && !engine_version.contains(pin.as_str())
+    {
+        warnings.push(format!(
+            "engine version drift: spec pins {pin:?}, engine reports {engine_version:?}"
+        ));
+    }
+    // Same-outdir drift: a receipt from an earlier run naming a
+    // different engine version is worth saying out loud.
+    if let Ok(prior) = AvifyRunReceipt::load(&outdir.join("avify-run.json"))
+        && prior.engine.version != engine_version
+    {
+        warnings.push(format!(
+            "engine version changed since the last run here: {:?} \u{2192} {:?}",
+            prior.engine.version, engine_version
+        ));
+    }
+
     let outcome = invocation.verify(&prefix, &plan_path, outdir, threads)?;
 
     let bind_start = Instant::now();
@@ -136,6 +161,8 @@ pub fn verify_pipeline(
         bind_s: bind_start.elapsed().as_secs_f64(),
         total_s: run_start.elapsed().as_secs_f64(),
     };
+    receipt.cold_start = cold_start;
+    receipt.warnings = warnings;
     let receipt_path = outdir.join("avify-run.json");
     receipt.write(&receipt_path)?;
     Ok(VerifyPipelineOutput {

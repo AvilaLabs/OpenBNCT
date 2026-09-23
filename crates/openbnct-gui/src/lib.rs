@@ -1362,6 +1362,18 @@ struct AvifyPanel {
     /// `name → state` from the last staleness check of the run receipt.
     #[cfg(not(target_arch = "wasm32"))]
     staleness: Option<std::collections::BTreeMap<String, openbnct_avify::InputState>>,
+    /// The run receipt itself (engine version, timing, warnings).
+    #[cfg(not(target_arch = "wasm32"))]
+    receipt: Option<openbnct_avify::AvifyRunReceipt>,
+    /// `review.json` state for the loaded outdir.
+    #[cfg(not(target_arch = "wasm32"))]
+    review_state: Option<openbnct_avify::ReviewState>,
+    /// Tint ROI regions by their certificate verdict on the class map.
+    #[cfg(not(target_arch = "wasm32"))]
+    verdict_overlay: bool,
+    /// Reviewer-name form state for "Mark reviewed".
+    #[cfg(not(target_arch = "wasm32"))]
+    review_form: Option<(String, String)>,
     #[cfg(not(target_arch = "wasm32"))]
     receipt_path: String,
     /// The exported voxel arrays (class map + ROI masks) for the
@@ -1400,6 +1412,14 @@ impl Default for AvifyPanel {
             certificate: None,
             #[cfg(not(target_arch = "wasm32"))]
             staleness: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            receipt: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            review_state: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            verdict_overlay: true,
+            #[cfg(not(target_arch = "wasm32"))]
+            review_form: None,
             #[cfg(not(target_arch = "wasm32"))]
             receipt_path: String::new(),
             #[cfg(not(target_arch = "wasm32"))]
@@ -1498,7 +1518,9 @@ impl AvifyPanel {
             self.receipt_path = receipt.display().to_string();
             if let Ok(receipt) = openbnct_avify::AvifyRunReceipt::load(&receipt) {
                 self.staleness = Some(openbnct_avify::check_staleness(&receipt, &outdir));
+                self.receipt = Some(receipt);
             }
+            self.review_state = openbnct_avify::review_state(&outdir).ok();
             self.load_arrays(&outdir);
         }
         false
@@ -1593,6 +1615,8 @@ impl AvifyPanel {
                 self.staleness = openbnct_avify::AvifyRunReceipt::load(&receipt)
                     .map(|r| openbnct_avify::check_staleness(&r, &outdir))
                     .ok();
+                self.receipt = openbnct_avify::AvifyRunReceipt::load(&receipt).ok();
+                self.review_state = openbnct_avify::review_state(&outdir).ok();
                 self.load_arrays(&outdir);
                 self.status = Some("loaded".into());
                 if let Ok(r) = openbnct_avify::AvifyRunReceipt::load(&receipt) {
@@ -1618,6 +1642,8 @@ impl AvifyPanel {
                 .map(|p| p.to_path_buf())
                 .unwrap_or_default();
             self.staleness = Some(openbnct_avify::check_staleness(&receipt, &base));
+            self.review_state = openbnct_avify::review_state(&base).ok();
+            self.receipt = Some(receipt);
         }
     }
 }
@@ -3471,6 +3497,7 @@ fn avify_class_view(
     arrays: &openbnct_avify::ArraysNpz,
     plane: usize,
     cursor: [usize; 3],
+    verdicts: Option<&std::collections::BTreeMap<String, String>>,
     theme: Theme,
 ) -> Option<[usize; 3]> {
     let [nz, ny, nx] = arrays.shape_zyx;
@@ -3506,10 +3533,25 @@ fn avify_class_view(
             let [x, y, z] = to_voxel(u, v);
             let mut color = avify_class_color(cls(x, y, z));
             // ROI contour: any in-plane 4-neighbour leaving the mask.
-            for (i, (_, mask)) in arrays.rois.iter().enumerate() {
+            for (i, (roi_name, mask)) in arrays.rois.iter().enumerate() {
                 let idx = z * ny * nx + y * nx + x;
                 if !mask[idx] {
                     continue;
+                }
+                // Verdict tint: the ROI's certified interval outcome
+                // colours its interior (contour stays bright).
+                if let Some(verdicts) = verdicts
+                    && let Some(action) = verdicts.get(roi_name)
+                {
+                    let tint = match action.as_str() {
+                        "PASS" => egui::Color32::from_rgba_unmultiplied(60, 160, 80, 96),
+                        "FAIL" => egui::Color32::from_rgba_unmultiplied(200, 60, 60, 96),
+                        "ADDITIONAL_EVIDENCE" => {
+                            egui::Color32::from_rgba_unmultiplied(220, 170, 60, 96)
+                        }
+                        _ => egui::Color32::from_rgba_unmultiplied(140, 140, 140, 64),
+                    };
+                    color = color.blend(tint);
                 }
                 let leaves = |u: isize, v: isize| -> bool {
                     if u < 0 || v < 0 || u >= w as isize || v >= h as isize {
@@ -3927,7 +3969,177 @@ fn show_avify_workspace(
                         ));
                     }
                 }
+                // Engine identity: certificate stamp when present, the
+                // receipt's --version answer otherwise.
+                if let Some(engine) = &cert.engine {
+                    ui.label(
+                        egui::RichText::new(format!(
+                            "engine: {}{}",
+                            engine.name.as_deref().unwrap_or("avify-dose"),
+                            engine
+                                .version
+                                .as_deref()
+                                .map(|v| format!(" {v}"))
+                                .unwrap_or_default()
+                        ))
+                        .small()
+                        .color(theme.text_dim),
+                    );
+                }
             });
+    }
+
+    // Receipt-backed metadata: version-drift warnings, cold-vs-repeat
+    // timing, and the reviewed marker — all connector-owned state.
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        // Warnings (version drift etc.) — verbatim from the receipt.
+        if let Some(receipt) = &panel.receipt {
+            for warning in &receipt.warnings {
+                ui.colored_label(theme.warn_text, format!("\u{26a0} {warning}"));
+            }
+            if receipt.cold_start {
+                ui.label(
+                    egui::RichText::new(t!(
+                        language,
+                        en = "first run in this directory — timings include one-time setup",
+                        ja = "このディレクトリでの初回実行 — 時間には初期セットアップが含まれます",
+                        it = "prima esecuzione in questa directory — i tempi includono il setup iniziale",
+                        zh = "此目录中的首次运行 — 计时包含一次性设置",
+                        es = "primera ejecución en este directorio — los tiempos incluyen la configuración inicial"
+                    ))
+                    .small()
+                    .color(theme.text_dim),
+                );
+            }
+        }
+        // Reviewed marker — badge or a two-field inline form.
+        match &panel.review_state {
+            Some(openbnct_avify::ReviewState::Current(review)) => {
+                ui.colored_label(
+                    theme.brand,
+                    t!(
+                        language,
+                        en = "REVIEWED",
+                        ja = "レビュー済み",
+                        it = "REVISIONATO",
+                        zh = "已评审",
+                        es = "REVISADO"
+                    ),
+                );
+                ui.label(
+                    egui::RichText::new(format!(
+                        "by {}{}",
+                        review.reviewer,
+                        if review.note.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" \u{2014} {}", review.note)
+                        }
+                    ))
+                    .small()
+                    .color(theme.text_dim),
+                );
+            }
+            Some(openbnct_avify::ReviewState::Stale { .. }) => {
+                ui.colored_label(
+                    theme.warn_text,
+                    t!(
+                        language,
+                        en = "review STALE — certificate changed since review",
+                        ja = "レビューは陳腐化 — 証明書が変更されました",
+                        it = "revisione SCADUTA — certificato cambiato",
+                        zh = "评审已过期 — 证书已更改",
+                        es = "revisión OBSOLETA — el certificado cambió"
+                    ),
+                );
+            }
+            _ => {}
+        }
+        if panel.certificate.is_some() && panel.review_state.is_some() {
+            let mut write_payload = None;
+            let mut cancel_form = false;
+            if let Some((reviewer, note)) = &mut panel.review_form {
+                ui.horizontal(|ui| {
+                    ui.label(t!(
+                        language,
+                        en = "reviewer:",
+                        ja = "レビュアー:",
+                        it = "revisore:",
+                        zh = "评审人:",
+                        es = "revisor:"
+                    ));
+                    ui.text_edit_singleline(reviewer);
+                    ui.label(t!(
+                        language,
+                        en = "note:",
+                        ja = "メモ:",
+                        it = "nota:",
+                        zh = "备注:",
+                        es = "nota:"
+                    ));
+                    ui.text_edit_singleline(note);
+                });
+                ui.horizontal(|ui| {
+                    if ui
+                        .button(t!(
+                            language,
+                            en = "Write review.json",
+                            ja = "review.json を書き込む",
+                            it = "Scrivi review.json",
+                            zh = "写入 review.json",
+                            es = "Escribir review.json"
+                        ))
+                        .clicked()
+                        && !reviewer.trim().is_empty()
+                    {
+                        write_payload =
+                            Some((reviewer.trim().to_string(), note.trim().to_string()));
+                    }
+                    if ui
+                        .button(t!(
+                            language,
+                            en = "Cancel",
+                            ja = "キャンセル",
+                            it = "Annulla",
+                            zh = "取消",
+                            es = "Cancelar"
+                        ))
+                        .clicked()
+                    {
+                        cancel_form = true;
+                    }
+                });
+            } else if matches!(
+                panel.review_state,
+                Some(openbnct_avify::ReviewState::Missing) | None
+            ) && ui
+                .button(t!(
+                    language,
+                    en = "Mark reviewed",
+                    ja = "レビュー済みにする",
+                    it = "Segna revisionato",
+                    zh = "标记为已评审",
+                    es = "Marcar revisado"
+                ))
+                .clicked()
+            {
+                panel.review_form = Some((String::new(), String::new()));
+            }
+            if let Some((reviewer, note)) = write_payload {
+                let outdir = std::path::PathBuf::from(panel.outdir.trim());
+                match openbnct_avify::write_review(&outdir, &reviewer, &note) {
+                    Ok(_) => {
+                        panel.review_state = openbnct_avify::review_state(&outdir).ok();
+                        panel.status = Some("reviewed".into());
+                        panel.review_form = None;
+                    }
+                    Err(e) => panel.status = Some(format!("review: {e}")),
+                }
+            } else if cancel_form {
+                panel.review_form = None;
+            }
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]
@@ -3958,10 +4170,34 @@ fn show_avify_workspace(
                     .color(theme.text_dim)
                     .small(),
                 );
+                let verdicts: Option<std::collections::BTreeMap<String, String>> =
+                    if panel.verdict_overlay {
+                        panel.certificate.as_ref().map(|cert| {
+                            cert.actions
+                                .iter()
+                                .map(|(k, a)| (k.clone(), a.action.clone()))
+                                .collect()
+                        })
+                    } else {
+                        None
+                    };
+                if panel.certificate.is_some() {
+                    ui.checkbox(
+                        &mut panel.verdict_overlay,
+                        t!(
+                            language,
+                            en = "tint ROIs by verdict",
+                            ja = "判定で ROI を着色",
+                            it = "colora le ROI per verdetto",
+                            zh = "按判定为 ROI 着色",
+                            es = "colorear ROI por veredicto"
+                        ),
+                    );
+                }
                 ui.horizontal(|ui| {
                     for (plane, label) in [(0usize, "axial"), (1, "coronal"), (2, "sagittal")] {
                         if let Some(voxel) =
-                            avify_class_view(ui, arrays, plane, panel.cursor, theme)
+                            avify_class_view(ui, arrays, plane, panel.cursor, verdicts.as_ref(), theme)
                         {
                             clicked_cursor = Some(voxel);
                         }

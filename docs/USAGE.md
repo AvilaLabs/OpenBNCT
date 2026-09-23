@@ -996,6 +996,24 @@ The engine is not distributed with OpenBNCT. Three subcommands:
 - `show`/`status` — render a `certificate.json`, and check an
   `avify-run.json` receipt against the filesystem (CURRENT/STALE per
   bound input).
+- `diff` — compare two run directories: per-ROI interval/action changes
+  plus which bound inputs differ.
+- `review` — mark a certificate as reviewed:
+  `openbnct avify review --outdir run --reviewer "name" --note "what was
+  checked"` writes `review.json` (`openbnct.avify-review/0.1.0`), a
+  marker hash-bound to the certificate bytes. A re-run under the same
+  directory leaves the review STALE rather than silently attached;
+  `status` and `show` report the state.
+
+Receipt fields beyond the binding: `cold_start` marks a run whose
+outdir had no prior certificate (its timings include one-time setup a
+repeat run wouldn't pay); `warnings` carries non-fatal observations —
+notably engine-version drift when the spec's optional `engine_version`
+pin disagrees with `avify-dose --version`, or when the engine version
+changed between runs in the same directory. The pin warns, never
+refuses. Certificates from `avify-dose` 0.1.0+ also carry an `engine`
+block (name + version) so the certificate is self-describing without
+its receipt.
 
 A runnable example (export is pure Rust; verify needs the engine +
 OpenMC) is in `examples/avify/`. Certificate output is an empirical
@@ -1004,10 +1022,13 @@ two-evaluation envelope — research software, not a certified bound.
 The Python package exposes the same pipeline —
 `openbnct.avify_export_plan(case, assignment, spec, prefix)`,
 `avify_verify(case, assignment, spec, outdir, engine_cmd, threads,
-timeout_s)`, `avify_status(receipt)`, and `avify_load_certificate(path)`
+timeout_s)`, `avify_status(receipt)` (now including `cold_start`,
+`warnings`, and `review` state), `avify_review(outdir, reviewer,
+note)`, `avify_diff(before, after)`, and `avify_load_certificate(path)`
 — each returning a JSON string of the artifact paths, run receipt
 states, or the certificate verbatim. The workbench's Avify tab shells
-out to `openbnct avify` for the same bounded run.
+out to `openbnct avify` for the same bounded run, renders the class map
+with ROI verdict tinting, and exposes the review marker inline.
 
 ### External-dose and combined-treatment evaluation
 

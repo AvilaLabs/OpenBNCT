@@ -59,12 +59,23 @@ pub struct RunRecord {
     pub roi_mass_g: BTreeMap<String, f64>,
 }
 
+/// The engine's self-identification, stamped into certificates by
+/// `avify-dose` 0.1.0+ (absent on older certificates).
+#[derive(Debug, Clone, Deserialize)]
+pub struct EngineInfo {
+    pub name: Option<String>,
+    pub version: Option<String>,
+}
+
 /// The engine's certificate as returned on disk.
 #[derive(Debug, Clone, Deserialize)]
 pub struct AvifyCertificate {
     pub plan_sha256: String,
     pub ingest_meta_sha256: String,
     pub ingest_arrays_sha256: String,
+    /// Which engine produced this certificate.
+    #[serde(default)]
+    pub engine: Option<EngineInfo>,
     #[serde(default)]
     pub openmc_version: Option<String>,
     #[serde(default)]

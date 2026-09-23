@@ -1041,6 +1041,19 @@ enum AvifyCommand {
         #[arg(long)]
         after: PathBuf,
     },
+    /// Mark a run's certificate as reviewed — writes a hash-bound
+    /// `review.json` naming the certificate bytes the reviewer saw.
+    Review {
+        /// Run directory holding `certificate.json`.
+        #[arg(long)]
+        outdir: PathBuf,
+        /// Reviewer name — anonymous sign-off is meaningless.
+        #[arg(long)]
+        reviewer: String,
+        /// Free-text scope of the review (what was checked).
+        #[arg(long, default_value = "")]
+        note: String,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -4412,6 +4425,30 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let cert = openbnct_avify::AvifyCertificate::load(&certificate)
                     .map_err(|e| io::Error::other(format!("avify certificate: {e}")))?;
                 print_avify_certificate(&cert);
+                if let Some(engine) = &cert.engine {
+                    println!(
+                        "engine: {}{}",
+                        engine.name.as_deref().unwrap_or("avify-dose"),
+                        engine
+                            .version
+                            .as_deref()
+                            .map(|v| format!(" {v}"))
+                            .unwrap_or_default()
+                    );
+                }
+                if let Some(dir) = certificate.parent() {
+                    match openbnct_avify::review_state(dir)
+                        .map_err(|e| io::Error::other(format!("avify review: {e}")))?
+                    {
+                        openbnct_avify::ReviewState::Current(review) => {
+                            println!("review: REVIEWED by {}", review.reviewer)
+                        }
+                        openbnct_avify::ReviewState::Stale { .. } => {
+                            println!("review: STALE — certificate changed since review")
+                        }
+                        openbnct_avify::ReviewState::Missing => {}
+                    }
+                }
             }
             AvifyCommand::Status { receipt } => {
                 let receipt = openbnct_avify::AvifyRunReceipt::load(&receipt)
@@ -4449,6 +4486,31 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         receipt.engine.timeout_s
                     );
                 }
+                if receipt.cold_start {
+                    println!(
+                        "  run kind: first run in this directory (cold — includes one-time setup)"
+                    );
+                }
+                for warning in &receipt.warnings {
+                    println!("  warning: {warning}");
+                }
+                match openbnct_avify::review_state(&base)
+                    .map_err(|e| io::Error::other(format!("avify review: {e}")))?
+                {
+                    openbnct_avify::ReviewState::Current(review) => println!(
+                        "  review: REVIEWED by {}{}",
+                        review.reviewer,
+                        if review.note.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" — {}", review.note)
+                        }
+                    ),
+                    openbnct_avify::ReviewState::Stale { .. } => {
+                        println!("  review: STALE — the certificate changed since it was reviewed")
+                    }
+                    openbnct_avify::ReviewState::Missing => {}
+                }
                 let mut stale = false;
                 for (name, state) in &states {
                     let label = match state {
@@ -4472,6 +4534,19 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     } else {
                         "CURRENT — all bound inputs match the receipt"
                     }
+                );
+            }
+            AvifyCommand::Review {
+                outdir,
+                reviewer,
+                note,
+            } => {
+                let review = openbnct_avify::write_review(&outdir, &reviewer, &note)
+                    .map_err(|e| io::Error::other(format!("avify review: {e}")))?;
+                println!(
+                    "review.json written — {} reviewed certificate {}…",
+                    review.reviewer,
+                    &review.certificate_sha256[..16]
                 );
             }
             AvifyCommand::Diff { before, after } => {

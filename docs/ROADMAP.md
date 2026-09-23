@@ -1508,8 +1508,12 @@ implementation, or public technical disclosure, including connector behavior.
   rendering with per-ROI actions and run records, and run-receipt
   staleness with a recheck control. Native-only execution; the web tab
   renders read-only with an explicit note. Save/reopen of an approved
-  analysis is partially covered by the on-disk receipt + certificate
-  (`status` rebinds), but there is no persisted "approved" marker yet.
+  analysis is covered by the on-disk receipt + certificate (`status`
+  rebinds) plus `openbnct.avify-review/0.1.0` — `avify review` writes a
+  hash-bound reviewer marker that `status`/`show`/GUI report as
+  REVIEWED or STALE when the certificate bytes change. First visit to
+  the tab opens a five-slide plain-language tour (persisted seen-state);
+  ROIs tint by verdict on the class map when a certificate is loaded.
 - **R12-04 — Clear scientific results and linked visuals.**
   Pair a plain-language result explanation with synchronized spatial views
   and region/metric comparisons supported by the reviewed output contract.
@@ -1530,8 +1534,12 @@ implementation, or public technical disclosure, including connector behavior.
   reads the connector's own npz back (npy v1/v2, `|i1`/`|b1`, C-order).
   `openbnct avify diff` (CLI + `avify_diff` Python) compares two runs:
   per-ROI certified-interval shifts and PASS/FAIL transitions plus which
-  bound inputs differ — the "what changed" view. Still open: a GUI
-  compare panel and overlaying dose-product changes on the spatial view.
+  bound inputs differ — the "what changed" view. The workspace also has
+  a compare-to-run field driving the same `diff_runs`, and the class map
+  overlays each ROI's certificate verdict as a colour tint (with a
+  toggle). Still open: per-voxel dose-product envelopes would need
+  engine-side dose volumes — the engine's contract returns scalar ROI
+  intervals, and OpenBNCT does not re-derive engine results.
 - **R12-05 — Computation time and work reporting.**
   Show end-to-end elapsed time and a breakdown of preparation, transport,
   Avify computation, transfer, and result processing where applicable. Record
@@ -1552,8 +1560,12 @@ implementation, or public technical disclosure, including connector behavior.
   threads and timeout bound passed to the engine, and the host's
   `available_parallelism`; `avify status` and the Python surface print
   them, and absent fields on older receipts stay absent. Per-run
-  histories/wall-time/seed come through the certificate. Still open:
-  first-run vs reuse accounting and the labelled measured/estimated
+  histories/wall-time/seed come through the certificate. `cold_start`
+  now marks a run whose outdir had no prior certificate — first-run
+  cost is labelled apart from repeats — and `warnings` records
+  engine-version drift (spec `engine_version` pin or run-to-run
+  change). Certificates from `avify-dose` 0.1.0+ self-describe their
+  engine version. Still open: the labelled measured/estimated
   comparison display.
 - **R12-06 — Demonstrate value against a declared baseline.**
   Begin with one understandable synthetic case and a named conventional

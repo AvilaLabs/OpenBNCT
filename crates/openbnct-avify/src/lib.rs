@@ -19,6 +19,7 @@ pub mod npz;
 pub mod pipeline;
 pub mod plan;
 pub mod receipt;
+pub mod review;
 pub mod run;
 pub mod spec;
 pub mod voxel;
@@ -32,6 +33,7 @@ pub use plan::{AvifyPlan, BeamSpec, DeclaredSet, Normalisation};
 pub use receipt::{
     AvifyRunReceipt, BoundInput, EngineRecord, InputState, check_staleness, is_stale,
 };
+pub use review::{AvifyReview, ReviewState, review_state, write_review};
 pub use run::{EngineInvocation, VerifyOutcome};
 pub use spec::{AvifySpec, EngineClass};
 pub use voxel::{VoxelPlanExport, export_voxel_plan};

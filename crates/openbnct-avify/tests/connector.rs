@@ -324,3 +324,81 @@ fn diff_runs_reports_interval_and_input_changes() {
     assert!(!same.roi_changes["tumour"].action_changed);
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn review_roundtrip_and_staleness() {
+    use openbnct_avify::{ReviewState, review_state, write_review};
+    let dir = std::env::temp_dir().join(format!("avify-test-review-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    // No certificate yet — nothing to review.
+    assert!(write_review(&dir, "reviewer", "note").is_err());
+
+    std::fs::write(dir.join("certificate.json"), b"{\"v\":1}").unwrap();
+    let review = write_review(&dir, "connor", "checked intervals").unwrap();
+    assert_eq!(review.schema_version, "openbnct.avify-review/0.1.0");
+    assert!(matches!(
+        review_state(&dir).unwrap(),
+        ReviewState::Current(_)
+    ));
+
+    // Re-running changes the certificate bytes — review goes stale.
+    std::fs::write(dir.join("certificate.json"), b"{\"v\":2}").unwrap();
+    assert!(matches!(
+        review_state(&dir).unwrap(),
+        ReviewState::Stale { .. }
+    ));
+
+    // Anonymous sign-off rejected.
+    assert!(write_review(&dir, "  ", "note").is_err());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn receipt_backward_compat_cold_and_warnings_default() {
+    // A pre-0.2.1 receipt (no cold_start / warnings fields) must still load.
+    let receipt = serde_json::json!({
+        "schema_version": "openbnct.avify-run/0.1.0",
+        "created_unix_seconds": 1,
+        "inputs": {},
+        "exported": {},
+        "engine": {"argv0": ["avify-dose"], "version": "avify-dose 0.1.0"},
+        "certificate": {"path": "/x/certificate.json", "sha256": "aa"},
+        "engine_elapsed_s": 1.0
+    });
+    let receipt: openbnct_avify::AvifyRunReceipt = serde_json::from_value(receipt).unwrap();
+    assert!(!receipt.cold_start);
+    assert!(receipt.warnings.is_empty());
+}
+
+#[test]
+fn certificate_engine_field_optional() {
+    let base = serde_json::json!({
+        "plan_sha256": "aa",
+        "ingest_meta_sha256": "bb",
+        "ingest_arrays_sha256": "cc",
+        "scale_Gyw_per_MeVg": 1.0,
+        "runs": {},
+        "brackets": {},
+        "actions": {}
+    });
+    // Older certificate without the field.
+    let cert: AvifyCertificate = serde_json::from_value(base.clone()).unwrap();
+    assert!(cert.engine.is_none());
+    // 0.1.0+ certificate with the engine stamp.
+    let mut with_engine = base;
+    with_engine["engine"] = serde_json::json!({"name": "avify-dose", "version": "0.1.0"});
+    let cert: AvifyCertificate = serde_json::from_value(with_engine).unwrap();
+    let engine = cert.engine.unwrap();
+    assert_eq!(engine.version.as_deref(), Some("0.1.0"));
+}
+
+#[test]
+fn spec_engine_version_pin_optional() {
+    let spec: AvifySpec = serde_json::from_value(spec_json()).unwrap();
+    assert!(spec.engine_version.is_none());
+    let mut pinned = spec_json();
+    pinned["engine_version"] = serde_json::json!("0.1.0");
+    let spec: AvifySpec = serde_json::from_value(pinned).unwrap();
+    assert_eq!(spec.engine_version.as_deref(), Some("0.1.0"));
+}

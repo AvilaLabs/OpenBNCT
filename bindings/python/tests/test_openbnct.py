@@ -1522,6 +1522,21 @@ class AvifyConnectorTest(unittest.TestCase):
             self.assertEqual(status["inputs"]["case"]["state"], "changed")
             # Certificate passthrough — verbatim JSON.
             self.assertEqual(json.loads(openbnct.avify_load_certificate(cert)), cert_doc)
+            # Review marker: hash-bound to the certificate bytes.
+            with self.assertRaises(Exception):
+                openbnct.avify_review(tmp, "  ", "anonymous rejected")
+            review = json.loads(
+                openbnct.avify_review(tmp, "connor", "checked intervals")
+            )
+            self.assertEqual(review["schema_version"], "openbnct.avify-review/0.1.0")
+            status = json.loads(openbnct.avify_status(receipt_path))
+            self.assertEqual(status["review"]["state"], "reviewed")
+            self.assertEqual(status["review"]["reviewer"], "connor")
+            self.assertIn("cold_start", status)
+            # A re-run's new certificate bytes stale the review.
+            cert.write_text(json.dumps({**cert_doc, "extra": 1}))
+            status = json.loads(openbnct.avify_status(receipt_path))
+            self.assertEqual(status["review"]["state"], "stale")
 
 
 if __name__ == "__main__":

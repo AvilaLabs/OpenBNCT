@@ -4062,9 +4062,34 @@ fn avify_status(receipt: PathBuf) -> PyResult<String> {
             "timeout_s": receipt.engine.timeout_s,
         },
         "stale": openbnct_avify::is_stale(&states),
+        "cold_start": receipt.cold_start,
+        "warnings": receipt.warnings,
         "inputs": per_input,
+        "review": match openbnct_avify::review_state(&base).map_err(reject)? {
+            openbnct_avify::ReviewState::Missing => serde_json::json!("missing"),
+            openbnct_avify::ReviewState::Current(r) => serde_json::json!({
+                "state": "reviewed",
+                "reviewer": r.reviewer,
+                "note": r.note,
+                "created_unix_seconds": r.created_unix_seconds,
+            }),
+            openbnct_avify::ReviewState::Stale { review, .. } => serde_json::json!({
+                "state": "stale",
+                "reviewer": review.reviewer,
+            }),
+        },
     }))
     .map_err(reject)
+}
+
+/// Mark a run's certificate as reviewed — writes a hash-bound
+/// `review.json` next to it. Returns the marker as a JSON string.
+#[pyfunction]
+#[pyo3(signature = (outdir, reviewer, note=""))]
+fn avify_review(outdir: PathBuf, reviewer: &str, note: &str) -> PyResult<String> {
+    let review =
+        openbnct_avify::write_review(&outdir, reviewer, note).map_err(reject)?;
+    serde_json::to_string_pretty(&review).map_err(reject)
 }
 
 /// Compare two run directories (or `avify-run.json` paths) — per-ROI
@@ -4229,6 +4254,7 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(avify_export_plan, m)?)?;
     m.add_function(wrap_pyfunction!(avify_verify, m)?)?;
     m.add_function(wrap_pyfunction!(avify_status, m)?)?;
+    m.add_function(wrap_pyfunction!(avify_review, m)?)?;
     m.add_function(wrap_pyfunction!(avify_load_certificate, m)?)?;
     m.add_function(wrap_pyfunction!(avify_diff, m)?)?;
     Ok(())

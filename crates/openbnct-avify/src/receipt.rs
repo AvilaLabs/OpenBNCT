@@ -66,6 +66,14 @@ pub struct AvifyRunReceipt {
     /// Host resources at run start.
     #[serde(default)]
     pub resources: ResourceRecord,
+    /// `true` when this outdir had no prior certificate — i.e. the run
+    /// paid one-time setup costs a repeat run would not.
+    #[serde(default)]
+    pub cold_start: bool,
+    /// Non-fatal observations recorded during the run (e.g. engine
+    /// version drift from a spec pin). Empty on older receipts.
+    #[serde(default)]
+    pub warnings: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -213,5 +221,7 @@ pub fn receipt_for_run(
         resources: ResourceRecord {
             available_parallelism: std::thread::available_parallelism().map(|n| n.get()).ok(),
         },
+        cold_start: false,
+        warnings: Vec::new(),
     }
 }

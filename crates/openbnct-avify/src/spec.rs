@@ -62,6 +62,12 @@ pub struct AvifySpec {
     pub region_classes: BTreeMap<String, EngineClass>,
     /// ICRU-46 densities per class for the engine's ROI masses.
     pub density_g_cm3: BTreeMap<String, f64>,
+    /// Optional engine-version pin (e.g. `"0.1.0"` or the full
+    /// `avify-dose --version` line). Set and the connector warns when a
+    /// different engine answers — it never refuses, version drift is a
+    /// signal not a gate.
+    #[serde(default)]
+    pub engine_version: Option<String>,
     /// The engine plan fields, verbatim.
     pub plan: AvifyPlanFields,
 }
