@@ -4,7 +4,10 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
-## [0.2.1] — 2026-09-23
+## [0.2.2] — 2026-09-23
+
+(Supersedes the `v0.2.1` tag, which carried stale lockfiles and was
+never published.)
 
 ### Fixed — dose physics
 

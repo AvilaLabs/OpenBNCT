@@ -1122,7 +1122,7 @@ checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
 
 [[package]]
 name = "openbnct-avify"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "openbnct-transport",
  "serde",
@@ -1134,7 +1134,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-bio"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "openbnct-core",
  "openbnct-transport",
@@ -1157,7 +1157,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-core"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "serde",
  "thiserror",
@@ -1165,7 +1165,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-dicom"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "dicom-core",
  "dicom-dictionary-std",
@@ -1180,7 +1180,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-evidence"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "openbnct-core",
  "serde",
@@ -1191,7 +1191,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-mcnp"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "openbnct-core",
  "openbnct-transport",
@@ -1202,7 +1202,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-nifti"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "flate2",
  "openbnct-core",
@@ -1214,7 +1214,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-openmc"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "hdf5-pure",
  "md-5",
@@ -1230,7 +1230,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-phits"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "openbnct-core",
  "openbnct-transport",
@@ -1241,7 +1241,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-plan"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "calamine",
  "csv",
@@ -1278,7 +1278,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-transport"
-version = "0.2.0"
+version = "0.2.2"
 dependencies = [
  "openbnct-core",
  "rayon",
