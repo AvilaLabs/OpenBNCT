@@ -972,6 +972,35 @@ unknown keys are rejected. The emitted bundle is a standard
 `physical-dose-bundle` — every downstream surface (DVH, biological
 models, gamma comparison, planning) applies unchanged.
 
+### Avify Dose engine connector
+
+`openbnct avify` is the optional connector for the separately licensed
+Avify Dose engine (R12; see `docs/R12_SCOPE_REVIEW.md` for the boundary).
+The engine is not distributed with OpenBNCT. Three subcommands:
+
+- `export-plan` — write the engine's voxel plan (`<prefix>_arrays.npz`
+  int8 class map + ROI masks in z-y-x order, `<prefix>_meta.json` with a
+  scalar `voxel_cm` and corner-origin `lower_left_cm_xyz`) and the engine
+  plan JSON. The `openbnct.avify-spec/0.1.0` file declares the
+  material→engine-class map (air/brain/cranium/scalp/tumour), ROI
+  classes, and the engine plan fields; the declared uptake-uncertainty
+  set passes through verbatim — the connector never computes extremal
+  maps. Exports require isotropic voxels and a nonzero voxel count in
+  every ROI class, and reject ambiguous overlapping region claims.
+- `verify` — export, then run the engine as a bounded child process
+  (`--engine-cmd`, `--timeout-s`, `--threads`; timeout kills and reaps
+  the child). Prints the returned certificate — per-ROI certified `[L,U]`
+  intervals vs criteria with PASS/FAIL/ADDITIONAL_EVIDENCE actions — and
+  writes `avify-run.json`, a versioned receipt binding every input and
+  artifact by SHA-256 plus the engine's self-reported version.
+- `show`/`status` — render a `certificate.json`, and check an
+  `avify-run.json` receipt against the filesystem (CURRENT/STALE per
+  bound input).
+
+A runnable example (export is pure Rust; verify needs the engine +
+OpenMC) is in `examples/avify/`. Certificate output is an empirical
+two-evaluation envelope — research software, not a certified bound.
+
 ### External-dose and combined-treatment evaluation
 
 `openbnct import dose` ingests a `openbnct.external-dose/0.1.0` document —
