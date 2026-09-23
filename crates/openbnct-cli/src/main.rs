@@ -1642,16 +1642,20 @@ enum ExportCommand {
     },
     /// Emit a PHITS input deck for a transport case.
     ///
-    /// Emit subset is deliberately narrow: Z-axis `uniform_disk` sources
-    /// (`s-type = 1` circular plane), monoenergetic beams, single
-    /// material filling the grid `RPP`, and a `[t-track]` xyz-mesh
-    /// tally the `openbnct import phits` adapter can re-ingest.
-    /// Anything outside the subset is refused with a named reason.
+    /// Supports disk (Z face) and rectangular-plane sources, monoenergetic
+    /// and tabulated-histogram energies, and optional material
+    /// assignments: `voxel_box` regions carve `RPP` cells, voxel sets
+    /// emit a `LAT=1` lattice fill. `[t-track]` xyz-mesh tallies (neutron
+    /// + photon) read back through `openbnct import phits`. Anything
+    ///   outside the subset is refused with a named reason.
     Phits {
         /// `openbnct.transport-case/0.1.0` document.
         #[arg(long)]
         case: PathBuf,
-        /// Histories per batch (`maxbch`); `maxcas` is derived.
+        /// Optional `openbnct.material-assignment/0.2.0` region assignment.
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// Batch count (`maxcas` is derived from `requested_histories`).
         #[arg(long, default_value = "10")]
         maxbch: u32,
         /// New output path for the deck.
@@ -8227,6 +8231,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             }
             ExportCommand::Phits {
                 case,
+                assignment,
                 maxbch,
                 output,
             } => {
@@ -8235,8 +8240,17 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     serde_json::from_slice(&case_bytes).map_err(|error| {
                         io::Error::other(format!("case {}: {error}", case.display()))
                     })?;
+                let assignment_doc = assignment
+                    .map(|path| {
+                        let bytes = fs::read(&path)?;
+                        serde_json::from_slice::<MaterialAssignment>(&bytes).map_err(|error| {
+                            io::Error::other(format!("assignment {}: {error}", path.display()))
+                        })
+                    })
+                    .transpose()?;
                 let deck = openbnct_phits::deck::export_phits_deck(
                     &case_doc,
+                    assignment_doc.as_ref(),
                     &openbnct_phits::deck::PhitsDeckOptions {
                         case_sha256: format!(
                             "sha256:{}",

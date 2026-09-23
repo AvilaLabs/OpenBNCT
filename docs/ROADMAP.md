@@ -1310,6 +1310,18 @@ Each item is evidence-gated; none implies a clinical claim.
   geometry/source subsets so PHITS-side users can cross-check.
   Acceptance: emitted deck executes under PHITS and matches the
   OpenMC/MCNP reference on a frozen case within declared tolerances.
+  **Status (2026-09-23, emit side):** `export_phits_deck` +
+  `openbnct export phits` emit a full case: disk (Z-face `s-type=1`)
+  and rectangular-plane (`s-type=2`) sources, monoenergetic (`e0`) and
+  tabulated-histogram (`e-type=1` integral) energies, single material
+  or assignment — `voxel_box` regions carve RPP cells and any voxel-set
+  region emits a `LAT=1` lattice whose `FILL` lists per-material
+  universes (i-fastest, bundle order). Neutron sources emit neutron +
+  photon `[t-track]` xyz-mesh tallies the `import phits` adapter reads
+  back; the flagship layered-head phantom emits end-to-end. Non-Z disks
+  (need `trcl`) and component folding stay refused with named reasons.
+  Still open: execution + numerical agreement gate (licensed PHITS —
+  R11-05 tracks it).
 
 ## R11 — Physics-fidelity frontier and release pipeline (draft)
 
