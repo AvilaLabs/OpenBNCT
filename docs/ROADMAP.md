@@ -1493,6 +1493,15 @@ implementation, or public technical disclosure, including connector behavior.
   as one realizable distribution. Acceptance: users can identify what changed,
   where it matters, and which assumptions limit the interpretation, using an
   annotated synthetic walkthrough. All displays remain research-only.
+  **Status (2026-09-23, partial):** the workspace pairs the certificate
+  (per-ROI certified `[L,U]±3σ` vs criterion + PASS/FAIL/ADDITIONAL_EVIDENCE,
+  nominal dose, per-run histories/wall-time/seed) with a synchronized
+  tri-planar view of the engine class map — axial/coronal/sagittal share
+  one crosshair, ROI masks draw as contours, and the legend names every
+  class and index so nothing depends on colour alone. `read_arrays_npz`
+  reads the connector's own npz back (npy v1/v2, `|i1`/`|b1`, C-order).
+  Still open: region/metric comparison across runs and the annotated
+  synthetic walkthrough.
 - **R12-05 — Computation time and work reporting.**
   Show end-to-end elapsed time and a breakdown of preparation, transport,
   Avify computation, transfer, and result processing where applicable. Record

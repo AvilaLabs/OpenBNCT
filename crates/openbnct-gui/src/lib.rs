@@ -1364,6 +1364,14 @@ struct AvifyPanel {
     staleness: Option<std::collections::BTreeMap<String, openbnct_avify::InputState>>,
     #[cfg(not(target_arch = "wasm32"))]
     receipt_path: String,
+    /// The exported voxel arrays (class map + ROI masks) for the
+    /// spatial view — loaded from whichever `*_arrays.npz` the outdir
+    /// holds.
+    #[cfg(not(target_arch = "wasm32"))]
+    arrays: Option<openbnct_avify::ArraysNpz>,
+    /// Shared tri-planar crosshair, voxel index `[x, y, z]`.
+    #[cfg(not(target_arch = "wasm32"))]
+    cursor: [usize; 3],
 }
 
 impl Default for AvifyPanel {
@@ -1386,6 +1394,10 @@ impl Default for AvifyPanel {
             staleness: None,
             #[cfg(not(target_arch = "wasm32"))]
             receipt_path: String::new(),
+            #[cfg(not(target_arch = "wasm32"))]
+            arrays: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            cursor: [0; 3],
         }
     }
 }
@@ -1476,8 +1488,31 @@ impl AvifyPanel {
             if let Ok(receipt) = openbnct_avify::AvifyRunReceipt::load(&receipt) {
                 self.staleness = Some(openbnct_avify::check_staleness(&receipt, &outdir));
             }
+            self.load_arrays(&outdir);
         }
         false
+    }
+
+    /// Read whichever `*_arrays.npz` the outdir holds (verify writes
+    /// `openbnct-case_*`; export-plan honours `--prefix`).
+    fn load_arrays(&mut self, outdir: &std::path::Path) {
+        for candidate in ["openbnct-case_arrays.npz", "plan_arrays.npz"] {
+            let path = outdir.join(candidate);
+            if path.is_file() {
+                match openbnct_avify::read_arrays_npz(&path) {
+                    Ok(arrays) => {
+                        self.cursor = [
+                            arrays.shape_zyx[2] / 2,
+                            arrays.shape_zyx[1] / 2,
+                            arrays.shape_zyx[0] / 2,
+                        ];
+                        self.arrays = Some(arrays);
+                    }
+                    Err(e) => self.status = Some(format!("arrays npz: {e}")),
+                }
+                return;
+            }
+        }
     }
 
     fn cancel(&mut self) {
@@ -1501,6 +1536,7 @@ impl AvifyPanel {
                 self.staleness = openbnct_avify::AvifyRunReceipt::load(&receipt)
                     .map(|r| openbnct_avify::check_staleness(&r, &outdir))
                     .ok();
+                self.load_arrays(&outdir);
                 self.status = Some("loaded".into());
             }
             Err(e) => self.status = Some(format!("load certificate: {e}")),
@@ -3326,6 +3362,141 @@ fn show_workbench(
         });
 }
 
+/// Engine-class palette — five fixed tissue classes plus a fallback.
+/// Chosen to stay separable under common colour-vision deficiencies;
+/// the legend also prints each name and index so nothing depends on
+/// colour alone.
+#[cfg(not(target_arch = "wasm32"))]
+fn avify_class_color(class: i8) -> egui::Color32 {
+    match class {
+        0 => egui::Color32::from_rgb(30, 34, 44),    // air
+        1 => egui::Color32::from_rgb(196, 107, 176), // brain
+        2 => egui::Color32::from_rgb(214, 214, 214), // cranium
+        3 => egui::Color32::from_rgb(224, 164, 88),  // scalp
+        4 => egui::Color32::from_rgb(255, 82, 82),   // tumour
+        _ => egui::Color32::from_rgb(90, 200, 250),  // unknown
+    }
+}
+
+/// One orthogonal slice of the engine class map at the shared cursor.
+/// `plane` selects the fixed axis: 0 = axial (x-y at z), 1 = coronal
+/// (x-z at y), 2 = sagittal (y-z at x). ROI mask members paint as a
+/// bright contour — mask voxels whose in-plane 4-neighbour leaves the
+/// mask. Clicking moves the shared cursor; returns the new voxel.
+#[cfg(not(target_arch = "wasm32"))]
+fn avify_class_view(
+    ui: &mut egui::Ui,
+    arrays: &openbnct_avify::ArraysNpz,
+    plane: usize,
+    cursor: [usize; 3],
+    theme: Theme,
+) -> Option<[usize; 3]> {
+    let [nz, ny, nx] = arrays.shape_zyx;
+    let cls = |x: usize, y: usize, z: usize| arrays.cls_zyx[z * ny * nx + y * nx + x];
+    // (width, height, pixel→voxel, fixed-index, plane name)
+    type ToVoxel = Box<dyn Fn(usize, usize) -> [usize; 3]>;
+    let (w, h, to_voxel, fixed, name): (usize, usize, ToVoxel, usize, &str) = match plane {
+        0 => (
+            nx,
+            ny,
+            Box::new(move |u, v| [u, v, cursor[2]]) as ToVoxel,
+            cursor[2],
+            "axial",
+        ),
+        1 => (
+            nx,
+            nz,
+            Box::new(move |u, v| [u, cursor[1], v]) as ToVoxel,
+            cursor[1],
+            "coronal",
+        ),
+        _ => (
+            ny,
+            nz,
+            Box::new(move |u, v| [cursor[0], u, v]) as ToVoxel,
+            cursor[0],
+            "sagittal",
+        ),
+    };
+    let mut pixels = vec![egui::Color32::BLACK; w * h];
+    for v in 0..h {
+        for u in 0..w {
+            let [x, y, z] = to_voxel(u, v);
+            let mut color = avify_class_color(cls(x, y, z));
+            // ROI contour: any in-plane 4-neighbour leaving the mask.
+            for (i, (_, mask)) in arrays.rois.iter().enumerate() {
+                let idx = z * ny * nx + y * nx + x;
+                if !mask[idx] {
+                    continue;
+                }
+                let leaves = |u: isize, v: isize| -> bool {
+                    if u < 0 || v < 0 || u >= w as isize || v >= h as isize {
+                        return true;
+                    }
+                    let [x2, y2, z2] = to_voxel(u as usize, v as usize);
+                    !mask[z2 * ny * nx + y2 * nx + x2]
+                };
+                if leaves(u as isize - 1, v as isize)
+                    || leaves(u as isize + 1, v as isize)
+                    || leaves(u as isize, v as isize - 1)
+                    || leaves(u as isize, v as isize + 1)
+                {
+                    let tint = [
+                        egui::Color32::WHITE,
+                        egui::Color32::GOLD,
+                        egui::Color32::GREEN,
+                    ][i % 3];
+                    color = tint;
+                }
+            }
+            pixels[v * w + u] = color;
+        }
+    }
+    let image = egui::ColorImage::new([w, h], pixels);
+    let texture = ui.ctx().load_texture(
+        format!("avify-cls-{plane}"),
+        image,
+        egui::TextureOptions::NEAREST,
+    );
+    let size = egui::vec2(150.0, 150.0 * h as f32 / w as f32);
+    let (rect, response) = ui
+        .vertical(|ui| {
+            let (rect, response) = ui.allocate_exact_size(size, egui::Sense::click_and_drag());
+            ui.small(format!("{name} {fixed}"));
+            (rect, response)
+        })
+        .inner;
+    egui::Image::from_texture(&texture).paint_at(ui, rect);
+    // Crosshair lines through the shared cursor's in-plane position.
+    let painter = ui.painter_at(rect);
+    let (cu, cv) = match plane {
+        0 => (cursor[0], cursor[1]),
+        1 => (cursor[0], cursor[2]),
+        _ => (cursor[1], cursor[2]),
+    };
+    let fx = rect.left() + rect.width() * (cu as f32 + 0.5) / w as f32;
+    let fy = rect.top() + rect.height() * (cv as f32 + 0.5) / h as f32;
+    let stroke = egui::Stroke::new(1.0, theme.text_dim);
+    painter.line_segment(
+        [egui::pos2(fx, rect.top()), egui::pos2(fx, rect.bottom())],
+        stroke,
+    );
+    painter.line_segment(
+        [egui::pos2(rect.left(), fy), egui::pos2(rect.right(), fy)],
+        stroke,
+    );
+    if (response.clicked() || response.dragged())
+        && let Some(pos) = response.interact_pointer_pos()
+    {
+        let u =
+            ((pos.x - rect.left()) / rect.width() * w as f32).clamp(0.0, w as f32 - 1.0) as usize;
+        let v =
+            ((pos.y - rect.top()) / rect.height() * h as f32).clamp(0.0, h as f32 - 1.0) as usize;
+        return Some(to_voxel(u, v));
+    }
+    None
+}
+
 /// The Avify Dose workspace — connector for the separately licensed
 /// engine. The panel explains the research question and assumptions
 /// before execution, runs `openbnct avify` as a bounded job, and renders
@@ -3623,6 +3794,76 @@ fn show_avify_workspace(
                     }
                 }
             });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(arrays) = &panel.arrays {
+        let mut clicked_cursor = None;
+        egui::Frame::new()
+            .fill(theme.card_fill)
+            .corner_radius(8)
+            .inner_margin(egui::Margin::same(14))
+            .show(ui, |ui| {
+                ui.strong(t!(
+                    language,
+                    en = "Engine class map",
+                    ja = "エンジンクラスマップ",
+                    it = "Mappa classi del motore",
+                    zh = "引擎类别图",
+                    es = "Mapa de clases del motor"
+                ));
+                ui.label(
+                    egui::RichText::new(t!(
+                        language,
+                        en = "The voxel classes the engine actually saw — click any view to move the shared crosshair.",
+                        ja = "エンジンが実際に見た voxel クラス — 任意のビューをクリックすると共通クロスヘアが移動します。",
+                        it = "Le classi voxel che il motore ha effettivamente visto — clicca una vista per spostare il crosshair condiviso.",
+                        zh = "引擎实际看到的体素类别 — 点击任一视图移动共享十字线。",
+                        es = "Las clases de vóxel que el motor realmente vio — clic en cualquier vista para mover el crosshair compartido."
+                    ))
+                    .color(theme.text_dim)
+                    .small(),
+                );
+                ui.horizontal(|ui| {
+                    for (plane, label) in [(0usize, "axial"), (1, "coronal"), (2, "sagittal")] {
+                        if let Some(voxel) =
+                            avify_class_view(ui, arrays, plane, panel.cursor, theme)
+                        {
+                            clicked_cursor = Some(voxel);
+                        }
+                        let _ = label;
+                    }
+                });
+                // Class at the crosshair, named in text — readable
+                // without colour.
+                let [nx, ny, _nz] = [
+                    arrays.shape_zyx[2],
+                    arrays.shape_zyx[1],
+                    arrays.shape_zyx[0],
+                ];
+                let [cx, cy, cz] = panel.cursor;
+                let cls = arrays.cls_zyx[cz * ny * nx + cy * nx + cx];
+                let class_names = ["air", "brain", "cranium", "scalp", "tumour"];
+                ui.monospace(format!(
+                    "voxel [{cx}, {cy}, {cz}] → class {} ({cls})",
+                    class_names.get(cls as usize).unwrap_or(&"?")
+                ));
+                // Legend: swatch + name + class index.
+                ui.horizontal_wrapped(|ui| {
+                    for (index, name) in class_names.iter().enumerate() {
+                        ui.colored_label(
+                            avify_class_color(index as i8),
+                            format!("■ {name} ({index})"),
+                        );
+                    }
+                    for (name, _) in &arrays.rois {
+                        ui.monospace(format!("▣ roi:{name}"));
+                    }
+                });
+            });
+        if let Some(voxel) = clicked_cursor {
+            panel.cursor = voxel;
+        }
     }
 
     #[cfg(not(target_arch = "wasm32"))]

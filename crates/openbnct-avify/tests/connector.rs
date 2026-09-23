@@ -134,6 +134,18 @@ fn export_produces_loadable_npz_and_meta() {
     assert_eq!(export.class_voxels["tumour"], 2);
     assert_eq!(export.class_voxels["brain"], 32);
 
+    // Round-trip through the reader: same zyx order and masks.
+    let back = openbnct_avify::read_arrays_npz(&export.arrays_path).unwrap();
+    assert_eq!(back.shape_zyx, [4, 4, 4]);
+    assert_eq!(back.cls_zyx.len(), 64);
+    assert_eq!(back.cls_zyx[0], EngineClass::Brain.index() as i8);
+    assert_eq!(back.cls_zyx[23], EngineClass::Tumour.index() as i8);
+    assert_eq!(back.cls_zyx[11], EngineClass::Cranium.index() as i8);
+    let tumour = &back.rois.iter().find(|(n, _)| n == "tumour").unwrap().1;
+    assert!(tumour[3] && tumour[23] && !tumour[0]);
+    let brain = &back.rois.iter().find(|(n, _)| n == "brain").unwrap().1;
+    assert_eq!(brain.iter().filter(|&&b| b).count(), 32);
+
     std::fs::remove_dir_all(&dir).ok();
 }
 

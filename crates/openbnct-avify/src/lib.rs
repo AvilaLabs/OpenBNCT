@@ -23,6 +23,7 @@ pub mod voxel;
 
 pub use certificate::{AvifyCertificate, RoiAction, RoiBracket};
 pub use error::AvifyError;
+pub use npz::{ArraysNpz, read_arrays_npz};
 pub use plan::{AvifyPlan, BeamSpec, DeclaredSet, Normalisation};
 pub use receipt::{
     AvifyRunReceipt, BoundInput, EngineRecord, InputState, check_staleness, is_stale,
