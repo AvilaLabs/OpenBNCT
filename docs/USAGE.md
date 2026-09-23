@@ -963,7 +963,10 @@ openbnct import openpint \
   --out imported/
 ```
 
-Paths in the workbook resolve relative to the workbook's directory.
+Paths in the workbook resolve relative to the workbook's directory and must
+stay inside it: absolute paths, `..` components, symlinks that lead outside
+the directory, and anything that is not a regular file are rejected before
+any file is read.
 Component keys map `B10`→boron, `N14`→nitrogen, `n`→hydrogen, `g`→photon;
 unknown keys are rejected. The emitted bundle is a standard
 `physical-dose-bundle` — every downstream surface (DVH, biological

@@ -33,3 +33,6 @@ serde.workspace = true
 serde_json.workspace = true
 openbnct-mcnp = { path = "../openbnct-mcnp", version = "0.2.0" }
 openbnct-phits = { path = "../openbnct-phits", version = "0.2.0" }
+
+[dev-dependencies]
+tempfile = "3"

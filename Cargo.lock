@@ -3061,6 +3061,7 @@ dependencies = [
  "openbnct-transport",
  "serde",
  "serde_json",
+ "tempfile",
 ]
 
 [[package]]

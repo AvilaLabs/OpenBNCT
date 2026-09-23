@@ -840,6 +840,11 @@ enum VrCommand {
         /// the resolved artifact.
         #[arg(long)]
         adjoint_flux: Option<PathBuf>,
+        /// Write the windows even when an adjoint solve did not
+        /// converge. Without it a non-converged solve is an error and
+        /// nothing is written.
+        #[arg(long)]
+        allow_nonconverged: bool,
     },
     /// Validate and print a spec or resolved weight-windows artifact.
     Info {
@@ -2542,6 +2547,10 @@ enum OpenMcCommand {
         /// recorded in the run receipt's environment overlay.
         #[arg(long)]
         threads: Option<u32>,
+        /// Wall-clock limit for the OpenMC process, seconds; on expiry it
+        /// is killed and reaped and the command fails (logs are kept).
+        #[arg(long, default_value_t = openbnct_openmc::DEFAULT_OPENMC_TIMEOUT.as_secs())]
+        timeout_seconds: u64,
         /// New working directory for the run; it must not already exist.
         #[arg(long)]
         working_directory: PathBuf,
@@ -5155,10 +5164,14 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 openmc,
                 environment,
                 threads,
+                timeout_seconds,
                 working_directory,
                 dose_output,
                 evidence_root,
             } => {
+                if timeout_seconds == 0 {
+                    return Err(io::Error::other("--timeout-seconds must be ≥ 1").into());
+                }
                 let case_json = fs::read(&case)?;
                 let case_document: TransportCase = serde_json::from_slice(&case_json)?;
                 let config = openbnct_openmc::OpenMcBackendConfig {
@@ -5173,7 +5186,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     variance_reduction: vr,
                     nuclear_data_root,
                 };
-                let mut backend = OpenMcBackend::new(&openmc).configured(config);
+                let mut backend = OpenMcBackend::new(&openmc)
+                    .configured(config)
+                    .with_timeout(std::time::Duration::from_secs(timeout_seconds));
                 if let Some(threads) = threads {
                     if threads == 0 {
                         return Err(io::Error::other("--threads must be ≥ 1").into());
@@ -7917,8 +7932,14 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let workbook_sha256 = openbnct_evidence::sha256_hex(&bytes);
                 let plan = openbnct_plan::openpint::parse_openpint_workbook(&bytes)
                     .map_err(|error| io::Error::other(format!("openpint workbook: {error}")))?;
-                let base = workbook.parent().unwrap_or_else(|| Path::new("."));
-                let resolve = |path: &std::path::Path| {
+                let base = match workbook.parent() {
+                    Some(parent) if !parent.as_os_str().is_empty() => parent,
+                    _ => Path::new("."),
+                };
+                // Files the import reads must stay inside the workbook's
+                // directory; paths it only records keep their declared form.
+                let resolve = |path: &std::path::Path| confined_workbook_path(base, path);
+                let declared = |path: &std::path::Path| {
                     if path.is_absolute() {
                         path.to_path_buf()
                     } else {
@@ -7943,7 +7964,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     };
                     sources.push(openbnct_nifti::NiftiComponentSource {
                         component,
-                        file: resolve(rel),
+                        file: resolve(rel)?,
                         sigma_file: None,
                     });
                 }
@@ -7969,7 +7990,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
 
                 let mut structure_rows = Vec::new();
                 for structure in &plan.structures {
-                    let image = openbnct_nifti::read_nifti_file(&resolve(&structure.mask_path))
+                    let image = openbnct_nifti::read_nifti_file(&resolve(&structure.mask_path)?)
                         .map_err(|error| {
                             io::Error::other(format!(
                                 "mask {}: {error}",
@@ -8027,13 +8048,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     "id": format!("openpint-import-{}", &workbook_sha256[..16]),
                     "case_id": case_id,
                     "workbook_sha256": workbook_sha256,
-                    "ct_path": plan.ct_path.as_ref().map(|p| resolve(p).display().to_string()),
+                    "ct_path": plan.ct_path.as_ref().map(|p| declared(p).display().to_string()),
                     "dose_bundle": bundle_path.display().to_string(),
                     "dose_bundle_sha256": bundle.provenance_id,
                     "structures": structure_rows,
                     "hadron_courses": plan.hadron_courses.iter().map(|c| serde_json::json!({
                         "name": c.name,
-                        "dose_path": resolve(&c.dose_path).display().to_string(),
+                        "dose_path": declared(&c.dose_path).display().to_string(),
                         "fractions": c.fractions,
                     })).collect::<Vec<_>>(),
                     "qualification": "research_only_not_clinical",
@@ -9377,7 +9398,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     .map_err(|error| io::Error::other(format!("adjoint solve: {error}")))?;
                     let mut scored: Vec<(f64, usize)> = Vec::with_capacity(candidates.len());
                     for (index, candidate) in candidates.iter().enumerate() {
-                        let score = openbnct_transport::adjoint_direction_score(
+                        let score = match openbnct_transport::adjoint_direction_score(
                             &case_document,
                             &data,
                             &options,
@@ -9385,11 +9406,31 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                             &aim,
                             candidate.direction_lps,
                             radius_cm,
-                        )
-                        .map_err(|error| {
-                            io::Error::other(format!("score {}: {error}", candidate.name))
-                        })?;
+                        ) {
+                            Ok(score) => score,
+                            // A direction whose aperture cannot sit wholly on
+                            // its entry face is not realizable on this grid.
+                            Err(openbnct_transport::MultigroupError::ApertureOutsideFace(
+                                reason,
+                            )) => {
+                                eprintln!("skip {}: {reason}", candidate.name);
+                                continue;
+                            }
+                            Err(error) => {
+                                return Err(io::Error::other(format!(
+                                    "score {}: {error}",
+                                    candidate.name
+                                ))
+                                .into());
+                            }
+                        };
                         scored.push((score, index));
+                    }
+                    if scored.is_empty() {
+                        return Err(io::Error::other(
+                            "no candidate direction admits an aperture that fits its entry face",
+                        )
+                        .into());
                     }
                     scored
                         .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
@@ -11133,6 +11174,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 id,
                 output,
                 adjoint_flux,
+                allow_nonconverged,
             } => {
                 let spec_bytes = fs::read(&spec)?;
                 let spec_doc: openbnct_transport::VarianceReductionSpec =
@@ -11213,6 +11255,21 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     case_ref,
                 )
                 .map_err(|error| io::Error::other(error.to_string()))?;
+                let unconverged: Vec<usize> = derivation
+                    .adjoint_fluxes
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, flux)| !flux.converged)
+                    .map(|(index, _)| index)
+                    .collect();
+                if !unconverged.is_empty() && !allow_nonconverged {
+                    return Err(io::Error::other(format!(
+                        "adjoint solve for window(s) {unconverged:?} did not converge; raise \
+                         --max-outer/--max-inner, or pass --allow-nonconverged to write the \
+                         windows anyway"
+                    ))
+                    .into());
+                }
                 if let Some(prefix) = &adjoint_flux {
                     for (index, flux) in derivation.adjoint_fluxes.iter().enumerate() {
                         let path = PathBuf::from(format!("{}.{}.json", prefix.display(), index));
@@ -11588,6 +11645,35 @@ fn print_beam_summary(beam: &openbnct_transport::BeamDescription) {
             println!("    doi:{doi}");
         }
     }
+}
+
+/// Resolve a file path declared inside an imported workbook: it must be
+/// relative, free of `..`/root components, resolve (after symlinks) to a
+/// location inside the workbook's directory, and name a regular file —
+/// a received workbook cannot make the import read arbitrary files, or
+/// hang on a FIFO or device.
+fn confined_workbook_path(base: &Path, declared: &Path) -> io::Result<PathBuf> {
+    use std::path::Component;
+    let reject =
+        |why: &str| io::Error::other(format!("workbook path {}: {why}", declared.display()));
+    if declared.is_absolute()
+        || declared
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_) | Component::CurDir))
+    {
+        return Err(reject(
+            "must be relative to the workbook's directory, without `..` or root components",
+        ));
+    }
+    let root = fs::canonicalize(base)?;
+    let target = fs::canonicalize(root.join(declared)).map_err(|e| reject(&e.to_string()))?;
+    if !target.starts_with(&root) {
+        return Err(reject("resolves outside the workbook's directory"));
+    }
+    if !fs::metadata(&target)?.is_file() {
+        return Err(reject("is not a regular file"));
+    }
+    Ok(target)
 }
 
 fn write_new_json<T: serde::Serialize>(path: &Path, value: &T) -> io::Result<()> {
@@ -12358,4 +12444,40 @@ fn scaffold_case_from_labelmap(
         },
         requested_histories: 1,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn workbook_paths_stay_inside_the_workbook_directory() {
+        let dir = tempfile::tempdir().unwrap();
+        let base = dir.path().join("plan");
+        fs::create_dir_all(base.join("masks")).unwrap();
+        fs::write(base.join("masks").join("gtv.nii"), b"x").unwrap();
+        fs::write(dir.path().join("outside.nii"), b"x").unwrap();
+
+        let ok = confined_workbook_path(&base, Path::new("masks/gtv.nii")).unwrap();
+        assert!(ok.ends_with("masks/gtv.nii"));
+        assert!(confined_workbook_path(&base, Path::new("./masks/gtv.nii")).is_ok());
+
+        for bad in ["../outside.nii", "masks/../../outside.nii"] {
+            assert!(
+                confined_workbook_path(&base, Path::new(bad)).is_err(),
+                "{bad}"
+            );
+        }
+        let absolute = dir.path().join("outside.nii");
+        assert!(confined_workbook_path(&base, &absolute).is_err());
+        // Directories and missing files are not regular files.
+        assert!(confined_workbook_path(&base, Path::new("masks")).is_err());
+        assert!(confined_workbook_path(&base, Path::new("missing.nii")).is_err());
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(dir.path().join("outside.nii"), base.join("link.nii"))
+                .unwrap();
+            assert!(confined_workbook_path(&base, Path::new("link.nii")).is_err());
+        }
+    }
 }
