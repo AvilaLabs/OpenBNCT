@@ -31,10 +31,21 @@ impl Job {
         use std::io::{BufRead, BufReader, Read};
         use std::process::{Command, Stdio};
 
-        let mut child = Command::new(program)
+        let mut command = Command::new(program);
+        command
             .args(args)
+            .stdin(Stdio::null())
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
+            .stderr(Stdio::piped());
+        // The job leads its own process group, so cancellation reaches
+        // whatever it spawns — `openbnct openmc run` launches OpenMC as a
+        // grandchild that a plain kill of the CLI would orphan.
+        #[cfg(unix)]
+        {
+            use std::os::unix::process::CommandExt;
+            command.process_group(0);
+        }
+        let mut child = command
             .spawn()
             .map_err(|error| format!("spawn {program:?} failed: {error}"))?;
         let (sender, receiver) = std::sync::mpsc::channel();
@@ -123,6 +134,13 @@ impl Job {
     #[cfg(not(target_arch = "wasm32"))]
     fn terminate(&mut self) {
         if self.exit_code.is_none() {
+            // Kill the whole group first (grandchildren included), then
+            // the direct child as a fallback.
+            #[cfg(unix)]
+            {
+                use rustix::process::{Pid, Signal, kill_process_group};
+                let _ = kill_process_group(Pid::from_child(&self.child), Signal::KILL);
+            }
             let _ = self.child.kill();
         }
         match self.child.wait() {
@@ -152,6 +170,49 @@ mod tests {
         // kill() → signal termination → no exit code → -1.
         assert_eq!(job.exit_code, Some(-1));
         assert!(!job.poll(&mut Vec::new(), 16));
+    }
+
+    /// Cancelling kills the job's whole process group: a grandchild the
+    /// job spawned (as `openbnct openmc run` spawns OpenMC) must not
+    /// outlive the cancel.
+    #[cfg(unix)]
+    #[test]
+    fn cancel_kills_grandchildren() {
+        let dir = std::env::temp_dir().join(format!("openbnct-run-test-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let pid_file = dir.join("grandchild.pid");
+        let script = format!("sleep 60 & echo $! > {}; wait", pid_file.display());
+        let mut job = Job::spawn("sh", &["-c".to_string(), script], DEFAULT_TIMEOUT).unwrap();
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        let grandchild = loop {
+            if let Ok(text) = std::fs::read_to_string(&pid_file)
+                && let Ok(pid) = text.trim().parse::<i32>()
+            {
+                break pid;
+            }
+            assert!(
+                std::time::Instant::now() < deadline,
+                "grandchild never started"
+            );
+            std::thread::sleep(Duration::from_millis(20));
+        };
+        job.cancel();
+        // The grandchild was killed with the group; reaped by init shortly after.
+        let alive = |pid: i32| {
+            std::path::Path::new(&format!("/proc/{pid}")).exists()
+                && !std::fs::read_to_string(format!("/proc/{pid}/stat"))
+                    .map(|stat| stat.contains(") Z "))
+                    .unwrap_or(true)
+        };
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while alive(grandchild) && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            !alive(grandchild),
+            "grandchild {grandchild} survived cancel"
+        );
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A finishing child reports its exit status — bounded `true` run.

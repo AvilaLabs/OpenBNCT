@@ -3120,6 +3120,7 @@ dependencies = [
  "openbnct-transport",
  "openbnct-view",
  "rfd",
+ "rustix 1.1.4",
  "serde_json",
  "tempfile",
  "wasm-bindgen",
