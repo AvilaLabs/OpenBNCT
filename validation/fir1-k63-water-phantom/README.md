@@ -263,3 +263,30 @@ and is kept as the canonical refined beam model.
 
 Research-scope note: the spectrum is a literature reconstruction of
 a published measured figure, not a commissioned facility model.
+
+## Erratum (2026-09-23) — hydrogen dose response
+
+Multigroup data written by `openbnct sn collapse` before this date carries
+the `hydrogen` dose response 10⁶ too large: the elastic-recoil energy was
+taken from the eV energy grid and multiplied by a per-MeV kerma conversion
+(fixed in `openbnct-openmc`'s `mgcollapse`). Every
+`dose_response_gy_cm2.hydrogen` vector in this directory's
+`multigroup-data-28g*.json` files is therefore 10⁶ too large, and so is the
+hydrogen component of every S_N dose bundle folded from them — together
+with any quantity that sums it: `physical_total`, weighted (CBE/RBE,
+isoeffective, MKM) totals, and the weighted in-phantom dose profiles in the
+beam-quality reports. Neutron and photon fluence, activation and
+thermal-flux comparisons, and the boron, nitrogen and photon dose
+components are unaffected. The committed files stay unchanged as frozen
+evidence; re-collapse with the current `sn collapse` before using hydrogen,
+total or weighted dose from them.
+
+The ~2e5× hydrogen mismatch against the OpenMC tally described above as
+"definitional" was predominantly this unit error. With the recoil energy in
+MeV the S_N hydrogen component moves by 10⁻⁶, leaving a factor of order
+0.2–0.3 that is the genuine definitional difference (S_N folds H-dominated
+elastic-recoil kerma; the OpenMC bundle's hydrogen channel is the residual
+non-photon neutron KERMA). The hydrogen and `physical_total` rows of the
+voxelwise gamma were computed from the inflated bundle and should not be
+read; the boron, nitrogen and photon rows stand. This directory's S_N runs
+used the cylindrical-phantom data (`multigroup-data-28g-tsl-v4.json`).

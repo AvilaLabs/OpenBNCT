@@ -55,3 +55,35 @@ indices.
 
 Research scope only — no clinical qualification, commissioning, or
 treatment-use claim.
+
+## Erratum (2026-09-23) — hydrogen dose response
+
+Multigroup data written by `openbnct sn collapse` before this date carries
+the `hydrogen` dose response 10⁶ too large: the elastic-recoil energy was
+taken from the eV energy grid and multiplied by a per-MeV kerma conversion
+(fixed in `openbnct-openmc`'s `mgcollapse`). Every
+`dose_response_gy_cm2.hydrogen` vector in this directory's
+`multigroup-data-28g*.json` files is therefore 10⁶ too large, and so is the
+hydrogen component of every S_N dose bundle folded from them — together
+with any quantity that sums it: `physical_total`, weighted (CBE/RBE,
+isoeffective, MKM) totals, and the weighted in-phantom dose profiles in the
+beam-quality reports. Neutron and photon fluence, activation and
+thermal-flux comparisons, and the boron, nitrogen and photon dose
+components are unaffected. The committed files stay unchanged as frozen
+evidence; re-collapse with the current `sn collapse` before using hydrogen,
+total or weighted dose from them.
+
+Corrected artifacts for this benchmark: `multigroup-data-28g-v2.json`
+(`collapse-v2.sh`; σ_t, the P0 scatter matrix, μ̄ and the boron, nitrogen
+and photon responses are bit-identical to `multigroup-data-28g.json`, the
+hydrogen responses are exactly 10⁻⁶ of the old ones, and the P1/Pₗ moment
+arrays the collapse now emits are added) and `dose-28g-v2.json` (a fresh
+S₈ solve with the same options as `dose-28g-1e.json` — uncollided split,
+transport correction, convergence 1e-6 — converged in 10 outer
+iterations). Because the solver has changed since the `-1e` run (θ-weighted
+diamond closure, coarse-mesh rebalance), its boron, nitrogen and photon
+components differ from `dose-28g-1e.json` by a few percent (median voxel
+ratios 0.98–1.04); its hydrogen component is ~10⁻⁶ of the old one. The
+"Try it" command in the top-level README and the workbench's bundled
+example now use these files. `dose-28g.json`, `dose-28g-1e.json` and the
+planning studies under `planning/` predate the fix.

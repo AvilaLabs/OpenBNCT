@@ -81,7 +81,7 @@ no external codes needed — then open the result in the workbench:
 ```text
 git clone https://github.com/AvilaLabs/OpenBNCT && cd OpenBNCT
 openbnct sn solve --case benchmarks/synthetic/layered-head-phantom/case.json \
-    --data benchmarks/synthetic/layered-head-phantom/multigroup-data-28g.json \
+    --data benchmarks/synthetic/layered-head-phantom/multigroup-data-28g-v2.json \
     --assignment benchmarks/synthetic/layered-head-phantom/assignment.json \
     --dose dose.json --output flux.json
 ```

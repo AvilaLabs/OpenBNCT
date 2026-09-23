@@ -167,3 +167,31 @@ assumptions verbatim.
 Declared research demonstration. The phantom boron loading is dilute
 (1e-7 mass fraction) so component weights act as a convention, not a
 treatment-representative uptake model; no clinical claim.
+
+## Erratum (2026-09-23) — hydrogen dose response
+
+Multigroup data written by `openbnct sn collapse` before this date carries
+the `hydrogen` dose response 10⁶ too large: the elastic-recoil energy was
+taken from the eV energy grid and multiplied by a per-MeV kerma conversion
+(fixed in `openbnct-openmc`'s `mgcollapse`). Every
+`dose_response_gy_cm2.hydrogen` vector in this directory's
+`multigroup-data-28g*.json` files is therefore 10⁶ too large, and so is the
+hydrogen component of every S_N dose bundle folded from them — together
+with any quantity that sums it: `physical_total`, weighted (CBE/RBE,
+isoeffective, MKM) totals, and the weighted in-phantom dose profiles in the
+beam-quality reports. Neutron and photon fluence, activation and
+thermal-flux comparisons, and the boron, nitrogen and photon dose
+components are unaffected. The committed files stay unchanged as frozen
+evidence; re-collapse with the current `sn collapse` before using hydrogen,
+total or weighted dose from them.
+
+Every per-field dose under `fields/` and `fields6/` was folded from the
+pre-fix `multigroup-data-28g.json`, so the effective (isoeffective) doses,
+optimized weights, OpenPINT-endpoint reproduction, robustness and
+direction-search results in this directory are dominated by the inflated
+hydrogen component and are superseded; they are kept unchanged as the
+historical record. Separately, the `obl` field's disk overhangs its entry
+face (see "Fields" above); the solver now rejects an on-face disk that
+extends past a non-periodic grid edge, because such a disk has no defined
+injected strength, so `obl` must be re-aimed or narrowed before it is
+re-solved.

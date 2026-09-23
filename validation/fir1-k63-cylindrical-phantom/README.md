@@ -316,3 +316,20 @@ tail is fast-halo-sustained and its slope is controlled jointly by the
 undeclared fast-bin within-bin shape and the anisotropy treatment. A
 published fine-group K63 spectrum (or a declared intermediate
 weighting) plus a converged P_l solve would close the residual.
+
+## Erratum (2026-09-23) — hydrogen dose response
+
+Multigroup data written by `openbnct sn collapse` before this date carries
+the `hydrogen` dose response 10⁶ too large: the elastic-recoil energy was
+taken from the eV energy grid and multiplied by a per-MeV kerma conversion
+(fixed in `openbnct-openmc`'s `mgcollapse`). Every
+`dose_response_gy_cm2.hydrogen` vector in this directory's
+`multigroup-data-28g*.json` files is therefore 10⁶ too large, and so is the
+hydrogen component of every S_N dose bundle folded from them — together
+with any quantity that sums it: `physical_total`, weighted (CBE/RBE,
+isoeffective, MKM) totals, and the weighted in-phantom dose profiles in the
+beam-quality reports. Neutron and photon fluence, activation and
+thermal-flux comparisons, and the boron, nitrogen and photon dose
+components are unaffected. The committed files stay unchanged as frozen
+evidence; re-collapse with the current `sn collapse` before using hydrogen,
+total or weighted dose from them.
