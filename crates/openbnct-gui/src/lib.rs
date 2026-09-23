@@ -2078,6 +2078,8 @@ pub(crate) struct OpenBnctApp {
     /// UI language — English authoring with Japanese localization.
     language: Language,
     /// Active slide of the first-launch app tour (`None` = closed).
+    /// Dormant by owner decision: content and renderer stay compiled —
+    /// set to `Some(0)` to re-enable (see `APP_TOUR_SLIDES`).
     app_tour_slide: Option<usize>,
 }
 
@@ -2117,10 +2119,6 @@ impl OpenBnctApp {
             app_tour_slide: None,
         };
         app.panels.avify.tutorial_seen = tour_seen_from_disk("avify-tutorial");
-        if !tour_seen_from_disk("app-tour") {
-            app.app_tour_slide = Some(0);
-            write_tour_marker("app-tour");
-        }
         if has_initial_case {
             app.load_case();
         }
@@ -2376,16 +2374,6 @@ impl OpenBnctApp {
                     .clicked()
                 {
                     self.help.toggle_center();
-                    ui.close();
-                }
-                if ui
-                    .button(t!(self.language, en = "Replay welcome tour", ja = "ようこそツアーを再生",
-                it = "Rivedi il tour di benvenuto",
-                zh = "重播欢迎导览",
-                es = "Repetir tour de bienvenida"))
-                    .clicked()
-                {
-                    self.app_tour_slide = Some(0);
                     ui.close();
                 }
             });
