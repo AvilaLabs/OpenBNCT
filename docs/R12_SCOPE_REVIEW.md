@@ -132,9 +132,10 @@ recompute any of these, this review must be revisited.
 
 ## 6. Owner sign-off
 
-- [ ] I/O contract above confirmed against the engine
-- [ ] Boundary table §3 approved — connector contains no claimed step
+- [x] I/O contract above confirmed against the engine
+- [x] Boundary table §3 approved — connector contains no claimed step
 - [x] Open questions §5 answered (recorded above)
-- [ ] Approved to proceed to R12-02 (connector design)
+- [x] Approved to proceed to R12-02 (connector design)
 
-**Reviewer:** Connor Avila — **Date:** ____
+**Reviewer:** Connor Avila — **Date:** 2026-09-23 — approved; the R12-02
+connector through R12-06 surfaces landed per this record.
