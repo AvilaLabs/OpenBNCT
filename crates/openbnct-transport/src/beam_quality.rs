@@ -361,6 +361,63 @@ fn footprint_voxels(
     Ok(footprint)
 }
 
+/// Entry geometry along the port axis: the grid face the beam enters
+/// through — set by the declared propagation direction, so a beam
+/// travelling toward −axis enters the high face — and the voxel layers
+/// ordered from that face inward.
+struct DepthAxis {
+    axis: usize,
+    /// +1 when the beam travels toward +axis (enters the low face), −1
+    /// toward −axis (enters the high face).
+    sign: f64,
+    /// World coordinate of the entry face along `axis`, mm.
+    face_mm: f64,
+    /// Layer indices ordered from the entry face inward.
+    layers: Vec<usize>,
+}
+
+impl DepthAxis {
+    /// Depth of a layer centre below the entry face, cm.
+    fn depth_cm(&self, geometry: &openbnct_core::GridGeometry, layer: usize) -> f64 {
+        let center_mm =
+            geometry.origin_mm[self.axis] + layer as f64 * geometry.spacing_mm[self.axis];
+        self.sign * (center_mm - self.face_mm) / 10.0
+    }
+}
+
+fn depth_axis(
+    beam: &BeamDescription,
+    geometry: &openbnct_core::GridGeometry,
+) -> Result<DepthAxis, BeamQualityError> {
+    let axis = beam.port.axis.index();
+    let direction = match &beam.source.angle {
+        AngularDistribution::Monodirectional { unit_vector } => unit_vector,
+        AngularDistribution::IsotropicCone {
+            axis_unit_vector, ..
+        } => axis_unit_vector,
+    };
+    let component = direction[axis];
+    if !component.is_finite() || component.abs() < 1e-9 {
+        return Err(BeamQualityError::DegenerateProfile(
+            "beam direction is parallel to the port plane",
+        ));
+    }
+    let sign = component.signum();
+    let (minimum, maximum) = geometry.bounding_box_lps_mm()?;
+    let layers = geometry.shape[axis] as usize;
+    let (face_mm, order): (f64, Vec<usize>) = if sign > 0.0 {
+        (minimum[axis], (0..layers).collect())
+    } else {
+        (maximum[axis], (0..layers).rev().collect())
+    };
+    Ok(DepthAxis {
+        axis,
+        sign,
+        face_mm,
+        layers: order,
+    })
+}
+
 /// Depth profile of a dose bundle along the port axis, averaged over the
 /// aperture footprint.
 fn depth_profiles(
@@ -370,9 +427,9 @@ fn depth_profiles(
     normal_weights: &ComponentWeights,
 ) -> Result<DepthProfiles, BeamQualityError> {
     let shape = dose.geometry.shape.map(|v| v as usize);
-    let axis = beam.port.axis.index();
-    let (minimum, _) = dose.geometry.bounding_box_lps_mm()?;
     let footprint = footprint_voxels(&dose.geometry, beam)?;
+    let depth_axis = depth_axis(beam, &dose.geometry)?;
+    let axis = depth_axis.axis;
     let component = |kind: DoseComponent| -> Result<&[f64], BeamQualityError> {
         dose.components
             .iter()
@@ -395,10 +452,8 @@ fn depth_profiles(
     let mut tumor = Vec::with_capacity(layers);
     let mut normal = Vec::with_capacity(layers);
     let mut boron_profile = Vec::with_capacity(layers);
-    for layer in 0..layers {
-        let center_mm =
-            dose.geometry.origin_mm[axis] + layer as f64 * dose.geometry.spacing_mm[axis];
-        depth_cm.push((center_mm - minimum[axis]) / 10.0);
+    for &layer in &depth_axis.layers {
+        depth_cm.push(depth_axis.depth_cm(&dose.geometry, layer));
         let (mut tumor_sum, mut normal_sum, mut boron_sum) = (0.0, 0.0, 0.0);
         for voxel in &footprint {
             let mut index_voxel = *voxel;
@@ -445,8 +500,9 @@ pub fn attach_absolute_fluence_profile(
             "flux artifact cell count does not match the dose geometry",
         ));
     }
-    let axis = beam.port.axis.index();
     let footprint = footprint_voxels(geometry, beam)?;
+    let depth_axis = depth_axis(beam, geometry)?;
+    let axis = depth_axis.axis;
     // Thermal groups: those whose upper edge sits at or below the
     // declared thermal/epithermal boundary.
     let b = &flux.energy_boundaries_ev;
@@ -458,9 +514,8 @@ pub fn attach_absolute_fluence_profile(
             "no group lies entirely below the thermal edge",
         ));
     }
-    let layers = shape[axis];
-    let mut profile = Vec::with_capacity(layers);
-    for layer in 0..layers {
+    let mut profile = Vec::with_capacity(depth_axis.layers.len());
+    for &layer in &depth_axis.layers {
         let mut sum = 0.0;
         for voxel in &footprint {
             let mut index_voxel = *voxel;
@@ -483,9 +538,9 @@ pub fn attach_absolute_fluence_profile(
 /// depth. The detector-string geometry a transverse foil measurement
 /// resolves (lateral offset vs fluence at fixed depth).
 ///
-/// `depths_cm` are measured from the bounding-box minimum along the
-/// port axis — the same coordinate convention as `depth_cm` on the
-/// depth profiles.
+/// `depths_cm` are measured from the beam's entry face along the port
+/// axis — the same coordinate convention as `depth_cm` on the depth
+/// profiles.
 pub fn attach_transverse_fluence_profiles(
     report: &mut BeamQualityReport,
     beam: &BeamDescription,
@@ -507,9 +562,9 @@ pub fn attach_transverse_fluence_profiles(
             "flux artifact cell count does not match the dose geometry",
         ));
     }
-    let axis = beam.port.axis.index();
+    let depth_axis = depth_axis(beam, geometry)?;
+    let axis = depth_axis.axis;
     let (u_axis, v_axis) = beam.port.axis.in_plane_axes();
-    let (minimum, _) = geometry.bounding_box_lps_mm()?;
     // Thermal groups: those whose upper edge sits at or below the
     // declared thermal/epithermal boundary.
     let b = &flux.energy_boundaries_ev;
@@ -548,20 +603,20 @@ pub fn attach_transverse_fluence_profiles(
     let mut profiles = Vec::with_capacity(depths_cm.len());
     for &depth_cm in depths_cm {
         // Nearest depth layer to the requested depth.
-        let layer = (0..shape[axis])
+        let layer = depth_axis
+            .layers
+            .iter()
+            .copied()
             .min_by(|&i, &j| {
-                let di = geometry.origin_mm[axis] + i as f64 * geometry.spacing_mm[axis];
-                let dj = geometry.origin_mm[axis] + j as f64 * geometry.spacing_mm[axis];
-                let target = minimum[axis] + depth_cm * 10.0;
-                (di - target)
+                let di = depth_axis.depth_cm(geometry, i);
+                let dj = depth_axis.depth_cm(geometry, j);
+                (di - depth_cm)
                     .abs()
-                    .partial_cmp(&(dj - target).abs())
+                    .partial_cmp(&(dj - depth_cm).abs())
                     .unwrap_or(std::cmp::Ordering::Equal)
             })
             .ok_or(BeamQualityError::DegenerateProfile("empty depth axis"))?;
-        let depth_actual_cm = (geometry.origin_mm[axis] + layer as f64 * geometry.spacing_mm[axis]
-            - minimum[axis])
-            / 10.0;
+        let depth_actual_cm = depth_axis.depth_cm(geometry, layer);
         let mut lateral_cm = Vec::with_capacity(shape[u_axis]);
         let mut values = Vec::with_capacity(shape[u_axis]);
         for i in 0..shape[u_axis] {
@@ -931,6 +986,53 @@ mod tests {
         // normal = 1.35*10 + 0.5 + 0.5 + 1.0 = 15.5; tumor = 3.8*10+0.5+0.5+1=40.
         assert!((metrics.tumor_dose_profile[0] - 40.0).abs() < 1e-9);
         assert!((metrics.normal_tissue_dose_profile[0] - 15.5).abs() < 1e-9);
+    }
+
+    #[test]
+    fn high_face_entry_measures_depth_from_the_high_face() {
+        // Mirror the fixture along z: boron now rises toward +z, and the
+        // beam travels toward −z entering the high face. The profile must
+        // equal the low-face case read from the other end.
+        let mut beam = cone_beam();
+        beam.source.angle = AngularDistribution::IsotropicCone {
+            axis_unit_vector: [0.0, 0.0, -1.0],
+            half_angle_rad: 0.1491,
+        };
+        let mut mirrored = dose_bundle();
+        for volume in &mut mirrored.components {
+            let mut flipped = volume.values.clone();
+            for k in 0..8 {
+                for idx in 0..4 {
+                    flipped[idx + 4 * k] = volume.values[idx + 4 * (7 - k)];
+                }
+            }
+            volume.values = flipped;
+        }
+        let tumor = ComponentWeights {
+            boron: 3.8,
+            nitrogen: 1.0,
+            hydrogen: 1.0,
+            photon: 1.0,
+        };
+        let normal = ComponentWeights {
+            boron: 1.35,
+            nitrogen: 1.0,
+            hydrogen: 1.0,
+            photon: 1.0,
+        };
+        let low =
+            in_phantom_metrics(&cone_beam(), &dose_bundle(), reference(), &tumor, &normal).unwrap();
+        let high = in_phantom_metrics(&beam, &mirrored, reference(), &tumor, &normal).unwrap();
+        assert_eq!(high.depth_cm, low.depth_cm);
+        assert_eq!(high.tumor_dose_profile, low.tumor_dose_profile);
+        assert_eq!(high.advantage_depth_cm, low.advantage_depth_cm);
+        assert!((high.tumor_dose_profile[0] - 40.0).abs() < 1e-9);
+        // A beam parallel to the port plane has no entry face.
+        beam.source.angle = AngularDistribution::IsotropicCone {
+            axis_unit_vector: [1.0, 0.0, 0.0],
+            half_angle_rad: 0.1491,
+        };
+        assert!(in_phantom_metrics(&beam, &mirrored, reference(), &tumor, &normal).is_err());
     }
 
     #[test]
