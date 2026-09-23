@@ -368,6 +368,7 @@ fn apply_parameter(
     assignment: &mut Option<MaterialAssignment>,
     parameter: &ScreeningParameter,
     x: f64,
+    periodic: [bool; 3],
 ) -> Result<(), ScreeningError> {
     let theta = parameter.low + x * (parameter.high - parameter.low);
     let material_index = |material_id: &str| -> Result<usize, ScreeningError> {
@@ -407,23 +408,38 @@ fn apply_parameter(
             }
         }
         ScreeningTarget::SourceCenterShiftMm { coordinate } => {
-            let SourceSpatialDistribution::UniformDisk { center_uv_cm, .. } =
-                &mut case.source.space
+            let SourceSpatialDistribution::UniformDisk {
+                axis,
+                center_uv_cm,
+                radius_cm,
+                ..
+            } = &mut case.source.space
             else {
                 return Err(ScreeningError::UnknownTarget(
                     "source_center_shift_mm requires a UniformDisk source".into(),
                 ));
             };
             center_uv_cm[*coordinate as usize] += theta / 10.0; // mm → cm
+            let (axis, center, radius) = (*axis, *center_uv_cm, *radius_cm);
+            crate::multigroup::require_disk_on_face(&case.geometry, axis, center, radius, periodic)
+                .map_err(|reason| invalid(format!("perturbed source (θ = {theta}): {reason}")))?;
         }
         ScreeningTarget::SourceRadiusScale => {
-            let SourceSpatialDistribution::UniformDisk { radius_cm, .. } = &mut case.source.space
+            let SourceSpatialDistribution::UniformDisk {
+                axis,
+                center_uv_cm,
+                radius_cm,
+                ..
+            } = &mut case.source.space
             else {
                 return Err(ScreeningError::UnknownTarget(
                     "source_radius_scale requires a UniformDisk source".into(),
                 ));
             };
             *radius_cm *= theta;
+            let (axis, center, radius) = (*axis, *center_uv_cm, *radius_cm);
+            crate::multigroup::require_disk_on_face(&case.geometry, axis, center, radius, periodic)
+                .map_err(|reason| invalid(format!("perturbed source (θ = {theta}): {reason}")))?;
         }
         ScreeningTarget::GeometryOriginShiftMm { axis } => {
             case.geometry.origin_mm[*axis as usize] += theta;
@@ -509,7 +525,14 @@ fn evaluate(
     let mut data_p = data.clone();
     let mut assignment_p = options.assignment.clone();
     for (parameter, &xi) in parameters.iter().zip(x.iter()) {
-        apply_parameter(&mut case_p, &mut data_p, &mut assignment_p, parameter, xi)?;
+        apply_parameter(
+            &mut case_p,
+            &mut data_p,
+            &mut assignment_p,
+            parameter,
+            xi,
+            options.periodic,
+        )?;
     }
     // The composition map re-synthesizes fraction blends from the
     // perturbed tables — a precomputed map would carry unperturbed

@@ -327,12 +327,34 @@ pub fn aim_disk_source_at_centroid(
         EntrySide::High => maximum[axis_index],
     };
     let (u_axis, v_axis) = entry_axis.in_plane_axes();
+    let center_uv_cm = [entry_point[u_axis] / 10.0, entry_point[v_axis] / 10.0];
+
+    // The disk must lie wholly on the entry face — an overhanging disk
+    // has no defined injected strength in the solver (see
+    // `aim_source_at_centroid` for the rectangular equivalent).
+    let u_range = [center_uv_cm[0] - radius_cm, center_uv_cm[0] + radius_cm];
+    let v_range = [center_uv_cm[1] - radius_cm, center_uv_cm[1] + radius_cm];
+    let u_face = [minimum[u_axis] / 10.0, maximum[u_axis] / 10.0];
+    let v_face = [minimum[v_axis] / 10.0, maximum[v_axis] / 10.0];
+    const FIT_TOLERANCE_CM: f64 = 1.0e-9;
+    if u_range[0] < u_face[0] - FIT_TOLERANCE_CM
+        || u_range[1] > u_face[1] + FIT_TOLERANCE_CM
+        || v_range[0] < v_face[0] - FIT_TOLERANCE_CM
+        || v_range[1] > v_face[1] + FIT_TOLERANCE_CM
+    {
+        return Err(PositioningError::ApertureOutsideFace {
+            u_range,
+            v_range,
+            u_face,
+            v_face,
+        });
+    }
 
     let mut source = template.clone();
     source.space = SourceSpatialDistribution::UniformDisk {
         axis: entry_axis,
         offset_cm: face_coordinate_mm / 10.0,
-        center_uv_cm: [entry_point[u_axis] / 10.0, entry_point[v_axis] / 10.0],
+        center_uv_cm,
         radius_cm,
     };
     source.angle = AngularDistribution::Monodirectional {
@@ -597,6 +619,19 @@ mod tests {
             }
             other => panic!("expected Monodirectional, got {other:?}"),
         }
+    }
+
+    #[test]
+    fn rejects_disk_that_overhangs_the_entry_face() {
+        // Face spans [-2, 2] cm; a 1.8 cm disk centred at 0.5 cm reaches 2.3.
+        let tumor = mask(&[[2, 2, 2]]);
+        let err =
+            aim_disk_source_at_centroid(&template(), &geometry(), &tumor, [0.0, 0.0, 1.0], 1.8)
+                .unwrap_err();
+        assert!(
+            matches!(err, PositioningError::ApertureOutsideFace { .. }),
+            "{err}"
+        );
     }
 
     #[test]

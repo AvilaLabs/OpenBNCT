@@ -340,7 +340,10 @@ fn base_response(
 
 /// `q† = response / (φ_fwd + floor)` — the FW-CADIS adjoint source.
 /// The per-group floor is `1e-10 × group max`, bounding the source in
-/// cells the forward flux never reached.
+/// cells the forward flux never reached. A group the forward flux never
+/// reaches anywhere (max 0 — e.g. a group above the beam spectrum) has
+/// no particles to weight: its adjoint source is zero rather than
+/// response/1e-310, which overflows to +∞.
 fn fw_adjoint_source(base: &[Vec<f64>], forward_flux: &[Vec<f64>], groups: usize) -> Vec<Vec<f64>> {
     let mut floor = vec![0.0_f64; groups];
     for row in forward_flux {
@@ -354,7 +357,13 @@ fn fw_adjoint_source(base: &[Vec<f64>], forward_flux: &[Vec<f64>], groups: usize
         .zip(forward_flux.iter())
         .map(|(resp, flux)| {
             (0..groups)
-                .map(|g| resp[g] / (flux[g] + 1e-10_f64 * floor[g].max(1e-300)))
+                .map(|g| {
+                    if floor[g] > 0.0 {
+                        resp[g] / (flux[g] + 1e-10_f64 * floor[g])
+                    } else {
+                        0.0
+                    }
+                })
                 .collect()
         })
         .collect()

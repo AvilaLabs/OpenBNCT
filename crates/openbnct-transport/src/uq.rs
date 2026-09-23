@@ -381,6 +381,21 @@ pub fn propagate_uncertainty(
         }
         None => solve_multigroup(case, data, options, data_ref.clone(), case_ref.clone())?,
     };
+    // Sensitivities are differences of solves; an unconverged anchor or
+    // probe would make them — and every variance contribution built on
+    // them — silently unreliable.
+    let require_converged = |flux: &MultigroupFlux, what: &str| -> Result<(), UqError> {
+        if flux.converged {
+            Ok(())
+        } else {
+            Err(UqError::Invalid(format!(
+                "{what} did not converge (residual {:.3e} after {} outer iterations); raise \
+                 max_outer_iterations/max_inner_iterations",
+                flux.residual, flux.outer_iterations
+            )))
+        }
+    };
+    require_converged(&forward, "the nominal forward solve")?;
     // The component's response must be declared somewhere.
     if !case_material.iter().any(|&m| {
         data.materials[m]
@@ -450,6 +465,8 @@ pub fn propagate_uncertainty(
                 case_ref.clone(),
             )?;
             solves += 2;
+            require_converged(&flux_hi, "a finite-difference probe solve (θ + δ)")?;
+            require_converged(&flux_lo, "a finite-difference probe solve (θ − δ)")?;
             Ok((integrate(&flux_hi) - integrate(&flux_lo)) / (2.0 * delta))
         };
     let s_response = |material: usize, g: usize| -> f64 {

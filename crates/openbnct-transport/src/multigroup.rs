@@ -28,7 +28,7 @@ use openbnct_core::{
 };
 
 use crate::model::{
-    AngularDistribution, EnergyDistribution, MaterialAssignment, MaterialRegionShape,
+    AngularDistribution, EnergyDistribution, MaterialAssignment, MaterialRegionShape, PlaneAxis,
     SourceSpatialDistribution, TransportCase,
 };
 
@@ -45,6 +45,8 @@ pub enum MultigroupError {
     Solve(String),
     #[error("source mapping: {0}")]
     Source(String),
+    #[error("aperture does not fit the entry face: {0}")]
+    ApertureOutsideFace(String),
     #[error("model: {0}")]
     Model(#[from] crate::model::TransportModelError),
     #[error("validation: {0}")]
@@ -629,6 +631,56 @@ impl MultigroupFlux {
 /// `2·axis` for the low face, `2·axis + 1` for the high face.
 pub(crate) type BoundarySource =
     std::collections::BTreeMap<(u8, u32, u32), Vec<(usize, usize, f64)>>;
+
+/// Slack for a source disk that exactly touches the grid face boundary, cm.
+const FACE_FIT_TOLERANCE_CM: f64 = 1.0e-9;
+
+/// Reject an on-face disk that extends past the grid face. The injected
+/// strength of an overhanging disk is undefined — the uncollided split
+/// normalizes by the nominal πr² while the boundary-flux mapping spreads
+/// the full rate over the covered cells, so the two paths would disagree
+/// on the same case. Fail closed instead.
+///
+/// A periodic in-plane axis has no edge: a disk wider than the face on
+/// such an axis is the declared way to model a laterally uniform beam
+/// on a slab (the 1-D-on-3-D realization), so overhang is only checked
+/// along non-periodic axes.
+pub(crate) fn require_disk_on_face(
+    geometry: &openbnct_core::GridGeometry,
+    axis: PlaneAxis,
+    center_uv_cm: [f64; 2],
+    radius_cm: f64,
+    periodic: [bool; 3],
+) -> Result<(), String> {
+    if !(radius_cm.is_finite() && radius_cm > 0.0) {
+        return Err(format!(
+            "source disk radius {radius_cm} cm must be positive"
+        ));
+    }
+    let (u, v) = axis.in_plane_axes();
+    let extent = |a: usize| {
+        let lo = (geometry.origin_mm[a] - 0.5 * geometry.spacing_mm[a]) / 10.0;
+        [
+            lo,
+            lo + geometry.spacing_mm[a] * geometry.shape[a] as f64 / 10.0,
+        ]
+    };
+    let (u_face, v_face) = (extent(u), extent(v));
+    let t = FACE_FIT_TOLERANCE_CM;
+    let fits_axis = |a: usize, center: f64, face: [f64; 2]| {
+        periodic[a] || (center - radius_cm >= face[0] - t && center + radius_cm <= face[1] + t)
+    };
+    let fits = fits_axis(u, center_uv_cm[0], u_face) && fits_axis(v, center_uv_cm[1], v_face);
+    if fits {
+        Ok(())
+    } else {
+        Err(format!(
+            "source disk (centre {center_uv_cm:?} cm, radius {radius_cm} cm) extends past the \
+             grid face (u {u_face:?} cm, v {v_face:?} cm); an overhanging disk has no defined \
+             injected strength — shrink or re-aim the aperture, or enlarge the grid"
+        ))
+    }
+}
 
 /// The boundary face index (`2·axis` low / `2·axis+1` high), the
 /// transverse `(ju, jv)` cell columns the declared source covers, and
@@ -1306,202 +1358,204 @@ fn sweep_group(
     let volume = dx[0] * dx[1] * dx[2];
 
     // `psi`/`psi_prev` are [ordinate][cell]: each ordinate's sweep is
-    // independent given the lagged iterate, so `par_iter_mut` hands every
-    // direction its own row with no shared writes. Per-ordinate work is
-    // unchanged math — the parallel split keeps results bit-identical.
-    // When face currents are requested, each fold lane accumulates its
-    // own `[cell][12]` buffer — partial outflow per face plus boundary
-    // inflow per face — and the reduce sums them. Deterministic under
-    // lane-order-independent addition.
-    let face_sums = psi
-        .par_iter_mut()
-        .enumerate()
-        .fold(
-            || {
-                face_current
-                    .is_some()
-                    .then(|| vec![[0.0_f64; 12]; nx * ny * nz])
-            },
-            |mut acc, (d, psi_d)| {
-                let dir = quadrature[d].0;
-                // Sweep order: ascend where the direction points positive,
-                // descend where negative.
-                let xs: Vec<usize> = if dir[0] > 0.0 {
-                    (0..nx).collect()
-                } else {
-                    (0..nx).rev().collect()
-                };
-                let ys: Vec<usize> = if dir[1] > 0.0 {
-                    (0..ny).collect()
-                } else {
-                    (0..ny).rev().collect()
-                };
-                let zs: Vec<usize> = if dir[2] > 0.0 {
-                    (0..nz).collect()
-                } else {
-                    (0..nz).rev().collect()
-                };
-                // Per-axis *outflow edge* flux for this direction: psi_edge[a]
-                // indexes the same grid; entry [cell] is the edge the sweep
-                // writes toward the downstream neighbor.
-                let mut edge = [
-                    vec![0.0; nx * ny * nz],
-                    vec![0.0; nx * ny * nz],
-                    vec![0.0; nx * ny * nz],
-                ];
-                for &k in &zs {
-                    for &j in &ys {
-                        for &i in &xs {
-                            let cell = i + nx * j + nx * ny * k;
-                            let coord = [i, j, k];
-                            let mut psi_in = [0.0_f64; 3];
-                            let mut inflow_inside = [false; 3];
-                            for a in 0..3 {
-                                let positive = dir[a] > 0.0;
-                                let inside = if positive {
-                                    coord[a] > 0
-                                } else {
-                                    coord[a] + 1 < [nx, ny, nz][a]
-                                };
-                                inflow_inside[a] = inside;
-                                psi_in[a] = if inside {
-                                    let mut nc = coord;
-                                    nc[a] = if positive { nc[a] - 1 } else { nc[a] + 1 };
-                                    edge[a][nc[0] + nx * nc[1] + nx * ny * nc[2]]
-                                } else if periodic[a] {
-                                    // Periodic face: inflow is the wrap-around
-                                    // cell's previous-iterate average — exact
-                                    // under transverse uniformity, lagged
-                                    // otherwise.
-                                    let mut wc = coord;
-                                    wc[a] = if positive { [nx, ny, nz][a] - 1 } else { 0 };
-                                    psi_prev[d][wc[0] + nx * wc[1] + nx * ny * wc[2]]
-                                } else {
-                                    // Boundary face: declared incident flux or
-                                    // vacuum.
-                                    let face = 2 * a as u8 + u8::from(!positive);
-                                    let (uu, vv) = match a {
-                                        0 => (j, k),
-                                        1 => (i, k),
-                                        _ => (i, j),
-                                    };
-                                    boundary
-                                        .get(&(face, uu as u32, vv as u32))
-                                        .and_then(|entries| {
-                                            entries
-                                                .iter()
-                                                .find(|(dd, gg, _)| *dd == d && *gg == g)
-                                                .map(|(_, _, v)| *v)
-                                        })
-                                        .unwrap_or(0.0)
-                                };
-                            }
-                            let mi = case_material[cell];
-                            let st = sigma_eff[mi][g];
-                            // Scatter source into g from the current iterate plus
-                            // the fixed (first-collision or volumetric) source.
-                            // The P1 term adds 3·Σ_a Ω_{d,a}·S_a(cell) — the
-                            // anisotropic part of the scattering source.
-                            let q: f64 = fixed_source[cell][g]
-                                + (0..groups)
-                                    .map(|gp| scatter_eff[mi][gp * groups + g] * flux[cell][gp])
-                                    .sum::<f64>()
-                                + p1_source.map_or(0.0, |s| {
-                                    3.0 * (dir[0] * s[cell][0]
-                                        + dir[1] * s[cell][1]
-                                        + dir[2] * s[cell][2])
+    // independent given the lagged iterate, so every direction owns its
+    // row with no shared writes. Per-ordinate work is unchanged math.
+    // When face currents are requested, each ordinate also adds its
+    // partial outflow per face plus boundary inflow per face into a
+    // `[cell][12]` accumulator (see the driver below for the order).
+    let want_faces = face_current.is_some();
+    let sweep_one = |mut acc: Option<Vec<[f64; 12]>>, (d, psi_d): (usize, &mut Vec<f64>)| {
+        let dir = quadrature[d].0;
+        // Sweep order: ascend where the direction points positive,
+        // descend where negative.
+        let xs: Vec<usize> = if dir[0] > 0.0 {
+            (0..nx).collect()
+        } else {
+            (0..nx).rev().collect()
+        };
+        let ys: Vec<usize> = if dir[1] > 0.0 {
+            (0..ny).collect()
+        } else {
+            (0..ny).rev().collect()
+        };
+        let zs: Vec<usize> = if dir[2] > 0.0 {
+            (0..nz).collect()
+        } else {
+            (0..nz).rev().collect()
+        };
+        // Per-axis *outflow edge* flux for this direction: psi_edge[a]
+        // indexes the same grid; entry [cell] is the edge the sweep
+        // writes toward the downstream neighbor.
+        let mut edge = [
+            vec![0.0; nx * ny * nz],
+            vec![0.0; nx * ny * nz],
+            vec![0.0; nx * ny * nz],
+        ];
+        for &k in &zs {
+            for &j in &ys {
+                for &i in &xs {
+                    let cell = i + nx * j + nx * ny * k;
+                    let coord = [i, j, k];
+                    let mut psi_in = [0.0_f64; 3];
+                    let mut inflow_inside = [false; 3];
+                    for a in 0..3 {
+                        let positive = dir[a] > 0.0;
+                        let inside = if positive {
+                            coord[a] > 0
+                        } else {
+                            coord[a] + 1 < [nx, ny, nz][a]
+                        };
+                        inflow_inside[a] = inside;
+                        psi_in[a] = if inside {
+                            let mut nc = coord;
+                            nc[a] = if positive { nc[a] - 1 } else { nc[a] + 1 };
+                            edge[a][nc[0] + nx * nc[1] + nx * ny * nc[2]]
+                        } else if periodic[a] {
+                            // Periodic face: inflow is the wrap-around
+                            // cell's previous-iterate average — exact
+                            // under transverse uniformity, lagged
+                            // otherwise.
+                            let mut wc = coord;
+                            wc[a] = if positive { [nx, ny, nz][a] - 1 } else { 0 };
+                            psi_prev[d][wc[0] + nx * wc[1] + nx * ny * wc[2]]
+                        } else {
+                            // Boundary face: declared incident flux or
+                            // vacuum.
+                            let face = 2 * a as u8 + u8::from(!positive);
+                            let (uu, vv) = match a {
+                                0 => (j, k),
+                                1 => (i, k),
+                                _ => (i, j),
+                            };
+                            boundary
+                                .get(&(face, uu as u32, vv as u32))
+                                .and_then(|entries| {
+                                    entries
+                                        .iter()
+                                        .find(|(dd, gg, _)| *dd == d && *gg == g)
+                                        .map(|(_, _, v)| *v)
                                 })
-                                + kernel_source.map_or(0.0, |s| s[cell][d]);
-                            let (ax, ay, az) = (
-                                dir[0].abs() * face_area[0],
-                                dir[1].abs() * face_area[1],
-                                dir[2].abs() * face_area[2],
-                            );
-                            // Theta-weighted diamond difference: psi_avg =
-                            // theta*psi_out + (1-theta)*psi_in per axis, with the
-                            // weight chosen from the axis optical thickness to
-                            // reproduce exact exponential transmission for a pure
-                            // absorber: theta(tau) = (tau - (1-e^-tau)) /
-                            // (tau*(1-e^-tau)) — theta -> 1/2 (plain DD, 2nd-order
-                            // accurate) on thin cells and -> 1 (step) as tau grows.
-                            // Plain DD's outgoing edge goes negative for tau >~ 2,
-                            // and a clamp annihilates particles, systematically
-                            // over-attenuating the deep tail; the optimal weight
-                            // keeps the closure positive by construction for the
-                            // dominant pure-absorber channel and conserves the
-                            // local balance exactly. The weight depends only on
-                            // (sigma, delta, mu) — identical for forward and
-                            // adjoint sweeps — so the discrete maps stay dual.
-                            let area = [ax, ay, az];
-                            let mut theta = [0.5_f64; 3];
-                            let mut denom_w = st * volume;
-                            let mut numer_w = q * volume;
-                            for a in 0..3 {
-                                let mu = dir[a].abs().max(1e-30);
-                                let tau = st * dx[a] / mu;
-                                theta[a] = if tau > 1e-6 {
-                                    let e = (-tau.min(700.0)).exp();
-                                    ((tau - (1.0 - e)) / (tau * (1.0 - e))).clamp(0.5, 1.0)
-                                } else {
-                                    0.5
-                                };
-                                let w = area[a] / theta[a];
-                                denom_w += w;
-                                numer_w += w * psi_in[a];
-                            }
-                            let psi_avg = (numer_w / denom_w.max(1e-30)).max(0.0);
-                            psi_d[cell] = psi_avg;
-                            for a in 0..3 {
-                                let psi_out =
-                                    ((psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a]).max(0.0);
-                                edge[a][cell] = psi_out;
-                                if let Some(acc) = acc.as_mut() {
-                                    // Partial currents, θ-WDD-consistent:
-                                    // the per-direction balance is
-                                    // σ_tVψ + Σ_a |μ_a|A(ψ_out−ψ_in) = qV,
-                                    // so the partial outflow across the
-                                    // outflow face is w_d·|μ_a|·ψ_out.
-                                    // The inflow face records only the
-                                    // boundary contribution — interior
-                                    // inflow is the neighbor's outflow,
-                                    // read from its slot.
-                                    let wmu = quadrature[d].1 * dir[a].abs();
-                                    let (in_pos, out_pos) = if dir[a] > 0.0 {
-                                        (2 * a, 2 * a + 1)
-                                    } else {
-                                        (2 * a + 1, 2 * a)
-                                    };
-                                    acc[cell][out_pos] += wmu * psi_out;
-                                    if !inflow_inside[a] {
-                                        acc[cell][in_pos + 6] += wmu * psi_in[a];
-                                    }
-                                }
+                                .unwrap_or(0.0)
+                        };
+                    }
+                    let mi = case_material[cell];
+                    let st = sigma_eff[mi][g];
+                    // Scatter source into g from the current iterate plus
+                    // the fixed (first-collision or volumetric) source.
+                    // The P1 term adds 3·Σ_a Ω_{d,a}·S_a(cell) — the
+                    // anisotropic part of the scattering source.
+                    let q: f64 = fixed_source[cell][g]
+                        + (0..groups)
+                            .map(|gp| scatter_eff[mi][gp * groups + g] * flux[cell][gp])
+                            .sum::<f64>()
+                        + p1_source.map_or(0.0, |s| {
+                            3.0 * (dir[0] * s[cell][0] + dir[1] * s[cell][1] + dir[2] * s[cell][2])
+                        })
+                        + kernel_source.map_or(0.0, |s| s[cell][d]);
+                    let (ax, ay, az) = (
+                        dir[0].abs() * face_area[0],
+                        dir[1].abs() * face_area[1],
+                        dir[2].abs() * face_area[2],
+                    );
+                    // Theta-weighted diamond difference: psi_avg =
+                    // theta*psi_out + (1-theta)*psi_in per axis, with the
+                    // weight chosen from the axis optical thickness to
+                    // reproduce exact exponential transmission for a pure
+                    // absorber: theta(tau) = (tau - (1-e^-tau)) /
+                    // (tau*(1-e^-tau)) — theta -> 1/2 (plain DD, 2nd-order
+                    // accurate) on thin cells and -> 1 (step) as tau grows.
+                    // Plain DD's outgoing edge goes negative for tau >~ 2,
+                    // and a clamp annihilates particles, systematically
+                    // over-attenuating the deep tail; the optimal weight
+                    // keeps the closure positive by construction for the
+                    // dominant pure-absorber channel and conserves the
+                    // local balance exactly. The weight depends only on
+                    // (sigma, delta, mu) — identical for forward and
+                    // adjoint sweeps — so the discrete maps stay dual.
+                    let area = [ax, ay, az];
+                    let mut theta = [0.5_f64; 3];
+                    let mut denom_w = st * volume;
+                    let mut numer_w = q * volume;
+                    for a in 0..3 {
+                        let mu = dir[a].abs().max(1e-30);
+                        let tau = st * dx[a] / mu;
+                        theta[a] = if tau > 1e-6 {
+                            let e = (-tau.min(700.0)).exp();
+                            ((tau - (1.0 - e)) / (tau * (1.0 - e))).clamp(0.5, 1.0)
+                        } else {
+                            0.5
+                        };
+                        let w = area[a] / theta[a];
+                        denom_w += w;
+                        numer_w += w * psi_in[a];
+                    }
+                    let psi_avg = (numer_w / denom_w.max(1e-30)).max(0.0);
+                    psi_d[cell] = psi_avg;
+                    for a in 0..3 {
+                        let psi_out =
+                            ((psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a]).max(0.0);
+                        edge[a][cell] = psi_out;
+                        if let Some(acc) = acc.as_mut() {
+                            // Partial currents, θ-WDD-consistent:
+                            // the per-direction balance is
+                            // σ_tVψ + Σ_a |μ_a|A(ψ_out−ψ_in) = qV,
+                            // so the partial outflow across the
+                            // outflow face is w_d·|μ_a|·ψ_out.
+                            // The inflow face records only the
+                            // boundary contribution — interior
+                            // inflow is the neighbor's outflow,
+                            // read from its slot.
+                            let wmu = quadrature[d].1 * dir[a].abs();
+                            let (in_pos, out_pos) = if dir[a] > 0.0 {
+                                (2 * a, 2 * a + 1)
+                            } else {
+                                (2 * a + 1, 2 * a)
+                            };
+                            acc[cell][out_pos] += wmu * psi_out;
+                            if !inflow_inside[a] {
+                                acc[cell][in_pos + 6] += wmu * psi_in[a];
                             }
                         }
                     }
                 }
-                acc
-            },
-        )
-        .reduce(
-            || {
-                face_current
-                    .is_some()
-                    .then(|| vec![[0.0_f64; 12]; nx * ny * nz])
-            },
-            |a, b| match (a, b) {
-                (Some(mut a), Some(b)) => {
-                    for (ac, bc) in a.iter_mut().zip(b.iter()) {
-                        for f in 0..12 {
-                            ac[f] += bc[f];
-                        }
+            }
+        }
+        acc
+    };
+    // Floating-point addition is not associative, so the face sums must
+    // be formed in an order that never depends on the thread pool: the
+    // ordinates are split into a fixed number of contiguous chunks (a
+    // function of the ordinate count only), each chunk accumulates its
+    // ordinates in index order, and the chunk totals are combined
+    // serially in chunk order. The result is bit-identical for any
+    // RAYON_NUM_THREADS or scheduling, with at most FACE_SUM_CHUNKS
+    // accumulators alive.
+    const FACE_SUM_CHUNKS: usize = 16;
+    let chunk_len = psi.len().div_ceil(FACE_SUM_CHUNKS).max(1);
+    let chunk_sums: Vec<Option<Vec<[f64; 12]>>> = psi
+        .par_chunks_mut(chunk_len)
+        .enumerate()
+        .map(|(chunk, rows)| {
+            let mut acc = want_faces.then(|| vec![[0.0_f64; 12]; nx * ny * nz]);
+            for (offset, psi_d) in rows.iter_mut().enumerate() {
+                acc = sweep_one(acc, (chunk * chunk_len + offset, psi_d));
+            }
+            acc
+        })
+        .collect();
+    let mut face_sums: Option<Vec<[f64; 12]>> = None;
+    for part in chunk_sums.into_iter().flatten() {
+        match face_sums.as_mut() {
+            None => face_sums = Some(part),
+            Some(total) => {
+                for (t, p) in total.iter_mut().zip(part.iter()) {
+                    for f in 0..12 {
+                        t[f] += p[f];
                     }
-                    Some(a)
                 }
-                (a, None) => a,
-                (None, b) => b,
-            },
-        );
+            }
+        }
+    }
     if let (Some(out), Some(sums)) = (face_current, face_sums) {
         out.clone_from(&sums);
     }
@@ -1541,6 +1595,18 @@ pub(crate) fn solve_multigroup_unchecked(
     let geometry = &case.geometry;
     let n_cells = geometry.voxel_count()?;
     let groups = data.group_count();
+    // Both source paths below need the disk on the face (see
+    // `require_disk_on_face`).
+    if let SourceSpatialDistribution::UniformDisk {
+        axis,
+        center_uv_cm,
+        radius_cm,
+        ..
+    } = &case.source.space
+    {
+        require_disk_on_face(geometry, *axis, *center_uv_cm, *radius_cm, options.periodic)
+            .map_err(MultigroupError::Source)?;
+    }
     let quadrature = level_symmetric_quadrature(options.quadrature_order)?;
     let (data_eff, case_material) =
         material_composition_map(case, data, options.assignment.as_ref())?;
@@ -1694,14 +1760,19 @@ pub fn adjoint_direction_score(
     if adjoint.flux.len() != n_cells {
         return Err(invalid("adjoint flux grid does not match the case".into()));
     }
-    let (aimed_source, _report) = crate::positioning::aim_disk_source_at_centroid(
+    let (aimed_source, _report) = match crate::positioning::aim_disk_source_at_centroid(
         &case.source,
         &case.geometry,
         aim,
         direction_lps,
         radius_cm,
-    )
-    .map_err(|error| invalid(format!("aim direction: {error}")))?;
+    ) {
+        Ok(aimed) => aimed,
+        Err(error @ crate::positioning::PositioningError::ApertureOutsideFace { .. }) => {
+            return Err(MultigroupError::ApertureOutsideFace(error.to_string()));
+        }
+        Err(error) => return Err(invalid(format!("aim direction: {error}"))),
+    };
     let mut aimed_case = case.clone();
     aimed_case.source = aimed_source;
     let (_ad, case_material) =
@@ -2360,6 +2431,14 @@ pub(crate) fn solve_sn_problem(
                     if lmax >= 2 {
                         kernel_moments[cell][g].copy_from_slice(moments);
                     }
+                    // f64::max ignores NaN, so a non-finite iterate would
+                    // slip past the convergence test — fail instead.
+                    if !new_flux.is_finite() {
+                        return Err(MultigroupError::Solve(format!(
+                            "non-finite scalar flux in group {g} at cell {cell} — check the \
+                             source and cross sections for inf/NaN"
+                        )));
+                    }
                     change =
                         change.max((new_flux - flux[cell][g]).abs() / new_flux.abs().max(1e-30));
                     flux[cell][g] = *new_flux;
@@ -2379,7 +2458,19 @@ pub(crate) fn solve_sn_problem(
             .zip(previous.iter())
             .flat_map(|(a, b)| a.iter().zip(b.iter()))
             .map(|(x, y)| (x - y).abs() / x.abs().max(1e-30))
-            .fold(0.0_f64, f64::max);
+            .fold(0.0_f64, |m, v| {
+                if v.is_nan() || m.is_nan() {
+                    f64::NAN
+                } else {
+                    m.max(v)
+                }
+            });
+        if !residual.is_finite() {
+            return Err(MultigroupError::Solve(format!(
+                "non-finite outer residual after iteration {}",
+                outer + 1
+            )));
+        }
         // Coarse-mesh rebalance of the upscatter block: the slow mode
         // is the long-wavelength spatial imbalance of the
         // near-conservative sub-eV flux. Multiplicative factors
@@ -2660,6 +2751,18 @@ pub(crate) fn solve_sn_problem(
         if std::env::var_os("OPENBNCT_SOLVE_PROGRESS").is_some() {
             eprintln!("[sn-solve] outer {} residual {:.4e}", outer + 1, residual);
         }
+    }
+
+    // The rebalance and Anderson steps rescale the iterate after the
+    // sweep's own finiteness check; never return a non-finite flux.
+    if let Some((cell, _)) = flux
+        .iter()
+        .enumerate()
+        .find(|(_, row)| row.iter().any(|v| !v.is_finite()))
+    {
+        return Err(MultigroupError::Solve(format!(
+            "non-finite scalar flux at cell {cell} after acceleration"
+        )));
     }
 
     Ok(MultigroupFlux {
