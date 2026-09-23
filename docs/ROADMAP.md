@@ -1417,7 +1417,16 @@ independent engines, ordered by leverage. None implies a clinical claim.
 - **R11-04 — VR chi-square gate seeds (R6-09 remainder).** Two
   ~196M-history OpenMC runs outstanding for the
   variance-reduction acceptance gate (~27h each on this workstation).
-  Pure compute; no code work.
+  Pure compute; no code work. **In flight (2026-09-23):** serialized
+  supervisor scope `openbnct-vr-seeds.scope` (6 GB / 200% cgroup) runs
+  seed 20260831, then 314159265, on conda-forge OpenMC 0.16.0 @ 617d35a
+  — the exact commit the reference manifest pins — then evaluates each
+  seed against the contract, validates vs the 600M analog reference,
+  and runs the three-seed chi-square evaluation. Run dirs and script:
+  `../vr-seed-staging/` (sibling of this checkout), log at
+  `vr-seed-staging/supervisor.log`. At 2 threads (quota-matched) expect
+  roughly a week of background compute; killing the scope abandons it
+  cleanly and the supervisor restarts from the latest statepoint.
 - **R11-05 — licensed-engine execution gates.** The MCNP and PHITS
   emitters produce decks, but end-to-end execution requires licensed
   users. External dependency — track, don't block.
