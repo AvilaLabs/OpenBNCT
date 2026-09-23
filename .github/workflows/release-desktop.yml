@@ -65,6 +65,7 @@ jobs:
       # the release target explicitly onto whichever toolchain rustup just
       # resolved.
       - name: Install target
+        shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: rustup target add "$TARGET"
@@ -95,6 +96,7 @@ jobs:
             --extra "Noto Sans CJK JP (subset)=crates/openbnct-gui/assets/NotoSansCJKjp-UI.LICENSE.txt"
 
       - name: Build release binaries
+        shell: bash
         env:
           TARGET: ${{ matrix.target }}
         run: cargo build --release --locked --target "$TARGET" -p openbnct-cli -p openbnct-gui
