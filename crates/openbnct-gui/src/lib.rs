@@ -1488,6 +1488,25 @@ impl AvifyPanel {
         self.status = Some("cancelled".into());
     }
 
+    /// Load a previously written result from `outdir` (certificate +
+    /// run receipt) — reopens an earlier analysis without rerunning.
+    fn load_result(&mut self) {
+        let outdir = PathBuf::from(self.outdir.trim());
+        let cert_path = outdir.join("certificate.json");
+        match openbnct_avify::AvifyCertificate::load(&cert_path) {
+            Ok(cert) => {
+                self.certificate = Some(cert);
+                let receipt = outdir.join("avify-run.json");
+                self.receipt_path = receipt.display().to_string();
+                self.staleness = openbnct_avify::AvifyRunReceipt::load(&receipt)
+                    .map(|r| openbnct_avify::check_staleness(&r, &outdir))
+                    .ok();
+                self.status = Some("loaded".into());
+            }
+            Err(e) => self.status = Some(format!("load certificate: {e}")),
+        }
+    }
+
     /// Recompute the staleness check — call when the user asks, not per
     /// frame (each pass re-hashes the bound inputs).
     fn recheck_staleness(&mut self) {
@@ -3509,6 +3528,24 @@ fn show_avify_workspace(
                 {
                     #[cfg(not(target_arch = "wasm32"))]
                     panel.cancel();
+                }
+                if ui
+                    .add_enabled(
+                        cfg!(not(target_arch = "wasm32")),
+                        egui::Button::new(t!(
+                            language,
+                            en = "Load result",
+                            ja = "結果を読込",
+                            it = "Carica risultato",
+                            zh = "加载结果",
+                            es = "Cargar resultado"
+                        )),
+                    )
+                    .on_hover_text("load outdir/certificate.json + avify-run.json")
+                    .clicked()
+                {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    panel.load_result();
                 }
                 if let Some(status) = &panel.status {
                     ui.monospace(status.clone());
