@@ -1232,3 +1232,41 @@ def load_component_nifti_manifest(
     path: str | PathLike[str],
 ) -> ComponentNiftiManifest:
     """Read a per-component NIfTI export manifest."""
+
+def avify_export_plan(
+    case: str | PathLike[str],
+    assignment: str | PathLike[str],
+    spec: str | PathLike[str],
+    prefix: str | PathLike[str],
+) -> str:
+    """Export a case + material assignment + ``openbnct.avify-spec/0.1.0``
+    document to the Avify Dose engine's voxel plan (same path as
+    ``openbnct avify export-plan``). Returns a JSON object with the
+    artifact paths, SHA-256 bindings, and per-class voxel counts. The
+    declared uptake set passes through verbatim — corner maps stay in
+    the separately licensed engine."""
+
+def avify_verify(
+    case: str | PathLike[str],
+    assignment: str | PathLike[str],
+    spec: str | PathLike[str],
+    outdir: str | PathLike[str],
+    engine_cmd: str = "avify-dose",
+    threads: int | None = None,
+    timeout_s: int = 21600,
+) -> str:
+    """Export, then run the separately licensed Avify Dose engine as a
+    bounded child process (same path as ``openbnct avify verify`` —
+    timeout kills and reaps the child). Writes ``certificate.json`` and
+    the ``avify-run.json`` receipt under ``outdir``; returns a JSON
+    object with the run record and the parsed certificate — an
+    empirical two-evaluation envelope, research only."""
+
+def avify_status(receipt: str | PathLike[str]) -> str:
+    """Check an ``avify-run.json`` receipt against the filesystem (same
+    path as ``openbnct avify status``). Returns a JSON object with
+    per-input CURRENT/CHANGED/MISSING states and a ``stale`` verdict."""
+
+def avify_load_certificate(certificate: str | PathLike[str]) -> str:
+    """Read and validate the engine's ``certificate.json`` — returned
+    verbatim as JSON; the binding never re-derives engine results."""

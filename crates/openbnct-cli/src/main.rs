@@ -4371,80 +4371,29 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 threads,
                 timeout_s,
             } => {
-                let (case_path, assignment_path, spec_path) = (case, assignment, spec);
-                let case: TransportCase = serde_json::from_slice(&fs::read(&case_path)?)?;
-                let assignment: MaterialAssignment =
-                    serde_json::from_slice(&fs::read(&assignment_path)?)?;
-                let spec: openbnct_avify::AvifySpec =
-                    serde_json::from_slice(&fs::read(&spec_path)?)?;
-                fs::create_dir_all(&outdir)?;
-                let prefix = outdir.join("openbnct-case");
-                let export = openbnct_avify::export_voxel_plan(&case, &assignment, &spec, &prefix)
-                    .map_err(|e| io::Error::other(format!("avify export: {e}")))?;
-                let plan = openbnct_avify::AvifyPlan {
-                    declared_set: spec.plan.declared_set.clone(),
-                    brain_ratio: spec.plan.brain_ratio,
-                    weights: spec.plan.weights.clone(),
-                    criteria: spec.plan.criteria.clone(),
-                    normalisation: spec.plan.normalisation.clone(),
-                    histories: spec.plan.histories.clone(),
-                    seeds: spec.plan.seeds.clone(),
-                    beam: spec.plan.beam.clone(),
-                };
-                let plan_path = PathBuf::from(format!("{}.plan.json", prefix.display()));
-                fs::write(&plan_path, serde_json::to_vec_pretty(&plan)?)?;
-                println!("voxel plan exported to {}", prefix.display());
-                println!("  arrays sha256: {}", export.arrays_sha256);
-                println!("  meta   sha256: {}", export.meta_sha256);
-                let argv0: Vec<String> = engine_cmd.split_whitespace().map(String::from).collect();
-                if argv0.is_empty() {
-                    return Err(io::Error::other("--engine-cmd must not be empty").into());
-                }
-                let invocation = openbnct_avify::EngineInvocation { argv0, timeout_s };
-                let engine_version = invocation.engine_version();
-                let outcome = invocation
-                    .verify(&prefix, &plan_path, &outdir, threads)
-                    .map_err(|e| io::Error::other(format!("avify engine: {e}")))?;
+                let output = openbnct_avify::verify_pipeline(
+                    &case,
+                    &assignment,
+                    &spec,
+                    &outdir,
+                    &engine_cmd,
+                    timeout_s,
+                    threads,
+                )
+                .map_err(|e| io::Error::other(format!("avify: {e}")))?;
+                println!(
+                    "voxel plan exported to {}",
+                    openbnct_avify::pipeline::verify_prefix(&outdir).display()
+                );
+                println!("  arrays sha256: {}", output.export.arrays_sha256);
+                println!("  meta   sha256: {}", output.export.meta_sha256);
                 println!(
                     "engine finished in {:.0}s — certificate: {}",
-                    outcome.elapsed.as_secs_f64(),
-                    outcome.certificate_path.display()
+                    output.outcome.elapsed.as_secs_f64(),
+                    output.outcome.certificate_path.display()
                 );
-                let abs = |p: &PathBuf| fs::canonicalize(p).unwrap_or_else(|_| p.clone());
-                let inputs = openbnct_avify::receipt::bind_inputs(&[
-                    ("case", &abs(&case_path)),
-                    ("assignment", &abs(&assignment_path)),
-                    ("spec", &abs(&spec_path)),
-                ])
-                .map_err(|e| io::Error::other(format!("avify receipt: {e}")))?;
-                let exported = openbnct_avify::receipt::bind_inputs(&[
-                    ("arrays", &abs(&export.arrays_path)),
-                    ("meta", &abs(&export.meta_path)),
-                    ("plan", &abs(&plan_path)),
-                ])
-                .map_err(|e| io::Error::other(format!("avify receipt: {e}")))?;
-                let certificate_bound = openbnct_avify::BoundInput {
-                    path: abs(&outcome.certificate_path),
-                    sha256: openbnct_avify::receipt::hex_sha256(&fs::read(
-                        &outcome.certificate_path,
-                    )?),
-                };
-                let receipt = openbnct_avify::receipt::receipt_for_run(
-                    inputs,
-                    exported,
-                    openbnct_avify::EngineRecord {
-                        argv0: invocation.argv0.clone(),
-                        version: engine_version,
-                    },
-                    certificate_bound,
-                    outcome.elapsed.as_secs_f64(),
-                );
-                let receipt_path = outdir.join("avify-run.json");
-                receipt
-                    .write(&receipt_path)
-                    .map_err(|e| io::Error::other(format!("avify receipt: {e}")))?;
-                println!("run receipt: {}", receipt_path.display());
-                print_avify_certificate(&outcome.certificate);
+                println!("run receipt: {}", output.receipt_path.display());
+                print_avify_certificate(&output.outcome.certificate);
             }
             AvifyCommand::Show { certificate } => {
                 let cert = openbnct_avify::AvifyCertificate::load(&certificate)

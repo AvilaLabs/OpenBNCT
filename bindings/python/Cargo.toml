@@ -13,6 +13,7 @@ name = "_openbnct"
 crate-type = ["cdylib"]
 
 [dependencies]
+openbnct-avify = { path = "../../crates/openbnct-avify" }
 openbnct-bio = { path = "../../crates/openbnct-bio" }
 openbnct-boron = { path = "../../crates/openbnct-boron" }
 openbnct-core = { path = "../../crates/openbnct-core" }

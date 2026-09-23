@@ -1453,5 +1453,76 @@ class R8R9ArtifactTest(unittest.TestCase):
             self.assertEqual(again.to_json(), first)
 
 
+class AvifyConnectorTest(unittest.TestCase):
+    """The Avify Dose connector surface — same Rust pipeline as
+    ``openbnct avify``. Engine execution needs the separately licensed
+    ``avify-dose``; the export path is pure Rust."""
+
+    CASE = REPO_ROOT / "benchmarks" / "synthetic" / "layered-head-phantom" / "case.json"
+    ASSIGNMENT = REPO_ROOT / "examples" / "avify" / "assignment-tumour.json"
+    SPEC = REPO_ROOT / "examples" / "avify" / "spec.json"
+
+    def test_export_plan(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            out = json.loads(
+                openbnct.avify_export_plan(
+                    self.CASE, self.ASSIGNMENT, self.SPEC, Path(tmp) / "plan"
+                )
+            )
+            self.assertEqual(out["class_voxels"]["tumour"], 27)
+            self.assertEqual(len(out["arrays_sha256"]), 64)
+            for key in ("arrays_path", "meta_path", "plan_path"):
+                self.assertTrue(Path(out[key]).is_file(), key)
+
+    def test_export_rejects_zero_voxel_roi(self) -> None:
+        spec = json.loads(self.SPEC.read_text())
+        spec["roi_classes"] = {"brain": "brain"}
+        with tempfile.TemporaryDirectory() as tmp:
+            fixed = _write(tmp, "spec.json", json.dumps(spec))
+            with self.assertRaises(NctForgeError):
+                openbnct.avify_export_plan(
+                    self.CASE, self.ASSIGNMENT, fixed, Path(tmp) / "plan"
+                )
+
+    def test_status_and_certificate_round_trip(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            case = _write(tmp, "case.json", '{"a": 1}')
+            cert_doc = {
+                "plan_sha256": "0" * 64,
+                "ingest_meta_sha256": "0" * 64,
+                "ingest_arrays_sha256": "0" * 64,
+                "scale_Gyw_per_MeVg": 1.0,
+                "runs": {},
+                "brackets": {},
+                "actions": {},
+            }
+            cert = _write(tmp, "certificate.json", json.dumps(cert_doc))
+            bound = lambda p: {
+                "path": str(p),
+                "sha256": hashlib.sha256(Path(p).read_bytes()).hexdigest(),
+            }
+            receipt = {
+                "schema_version": "openbnct.avify-run/0.1.0",
+                "created_unix_seconds": 1,
+                "inputs": {"case": bound(case)},
+                "exported": {},
+                "engine": {"argv0": ["avify-dose"], "version": "test"},
+                "certificate": bound(cert),
+                "engine_elapsed_s": 1.0,
+            }
+            receipt_path = _write(tmp, "avify-run.json", json.dumps(receipt))
+            status = json.loads(openbnct.avify_status(receipt_path))
+            self.assertFalse(status["stale"])
+            self.assertEqual(status["inputs"]["case"], "current")
+            # Mutating the bound input marks the run stale.
+            case.write_text('{"a": 2}')
+            status = json.loads(openbnct.avify_status(receipt_path))
+            self.assertTrue(status["stale"])
+            self.assertEqual(status["inputs"]["case"]["state"], "changed")
+            # Certificate passthrough — verbatim JSON.
+            self.assertEqual(json.loads(openbnct.avify_load_certificate(cert)), cert_doc)
+
+
 if __name__ == "__main__":
     unittest.main()

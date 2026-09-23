@@ -1001,6 +1001,14 @@ A runnable example (export is pure Rust; verify needs the engine +
 OpenMC) is in `examples/avify/`. Certificate output is an empirical
 two-evaluation envelope — research software, not a certified bound.
 
+The Python package exposes the same pipeline —
+`openbnct.avify_export_plan(case, assignment, spec, prefix)`,
+`avify_verify(case, assignment, spec, outdir, engine_cmd, threads,
+timeout_s)`, `avify_status(receipt)`, and `avify_load_certificate(path)`
+— each returning a JSON string of the artifact paths, run receipt
+states, or the certificate verbatim. The workbench's Avify tab shells
+out to `openbnct avify` for the same bounded run.
+
 ### External-dose and combined-treatment evaluation
 
 `openbnct import dose` ingests a `openbnct.external-dose/0.1.0` document —

@@ -15,6 +15,7 @@
 pub mod certificate;
 pub mod error;
 pub mod npz;
+pub mod pipeline;
 pub mod plan;
 pub mod receipt;
 pub mod run;
@@ -24,6 +25,7 @@ pub mod voxel;
 pub use certificate::{AvifyCertificate, RoiAction, RoiBracket};
 pub use error::AvifyError;
 pub use npz::{ArraysNpz, read_arrays_npz};
+pub use pipeline::{VerifyPipelineOutput, export_pipeline, verify_pipeline};
 pub use plan::{AvifyPlan, BeamSpec, DeclaredSet, Normalisation};
 pub use receipt::{
     AvifyRunReceipt, BoundInput, EngineRecord, InputState, check_staleness, is_stale,

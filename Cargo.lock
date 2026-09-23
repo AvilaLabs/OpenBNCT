@@ -3111,6 +3111,7 @@ dependencies = [
  "eframe",
  "image",
  "js-sys",
+ "openbnct-avify",
  "openbnct-bio",
  "openbnct-core",
  "openbnct-dicom",

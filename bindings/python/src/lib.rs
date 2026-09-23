@@ -3941,6 +3941,119 @@ fn load_component_nifti_manifest(path: PathBuf) -> PyResult<PyComponentNiftiMani
 /// Research software only: not a medical device, not commissioned, and not a
 /// dose calculator. Transport actions stay unavailable until the same Rust
 /// capability and evidence gates used by the CLI and GUI pass.
+/// Export a case + material assignment + avify spec to the engine's
+/// voxel plan (`<prefix>_arrays.npz`, `<prefix>_meta.json`,
+/// `<prefix>.plan.json`). Returns a JSON object with the artifact
+/// paths, SHA-256 bindings, and per-class voxel counts. The declared
+/// uptake set passes through verbatim — corner maps stay in the
+/// separately licensed engine.
+#[pyfunction]
+#[pyo3(signature = (case, assignment, spec, prefix))]
+fn avify_export_plan(
+    case: PathBuf,
+    assignment: PathBuf,
+    spec: PathBuf,
+    prefix: PathBuf,
+) -> PyResult<String> {
+    let (export, plan_path) =
+        openbnct_avify::export_pipeline(&case, &assignment, &spec, &prefix).map_err(reject)?;
+    serde_json::to_string_pretty(&serde_json::json!({
+        "arrays_path": export.arrays_path,
+        "meta_path": export.meta_path,
+        "plan_path": plan_path,
+        "arrays_sha256": export.arrays_sha256,
+        "meta_sha256": export.meta_sha256,
+        "class_voxels": export.class_voxels,
+    }))
+    .map_err(reject)
+}
+
+/// Export, then run the separately licensed Avify Dose engine as a
+/// bounded child process (timeout kills and reaps it). Writes
+/// `certificate.json` and the `avify-run.json` receipt under `outdir`;
+/// returns a JSON object with the run record and the parsed
+/// certificate — an empirical two-evaluation envelope, research only.
+#[pyfunction]
+#[pyo3(signature = (case, assignment, spec, outdir, engine_cmd="avify-dose", threads=None, timeout_s=21600))]
+#[allow(clippy::too_many_arguments)]
+fn avify_verify(
+    case: PathBuf,
+    assignment: PathBuf,
+    spec: PathBuf,
+    outdir: PathBuf,
+    engine_cmd: &str,
+    threads: Option<u32>,
+    timeout_s: u64,
+) -> PyResult<String> {
+    let output = openbnct_avify::verify_pipeline(
+        &case,
+        &assignment,
+        &spec,
+        &outdir,
+        engine_cmd,
+        timeout_s,
+        threads,
+    )
+    .map_err(reject)?;
+    serde_json::to_string_pretty(&serde_json::json!({
+        "certificate_path": output.outcome.certificate_path,
+        "receipt_path": output.receipt_path,
+        "elapsed_s": output.outcome.elapsed.as_secs_f64(),
+        "engine_version": output.receipt.engine.version,
+        // The certificate is a passthrough document (Deserialize-only
+        // in the connector) — embed the engine's bytes verbatim.
+        "certificate": serde_json::from_slice::<serde_json::Value>(
+            &fs::read(&output.outcome.certificate_path).map_err(reject)?,
+        )
+        .map_err(reject)?,
+    }))
+    .map_err(reject)
+}
+
+/// Check a `avify-run.json` receipt against the filesystem — JSON
+/// object with per-input CURRENT/CHANGED/MISSING states and a `stale`
+/// verdict.
+#[pyfunction]
+fn avify_status(receipt: PathBuf) -> PyResult<String> {
+    let receipt = openbnct_avify::AvifyRunReceipt::load(&receipt).map_err(reject)?;
+    let base = receipt
+        .certificate
+        .path
+        .parent()
+        .map(|p| p.to_path_buf())
+        .unwrap_or_else(|| PathBuf::from("."));
+    let states = openbnct_avify::check_staleness(&receipt, &base);
+    let mut per_input = serde_json::Map::new();
+    for (name, state) in &states {
+        let value = match state {
+            openbnct_avify::InputState::Current => serde_json::json!("current"),
+            openbnct_avify::InputState::Changed(d) => {
+                serde_json::json!({"state": "changed", "current_sha256": d})
+            }
+            openbnct_avify::InputState::Missing => serde_json::json!("missing"),
+        };
+        per_input.insert(name.clone(), value);
+    }
+    serde_json::to_string_pretty(&serde_json::json!({
+        "engine_version": receipt.engine.version,
+        "engine_argv0": receipt.engine.argv0,
+        "certificate_sha256": receipt.certificate.sha256,
+        "engine_elapsed_s": receipt.engine_elapsed_s,
+        "stale": openbnct_avify::is_stale(&states),
+        "inputs": per_input,
+    }))
+    .map_err(reject)
+}
+
+/// Load the engine's `certificate.json` — returned verbatim as JSON;
+/// the surface never re-derives engine results.
+#[pyfunction]
+fn avify_load_certificate(certificate: PathBuf) -> PyResult<String> {
+    let bytes = fs::read(&certificate).map_err(reject)?;
+    let _: openbnct_avify::AvifyCertificate = serde_json::from_slice(&bytes).map_err(reject)?;
+    String::from_utf8(bytes).map_err(reject)
+}
+
 #[pymodule]
 fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
@@ -4081,5 +4194,9 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load_rtplan_summary, m)?)?;
     m.add_function(wrap_pyfunction!(summarize_rtplan, m)?)?;
     m.add_function(wrap_pyfunction!(load_component_nifti_manifest, m)?)?;
+    m.add_function(wrap_pyfunction!(avify_export_plan, m)?)?;
+    m.add_function(wrap_pyfunction!(avify_verify, m)?)?;
+    m.add_function(wrap_pyfunction!(avify_status, m)?)?;
+    m.add_function(wrap_pyfunction!(avify_load_certificate, m)?)?;
     Ok(())
 }
