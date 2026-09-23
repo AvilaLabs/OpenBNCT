@@ -20,6 +20,7 @@ path = "src/main.rs"
 clap.workspace = true
 openbnct-bio = { path = "../openbnct-bio", version = "0.2.0" }
 openbnct-boron = { path = "../openbnct-boron", version = "0.2.0" }
+openbnct-avify = { path = "../openbnct-avify", version = "0.2.0" }
 openbnct-core = { path = "../openbnct-core", version = "0.2.0" }
 openbnct-dicom = { path = "../openbnct-dicom", version = "0.2.0" }
 openbnct-evidence = { path = "../openbnct-evidence", version = "0.2.0" }

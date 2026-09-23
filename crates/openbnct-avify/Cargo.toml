@@ -1,0 +1,26 @@
+[package]
+name = "openbnct-avify"
+description = "Connector surface for the separately licensed Avify Dose engine — voxel-plan export, plan/certificate interchange, bounded process orchestration"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+authors.workspace = true
+repository.workspace = true
+license.workspace = true
+publish.workspace = true
+readme = "README.md"
+keywords.workspace = true
+categories.workspace = true
+
+[dependencies]
+openbnct-transport = { path = "../openbnct-transport", version = "0.2.0" }
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+zip = { version = "4", default-features = false, features = ["deflate"] }
+
+[dev-dependencies]
+zip = { version = "4", default-features = false, features = ["deflate"] }
+serde_json.workspace = true
+openbnct-transport = { path = "../openbnct-transport" }

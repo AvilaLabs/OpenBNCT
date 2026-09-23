@@ -1434,6 +1434,12 @@ implementation, or public technical disclosure, including connector behavior.
   repository or process separation alone does not establish patent clearance.
   Acceptance: a reviewed scope states what can be implemented and published,
   with unresolved capabilities and restrictions explicit.
+  **Status (2026-09-23):** scope record drafted at
+  [`R12_SCOPE_REVIEW.md`](R12_SCOPE_REVIEW.md); owner decisions recorded
+  (packaged `avify-dose` CLI in the proprietary repo, five-class material
+  domain, tumour/brain/scalp ROI schema for v1, CLI surface first,
+  certificate rendered verbatim with empirical-envelope labelling).
+  Awaiting final sign-off checklist.
 - **R12-02 — Optional engine connection through shared Rust contracts.**
   After review, define a versioned, SHA-256 content-bound interchange for
   approved inputs, returned results, execution status, and timing records.
@@ -1447,6 +1453,15 @@ implementation, or public technical disclosure, including connector behavior.
   completes an end-to-end exchange; unavailable engines, incompatible
   versions, and licensing failures produce actionable messages without
   disabling ordinary OpenBNCT workflows.
+  **Status (2026-09-23):** `openbnct-avify` crate + `openbnct avify
+  {export-plan,verify,show}` CLI landed — case/assignment export to the
+  engine's voxel plan (npz+meta, zyx order, corner origin, isotropic
+  enforcement, zero-voxel-ROI rejection), verbatim plan JSON, bounded
+  engine subprocess with kill+reap, typed certificate parse. Verified
+  end-to-end against the engine on a layered-head case with a declared
+  tumour region (3 OpenMC evaluations, certificate emitted, actions
+  rendered). Version-compatibility negotiation and stale-result rejection
+  beyond hash binding remain open.
 - **R12-03 — Avify Dose workspace and continuous case workflow.**
   Provide an optional dedicated workspace, reachable from Dose and Plan,
   carrying over applicable case inputs without manual re-entry. Explain the

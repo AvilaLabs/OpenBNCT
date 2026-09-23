@@ -12,6 +12,7 @@ members = [
   "crates/openbnct-nifti",
   "crates/openbnct-njoy",
   "crates/openbnct-plan",
+  "crates/openbnct-avify",
   "crates/openbnct-mcnp",
   "crates/openbnct-phits",
   "crates/openbnct-cli",

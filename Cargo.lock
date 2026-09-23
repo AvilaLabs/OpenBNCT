@@ -3005,6 +3005,18 @@ dependencies = [
 ]
 
 [[package]]
+name = "openbnct-avify"
+version = "0.2.0"
+dependencies = [
+ "openbnct-transport",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.20",
+ "zip 4.6.1",
+]
+
+[[package]]
 name = "openbnct-bio"
 version = "0.2.0"
 dependencies = [
@@ -3033,6 +3045,7 @@ name = "openbnct-cli"
 version = "0.2.0"
 dependencies = [
  "clap",
+ "openbnct-avify",
  "openbnct-bio",
  "openbnct-boron",
  "openbnct-core",

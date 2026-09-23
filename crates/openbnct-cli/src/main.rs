@@ -88,6 +88,9 @@ enum Command {
     /// Evaluate parametric accelerator-target neutron sources
     /// (`openbnct.accelerator-source/0.1.0`).
     Accelerator(AcceleratorArgs),
+    /// Optional Avify Dose engine integration (R12) — export the voxel
+    /// plan, run the separately licensed engine, ingest its certificate.
+    Avify(AvifyArgs),
     /// Rasterize and sweep beam-shaping assemblies
     /// (`openbnct.beam-shaping-assembly/0.1.0`).
     Bsa(BsaArgs),
@@ -953,6 +956,68 @@ enum AcceleratorCommand {
         /// New output path for the beam-description JSON.
         #[arg(long)]
         output: PathBuf,
+    },
+}
+
+#[derive(Debug, Args)]
+struct AvifyArgs {
+    #[command(subcommand)]
+    command: AvifyCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum AvifyCommand {
+    /// Export the voxel plan + engine plan JSON without running the
+    /// engine — review the exact inputs the engine will consume.
+    ExportPlan {
+        /// `openbnct.transport-case` JSON.
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.material-assignment` JSON for the case.
+        #[arg(long)]
+        assignment: PathBuf,
+        /// `openbnct.avify-spec` JSON — class map + engine plan fields.
+        #[arg(long)]
+        spec: PathBuf,
+        /// Output prefix for `<prefix>_arrays.npz` / `<prefix>_meta.json`;
+        /// the plan JSON lands at `<prefix>.plan.json`.
+        #[arg(long)]
+        prefix: PathBuf,
+    },
+    /// Export the voxel plan, run `avify-dose verify` as a bounded child
+    /// process, and print the returned certificate summary.
+    Verify {
+        /// `openbnct.transport-case` JSON.
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.material-assignment` JSON for the case.
+        #[arg(long)]
+        assignment: PathBuf,
+        /// `openbnct.avify-spec` JSON — class map + engine plan fields.
+        #[arg(long)]
+        spec: PathBuf,
+        /// Run directory: the voxel plan, plan JSON, engine logs, and
+        /// `certificate.json` land here.
+        #[arg(long)]
+        outdir: PathBuf,
+        /// Engine invocation; e.g. `avify-dose` (default) or
+        /// `/path/to/python -m avify`. Split on whitespace.
+        #[arg(long, default_value = "avify-dose")]
+        engine_cmd: String,
+        /// OpenMC threads passed through to the engine.
+        #[arg(long)]
+        threads: Option<u32>,
+        /// Bound on total engine wall time, seconds (default 21600).
+        /// Exceeding it kills and reaps the child.
+        #[arg(long, default_value_t = 21600)]
+        timeout_s: u64,
+    },
+    /// Render a returned `certificate.json` — per-ROI certified
+    /// intervals vs criteria and the recorded run records.
+    Show {
+        /// `certificate.json` from an `avify verify` run.
+        #[arg(long)]
+        certificate: PathBuf,
     },
 }
 
@@ -3561,6 +3626,48 @@ fn main() -> ExitCode {
     }
 }
 
+/// Render an Avify certificate: per-ROI certified interval vs criterion,
+/// action, applicability flags, and the recorded run cost. The envelope
+/// is labelled what the engine says it is — empirical, not certified.
+fn print_avify_certificate(cert: &openbnct_avify::AvifyCertificate) {
+    println!(
+        "avify certificate — empirical two-evaluation envelope (research only, not a certified bound)"
+    );
+    for (roi, action) in &cert.actions {
+        let flags = cert.brackets.get(roi).map(|b| {
+            let mut f = String::new();
+            if b.photon_valid == Some(false) {
+                f.push_str(" photon-decomposition-invalid");
+            }
+            if b.fast_applicability_ok == Some(false) {
+                f.push_str(" fast-allowance-failed");
+            }
+            f
+        });
+        println!(
+            "  {roi:8} {} {:>5.1} Gy-w: certified [{:.2}, {:.2}]{} -> {}",
+            action.criterion.0,
+            action.criterion.1,
+            action.certified_gyw[0],
+            action.certified_gyw[1],
+            match action.nominal_gyw {
+                Some(n) => format!(", nominal {n:.2}"),
+                None => String::new(),
+            },
+            action.action
+        );
+        if let Some(f) = flags.filter(|f| !f.is_empty()) {
+            println!("           flags:{f}");
+        }
+    }
+    for (name, run) in &cert.runs {
+        println!(
+            "  run {name:12} histories={} wall={:.0}s seed={}",
+            run.histories, run.wall_s, run.seed
+        );
+    }
+}
+
 /// Pair each `--profile` with the `--receipt` at the same position; mixed
 /// selections pass one pair per bound acquisition.
 fn acquisition_pairs<'a>(
@@ -4202,6 +4309,93 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     .map_err(|error| io::Error::other(format!("beam derive: {error}")))?;
                 write_new_json(&output, &beam)?;
                 println!("beam: {}", output.display());
+            }
+        },
+        Some(Command::Avify(args)) => match args.command {
+            AvifyCommand::ExportPlan {
+                case,
+                assignment,
+                spec,
+                prefix,
+            } => {
+                let case: TransportCase = serde_json::from_slice(&fs::read(&case)?)?;
+                let assignment: MaterialAssignment =
+                    serde_json::from_slice(&fs::read(&assignment)?)?;
+                let spec: openbnct_avify::AvifySpec = serde_json::from_slice(&fs::read(&spec)?)?;
+                let export = openbnct_avify::export_voxel_plan(&case, &assignment, &spec, &prefix)
+                    .map_err(|e| io::Error::other(format!("avify export: {e}")))?;
+                let plan = openbnct_avify::AvifyPlan {
+                    declared_set: spec.plan.declared_set.clone(),
+                    brain_ratio: spec.plan.brain_ratio,
+                    weights: spec.plan.weights.clone(),
+                    criteria: spec.plan.criteria.clone(),
+                    normalisation: spec.plan.normalisation.clone(),
+                    histories: spec.plan.histories.clone(),
+                    seeds: spec.plan.seeds.clone(),
+                    beam: spec.plan.beam.clone(),
+                };
+                let plan_path = PathBuf::from(format!("{}.plan.json", prefix.display()));
+                write_new_json(&plan_path, &plan)?;
+                println!("voxel plan: {}", export.arrays_path.display());
+                println!("  meta:     {}", export.meta_path.display());
+                println!("  plan:     {}", plan_path.display());
+                println!("  arrays sha256: {}", export.arrays_sha256);
+                println!("  meta   sha256: {}", export.meta_sha256);
+                for (class, count) in &export.class_voxels {
+                    println!("  class {class:<8} {count} voxels");
+                }
+            }
+            AvifyCommand::Verify {
+                case,
+                assignment,
+                spec,
+                outdir,
+                engine_cmd,
+                threads,
+                timeout_s,
+            } => {
+                let case: TransportCase = serde_json::from_slice(&fs::read(&case)?)?;
+                let assignment: MaterialAssignment =
+                    serde_json::from_slice(&fs::read(&assignment)?)?;
+                let spec: openbnct_avify::AvifySpec = serde_json::from_slice(&fs::read(&spec)?)?;
+                fs::create_dir_all(&outdir)?;
+                let prefix = outdir.join("openbnct-case");
+                let export = openbnct_avify::export_voxel_plan(&case, &assignment, &spec, &prefix)
+                    .map_err(|e| io::Error::other(format!("avify export: {e}")))?;
+                let plan = openbnct_avify::AvifyPlan {
+                    declared_set: spec.plan.declared_set.clone(),
+                    brain_ratio: spec.plan.brain_ratio,
+                    weights: spec.plan.weights.clone(),
+                    criteria: spec.plan.criteria.clone(),
+                    normalisation: spec.plan.normalisation.clone(),
+                    histories: spec.plan.histories.clone(),
+                    seeds: spec.plan.seeds.clone(),
+                    beam: spec.plan.beam.clone(),
+                };
+                let plan_path = PathBuf::from(format!("{}.plan.json", prefix.display()));
+                fs::write(&plan_path, serde_json::to_vec_pretty(&plan)?)?;
+                println!("voxel plan exported to {}", prefix.display());
+                println!("  arrays sha256: {}", export.arrays_sha256);
+                println!("  meta   sha256: {}", export.meta_sha256);
+                let argv0: Vec<String> = engine_cmd.split_whitespace().map(String::from).collect();
+                if argv0.is_empty() {
+                    return Err(io::Error::other("--engine-cmd must not be empty").into());
+                }
+                let invocation = openbnct_avify::EngineInvocation { argv0, timeout_s };
+                let outcome = invocation
+                    .verify(&prefix, &plan_path, &outdir, threads)
+                    .map_err(|e| io::Error::other(format!("avify engine: {e}")))?;
+                println!(
+                    "engine finished in {:.0}s — certificate: {}",
+                    outcome.elapsed.as_secs_f64(),
+                    outcome.certificate_path.display()
+                );
+                print_avify_certificate(&outcome.certificate);
+            }
+            AvifyCommand::Show { certificate } => {
+                let cert = openbnct_avify::AvifyCertificate::load(&certificate)
+                    .map_err(|e| io::Error::other(format!("avify certificate: {e}")))?;
+                print_avify_certificate(&cert);
             }
         },
         Some(Command::Bsa(args)) => match args.command {

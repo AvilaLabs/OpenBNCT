@@ -1,0 +1,354 @@
+{
+ "actions": {
+  "brain": {
+   "action": "PASS",
+   "certified_Gyw": [
+    1.2803473844943532e-06,
+    2.196712278546228e-06
+   ],
+   "criterion": [
+    "<=",
+    11.0
+   ],
+   "nominal_Gyw": 1.7612585769686447e-06
+  },
+  "scalp": {
+   "action": "PASS",
+   "certified_Gyw": [
+    3.461895974268739e-07,
+    8.225976556982731e-07
+   ],
+   "criterion": [
+    "<=",
+    10.0
+   ],
+   "nominal_Gyw": 5.890746758573512e-07
+  },
+  "tumour": {
+   "action": "FAIL",
+   "certified_Gyw": [
+    4.210205715621552e-06,
+    1.9632715916252883e-05
+   ],
+   "criterion": [
+    ">=",
+    20.0
+   ],
+   "nominal_Gyw": 1.7735898725805905e-05
+  }
+ },
+ "brackets": {
+  "brain": {
+   "L": 0.00022570834865306887,
+   "U": 0.0003099520975831372,
+   "fast_applicability_ok": true,
+   "kernels": {
+    "K_hi": 68027.88753177189,
+    "K_lo": 70196.76443585347,
+    "gammaB": 108723.69410940389,
+    "gammaH": 322748.1514693622
+   },
+   "photon_valid": true,
+   "sL": 8.641951061159559e-06,
+   "sU": 1.093929764333476e-05
+  },
+  "scalp": {
+   "L": 6.392677307821967e-05,
+   "U": 0.00011642408851642493,
+   "fast_applicability_ok": true,
+   "kernels": {
+    "K_hi": 8578.679541262667,
+    "K_lo": 10390.418010570538,
+    "gammaB": 113895.1989938837,
+    "gammaH": 109240.11884038021
+   },
+   "photon_valid": true,
+   "sL": 3.302711744208625e-06,
+   "sU": 3.977393266782706e-06
+  },
+  "tumour": {
+   "L": 0.001060826805277054,
+   "U": 0.0021548602126120744,
+   "fast_applicability_ok": true,
+   "kernels": {
+    "K_hi": 619.9670629277215,
+    "K_lo": 456.4523269262763,
+    "gammaB": 1962.2857747246949,
+    "gammaH": 3401.869775634841
+   },
+   "photon_valid": true,
+   "sL": 0.0001346252919306973,
+   "sU": 0.0003028613836926637
+  }
+ },
+ "direct_doses": {
+  "corner_hi": {
+   "brain": {
+    "std": 7.367332278889929e-06,
+    "value": 0.000298004388753706
+   },
+   "scalp": {
+    "std": 3.782712984866414e-06,
+    "value": 0.00010000567209215061
+   },
+   "tumour": {
+    "std": 0.00038204529234250515,
+    "value": 0.002867956519191473
+   }
+  },
+  "corner_lo": {
+   "brain": {
+    "std": 7.359079271727084e-06,
+    "value": 0.0002347940934561268
+   },
+   "scalp": {
+    "std": 2.247621909607656e-06,
+    "value": 7.274791914265307e-05
+   },
+   "tumour": {
+    "std": 0.0001059149614273552,
+    "value": 0.0008205244651520387
+   }
+  },
+  "nominal": {
+   "brain": {
+    "std": 7.106162917845337e-06,
+    "value": 0.0002748227847655411
+   },
+   "scalp": {
+    "std": 2.7446769893763677e-06,
+    "value": 9.191787337246724e-05
+   },
+   "tumour": {
+    "std": 0.0003993531122756077,
+    "value": 0.0027674693210208655
+   }
+  }
+ },
+ "ingest_arrays_sha256": "5029d3deea2fcd4a49326aa9b6bebcc367e81ebfbd3692e9c649463fe4f96996",
+ "ingest_meta_sha256": "89872bb251736de7c3116b7a1748827f62d4ce990646b665956798f890e86125",
+ "openmc_version": "0.15.3",
+ "params": {
+  "corner_hi": [
+   4.5,
+   1.2,
+   25.0
+  ],
+  "corner_lo": [
+   2.5,
+   0.8,
+   15.0
+  ],
+  "nominal": [
+   3.5,
+   1.0,
+   20.0
+  ]
+ },
+ "plan": {
+  "beam": "epithermal",
+  "brain_ratio": 1.0,
+  "criteria": {
+   "brain": [
+    "<=",
+    11.0
+   ],
+   "scalp": [
+    "<=",
+    10.0
+   ],
+   "tumour": [
+    ">=",
+    20.0
+   ]
+  },
+  "declared_set": {
+   "B": [
+    15.0,
+    20.0,
+    25.0
+   ],
+   "rs": [
+    0.8,
+    1.0,
+    1.2
+   ],
+   "rt": [
+    2.5,
+    3.5,
+    4.5
+   ]
+  },
+  "histories": {
+   "corner": 1000,
+   "nominal": 1000
+  },
+  "normalisation": {
+   "source_particles_total": 40000000.0
+  },
+  "seeds": {
+   "hi": 2,
+   "lo": 1,
+   "nom": 3
+  },
+  "weights": {
+   "brain": [
+    1.35,
+    3.2,
+    3.2,
+    1.0
+   ],
+   "scalp": [
+    2.5,
+    3.2,
+    3.2,
+    1.0
+   ],
+   "tumour": [
+    3.8,
+    3.2,
+    3.2,
+    1.0
+   ]
+  }
+ },
+ "plan_sha256": "7181c17ab3856cb79bc628348a98ff5a12813dcebfb4f1ee1e8e306f0cfe0af6",
+ "roi_mass_g": {
+  "brain": 1953.1366400000006,
+  "scalp": 1826.0377600000006,
+  "tumour": 14.376960000000004
+ },
+ "runs": {
+  "corner_hi": {
+   "b10_atom_density": {
+    "air": 0.0,
+    "brain": 1.563733616999212e-06,
+    "cranium": 0.0,
+    "scalp": 1.9666957413797777e-06,
+    "tumour": 7.0368012764964546e-06
+   },
+   "b10_atoms_total_bcm3": 0.006328728067795533,
+   "class_volume_cm3": {
+    "air": 3792.896000000001,
+    "brain": 1878.0160000000005,
+    "cranium": 640.0000000000001,
+    "scalp": 1675.2640000000004,
+    "tumour": 13.824000000000003
+   },
+   "histories": 1000,
+   "ppm": {
+    "brain": 25.0,
+    "cranium": 0.0,
+    "scalp": 30.0,
+    "tumour": 112.5
+   },
+   "roi_mass_g": {
+    "brain": 1953.1366400000006,
+    "scalp": 1826.0377600000006,
+    "tumour": 14.376960000000004
+   },
+   "seed": 2,
+   "tallies": {
+    "_stripped_for_fixture": true
+   },
+   "wall_s": 10.37237000465393
+  },
+  "corner_lo": {
+   "b10_atom_density": {
+    "air": 0.0,
+    "brain": 9.382401701995271e-07,
+    "cranium": 0.0,
+    "scalp": 7.866782965519112e-07,
+    "tumour": 2.3456004254988175e-06
+   },
+   "b10_atoms_total_bcm3": 0.0031123494615542726,
+   "class_volume_cm3": {
+    "air": 3792.896000000001,
+    "brain": 1878.0160000000005,
+    "cranium": 640.0000000000001,
+    "scalp": 1675.2640000000004,
+    "tumour": 13.824000000000003
+   },
+   "histories": 1000,
+   "ppm": {
+    "brain": 15.0,
+    "cranium": 0.0,
+    "scalp": 12.0,
+    "tumour": 37.5
+   },
+   "roi_mass_g": {
+    "brain": 1953.1366400000006,
+    "scalp": 1826.0377600000006,
+    "tumour": 14.376960000000004
+   },
+   "seed": 1,
+   "tallies": {
+    "_stripped_for_fixture": true
+   },
+   "wall_s": 7.635515928268433
+  },
+  "nominal": {
+   "b10_atom_density": {
+    "air": 0.0,
+    "brain": 1.2509868935993696e-06,
+    "cranium": 0.0,
+    "scalp": 1.3111304942531848e-06,
+    "tumour": 4.378454127597794e-06
+   },
+   "b10_atoms_total_bcm3": 0.004606390868154395,
+   "class_volume_cm3": {
+    "air": 3792.896000000001,
+    "brain": 1878.0160000000005,
+    "cranium": 640.0000000000001,
+    "scalp": 1675.2640000000004,
+    "tumour": 13.824000000000003
+   },
+   "histories": 1000,
+   "ppm": {
+    "brain": 20.0,
+    "cranium": 0.0,
+    "scalp": 20.0,
+    "tumour": 70.0
+   },
+   "roi_mass_g": {
+    "brain": 1953.1366400000006,
+    "scalp": 1826.0377600000006,
+    "tumour": 14.376960000000004
+   },
+   "seed": 3,
+   "tallies": {
+    "_stripped_for_fixture": true
+   },
+   "wall_s": 9.7134530544281
+  }
+ },
+ "scale_Gyw_per_MeVg": 0.006408706536000001,
+ "timestamp_utc": "2026-09-23T13:52:15Z",
+ "verifier_sha256": {
+  "ingest_dicom.py": "8f765d0003db45648decef237a572bb541de979f00414cb4879f98bf496ce30f",
+  "ingest_source.py": "b1710f3f7b6e9215daa85e2f0833763e28b595ef10d88430ba3eb02f67963efe",
+  "plan_model.py": "7c2d9fdbf50491ccc4998cf6360eeca7adcce8bd375c37770513eccf40fed021",
+  "plan_verify.py": "b933929446929b9e7b89d483b9ea3b1e5b9436ac92f169e3afaddfc877c2264c"
+ },
+ "w006_harness_sha256": "d3ac76b4c94dc278b4ed23e1c278be297bb13937d4029e1cd2c9c42850c50f1f",
+ "weights": {
+  "brain": [
+   1.35,
+   3.2,
+   3.2,
+   1.0
+  ],
+  "scalp": [
+   2.5,
+   3.2,
+   3.2,
+   1.0
+  ],
+  "tumour": [
+   3.8,
+   3.2,
+   3.2,
+   1.0
+  ]
+ }
+}
