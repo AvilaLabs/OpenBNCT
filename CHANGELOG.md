@@ -6,6 +6,94 @@ own versions independent of the crate version.
 
 ## Unreleased
 
+### Fixed — dose physics
+
+- `sn collapse` wrote the `hydrogen` (elastic-recoil) dose response 10⁶
+  too large: the group-mean recoil energy came from the eV energy grid
+  and was multiplied by a per-MeV kerma conversion. Both the free-gas
+  and the bound-atom (S(α,β)) paths now convert to MeV, and a
+  regression test pins the pure-hydrogen kerma factor near 1 MeV to a
+  hand calculation. Every S_N dose folded from earlier data carries a
+  hydrogen component — and any total, weighted dose or in-phantom
+  profile built on it — 10⁶ too large; fluence, activation and the
+  boron, nitrogen and photon components are unaffected. Frozen
+  artifacts are unchanged and carry dated errata in their READMEs; the
+  layered-head benchmark ships corrected `multigroup-data-28g-v2.json`
+  and `dose-28g-v2.json`, which the README "Try it" command, the
+  workbench's bundled example and the notebooks now use.
+- Boron microdistribution: an α/⁷Li track from a site outside the
+  nucleus now deposits only the part of its range that reaches the
+  nucleus — `min(t_far, R) − max(t_near, 0)` — instead of the whole
+  chord clamped to the range, which credited cytoplasm, membrane and
+  extracellular boron with nuclear dose it cannot deliver.
+- In-phantom beam quality (`beam qa`: advantage depth, advantage ratio,
+  therapeutic ratio, absolute and transverse thermal-fluence profiles)
+  measures depth from the face the beam enters — set by its declared
+  direction — instead of always from the grid's low face, so beams
+  entering through the high face are no longer read backwards.
+
+### Fixed — solver robustness and reproducibility
+
+- An on-face disk source that extends past a non-periodic grid edge is
+  rejected (disk aiming, screening perturbations of the aperture, and
+  the forward solve): its injected strength was undefined, and the
+  uncollided split and boundary-flux paths disagreed on it. Periodic
+  axes still accept a wider disk for slab problems. `plan directions
+  --adjoint` skips and reports candidate directions whose aperture does
+  not fit its entry face.
+- The coarse-mesh rebalance sums face currents over a fixed, thread-
+  independent partition of the ordinates, so solves are bit-identical
+  for any `RAYON_NUM_THREADS`.
+- A non-finite scalar flux or outer residual is now an error instead of
+  passing the convergence test (`f64::max` ignores NaN); FW-CADIS gives
+  a zero adjoint source to groups the forward flux never reaches instead
+  of dividing by 1e-310.
+- `vr cadis` refuses to write windows when an adjoint solve did not
+  converge (`--allow-nonconverged` writes them anyway), and `uq
+  propagate` requires the nominal and every finite-difference probe
+  solve to converge.
+- OpenMC execution is bounded: `openmc run --timeout-seconds` (default
+  48 h) kills and reaps a run that exceeds it, and stdin is closed. The
+  workbench's run panel starts each job in its own process group and
+  cancels the whole group, so OpenMC launched by the CLI no longer
+  outlives a cancel.
+
+### Security
+
+- `import openpint` reads workbook-referenced files only from inside the
+  workbook's directory: absolute paths, `..` components, symlinks that
+  lead outside, and non-regular files are rejected.
+- Dependencies: calamine 0.36 (pulls quick-xml 0.41; RUSTSEC-2026-0194,
+  -0195) and rustls 0.23.45 (RUSTSEC-2026-0285) in both lockfiles.
+- `SECURITY.md` documents private vulnerability reporting through
+  GitHub, the supported versions and the scope.
+- Release and CI workflows pin every third-party action to a commit
+  SHA, give each job only the token permissions it uses, do not persist
+  checkout credentials, and pass workflow values to shell steps through
+  environment variables rather than inline `${{ }}` expansion.
+  Publishing to crates.io, PyPI and TestPyPI runs in GitHub environments
+  that require the owner's approval, and `v*` release tags cannot be
+  moved or deleted.
+
+### Changed — release artifacts
+
+- Desktop archives, the web build and the Python wheels and sdist ship
+  `LICENSE` and a `THIRD_PARTY_NOTICES.txt` generated from `Cargo.lock`
+  by `scripts/third_party_notices.py`: every third-party package on a
+  shipped (non-dev, non-build) dependency path with the license texts
+  from its published source, plus the OFL of the bundled Noto Sans CJK
+  JP subset. Desktop archives also carry `NOTICE`. The Python package
+  declares its license as a PEP 639 expression (maturin ≥ 1.9), and the
+  release-set check fails if the sdist or any wheel lacks either
+  license file.
+
+### Changed — examples
+
+- The notebooks reshape voxel data as `(nz, ny, nx)` — voxels are stored
+  x-fastest, and the previous `(nx, ny, nz)` reshape scrambled the
+  mid-plane maps — read the corrected layered-head dose, and are
+  re-executed against the published wheel.
+
 ### Added — pharmacokinetics
 
 - `irradiation-time --pk-samples --pk-bootstrap N` propagates PK fit
