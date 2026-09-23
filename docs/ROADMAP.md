@@ -1333,12 +1333,17 @@ independent engines, ordered by leverage. None implies a clinical claim.
   requires a published fine-group K63 spectrum (Seppälä 2002 tabulates
   only the 3-group integrals) or a declared intermediate weighting,
   plus a converged P_l solve.
-- **R11-02 — water-phantom photon-channel deficit.** Transported
-  photon dose at FiR-1 water phantom sits at 0.465× the 20M-history
-  OpenMC tally; the voxelwise γ record (5%/20mm) shows photon the
-  weakest channel (19.6% pass; boron 76.7%). Requires the θ-WDD solve
-  on the 63k-cell phantom and an n→γ production/deposition accounting
-  pass. Blocked mainly by solve cost on a laptop.
+- **R11-02 — water-phantom photon-channel deficit: localized to
+  photon transport.** The θ-WDD re-solve (committed `*-wdd`
+  artifacts, 72 outers at 9.96e-5) moved every channel ~6% lower —
+  the deficit is not a closure artifact. Decomposition: n→γ
+  production (local-kerma fold) is 0.775× the MC tally ≈ consistent
+  with the ~15% MC escape fraction, but transported/production =
+  0.56 in both closures — our 16-group transported photon loses ~44%
+  vs MC's ~15% escape. Remaining suspects: photon-group collapse
+  and/or face-boundary leakage treatment in `sn photon-solve`.
+  Evidence gate: a photon-transport accounting pass localizing where
+  the extra ~29% escapes.
 - **R11-03 — θ-WDD + P1 iteration stiffness.** The weighted closure
   under P1 in-scatter converges far slower than the clamp-era map
   (committed solve: 39 outers; WDD+P1 did not reach 1e-4 within ~5h).

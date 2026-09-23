@@ -147,6 +147,31 @@ both sides — no bremsstrahlung anywhere in the comparison):
 | photon (neutron fold, local kerma) | 2.71e-11 | 3.27e-11 | 0.828 |
 | photon (transported) | 1.52e-11 | 3.27e-11 | 0.465 |
 
+### θ-WDD closure re-solve (`*-wdd` artifacts, 2026-09-22)
+
+The committed `*-tsl-p1-1e` pair predates the θ-WDD spatial closure;
+the solve above was re-run under the weighted closure (S8, same v4
+TSL data, Anderson 5, 1e-4 — 72 outer iterations, residual 9.96e-5)
+plus `sn photon-solve` on the new flux. Ratios vs the same OpenMC
+tallies:
+
+| component | clamp-era | θ-WDD |
+|-----------|-----------|-------|
+| boron     | 0.386 | 0.361 |
+| nitrogen  | 0.384 | 0.359 |
+| photon (local kerma) | 0.828 | 0.775 |
+| photon (transported) | 0.465 | **0.434** |
+
+The closure shifts every channel ~6% lower — the deficits are *not*
+closure artifacts. The decomposition localizes the photon gap on the
+photon side: n→γ production (local-kerma fold) sits at 0.775× the
+MC-deposited tally, consistent with the ~15% MC boundary-escape
+fraction, while transported/production ≈ **0.56 in both eras** — the
+retention deficit is closure-independent. Our transported photon
+loses ~44% to escape/attenuation where MC retains ~85%; the residual
+is a photon-transport-side issue (16-group collapse or face/boundary
+treatment), not neutron normalization or spatial closure.
+
 Reading:
 
 - The neutron-driven components (boron, nitrogen — both ∝ thermal
