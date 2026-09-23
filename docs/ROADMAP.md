@@ -1304,7 +1304,14 @@ Each item is evidence-gated; none implies a clinical claim.
   covariance data where published and propagate perturbations through
   the multigroup path to dose-level uncertainty surfaces — a
   differentiator no current BNCT tool offers, matching the project's
-  provenance/uncertainty brand.
+  provenance/uncertainty brand. **Status (2026-09-23):** chain verified
+  end-to-end on real evaluations — `openmc cov-endf` parses ENDF-6
+  MF33 (NI LB∈{0,1,5} + NC LTY=0; everything else ledgered) and
+  collapses onto a multigroup mesh, `uq propagate` folds it through
+  S_N sensitivities into a `dose-uncertainty-budget`. ENDF/B-VIII.1
+  n-005_B_010 MT=107 → ¹⁰B(n,α) dose-response covariance → σ_rel ≈
+  0.34% on the layered-head boron integral. Remaining gap is R11-06's
+  NC LTY 1–3 cross-material blocks (skipped with a ledger entry).
 - **R10-07 — PHITS deck emitter.** Symmetric interoperability: the
   workbench reads PHITS outputs; emit PHITS input for supported
   geometry/source subsets so PHITS-side users can cross-check.

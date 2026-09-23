@@ -1645,6 +1645,31 @@ openbnct uq propagate \
 openbnct uq budget-info --budget BUDGET.json
 ```
 
+The covariance artifact itself comes from an evaluated data tape:
+`openbnct openmc cov-endf` reads an ENDF-6 file's MF33 section (NI
+LB∈{0,1,5} blocks plus NC LTY=0 derived-quantity references; anything
+outside that subset lands in an explicit skip ledger), collapses the
+energy-grid covariance onto a `openbnct.multigroup-data` boundary set,
+and binds it to a parameter — `sigma_total` for removal cross sections
+(e.g. MT=1) or `dose_response` for a component's kerma response (e.g.
+¹⁰B(n,α) MT=107 with `--component boron`).
+
+```text
+openbnct openmc cov-endf \
+  --tape n-005_B_010.endf \
+  --data transport/multigroup-data.json \
+  --material openbnct.layered-head.brain.v1 \
+  --mt 107 --parameter dose_response --component boron \
+  --note "ENDF/B-VIII.1 n-005_B_010 MT=107" \
+  --output NEW-COVARIANCE.json
+```
+
+Verified end-to-end on real data (2026-09-23): ENDF/B-VIII.1
+`n-005_B_010.endf` MT=107 collapsed onto the layered-head 28-group
+mesh → propagated through `uq propagate` → the ¹⁰B(n,α) covariance
+alone contributes σ_rel ≈ 0.34% to the boron dose integral on that
+benchmark.
+
 `openbnct uq screen` runs a `openbnct.sensitivity-spec/0.1.0` design —
 global sensitivity screening over *declared* input ranges, answering
 which inputs deserve a covariance at all. Each parameter is an absolute
