@@ -130,7 +130,7 @@ impl WorkspaceTab {
             Self::Plan => "Plan",
             Self::Dose => "Dose components",
             Self::Evidence => "Evidence",
-            Self::Avify => "Avify",
+            Self::Avify => "Avify (Experimental)",
         }
     }
 
@@ -142,7 +142,7 @@ impl WorkspaceTab {
             Self::Plan => "計画",
             Self::Dose => "線量成分",
             Self::Evidence => "エビデンス",
-            Self::Avify => "Avify",
+            Self::Avify => "Avify（実験的）",
         }
     }
 
@@ -156,7 +156,7 @@ impl WorkspaceTab {
                 Self::Plan => "Piano",
                 Self::Dose => "Componenti dose",
                 Self::Evidence => "Evidenza",
-                Self::Avify => "Avify",
+                Self::Avify => "Avify (Sperimentale)",
             },
             Language::ChineseSimplified => match self {
                 Self::Overview => "概览",
@@ -165,7 +165,7 @@ impl WorkspaceTab {
                 Self::Plan => "计划",
                 Self::Dose => "剂量成分",
                 Self::Evidence => "证据",
-                Self::Avify => "Avify",
+                Self::Avify => "Avify（实验性）",
             },
             Language::Spanish => match self {
                 Self::Overview => "Resumen",
@@ -174,7 +174,7 @@ impl WorkspaceTab {
                 Self::Plan => "Plan",
                 Self::Dose => "Componentes de dosis",
                 Self::Evidence => "Evidencia",
-                Self::Avify => "Avify",
+                Self::Avify => "Avify (Experimental)",
             },
             Language::English => self.label(),
         }
@@ -1375,6 +1375,11 @@ struct AvifyPanel {
     /// Path of a prior run to compare the current one against
     /// (`avify diff` semantics — pure file IO, no engine).
     compare_path: String,
+    /// Active onboarding slide (`None` = tutorial closed).
+    tutorial_slide: Option<usize>,
+    /// Whether the first-visit tutorial has already been shown
+    /// (persisted to a marker file on native).
+    tutorial_seen: bool,
 }
 
 impl Default for AvifyPanel {
@@ -1402,6 +1407,8 @@ impl Default for AvifyPanel {
             #[cfg(not(target_arch = "wasm32"))]
             cursor: [0; 3],
             compare_path: String::new(),
+            tutorial_slide: None,
+            tutorial_seen: false,
         }
     }
 }
@@ -2106,6 +2113,7 @@ impl OpenBnctApp {
             drop_receiver,
             language: Language::detect(),
         };
+        app.panels.avify.tutorial_seen = avify_tutorial_seen_from_disk();
         if has_initial_case {
             app.load_case();
         }
@@ -2755,6 +2763,11 @@ impl eframe::App for OpenBnctApp {
         }
         if let Some(workspace) = self.help.requested_workspace(self.language) {
             self.workspace = workspace.into();
+        }
+        if self.workspace == WorkspaceTab::Avify && !self.panels.avify.tutorial_seen {
+            self.panels.avify.tutorial_seen = true;
+            self.panels.avify.tutorial_slide = Some(0);
+            write_avify_tutorial_marker();
         }
 
         // Web drops read asynchronously — bytes arrive through the channel
@@ -3416,6 +3429,7 @@ fn show_workbench(
                     ),
                 });
         });
+    show_avify_tutorial(ui.ctx(), &mut panels.avify, theme);
 }
 
 /// Engine-class palette — five fixed tissue classes plus a fallback.
@@ -3595,6 +3609,20 @@ fn show_avify_workspace(
                 zh = "所问问题:对于规范中声明的摄取不确定集合,每个 ROI 的剂量是否落在其判据内?引擎自行评估角点映射并返回经验包络 — 研究软件,非经认证的临床界限。",
                 es = "Pregunta: para el conjunto de incertidumbre de captación declarado en la spec, ¿la dosis del plan en cada ROI entra en su criterio? El motor evalúa él mismo los mapas de esquina y devuelve una envolvente empírica — software de investigación, no un límite clínico certificado."
             ));
+            ui.add_space(6.0);
+            if ui
+                .link(t!(
+                    language,
+                    en = "New here? Replay the intro tour",
+                    ja = "はじめてですか?イントロツアーを再生",
+                    it = "Nuovo qui? Rivedi il tour introduttivo",
+                    zh = "第一次使用?重播入门导览",
+                    es = "¿Nuevo aquí? Repite el tour de introducción"
+                ))
+                .clicked()
+            {
+                panel.tutorial_slide = Some(0);
+            }
         });
 
     egui::Frame::new()
@@ -4024,6 +4052,490 @@ fn show_avify_workspace(
             });
         if recheck {
             panel.recheck_staleness();
+        }
+    }
+}
+
+// ── Avify first-visit tutorial ─────────────────────────────────────────
+
+/// Marker recording that the onboarding tour has been shown; lives in
+/// the user's config dir, not the workspace, so it survives updates and
+/// checkouts. Absent on wasm — the tour shows once per session there.
+#[cfg(not(target_arch = "wasm32"))]
+fn avify_tutorial_marker() -> Option<std::path::PathBuf> {
+    std::env::var_os("HOME")
+        .map(std::path::PathBuf::from)
+        .map(|home| {
+            home.join(".config")
+                .join("openbnct")
+                .join("avify-tutorial-seen")
+        })
+}
+
+fn avify_tutorial_seen_from_disk() -> bool {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        avify_tutorial_marker().is_some_and(|path| path.exists())
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        false
+    }
+}
+
+fn write_avify_tutorial_marker() {
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(path) = avify_tutorial_marker() {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = std::fs::write(&path, b"shown\n");
+    }
+}
+
+const AVIFY_TUTORIAL_SLIDES: usize = 5;
+
+fn avify_tutorial_slide(slide: usize) -> (&'static str, &'static str) {
+    match slide {
+        0 => (
+            "A different question",
+            "OpenBNCT asks \u{201c}what dose does this plan deliver?\u{201d} Avify \
+             asks a second question: \u{201c}how sure are we of that answer, given \
+             that boron uptake is never measured perfectly?\u{201d}\n\n\
+             Avify Dose is a separate program. This tab only packages the \
+             question and reads the answer back \u{2014} the engine does the \
+             evaluating.",
+        ),
+        1 => (
+            "Why boron is the hard part",
+            "BNCT works because boron-10 inside a tumour cell captures a \
+             neutron and releases a cell-killing burst. But boron maps come \
+             from estimates \u{2014} PET uptake ratios and blood counts, not \
+             a direct measurement of every voxel.\n\n\
+             So the real dose could sit a little above or below the nominal \
+             answer everywhere at once.",
+        ),
+        2 => (
+            "The two-corner trick",
+            "Instead of guessing one boron map, you declare a range of \
+             plausible maps. The engine evaluates the two extreme corners \
+             \u{2014} the pessimistic map and the optimistic map \u{2014} and \
+             reports the interval between them.\n\n\
+             If both ends of that interval satisfy your criteria, the plan \
+             holds up across the whole declared uncertainty set.",
+        ),
+        3 => (
+            "What you provide",
+            "\u{2022} Your OpenBNCT case and a tissue-class mapping\n\
+             \u{2022} Uptake bounds \u{2014} the plausible boron range for \
+             tumour and tissue\n\
+             \u{2022} A criterion per region, e.g. tumour \u{2265} 20 Gy, \
+             brain \u{2264} 10 Gy\n\n\
+             The engine runs as its own bounded process; you can watch it \
+             work and cancel it here.",
+        ),
+        _ => (
+            "Reading the certificate",
+            "Each region gets a certified interval [L, U] checked against \
+             its criterion:\n\n\
+             \u{2022} PASS \u{2014} the whole interval meets the criterion\n\
+             \u{2022} FAIL \u{2014} the evidence doesn\u{2019}t support it; \
+             with small runs this often just means \u{201c}not enough \
+             histories yet\u{201d}\n\
+             \u{2022} ADDITIONAL_EVIDENCE \u{2014} the interval straddles \
+             the line\n\n\
+             Research software only \u{2014} an empirical envelope, never a \
+             clinical bound.",
+        ),
+    }
+}
+
+fn show_avify_tutorial(ctx: &egui::Context, panel: &mut AvifyPanel, theme: Theme) {
+    let Some(slide) = panel.tutorial_slide else {
+        return;
+    };
+    let mut open = true;
+    let mut advance: Option<Option<usize>> = None;
+    egui::Window::new("Welcome to Avify Dose")
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .collapsible(false)
+        .resizable(false)
+        .fixed_size([580.0, 470.0])
+        .open(&mut open)
+        .show(ctx, |ui| {
+            let (title, body) = avify_tutorial_slide(slide);
+            ui.label(egui::RichText::new(title).size(20.0).strong());
+            ui.add_space(6.0);
+            ui.label(
+                egui::RichText::new(format!(
+                    "Slide {} of {AVIFY_TUTORIAL_SLIDES} \u{00b7} experimental feature",
+                    slide + 1
+                ))
+                .size(11.0)
+                .color(theme.text_dim),
+            );
+            ui.add_space(10.0);
+            ui.label(body);
+            ui.add_space(12.0);
+
+            let (rect, _) = ui.allocate_exact_size(
+                egui::vec2(ui.available_width(), 190.0),
+                egui::Sense::hover(),
+            );
+            paint_avify_tutorial_diagram(ui.painter(), rect, slide, theme);
+
+            ui.add_space(10.0);
+            ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
+                ui.horizontal(|ui| {
+                    if ui.button("Skip tour").clicked() {
+                        advance = Some(None);
+                    }
+                    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                        if slide + 1 < AVIFY_TUTORIAL_SLIDES {
+                            if ui.button("Next \u{2192}").clicked() {
+                                advance = Some(Some(slide + 1));
+                            }
+                        } else if ui.button("Get started").clicked() {
+                            advance = Some(None);
+                        }
+                        if slide > 0 && ui.button("\u{2190} Back").clicked() {
+                            advance = Some(Some(slide - 1));
+                        }
+                    });
+                    ui.with_layout(
+                        egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
+                        |ui| {
+                            ui.horizontal(|ui| {
+                                for dot in 0..AVIFY_TUTORIAL_SLIDES {
+                                    let color = if dot == slide {
+                                        theme.brand
+                                    } else {
+                                        theme.text_dim.gamma_multiply(0.45)
+                                    };
+                                    ui.painter().circle_filled(
+                                        ui.cursor().min + egui::vec2(6.0, 10.0),
+                                        4.0,
+                                        color,
+                                    );
+                                    ui.add_space(11.0);
+                                }
+                            });
+                        },
+                    );
+                });
+            });
+        });
+    if !open {
+        advance = Some(None);
+    }
+    if let Some(next) = advance {
+        panel.tutorial_slide = next;
+    }
+}
+
+/// The per-slide figures. Deliberately schematic — they explain the
+/// envelope idea, not real geometry.
+fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usize, theme: Theme) {
+    let bg = theme.card_alt_fill;
+    p.rect_filled(rect, 6.0, bg);
+    let text = egui::FontId::proportional(12.0);
+    let strong = egui::FontId::proportional(13.0);
+    let dim = theme.text_dim;
+    let brand = theme.brand;
+    let ok = egui::Color32::from_rgb(70, 160, 90);
+    let c = rect.center();
+    match slide {
+        0 => {
+            // Nominal single answer vs envelope band.
+            let left =
+                egui::Rect::from_center_size(c + egui::vec2(-140.0, 0.0), egui::vec2(170.0, 120.0));
+            let right =
+                egui::Rect::from_center_size(c + egui::vec2(140.0, 0.0), egui::vec2(170.0, 120.0));
+            p.rect_filled(left, 8.0, bg.gamma_multiply(1.15));
+            p.rect_filled(right, 8.0, bg.gamma_multiply(1.15));
+            p.text(
+                left.center_top() + egui::vec2(0.0, 14.0),
+                egui::Align2::CENTER_CENTER,
+                "Nominal dose",
+                strong.clone(),
+                dim,
+            );
+            p.text(
+                right.center_top() + egui::vec2(0.0, 14.0),
+                egui::Align2::CENTER_CENTER,
+                "Avify envelope",
+                strong.clone(),
+                brand,
+            );
+            let ly = left.center().y + 12.0;
+            p.line_segment(
+                [
+                    egui::pos2(left.min.x + 30.0, ly),
+                    egui::pos2(left.max.x - 30.0, ly),
+                ],
+                egui::Stroke::new(2.0, dim),
+            );
+            p.circle_filled(egui::pos2(left.center().x, ly), 5.0, dim);
+            p.text(
+                egui::pos2(left.center().x, ly + 18.0),
+                egui::Align2::CENTER_CENTER,
+                "one number",
+                text.clone(),
+                dim,
+            );
+            let ry = right.center().y + 12.0;
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(right.min.x + 30.0, ry - 9.0),
+                    egui::pos2(right.max.x - 30.0, ry + 9.0),
+                ),
+                4.0,
+                brand.gamma_multiply(0.35),
+            );
+            for (x, label) in [(right.min.x + 30.0, "L"), (right.max.x - 30.0, "U")] {
+                p.line_segment(
+                    [egui::pos2(x, ry - 14.0), egui::pos2(x, ry + 14.0)],
+                    egui::Stroke::new(2.0, brand),
+                );
+                p.text(
+                    egui::pos2(x, ry + 24.0),
+                    egui::Align2::CENTER_CENTER,
+                    label,
+                    strong.clone(),
+                    brand,
+                );
+            }
+            p.text(
+                right.center_bottom() + egui::vec2(0.0, -8.0),
+                egui::Align2::CENTER_CENTER,
+                "a range",
+                text.clone(),
+                dim,
+            );
+        }
+        1 => {
+            // Uptake estimate bars with uncertainty whiskers.
+            for (i, (name, h)) in [("tumour", 96.0_f32), ("tissue", 44.0)].iter().enumerate() {
+                let x = c.x - 110.0 + i as f32 * 220.0;
+                let top = rect.max.y - 40.0 - h;
+                p.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(x - 34.0, top),
+                        egui::pos2(x + 34.0, rect.max.y - 40.0),
+                    ),
+                    3.0,
+                    if i == 0 {
+                        brand.gamma_multiply(0.7)
+                    } else {
+                        dim.gamma_multiply(0.5)
+                    },
+                );
+                // Whisker: the true value could sit higher or lower.
+                let wx = x + 44.0;
+                p.line_segment(
+                    [egui::pos2(wx, top - 18.0), egui::pos2(wx, top + 18.0)],
+                    egui::Stroke::new(2.0, theme.warn_text),
+                );
+                p.line_segment(
+                    [
+                        egui::pos2(wx - 6.0, top - 18.0),
+                        egui::pos2(wx + 6.0, top - 18.0),
+                    ],
+                    egui::Stroke::new(2.0, theme.warn_text),
+                );
+                p.line_segment(
+                    [
+                        egui::pos2(wx - 6.0, top + 18.0),
+                        egui::pos2(wx + 6.0, top + 18.0),
+                    ],
+                    egui::Stroke::new(2.0, theme.warn_text),
+                );
+                p.text(
+                    egui::pos2(x, rect.max.y - 30.0),
+                    egui::Align2::CENTER_CENTER,
+                    *name,
+                    text.clone(),
+                    dim,
+                );
+            }
+            p.text(
+                egui::pos2(rect.center().x, rect.min.y + 18.0),
+                egui::Align2::CENTER_CENTER,
+                "estimated boron uptake \u{2014} true value inside the whiskers",
+                text.clone(),
+                dim,
+            );
+        }
+        2 => {
+            // Declared range -> two corner evaluations -> interval.
+            let y = rect.min.y + 52.0;
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(rect.min.x + 60.0, y - 4.0),
+                    egui::pos2(rect.max.x - 60.0, y + 4.0),
+                ),
+                4.0,
+                dim.gamma_multiply(0.4),
+            );
+            for (x, label) in [
+                (rect.min.x + 60.0, "pessimistic corner"),
+                (rect.max.x - 60.0, "optimistic corner"),
+            ] {
+                p.circle_filled(egui::pos2(x, y), 7.0, brand);
+                p.text(
+                    egui::pos2(x, y + 20.0),
+                    egui::Align2::CENTER_CENTER,
+                    label,
+                    text.clone(),
+                    dim,
+                );
+            }
+            p.text(
+                egui::pos2(rect.center().x, y - 24.0),
+                egui::Align2::CENTER_CENTER,
+                "declared uptake range",
+                strong.clone(),
+                dim,
+            );
+            for x in [rect.min.x + 60.0, rect.max.x - 60.0] {
+                p.arrow(
+                    egui::pos2(x, y + 34.0),
+                    egui::vec2(0.0, 34.0),
+                    egui::Stroke::new(1.5, dim),
+                );
+            }
+            let by = rect.max.y - 48.0;
+            for (x, w, label, col) in [
+                (
+                    rect.min.x + 60.0,
+                    70.0,
+                    "run 1 \u{2192} low dose",
+                    theme.warn_text,
+                ),
+                (rect.max.x - 60.0, 110.0, "run 2 \u{2192} high dose", ok),
+            ] {
+                p.rect_filled(
+                    egui::Rect::from_min_max(
+                        egui::pos2(x - w / 2.0, by - 8.0),
+                        egui::pos2(x + w / 2.0, by + 8.0),
+                    ),
+                    4.0,
+                    col.gamma_multiply(0.5),
+                );
+                p.text(
+                    egui::pos2(x, by + 20.0),
+                    egui::Align2::CENTER_CENTER,
+                    label,
+                    text.clone(),
+                    dim,
+                );
+            }
+        }
+        3 => {
+            // OpenBNCT -> engine -> certificate pipeline.
+            let boxes = [
+                ("OpenBNCT", "your case + spec", brand),
+                ("Avify engine", "separate program", dim),
+                ("Certificate", "[L, U] per region", ok),
+            ];
+            let bw = 150.0;
+            for (i, (t1, t2, col)) in boxes.iter().enumerate() {
+                let bx = egui::Rect::from_center_size(
+                    egui::pos2(rect.min.x + 95.0 + i as f32 * 195.0, c.y - 10.0),
+                    egui::vec2(bw, 76.0),
+                );
+                p.rect_filled(bx, 8.0, bg.gamma_multiply(1.15));
+                p.rect_stroke(
+                    bx,
+                    8.0,
+                    egui::Stroke::new(1.5, *col),
+                    egui::StrokeKind::Inside,
+                );
+                p.text(
+                    bx.center() - egui::vec2(0.0, 12.0),
+                    egui::Align2::CENTER_CENTER,
+                    *t1,
+                    strong.clone(),
+                    *col,
+                );
+                p.text(
+                    bx.center() + egui::vec2(0.0, 12.0),
+                    egui::Align2::CENTER_CENTER,
+                    *t2,
+                    text.clone(),
+                    dim,
+                );
+                if i < 2 {
+                    p.arrow(
+                        egui::pos2(bx.max.x + 6.0, bx.center().y),
+                        egui::vec2(33.0, 0.0),
+                        egui::Stroke::new(1.5, dim),
+                    );
+                }
+            }
+            p.text(
+                egui::pos2(rect.center().x, rect.max.y - 22.0),
+                egui::Align2::CENTER_CENTER,
+                "OpenBNCT packages the question \u{2014} the engine produces the answer",
+                text.clone(),
+                dim,
+            );
+        }
+        _ => {
+            // Interval vs criterion line with PASS chip.
+            let y = c.y - 20.0;
+            p.line_segment(
+                [
+                    egui::pos2(rect.min.x + 70.0, y),
+                    egui::pos2(rect.max.x - 70.0, y),
+                ],
+                egui::Stroke::new(2.0, dim.gamma_multiply(0.6)),
+            );
+            let crit = egui::pos2(rect.min.x + 300.0, y);
+            p.line_segment(
+                [crit + egui::vec2(0.0, -30.0), crit + egui::vec2(0.0, 30.0)],
+                egui::Stroke::new(2.0, dim),
+            );
+            p.text(
+                crit + egui::vec2(0.0, -40.0),
+                egui::Align2::CENTER_CENTER,
+                "criterion \u{2265} 20 Gy",
+                text.clone(),
+                dim,
+            );
+            p.rect_filled(
+                egui::Rect::from_min_max(
+                    egui::pos2(rect.min.x + 330.0, y - 8.0),
+                    egui::pos2(rect.max.x - 100.0, y + 8.0),
+                ),
+                4.0,
+                ok.gamma_multiply(0.5),
+            );
+            for (x, lab) in [(rect.min.x + 330.0, "L"), (rect.max.x - 100.0, "U")] {
+                p.line_segment(
+                    [egui::pos2(x, y - 13.0), egui::pos2(x, y + 13.0)],
+                    egui::Stroke::new(2.0, ok),
+                );
+                p.text(
+                    egui::pos2(x, y + 24.0),
+                    egui::Align2::CENTER_CENTER,
+                    lab,
+                    strong.clone(),
+                    ok,
+                );
+            }
+            let chip = egui::Rect::from_center_size(
+                egui::pos2(rect.center().x - 60.0, rect.max.y - 40.0),
+                egui::vec2(150.0, 30.0),
+            );
+            p.rect_filled(chip, 15.0, ok.gamma_multiply(0.35));
+            p.text(
+                chip.center(),
+                egui::Align2::CENTER_CENTER,
+                "PASS \u{2014} whole interval clears it",
+                text.clone(),
+                ok,
+            );
         }
     }
 }
