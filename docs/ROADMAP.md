@@ -1366,10 +1366,35 @@ independent engines, ordered by leverage. None implies a clinical claim.
   diverged (residual → 1e29) — the classical inconsistent-
   discretization DSA instability: the diffusion operator must be
   derived consistently from the θ-WDD discretization (Alcouffe-style
-  consistent DSA), not posed independently. Remaining candidate:
-  consistent-DSA on the thermal block, or accept Anderson-5 as the
-  production configuration. Needed before the P1 validation suite
-  re-runs under the new closure.
+  consistent DSA), not posed independently. Implemented (2026-09-23):
+  a coarse-mesh rebalance (CMR) on the upscatter block — per
+  2×2×2-cell region and block group, multiplicative factors are solved
+  from regional balance equations built from the sweep's *measured*
+  partial currents (`w·|μ|·ψ` per face, with boundary inflow separated
+  from interior exchange; the current is consistent with the
+  discretization's own `|μ|·A` exchange, not a diffusion ansatz). Two
+  design lessons are recorded: direct measured conductance
+  `β = J/Δφ` diverged catastrophically (ill-conditioned in streaming
+  regions), and the partial-current buffer must record outflow and
+  boundary inflow separately — interior inflow is the neighbour's
+  outflow, not a signed net current. Result on the cylindrical
+  phantom: the stiff global mode contracts ~3× per two outers under
+  CMR versus ~0.75/outer bare — residual reaches ~2e-2 by outer 11
+  versus ~outer 28 — then the composed map enters a period-2 limit
+  cycle (~2.4e-2) because the measured balance carries a systematic
+  defect at the fixed point (positivity-clamped edge fluxes are
+  inconsistent with the ideal exchange, and the partial-current
+  scaling is a linearization). A stall detector therefore disables
+  CMR after four non-improving outers and bare sweeps finish cleanly:
+  the cylindrical case reaches 2e-5 in 45 outers versus >60 outers
+  for the bare baseline at 1.6e-3 and counting — roughly 3× fewer
+  outers to the 1e-3 production tolerance. `OPENBNCT_NO_CMR=1`
+  disables the correction for A/B diagnostics; `CMR_DEBUG=1` prints
+  regional balance residuals and factor ranges. Remaining candidates
+  to close the tail further: consistent-DSA on the thermal block
+  (Alcouffe derivation), or a fixed-point-exact CMR formulation that
+  subtracts the systematic clamp defect. Anderson-5 remains the
+  production configuration pending the P1 verification solve.
 - **R11-04 — VR chi-square gate seeds (R6-09 remainder).** Two
   ~196M-history OpenMC runs outstanding for the
   variance-reduction acceptance gate (~27h each on this workstation).

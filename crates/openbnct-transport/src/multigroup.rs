@@ -521,6 +521,20 @@ impl AndersonState {
 
 /// Dense Gaussian elimination with partial pivoting for the small
 /// (≤ depth) normal-equations system; `None` on singularity.
+/// Per-cell partial-current buffer for the CMR region balance: slots
+/// 0..6 are this cell's outflow across faces 2a+s, slots 6..12 are the
+/// inflow across faces that are domain boundaries (interior inflow is
+/// read from the neighbor's opposite outflow slot).
+type FaceCurrents = Vec<[f64; 12]>;
+
+/// Region-boundary inflow stubs for CMR: per (region, block group) a
+/// list of (neighbor_region, area-weighted partial current) pairs.
+type InflowStubs = Vec<Vec<Vec<(usize, f64)>>>;
+
+/// CMR_DEBUG diagnostic row: (balance residual, region, block group,
+/// removal D, region outflow, in-scatter M, fixed+boundary Q, inflow).
+type CmrImbalance = (f64, usize, usize, f64, f64, f64, f64, f64);
+
 fn solve_dense(a: &mut [Vec<f64>], b: &mut [f64]) -> Option<Vec<f64>> {
     let n = a.len();
     for col in 0..n {
@@ -1257,6 +1271,11 @@ fn kernel_eigenbasis(quadrature: &[([f64; 3], f64)], l: u32) -> Vec<(f64, Vec<f6
 /// `kernel_source[cell][dir]` is the higher-Legendre in-scatter
 /// (Σ_{l≥2}(2l+1)Σ_gp σ_l(gp→g)·Σ_k u_k(d)M_k) when `anisotropy_order
 /// ≥ 2` is active — `None` otherwise.
+/// When `face_current` is `Some`, it is filled with per-cell partial
+/// currents: `[f]` = Σ_{d: outflow f} w_d |μ_{d,a}| ψ_out (this cell's
+/// outflow across face f, index 2a+s) and `[f+6]` = the inflow across
+/// f when f is a domain boundary (interior inflow is the neighbor's
+/// outflow, read from its slot). These feed the coarse-mesh rebalance.
 #[allow(clippy::too_many_arguments)]
 fn sweep_group(
     g: usize,
@@ -1274,6 +1293,7 @@ fn sweep_group(
     quadrature: &[([f64; 3], f64)],
     boundary: &BoundarySource,
     periodic: [bool; 3],
+    face_current: Option<&mut Vec<[f64; 12]>>,
 ) {
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
     let groups = data.group_count();
@@ -1289,139 +1309,202 @@ fn sweep_group(
     // independent given the lagged iterate, so `par_iter_mut` hands every
     // direction its own row with no shared writes. Per-ordinate work is
     // unchanged math — the parallel split keeps results bit-identical.
-    psi.par_iter_mut().enumerate().for_each(|(d, psi_d)| {
-        let dir = quadrature[d].0;
-        // Sweep order: ascend where the direction points positive,
-        // descend where negative.
-        let xs: Vec<usize> = if dir[0] > 0.0 {
-            (0..nx).collect()
-        } else {
-            (0..nx).rev().collect()
-        };
-        let ys: Vec<usize> = if dir[1] > 0.0 {
-            (0..ny).collect()
-        } else {
-            (0..ny).rev().collect()
-        };
-        let zs: Vec<usize> = if dir[2] > 0.0 {
-            (0..nz).collect()
-        } else {
-            (0..nz).rev().collect()
-        };
-        // Per-axis *outflow edge* flux for this direction: psi_edge[a]
-        // indexes the same grid; entry [cell] is the edge the sweep
-        // writes toward the downstream neighbor.
-        let mut edge = [
-            vec![0.0; nx * ny * nz],
-            vec![0.0; nx * ny * nz],
-            vec![0.0; nx * ny * nz],
-        ];
-        for &k in &zs {
-            for &j in &ys {
-                for &i in &xs {
-                    let cell = i + nx * j + nx * ny * k;
-                    let coord = [i, j, k];
-                    let mut psi_in = [0.0_f64; 3];
-                    for a in 0..3 {
-                        let positive = dir[a] > 0.0;
-                        let inside = if positive {
-                            coord[a] > 0
-                        } else {
-                            coord[a] + 1 < [nx, ny, nz][a]
-                        };
-                        psi_in[a] = if inside {
-                            let mut nc = coord;
-                            nc[a] = if positive { nc[a] - 1 } else { nc[a] + 1 };
-                            edge[a][nc[0] + nx * nc[1] + nx * ny * nc[2]]
-                        } else if periodic[a] {
-                            // Periodic face: inflow is the wrap-around
-                            // cell's previous-iterate average — exact
-                            // under transverse uniformity, lagged
-                            // otherwise.
-                            let mut wc = coord;
-                            wc[a] = if positive { [nx, ny, nz][a] - 1 } else { 0 };
-                            psi_prev[d][wc[0] + nx * wc[1] + nx * ny * wc[2]]
-                        } else {
-                            // Boundary face: declared incident flux or
-                            // vacuum.
-                            let face = 2 * a as u8 + u8::from(!positive);
-                            let (uu, vv) = match a {
-                                0 => (j, k),
-                                1 => (i, k),
-                                _ => (i, j),
-                            };
-                            boundary
-                                .get(&(face, uu as u32, vv as u32))
-                                .and_then(|entries| {
-                                    entries
-                                        .iter()
-                                        .find(|(dd, gg, _)| *dd == d && *gg == g)
-                                        .map(|(_, _, v)| *v)
+    // When face currents are requested, each fold lane accumulates its
+    // own `[cell][12]` buffer — partial outflow per face plus boundary
+    // inflow per face — and the reduce sums them. Deterministic under
+    // lane-order-independent addition.
+    let face_sums = psi
+        .par_iter_mut()
+        .enumerate()
+        .fold(
+            || {
+                face_current
+                    .is_some()
+                    .then(|| vec![[0.0_f64; 12]; nx * ny * nz])
+            },
+            |mut acc, (d, psi_d)| {
+                let dir = quadrature[d].0;
+                // Sweep order: ascend where the direction points positive,
+                // descend where negative.
+                let xs: Vec<usize> = if dir[0] > 0.0 {
+                    (0..nx).collect()
+                } else {
+                    (0..nx).rev().collect()
+                };
+                let ys: Vec<usize> = if dir[1] > 0.0 {
+                    (0..ny).collect()
+                } else {
+                    (0..ny).rev().collect()
+                };
+                let zs: Vec<usize> = if dir[2] > 0.0 {
+                    (0..nz).collect()
+                } else {
+                    (0..nz).rev().collect()
+                };
+                // Per-axis *outflow edge* flux for this direction: psi_edge[a]
+                // indexes the same grid; entry [cell] is the edge the sweep
+                // writes toward the downstream neighbor.
+                let mut edge = [
+                    vec![0.0; nx * ny * nz],
+                    vec![0.0; nx * ny * nz],
+                    vec![0.0; nx * ny * nz],
+                ];
+                for &k in &zs {
+                    for &j in &ys {
+                        for &i in &xs {
+                            let cell = i + nx * j + nx * ny * k;
+                            let coord = [i, j, k];
+                            let mut psi_in = [0.0_f64; 3];
+                            let mut inflow_inside = [false; 3];
+                            for a in 0..3 {
+                                let positive = dir[a] > 0.0;
+                                let inside = if positive {
+                                    coord[a] > 0
+                                } else {
+                                    coord[a] + 1 < [nx, ny, nz][a]
+                                };
+                                inflow_inside[a] = inside;
+                                psi_in[a] = if inside {
+                                    let mut nc = coord;
+                                    nc[a] = if positive { nc[a] - 1 } else { nc[a] + 1 };
+                                    edge[a][nc[0] + nx * nc[1] + nx * ny * nc[2]]
+                                } else if periodic[a] {
+                                    // Periodic face: inflow is the wrap-around
+                                    // cell's previous-iterate average — exact
+                                    // under transverse uniformity, lagged
+                                    // otherwise.
+                                    let mut wc = coord;
+                                    wc[a] = if positive { [nx, ny, nz][a] - 1 } else { 0 };
+                                    psi_prev[d][wc[0] + nx * wc[1] + nx * ny * wc[2]]
+                                } else {
+                                    // Boundary face: declared incident flux or
+                                    // vacuum.
+                                    let face = 2 * a as u8 + u8::from(!positive);
+                                    let (uu, vv) = match a {
+                                        0 => (j, k),
+                                        1 => (i, k),
+                                        _ => (i, j),
+                                    };
+                                    boundary
+                                        .get(&(face, uu as u32, vv as u32))
+                                        .and_then(|entries| {
+                                            entries
+                                                .iter()
+                                                .find(|(dd, gg, _)| *dd == d && *gg == g)
+                                                .map(|(_, _, v)| *v)
+                                        })
+                                        .unwrap_or(0.0)
+                                };
+                            }
+                            let mi = case_material[cell];
+                            let st = sigma_eff[mi][g];
+                            // Scatter source into g from the current iterate plus
+                            // the fixed (first-collision or volumetric) source.
+                            // The P1 term adds 3·Σ_a Ω_{d,a}·S_a(cell) — the
+                            // anisotropic part of the scattering source.
+                            let q: f64 = fixed_source[cell][g]
+                                + (0..groups)
+                                    .map(|gp| scatter_eff[mi][gp * groups + g] * flux[cell][gp])
+                                    .sum::<f64>()
+                                + p1_source.map_or(0.0, |s| {
+                                    3.0 * (dir[0] * s[cell][0]
+                                        + dir[1] * s[cell][1]
+                                        + dir[2] * s[cell][2])
                                 })
-                                .unwrap_or(0.0)
-                        };
-                    }
-                    let mi = case_material[cell];
-                    let st = sigma_eff[mi][g];
-                    // Scatter source into g from the current iterate plus
-                    // the fixed (first-collision or volumetric) source.
-                    // The P1 term adds 3·Σ_a Ω_{d,a}·S_a(cell) — the
-                    // anisotropic part of the scattering source.
-                    let q: f64 = fixed_source[cell][g]
-                        + (0..groups)
-                            .map(|gp| scatter_eff[mi][gp * groups + g] * flux[cell][gp])
-                            .sum::<f64>()
-                        + p1_source.map_or(0.0, |s| {
-                            3.0 * (dir[0] * s[cell][0] + dir[1] * s[cell][1] + dir[2] * s[cell][2])
-                        })
-                        + kernel_source.map_or(0.0, |s| s[cell][d]);
-                    let (ax, ay, az) = (
-                        dir[0].abs() * face_area[0],
-                        dir[1].abs() * face_area[1],
-                        dir[2].abs() * face_area[2],
-                    );
-                    // Theta-weighted diamond difference: psi_avg =
-                    // theta*psi_out + (1-theta)*psi_in per axis, with the
-                    // weight chosen from the axis optical thickness to
-                    // reproduce exact exponential transmission for a pure
-                    // absorber: theta(tau) = (tau - (1-e^-tau)) /
-                    // (tau*(1-e^-tau)) — theta -> 1/2 (plain DD, 2nd-order
-                    // accurate) on thin cells and -> 1 (step) as tau grows.
-                    // Plain DD's outgoing edge goes negative for tau >~ 2,
-                    // and a clamp annihilates particles, systematically
-                    // over-attenuating the deep tail; the optimal weight
-                    // keeps the closure positive by construction for the
-                    // dominant pure-absorber channel and conserves the
-                    // local balance exactly. The weight depends only on
-                    // (sigma, delta, mu) — identical for forward and
-                    // adjoint sweeps — so the discrete maps stay dual.
-                    let area = [ax, ay, az];
-                    let mut theta = [0.5_f64; 3];
-                    let mut denom_w = st * volume;
-                    let mut numer_w = q * volume;
-                    for a in 0..3 {
-                        let mu = dir[a].abs().max(1e-30);
-                        let tau = st * dx[a] / mu;
-                        theta[a] = if tau > 1e-6 {
-                            let e = (-tau.min(700.0)).exp();
-                            ((tau - (1.0 - e)) / (tau * (1.0 - e))).clamp(0.5, 1.0)
-                        } else {
-                            0.5
-                        };
-                        let w = area[a] / theta[a];
-                        denom_w += w;
-                        numer_w += w * psi_in[a];
-                    }
-                    let psi_avg = (numer_w / denom_w.max(1e-30)).max(0.0);
-                    psi_d[cell] = psi_avg;
-                    for a in 0..3 {
-                        edge[a][cell] =
-                            ((psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a]).max(0.0);
+                                + kernel_source.map_or(0.0, |s| s[cell][d]);
+                            let (ax, ay, az) = (
+                                dir[0].abs() * face_area[0],
+                                dir[1].abs() * face_area[1],
+                                dir[2].abs() * face_area[2],
+                            );
+                            // Theta-weighted diamond difference: psi_avg =
+                            // theta*psi_out + (1-theta)*psi_in per axis, with the
+                            // weight chosen from the axis optical thickness to
+                            // reproduce exact exponential transmission for a pure
+                            // absorber: theta(tau) = (tau - (1-e^-tau)) /
+                            // (tau*(1-e^-tau)) — theta -> 1/2 (plain DD, 2nd-order
+                            // accurate) on thin cells and -> 1 (step) as tau grows.
+                            // Plain DD's outgoing edge goes negative for tau >~ 2,
+                            // and a clamp annihilates particles, systematically
+                            // over-attenuating the deep tail; the optimal weight
+                            // keeps the closure positive by construction for the
+                            // dominant pure-absorber channel and conserves the
+                            // local balance exactly. The weight depends only on
+                            // (sigma, delta, mu) — identical for forward and
+                            // adjoint sweeps — so the discrete maps stay dual.
+                            let area = [ax, ay, az];
+                            let mut theta = [0.5_f64; 3];
+                            let mut denom_w = st * volume;
+                            let mut numer_w = q * volume;
+                            for a in 0..3 {
+                                let mu = dir[a].abs().max(1e-30);
+                                let tau = st * dx[a] / mu;
+                                theta[a] = if tau > 1e-6 {
+                                    let e = (-tau.min(700.0)).exp();
+                                    ((tau - (1.0 - e)) / (tau * (1.0 - e))).clamp(0.5, 1.0)
+                                } else {
+                                    0.5
+                                };
+                                let w = area[a] / theta[a];
+                                denom_w += w;
+                                numer_w += w * psi_in[a];
+                            }
+                            let psi_avg = (numer_w / denom_w.max(1e-30)).max(0.0);
+                            psi_d[cell] = psi_avg;
+                            for a in 0..3 {
+                                let psi_out =
+                                    ((psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a]).max(0.0);
+                                edge[a][cell] = psi_out;
+                                if let Some(acc) = acc.as_mut() {
+                                    // Partial currents, θ-WDD-consistent:
+                                    // the per-direction balance is
+                                    // σ_tVψ + Σ_a |μ_a|A(ψ_out−ψ_in) = qV,
+                                    // so the partial outflow across the
+                                    // outflow face is w_d·|μ_a|·ψ_out.
+                                    // The inflow face records only the
+                                    // boundary contribution — interior
+                                    // inflow is the neighbor's outflow,
+                                    // read from its slot.
+                                    let wmu = quadrature[d].1 * dir[a].abs();
+                                    let (in_pos, out_pos) = if dir[a] > 0.0 {
+                                        (2 * a, 2 * a + 1)
+                                    } else {
+                                        (2 * a + 1, 2 * a)
+                                    };
+                                    acc[cell][out_pos] += wmu * psi_out;
+                                    if !inflow_inside[a] {
+                                        acc[cell][in_pos + 6] += wmu * psi_in[a];
+                                    }
+                                }
+                            }
+                        }
                     }
                 }
-            }
-        }
-    });
+                acc
+            },
+        )
+        .reduce(
+            || {
+                face_current
+                    .is_some()
+                    .then(|| vec![[0.0_f64; 12]; nx * ny * nz])
+            },
+            |a, b| match (a, b) {
+                (Some(mut a), Some(b)) => {
+                    for (ac, bc) in a.iter_mut().zip(b.iter()) {
+                        for f in 0..12 {
+                            ac[f] += bc[f];
+                        }
+                    }
+                    Some(a)
+                }
+                (a, None) => a,
+                (None, b) => b,
+            },
+        );
+    if let (Some(out), Some(sums)) = (face_current, face_sums) {
+        out.clone_from(&sums);
+    }
 }
 
 /// Solve the multigroup S_N problem on the case grid.
@@ -2081,6 +2164,43 @@ pub(crate) fn solve_sn_problem(
     // Anderson minimizes is against this point, not the up-pass input.
     let mut cycle_origin: Vec<Vec<f64>> = Vec::new();
 
+    // Detect the upscatter-coupled suffix of the group structure — the
+    // sub-eV block where bound-atom S(α,β) scatters both ways. Its
+    // near-conservative (σ_a/Σ_t ≈ 0.02–0.1) *spatial* diffusion mode
+    // is the slowly-contracting eigenmode of the outer iteration; the
+    // consistent synthetic correction below accelerates it. For block
+    // groups the sweep records per-cell face currents so the
+    // correction uses the transport discretization's measured face
+    // conductance rather than a diffusion-theory guess.
+    let upscatter_block_start: Option<usize> = {
+        let mut start = groups;
+        for m in &data.materials {
+            for gf in 0..groups {
+                let row_sum: f64 = (0..groups)
+                    .map(|gt| m.scatter_matrix_per_cm[gf * groups + gt].abs())
+                    .sum();
+                if row_sum <= 0.0 {
+                    continue;
+                }
+                for gt in 0..gf {
+                    if m.scatter_matrix_per_cm[gf * groups + gt] > 1.0e-3 * row_sum {
+                        start = start.min(gt);
+                    }
+                }
+            }
+        }
+        (start < groups).then_some(start)
+    };
+    let mut block_faces: Vec<FaceCurrents> = upscatter_block_start
+        .map(|bs| vec![vec![[0.0; 12]; n_cells]; groups - bs])
+        .unwrap_or_default();
+
+    // CMR stall detection: when the rebalance is active but the sweep
+    // residual stops improving, the composed map is in its limit cycle —
+    // disable CMR permanently and let bare sweeps finish.
+    let mut cmr_enabled = std::env::var_os("OPENBNCT_NO_CMR").is_none();
+    let mut cmr_best = f64::MAX;
+    let mut cmr_stall = 0usize;
     for outer in 0..options.max_outer_iterations {
         let previous = flux.clone();
         if anderson.is_some() && outer % 2 == 0 {
@@ -2168,6 +2288,11 @@ pub(crate) fn solve_sn_problem(
                     None
                 };
                 std::mem::swap(&mut psi, &mut psi_prev);
+                // Face currents are only needed while CMR is active —
+                // below the cutoff the accumulation is pure overhead.
+                let faces = upscatter_block_start
+                    .filter(|&bs| g >= bs && cmr_enabled && residual > 5e-3)
+                    .map(|bs| &mut block_faces[g - bs]);
                 sweep_group(
                     g,
                     &flux,
@@ -2184,6 +2309,7 @@ pub(crate) fn solve_sn_problem(
                     quadrature,
                     boundary,
                     options.periodic,
+                    faces,
                 );
                 // Moment reduction is per-cell independent — computed in
                 // parallel into an indexed buffer, then applied serially
@@ -2243,12 +2369,279 @@ pub(crate) fn solve_sn_problem(
                 }
             }
         }
+        // The convergence residual is the SWEEP's own iterate change —
+        // measured before CMR so the correction's multiplicative kick
+        // is never counted (and so CMR's taper sees the true map
+        // residual). At the transport fixed point this residual → 0 and
+        // the correction fades out cleanly.
         residual = flux
             .iter()
             .zip(previous.iter())
             .flat_map(|(a, b)| a.iter().zip(b.iter()))
             .map(|(x, y)| (x - y).abs() / x.abs().max(1e-30))
             .fold(0.0_f64, f64::max);
+        // Coarse-mesh rebalance of the upscatter block: the slow mode
+        // is the long-wavelength spatial imbalance of the
+        // near-conservative sub-eV flux. Multiplicative factors
+        // f_{i,R} per coarse region and block group are solved from
+        // the regional balance equations using the sweep's *measured*
+        // partial currents — the transport discretization's own
+        // leakage, not a diffusion approximation (the consistent half
+        // of consistent acceleration; a textbook-diffusion correction
+        // diverges on these 2.5–5 mfp cells). Interior faces cancel
+        // exactly; only region-boundary currents couple regions.
+        // Linear in f, M-matrix structure, positivity-preserving.
+        // At the fixed point f = 1 identically.
+        const OMEGA_CMR: f64 = 0.6;
+        // CMR is approximate (partial-current scaling + positivity-clamp
+        // inconsistency), so the composed sweep+CMR map has a small
+        // limit cycle: apply it only while the residual is above the
+        // global-mode regime, then let bare sweeps finish — the slow
+        // sub-eV spatial mode is dead by ~5e-3 and the fast local
+        // contraction doesn't need help.
+        // Stall check before applying: if the last four outers produced
+        // no meaningful improvement, the correction is cycling.
+        if cmr_enabled && outer > 0 {
+            if residual < 0.5 * cmr_best {
+                cmr_best = residual;
+                cmr_stall = 0;
+            } else {
+                cmr_stall += 1;
+                if cmr_stall >= 4 {
+                    cmr_enabled = false;
+                    if std::env::var_os("CMR_DEBUG").is_some() {
+                        eprintln!("[cmr] stalled at {residual:.3e} — disabled");
+                    }
+                }
+            }
+        }
+        if cmr_enabled
+            && residual > 5e-3
+            && residual >= options.convergence
+            && let Some(bs) = upscatter_block_start
+        {
+            const CF: usize = 2; // coarse factor per axis
+            let nb = groups - bs;
+            let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
+            let dxc = [
+                geometry.spacing_mm[0] / 10.0,
+                geometry.spacing_mm[1] / 10.0,
+                geometry.spacing_mm[2] / 10.0,
+            ];
+            let volume = dxc[0] * dxc[1] * dxc[2];
+            let area = [dxc[1] * dxc[2], dxc[0] * dxc[2], dxc[0] * dxc[1]];
+            let nr = [nx.div_ceil(CF), ny.div_ceil(CF), nz.div_ceil(CF)];
+            let n_regions = nr[0] * nr[1] * nr[2];
+            let region_of =
+                |i: usize, j: usize, k: usize| i / CF + nr[0] * (j / CF) + nr[0] * nr[1] * (k / CF);
+            // Assemble per-region quantities.
+            // d_term[R][i] = Σ σ_t·φ·V ;  m_term[R][i][j] = Σ S_{j→i}·φ_j·V
+            // q_term[R][i] = fixed + non-block in-scatter + boundary inflow
+            // out_w[R][i] = Σ A·P_out over region-boundary faces
+            // in_w[R][i] = list of (R', Σ A·P_out from R' into R)
+            let mut d_term = vec![vec![0.0_f64; nb]; n_regions];
+            let mut m_term = vec![vec![vec![0.0_f64; nb]; nb]; n_regions];
+            let mut q_term = vec![vec![0.0_f64; nb]; n_regions];
+            let mut out_w = vec![vec![0.0_f64; nb]; n_regions];
+            let mut in_w: InflowStubs = vec![vec![Vec::new(); nb]; n_regions];
+            for cell in 0..n_cells {
+                let (ci, cj, ck) = (cell % nx, (cell / nx) % ny, cell / (nx * ny));
+                let r = region_of(ci, cj, ck);
+                let mi = case_material[cell];
+                let scatter = &scatter_eff[mi];
+                for b in 0..nb {
+                    let gi = bs + b;
+                    d_term[r][b] += sigma_eff[mi][gi] * flux[cell][gi] * volume;
+                    for bj in 0..nb {
+                        m_term[r][b][bj] +=
+                            scatter[(bs + bj) * groups + gi] * flux[cell][bs + bj] * volume;
+                    }
+                    let mut q = fixed_source[cell][gi] * volume;
+                    for gf in 0..bs {
+                        q += scatter[gf * groups + gi] * flux[cell][gf] * volume;
+                    }
+                    q_term[r][b] += q;
+                }
+                for (axis, &face_area) in area.iter().enumerate() {
+                    for (fi, sign) in [(2 * axis, -1_i64), (2 * axis + 1, 1)] {
+                        let (mut i, mut j, mut k) = (ci as i64, cj as i64, ck as i64);
+                        match axis {
+                            0 => i += sign,
+                            1 => j += sign,
+                            _ => k += sign,
+                        }
+                        let inside = i >= 0
+                            && j >= 0
+                            && k >= 0
+                            && (i as usize) < nx
+                            && (j as usize) < ny
+                            && (k as usize) < nz;
+                        // Accumulated currents are Σ w_d·ψ; the scalar
+                        // flux convention divides by 4π, so they must too.
+                        let inv4pi = 1.0 / (4.0 * std::f64::consts::PI);
+                        for b in 0..nb {
+                            if inside {
+                                let nb_cell =
+                                    (k as usize) * nx * ny + (j as usize) * nx + i as usize;
+                                let nr_ = region_of(i as usize, j as usize, k as usize);
+                                if nr_ == r {
+                                    continue; // internal face cancels
+                                }
+                                // Outflow across the region boundary.
+                                out_w[r][b] += face_area * block_faces[b][cell][fi] * inv4pi;
+                                // Inflow from R': the neighbor's
+                                // outflow across the same face.
+                                let opp = fi ^ 1;
+                                in_w[r][b]
+                                    .push((nr_, face_area * block_faces[b][nb_cell][opp] * inv4pi));
+                            } else {
+                                // Domain boundary: outflow leaves the
+                                // problem; declared boundary inflow is
+                                // a fixed source.
+                                out_w[r][b] += face_area * block_faces[b][cell][fi] * inv4pi;
+                                q_term[r][b] += face_area * block_faces[b][cell][fi + 6] * inv4pi;
+                            }
+                        }
+                    }
+                }
+            }
+            // Consolidate the inflow stubs per (R, i) by neighbor region.
+            let mut in_w_c: InflowStubs = vec![vec![Vec::new(); nb]; n_regions];
+            for r in 0..n_regions {
+                for b in 0..nb {
+                    let mut acc: Vec<(usize, f64)> = in_w[r][b].clone();
+                    acc.sort_by_key(|&(rr, _)| rr);
+                    let mut merged: Vec<(usize, f64)> = Vec::with_capacity(acc.len());
+                    for (rr, w) in acc {
+                        if let Some(last) = merged.last_mut()
+                            && last.0 == rr
+                        {
+                            last.1 += w;
+                            continue;
+                        }
+                        merged.push((rr, w));
+                    }
+                    in_w_c[r][b] = merged;
+                }
+            }
+            if std::env::var_os("CMR_DEBUG").is_some() {
+                // Region-balance residual at f = 1: if the assembly is
+                // consistent with the sweep's cell balance, this is ~0.
+                let mut entries: Vec<CmrImbalance> = Vec::new();
+                for r in 0..n_regions {
+                    for i in 0..nb {
+                        let d = d_term[r][i];
+                        let out = out_w[r][i];
+                        let m: f64 = m_term[r][i].iter().sum();
+                        let q = q_term[r][i];
+                        let inflow: f64 = in_w_c[r][i].iter().map(|&(_, w)| w).sum();
+                        let res = (d + out - m) - (q + inflow);
+                        entries.push((res.abs(), r, i, d, out, m, q, inflow));
+                    }
+                }
+                entries.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
+                eprintln!("[cmr] outer {outer} top imbalances:");
+                for e in entries.iter().take(6) {
+                    let &(res, r, i, d, out, m, q, inflow) = e;
+                    let nrr = nr[0] * nr[1];
+                    eprintln!(
+                        "  R{r} (rx={},ry={},rz={}) g{}: res={res:.3e} D={d:.3e} out={out:.3e} M={m:.3e} Q={q:.3e} in={inflow:.3e}",
+                        r % nr[0],
+                        (r / nr[0]) % nr[1],
+                        r / nrr,
+                        bs + i
+                    );
+                }
+            }
+            // Gauss-Seidel over regions: per region solve the nb×nb
+            // system (diag(D+P_out) − M^T)·f = Q + Σ_{R'} f_{R'}·in_w.
+            // Regions whose total coupling is negligible vs the global
+            // scale (void/air cells: the balance is out≈in noise with no
+            // flux to rebalance) are locked at f = 1 — solving them is
+            // ill-conditioned and only injects jitter.
+            let global_scale = d_term
+                .iter()
+                .zip(m_term.iter())
+                .zip(out_w.iter())
+                .flat_map(|((d, m), o)| {
+                    d.iter()
+                        .zip(m.iter())
+                        .zip(o.iter())
+                        .map(|((&dv, mv), &ov)| dv + ov + mv.iter().sum::<f64>())
+                })
+                .fold(0.0_f64, f64::max);
+            let eligible: Vec<bool> = (0..n_regions)
+                .map(|r| {
+                    (0..nb).any(|i| {
+                        d_term[r][i]
+                            + out_w[r][i]
+                            + m_term[r][i].iter().sum::<f64>()
+                            + in_w_c[r][i].iter().map(|&(_, w)| w).sum::<f64>()
+                            > 1e-3 * global_scale
+                    })
+                })
+                .collect();
+            let mut f = vec![vec![1.0_f64; nb]; n_regions];
+            let mut scratch_a = vec![vec![0.0_f64; nb]; nb];
+            let mut scratch_b = vec![0.0_f64; nb];
+            for _gs in 0..60 {
+                let mut gs_change = 0.0_f64;
+                for r in 0..n_regions {
+                    if !eligible[r] {
+                        continue;
+                    }
+                    for i in 0..nb {
+                        for j in 0..nb {
+                            scratch_a[i][j] = -m_term[r][i][j];
+                        }
+                        scratch_a[i][i] += d_term[r][i] + out_w[r][i];
+                        scratch_b[i] = q_term[r][i]
+                            + in_w_c[r][i]
+                                .iter()
+                                .map(|&(rr, w)| f[rr][i] * w)
+                                .sum::<f64>();
+                    }
+                    if let Some(x) = solve_dense(&mut scratch_a, &mut scratch_b) {
+                        for i in 0..nb {
+                            let v = x[i].clamp(0.2, 5.0);
+                            gs_change = gs_change.max((v - f[r][i]).abs());
+                            f[r][i] = v;
+                        }
+                    }
+                }
+                if gs_change < 1e-4 {
+                    break;
+                }
+            }
+            if std::env::var_os("CMR_DEBUG").is_some() {
+                let (mut lo, mut hi) = (f64::MAX, 0.0_f64);
+                for fr in &f {
+                    for &v in fr {
+                        lo = lo.min(v);
+                        hi = hi.max(v);
+                    }
+                }
+                eprintln!("[cmr] outer {outer} f range [{lo:.3e},{hi:.3e}]");
+            }
+            // Under-relaxed multiplicative application: the partial-
+            // current scaling f_R·P⁺ ≈ exact outflow is a linearization
+            // (θ-WDD edge response is nonlinear in f), so the raw solve
+            // overshoots near the fixed point — ω damps it. The sweep
+            // residual also tapers ω → 0: the measured region balance
+            // carries a systematic defect (positivity-clamped ψ_out is
+            // inconsistent with the ideal exchange), so at the transport
+            // fixed point CMR would push f ≠ 1 forever — a limit cycle.
+            // Fading out once the global mode is dead preserves the
+            // sweep's fixed point exactly.
+            let omega_eff = OMEGA_CMR * (residual / 1e-2).clamp(0.0, 1.0);
+            for (cell, flux_row) in flux.iter_mut().enumerate() {
+                let (ci, cj, ck) = (cell % nx, (cell / nx) % ny, cell / (nx * ny));
+                let r = region_of(ci, cj, ck);
+                for b in 0..nb {
+                    flux_row[bs + b] *= 1.0 + omega_eff * (f[r][b] - 1.0);
+                }
+            }
+        }
         outer_done = outer + 1;
         if residual < options.convergence {
             converged = true;
