@@ -354,7 +354,20 @@ fn fibonacci_directions(n: usize) -> Vec<[f64; 3]> {
 /// `(r, 0, 0)` by spherical symmetry; the nucleus is the sphere of
 /// radius `rn` centered at the origin. Returns 0 when the ray misses
 /// or points away.
+#[cfg(test)]
 fn nucleus_chord_um(r: f64, direction: [f64; 3], rn: f64) -> f64 {
+    nucleus_track_overlap_um(r, direction, rn, f64::INFINITY)
+}
+
+/// Path length (µm) that a straight track of CSDA range `range_um`,
+/// starting at the decay site `(r, 0, 0)` and heading along
+/// `direction`, spends inside the nucleus: the overlap of the track
+/// segment `t ∈ [0, range_um]` with the ray's chord `[t_near, t_far]`
+/// through the sphere of radius `rn` at the origin. A site outside the
+/// nucleus must first cover the standoff `t_near` before it deposits
+/// anything there. Returns 0 when the ray misses, points away, or runs
+/// out of range first.
+fn nucleus_track_overlap_um(r: f64, direction: [f64; 3], rn: f64, range_um: f64) -> f64 {
     // |p + t·u|² = rn² ⇒ t² + 2(p·u)t + r² − rn² = 0.
     let b = r * direction[0];
     let discriminant = b * b - (r * r - rn * rn);
@@ -364,10 +377,7 @@ fn nucleus_chord_um(r: f64, direction: [f64; 3], rn: f64) -> f64 {
     let d = discriminant.sqrt();
     let t_near = -b - d;
     let t_far = -b + d;
-    if t_far <= 0.0 {
-        return 0.0;
-    }
-    t_far - t_near.max(0.0)
+    (t_far.min(range_um) - t_near.max(0.0)).max(0.0)
 }
 
 /// Mean fraction of a track's energy deposited in the nucleus for
@@ -390,7 +400,7 @@ fn shell_deposition_fraction(r_in: f64, r_out: f64, rn: f64, range_um: f64) -> f
         let w = r * r;
         let dir_mean: f64 = directions
             .iter()
-            .map(|u| nucleus_chord_um(r, *u, rn).min(range_um) / range_um)
+            .map(|u| nucleus_track_overlap_um(r, *u, rn, range_um) / range_um)
             .sum::<f64>()
             / directions.len() as f64;
         acc += w * dir_mean;
@@ -625,6 +635,26 @@ mod tests {
         // Outward ray from inside → exits through the far surface.
         let c = nucleus_chord_um(2.0, [1.0, 0.0, 0.0], 5.0);
         assert!((c - 3.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn track_overlap_counts_standoff_before_the_nucleus() {
+        // Site at r = 9.9 aimed at the centre, nucleus rn = 5: the chord
+        // spans t ∈ [4.9, 14.9]. A 4 µm ⁷Li track stops before the
+        // surface and deposits nothing; a 9 µm α enters at 4.9 and
+        // stops at 9.0 → 4.1 µm inside.
+        let inward = [-1.0, 0.0, 0.0];
+        assert_eq!(nucleus_track_overlap_um(9.9, inward, 5.0, 4.0), 0.0);
+        let alpha = nucleus_track_overlap_um(9.9, inward, 5.0, 9.0);
+        assert!((alpha - 4.1).abs() < 1e-9, "got {alpha}");
+        // Long enough to cross: the full 10 µm diameter.
+        let full = nucleus_track_overlap_um(9.9, inward, 5.0, 20.0);
+        assert!((full - 10.0).abs() < 1e-9);
+        // From inside, the range caps the path as before.
+        assert!((nucleus_track_overlap_um(0.0, inward, 5.0, 4.0) - 4.0).abs() < 1e-12);
+        // A cytoplasm shell sitting farther out than the ⁷Li range
+        // contributes no ⁷Li energy to the nucleus at all.
+        assert_eq!(shell_deposition_fraction(9.5, 10.0, 5.0, 4.0), 0.0);
     }
 
     #[test]
