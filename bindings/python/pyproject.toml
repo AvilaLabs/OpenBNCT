@@ -1,5 +1,7 @@
 [build-system]
-requires = ["maturin>=1.7,<2"]
+# >=1.9 for PEP 639 `license-files` support (see the `license-files` key
+# below); CI pins the exact version (1.15.0) via maturin-version/pip.
+requires = ["maturin>=1.9,<2"]
 build-backend = "maturin"
 
 [project]
@@ -8,13 +10,20 @@ version = "0.2.0"
 description = "Transport-neutral BNCT research verification workbench (research software, not a dose calculator)"
 readme = "README.md"
 requires-python = ">=3.10"
-license = { text = "MIT" }
+# PEP 639 (maturin >=1.9): plain SPDX expression plus explicit license-file
+# globs, resolved relative to this pyproject.toml. Neither file lives in
+# this directory in git — the release workflow copies LICENSE in and
+# generates THIRD_PARTY_NOTICES.txt here before `maturin build`. maturin
+# omits a missing one without error, so a local build still works and
+# scripts/check_python_release_set.py enforces both on release artifacts.
+# The license expression replaces the deprecated License :: classifier.
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_NOTICES.txt"]
 authors = [{ name = "Avila Labs" }]
 keywords = ["bnct", "verification", "dicom", "research"]
 classifiers = [
     "Development Status :: 3 - Alpha",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Rust",
     "Programming Language :: Python :: 3",
     "Topic :: Scientific/Engineering :: Physics",

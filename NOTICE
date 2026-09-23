@@ -7,6 +7,13 @@ The Avila Labs name and logo are brand assets. The MIT License does not
 grant trademark rights beyond reasonable and customary use in describing the
 origin of this work.
 
-Third-party dependencies and data remain subject to their respective licenses.
-A generated third-party notice inventory will be added before the first binary
-or archival release.
+Third-party dependencies and data remain subject to their respective
+licenses. Release archives, the web build, and the Python wheels/sdist ship
+a THIRD_PARTY_NOTICES.txt generated from the committed Cargo.lock by
+scripts/third_party_notices.py; see docs/THIRD_PARTY_LICENSES.md for the
+direct-dependency summary and how to regenerate it.
+
+The desktop and web GUI embed a glyph subset of Noto Sans CJK JP (SIL Open
+Font License 1.1; see crates/openbnct-gui/assets/NotoSansCJKjp-UI.LICENSE.txt)
+and egui's bundled default fonts (MIT/Apache-2.0 AND OFL-1.1 AND Ubuntu Font
+Licence 1.0, via the epaint_default_fonts crate).
