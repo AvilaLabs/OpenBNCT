@@ -1473,6 +1473,15 @@ implementation, or public technical disclosure, including connector behavior.
   launch, inspect, save, and reopen an approved analysis from the workbench;
   process execution has bounded waits, termination/reaping, cancellation-race
   coverage, and the local workload limits required by `AGENTS.md`.
+  **Status (2026-09-23):** Avify workspace tab landed — input fields
+  (case/assignment/spec/outdir/engine/threads/timeout) with loaded-case
+  carry-over, research-question explanation card, bounded `openbnct avify`
+  job (process-group cancel reaches the engine grandchild), certificate
+  rendering with per-ROI actions and run records, and run-receipt
+  staleness with a recheck control. Native-only execution; the web tab
+  renders read-only with an explicit note. Save/reopen of an approved
+  analysis is partially covered by the on-disk receipt + certificate
+  (`status` rebinds), but there is no persisted "approved" marker yet.
 - **R12-04 — Clear scientific results and linked visuals.**
   Pair a plain-language result explanation with synchronized spatial views
   and region/metric comparisons supported by the reviewed output contract.

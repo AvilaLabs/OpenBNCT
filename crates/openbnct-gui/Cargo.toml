@@ -43,6 +43,11 @@ zip = { version = "4", default-features = false, features = ["deflate"] }
 # Process-group kill for job cancellation (safe wrapper over kill(2)).
 rustix = { version = "1.1", features = ["process"] }
 
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# Avify connector — certificate/receipt types for the Avify workspace.
+# Engine execution is native-only, so the whole dep is.
+openbnct-avify = { path = "../openbnct-avify", version = "0.2.0" }
+
 [target.'cfg(target_arch = "wasm32")'.dependencies]
 console_error_panic_hook = "0.1.7"
 eframe = { workspace = true, features = ["glow"] }

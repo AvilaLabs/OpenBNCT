@@ -108,16 +108,18 @@ enum WorkspaceTab {
     Plan,
     Dose,
     Evidence,
+    Avify,
 }
 
 impl WorkspaceTab {
-    const ALL: [Self; 6] = [
+    const ALL: [Self; 7] = [
         Self::Overview,
         Self::Geometry,
         Self::Transport,
         Self::Plan,
         Self::Dose,
         Self::Evidence,
+        Self::Avify,
     ];
 
     const fn label(self) -> &'static str {
@@ -128,6 +130,7 @@ impl WorkspaceTab {
             Self::Plan => "Plan",
             Self::Dose => "Dose components",
             Self::Evidence => "Evidence",
+            Self::Avify => "Avify",
         }
     }
 
@@ -139,6 +142,7 @@ impl WorkspaceTab {
             Self::Plan => "計画",
             Self::Dose => "線量成分",
             Self::Evidence => "エビデンス",
+            Self::Avify => "Avify",
         }
     }
 
@@ -152,6 +156,7 @@ impl WorkspaceTab {
                 Self::Plan => "Piano",
                 Self::Dose => "Componenti dose",
                 Self::Evidence => "Evidenza",
+                Self::Avify => "Avify",
             },
             Language::ChineseSimplified => match self {
                 Self::Overview => "概览",
@@ -160,6 +165,7 @@ impl WorkspaceTab {
                 Self::Plan => "计划",
                 Self::Dose => "剂量成分",
                 Self::Evidence => "证据",
+                Self::Avify => "Avify",
             },
             Language::Spanish => match self {
                 Self::Overview => "Resumen",
@@ -168,6 +174,7 @@ impl WorkspaceTab {
                 Self::Plan => "Plan",
                 Self::Dose => "Componentes de dosis",
                 Self::Evidence => "Evidencia",
+                Self::Avify => "Avify",
             },
             Language::English => self.label(),
         }
@@ -181,6 +188,7 @@ impl WorkspaceTab {
             Self::Plan => "04",
             Self::Dose => "05",
             Self::Evidence => "06",
+            Self::Avify => "07",
         }
     }
 }
@@ -194,6 +202,7 @@ impl From<WorkspaceTab> for HelpWorkspace {
             WorkspaceTab::Plan => Self::Plan,
             WorkspaceTab::Dose => Self::Dose,
             WorkspaceTab::Evidence => Self::Evidence,
+            WorkspaceTab::Avify => Self::Avify,
         }
     }
 }
@@ -207,6 +216,7 @@ impl From<HelpWorkspace> for WorkspaceTab {
             HelpWorkspace::Plan => Self::Plan,
             HelpWorkspace::Dose => Self::Dose,
             HelpWorkspace::Evidence => Self::Evidence,
+            HelpWorkspace::Avify => Self::Avify,
         }
     }
 }
@@ -1330,6 +1340,170 @@ impl RunPanel {
     }
 }
 
+/// UI state for the Avify workspace: input paths, the engine job, and the
+/// returned certificate + run receipt. Execution shells out to `openbnct
+/// avify` — the same code path as the CLI — so this panel never reimplements
+/// connector logic. Engine runs are native-only.
+struct AvifyPanel {
+    case_path: String,
+    assignment_path: String,
+    spec_path: String,
+    outdir: String,
+    engine_cmd: String,
+    threads: String,
+    timeout_s: String,
+    #[cfg(not(target_arch = "wasm32"))]
+    job: Option<run::Job>,
+    output: Vec<String>,
+    status: Option<String>,
+    /// Parsed certificate after a successful verify.
+    #[cfg(not(target_arch = "wasm32"))]
+    certificate: Option<openbnct_avify::AvifyCertificate>,
+    /// `name → state` from the last staleness check of the run receipt.
+    #[cfg(not(target_arch = "wasm32"))]
+    staleness: Option<std::collections::BTreeMap<String, openbnct_avify::InputState>>,
+    #[cfg(not(target_arch = "wasm32"))]
+    receipt_path: String,
+}
+
+impl Default for AvifyPanel {
+    fn default() -> Self {
+        Self {
+            case_path: String::new(),
+            assignment_path: String::new(),
+            spec_path: String::new(),
+            outdir: "avify-run".into(),
+            engine_cmd: "avify-dose".into(),
+            threads: "4".into(),
+            timeout_s: "21600".into(),
+            #[cfg(not(target_arch = "wasm32"))]
+            job: None,
+            output: Vec::new(),
+            status: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            certificate: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            staleness: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            receipt_path: String::new(),
+        }
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+impl AvifyPanel {
+    fn start(&mut self, verify: bool) {
+        self.output.clear();
+        self.status = None;
+        self.certificate = None;
+        self.staleness = None;
+        let mut args = vec![
+            "avify".to_string(),
+            if verify { "verify" } else { "export-plan" }.to_string(),
+            "--case".into(),
+            self.case_path.trim().to_string(),
+            "--assignment".into(),
+            self.assignment_path.trim().to_string(),
+            "--spec".into(),
+            self.spec_path.trim().to_string(),
+        ];
+        if verify {
+            args.extend([
+                "--outdir".into(),
+                self.outdir.trim().to_string(),
+                "--engine-cmd".into(),
+                self.engine_cmd.trim().to_string(),
+                "--timeout-s".into(),
+                self.timeout_s.trim().to_string(),
+            ]);
+            let threads = self.threads.trim();
+            if !threads.is_empty() {
+                args.extend(["--threads".into(), threads.to_string()]);
+            }
+        } else {
+            args.extend(["--prefix".into(), format!("{}/plan", self.outdir.trim())]);
+        }
+        // The job's own deadline stays a little looser than the
+        // connector's --timeout-s so the connector reports timeouts first.
+        let timeout = self
+            .timeout_s
+            .trim()
+            .parse::<u64>()
+            .map(|s| std::time::Duration::from_secs(s.max(1) + 60))
+            .unwrap_or(run::DEFAULT_TIMEOUT);
+        // The CLI writes into `outdir` without creating it.
+        if let Err(e) = std::fs::create_dir_all(self.outdir.trim()) {
+            self.status = Some(format!("outdir: {e}"));
+            return;
+        }
+        match run::Job::spawn("openbnct", &args, timeout) {
+            Ok(job) => self.job = Some(job),
+            Err(error) => self.status = Some(error),
+        }
+    }
+
+    /// Drain the job; on a finished verify, load the certificate and run
+    /// receipt from the outdir and check input staleness.
+    fn poll(&mut self) -> bool {
+        let Some(job) = &mut self.job else {
+            return false;
+        };
+        let running = job.poll(&mut self.output, 300);
+        if running {
+            return true;
+        }
+        let job = self.job.take().unwrap();
+        self.status = Some(if job.timed_out {
+            "killed — deadline exceeded".into()
+        } else {
+            match job.exit_code {
+                Some(0) => "exit 0".into(),
+                Some(code) => format!("exit {code}"),
+                None => "terminated".into(),
+            }
+        });
+        if job.exit_code == Some(0) {
+            let outdir = PathBuf::from(self.outdir.trim());
+            let cert_path = outdir.join("certificate.json");
+            if cert_path.is_file() {
+                match openbnct_avify::AvifyCertificate::load(&cert_path) {
+                    Ok(cert) => self.certificate = Some(cert),
+                    Err(e) => self.status = Some(format!("certificate parse: {e}")),
+                }
+            }
+            let receipt = outdir.join("avify-run.json");
+            self.receipt_path = receipt.display().to_string();
+            if let Ok(receipt) = openbnct_avify::AvifyRunReceipt::load(&receipt) {
+                self.staleness = Some(openbnct_avify::check_staleness(&receipt, &outdir));
+            }
+        }
+        false
+    }
+
+    fn cancel(&mut self) {
+        if let Some(job) = &mut self.job {
+            job.cancel();
+        }
+        self.job = None;
+        self.status = Some("cancelled".into());
+    }
+
+    /// Recompute the staleness check — call when the user asks, not per
+    /// frame (each pass re-hashes the bound inputs).
+    fn recheck_staleness(&mut self) {
+        let receipt = PathBuf::from(self.receipt_path.trim());
+        if let Ok(receipt) = openbnct_avify::AvifyRunReceipt::load(&receipt) {
+            let base = receipt
+                .certificate
+                .path
+                .parent()
+                .map(|p| p.to_path_buf())
+                .unwrap_or_default();
+            self.staleness = Some(openbnct_avify::check_staleness(&receipt, &base));
+        }
+    }
+}
+
 /// UI state for the transport workspace's source-positioning panel. Runs the
 /// same `openbnct_transport::aim_source_at_centroid`/`rotate_source` path as
 /// `openbnct position` and the Python bindings.
@@ -1510,6 +1684,7 @@ impl PositionPanel {
 /// Per-workspace panels shared between the app and the workbench render.
 #[derive(Default)]
 struct WorkbenchPanels {
+    avify: AvifyPanel,
     dose: DosePanel,
     evidence: EvidencePanel,
     nifti: NiftiPanel,
@@ -2663,6 +2838,7 @@ impl eframe::App for OpenBnctApp {
             self.language,
             &mut tour_targets,
             theme,
+            &self.case_path,
         );
         self.help.show_center(
             ui.ctx(),
@@ -2943,6 +3119,7 @@ fn show_workbench(
     language: Language,
     tour_targets: &mut TourTargets,
     theme: Theme,
+    loaded_case_path: &str,
 ) {
     let navigation = egui::Panel::left("openbnct-workspace-navigation")
         .exact_size(210.0)
@@ -3119,8 +3296,364 @@ fn show_workbench(
                         tour_targets,
                         theme,
                     ),
+                    WorkspaceTab::Avify => show_avify_workspace(
+                        ui,
+                        &mut panels.avify,
+                        loaded_case_path,
+                        language,
+                        theme,
+                    ),
                 });
         });
+}
+
+/// The Avify Dose workspace — connector for the separately licensed
+/// engine. The panel explains the research question and assumptions
+/// before execution, runs `openbnct avify` as a bounded job, and renders
+/// the returned certificate with per-input staleness from the run
+/// receipt. All controls stay enabled for reading; execution is
+/// native-only.
+fn show_avify_workspace(
+    ui: &mut egui::Ui,
+    panel: &mut AvifyPanel,
+    loaded_case_path: &str,
+    language: Language,
+    theme: Theme,
+) {
+    #[cfg(target_arch = "wasm32")]
+    let _ = loaded_case_path;
+    show_workspace_heading(
+        ui,
+        theme,
+        "Avify Dose",
+        t!(
+            language,
+            en = "Independent two-evaluation envelope from the separately licensed engine.",
+            ja = "別ライセンスのエンジンによる独立した2評価エンベロープ。",
+            it = "Inviluppo indipendente a due valutazioni dal motore con licenza separata.",
+            zh = "由单独许可的引擎给出的独立双评估包络。",
+            es = "Envolvente independiente de dos evaluaciones del motor con licencia separada."
+        ),
+    );
+
+    egui::Frame::new()
+        .fill(theme.card_fill)
+        .corner_radius(8)
+        .inner_margin(egui::Margin::same(14))
+        .show(ui, |ui| {
+            ui.label(t!(
+                language,
+                en = "What this asks: for the uptake-uncertainty set declared in the spec, does the plan's dose to each ROI bracket inside its criterion? The engine evaluates the corner maps itself and returns an empirical envelope — research software, not a certified clinical bound.",
+                ja = "問い: 仕様で宣言された摂取量不確実性集合について、各 ROI への線量は判定基準内に収まるか。エンジンはコーナーマップを自前で評価し、経験的エンベロープを返します — 研究ソフトウェアであり、認定済みの臨床境界ではありません。",
+                it = "Domanda: per l'insieme di incertezza di uptake dichiarato nella spec, la dose del piano a ciascuna ROI rientra nel suo criterio? Il motore valuta le mappe d'angolo da sé e restituisce un inviluppo empirico — software di ricerca, non un limite clinico certificato.",
+                zh = "所问问题:对于规范中声明的摄取不确定集合,每个 ROI 的剂量是否落在其判据内?引擎自行评估角点映射并返回经验包络 — 研究软件,非经认证的临床界限。",
+                es = "Pregunta: para el conjunto de incertidumbre de captación declarado en la spec, ¿la dosis del plan en cada ROI entra en su criterio? El motor evalúa él mismo los mapas de esquina y devuelve una envolvente empírica — software de investigación, no un límite clínico certificado."
+            ));
+        });
+
+    egui::Frame::new()
+        .fill(theme.card_fill)
+        .corner_radius(8)
+        .inner_margin(egui::Margin::same(14))
+        .show(ui, |ui| {
+            ui.strong(t!(
+                language,
+                en = "Inputs",
+                ja = "入力",
+                it = "Input",
+                zh = "输入",
+                es = "Entradas"
+            ));
+            let field = |ui: &mut egui::Ui, label: &str, value: &mut String| {
+                ui.horizontal(|ui| {
+                    ui.label(label);
+                    ui.add(
+                        egui::TextEdit::singleline(value)
+                            .desired_width((ui.available_width() - 80.0).max(200.0)),
+                    );
+                });
+            };
+            field(ui, "case", &mut panel.case_path);
+            #[cfg(not(target_arch = "wasm32"))]
+            if !loaded_case_path.is_empty()
+                && ui
+                    .small_button(t!(
+                        language,
+                        en = "use loaded case",
+                        ja = "読込済み症例を使用",
+                        it = "usa il caso caricato",
+                        zh = "使用已加载病例",
+                        es = "usar el caso cargado"
+                    ))
+                    .clicked()
+            {
+                panel.case_path = loaded_case_path.to_string();
+            }
+            field(ui, "assignment", &mut panel.assignment_path);
+            field(ui, "spec", &mut panel.spec_path);
+            field(ui, "outdir", &mut panel.outdir);
+            ui.horizontal(|ui| {
+                ui.label("engine");
+                ui.add(
+                    egui::TextEdit::singleline(&mut panel.engine_cmd)
+                        .desired_width(220.0)
+                        .hint_text("avify-dose"),
+                );
+                ui.label(t!(
+                    language,
+                    en = "threads",
+                    ja = "スレッド",
+                    it = "thread",
+                    zh = "线程",
+                    es = "hilos"
+                ));
+                ui.add(egui::TextEdit::singleline(&mut panel.threads).desired_width(40.0));
+                ui.label(t!(
+                    language,
+                    en = "timeout s",
+                    ja = "タイムアウト秒",
+                    it = "timeout s",
+                    zh = "超时 秒",
+                    es = "timeout s"
+                ));
+                ui.add(
+                    egui::TextEdit::singleline(&mut panel.timeout_s)
+                        .desired_width(70.0)
+                        .hint_text("21600"),
+                );
+            });
+        });
+
+    #[cfg(not(target_arch = "wasm32"))]
+    let running = panel.poll();
+    #[cfg(target_arch = "wasm32")]
+    let running = false;
+    if running {
+        ui.ctx()
+            .request_repaint_after(std::time::Duration::from_millis(150));
+    }
+
+    egui::Frame::new()
+        .fill(theme.card_fill)
+        .corner_radius(8)
+        .inner_margin(egui::Margin::same(14))
+        .show(ui, |ui| {
+            ui.horizontal(|ui| {
+                let enabled = !running && cfg!(not(target_arch = "wasm32"));
+                if ui
+                    .add_enabled(
+                        enabled,
+                        egui::Button::new(t!(
+                            language,
+                            en = "Export voxel plan",
+                            ja = "voxel plan を書き出す",
+                            it = "Esporta voxel plan",
+                            zh = "导出体素计划",
+                            es = "Exportar voxel plan"
+                        )),
+                    )
+                    .clicked()
+                {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    panel.start(false);
+                }
+                if ui
+                    .add_enabled(
+                        enabled,
+                        egui::Button::new(t!(
+                            language,
+                            en = "Verify",
+                            ja = "検証",
+                            it = "Verifica",
+                            zh = "验证",
+                            es = "Verificar"
+                        )),
+                    )
+                    .on_disabled_hover_text(if cfg!(target_arch = "wasm32") {
+                        t!(
+                            language,
+                            en = "native build only",
+                            ja = "ネイティブ版のみ",
+                            it = "solo build nativa",
+                            zh = "仅限原生构建",
+                            es = "solo build nativa"
+                        )
+                    } else {
+                        t!(
+                            language,
+                            en = "a job is already running",
+                            ja = "ジョブ実行中",
+                            it = "un job è già in esecuzione",
+                            zh = "已有任务在运行",
+                            es = "ya hay un trabajo en ejecución"
+                        )
+                    })
+                    .clicked()
+                {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    panel.start(true);
+                }
+                if ui
+                    .add_enabled(
+                        running,
+                        egui::Button::new(t!(
+                            language,
+                            en = "Cancel",
+                            ja = "キャンセル",
+                            it = "Annulla",
+                            zh = "取消",
+                            es = "Cancelar"
+                        )),
+                    )
+                    .clicked()
+                {
+                    #[cfg(not(target_arch = "wasm32"))]
+                    panel.cancel();
+                }
+                if let Some(status) = &panel.status {
+                    ui.monospace(status.clone());
+                }
+            });
+            if cfg!(target_arch = "wasm32") {
+                ui.label(t!(
+                    language,
+                    en = "Process execution requires the native build — the web inspector is read-only.",
+                    ja = "プロセス実行はネイティブ版のみ — Web インスペクタは読み取り専用です。",
+                    it = "L'esecuzione richiede la build nativa — l'inspector web è di sola lettura.",
+                    zh = "进程执行需要原生构建 — Web 检查器为只读。",
+                    es = "La ejecución de procesos requiere la build nativa — el inspector web es de solo lectura."
+                ));
+            }
+            if !panel.output.is_empty() {
+                egui::ScrollArea::vertical()
+                    .max_height(160.0)
+                    .stick_to_bottom(true)
+                    .show(ui, |ui| {
+                        for line in &panel.output {
+                            ui.monospace(line);
+                        }
+                    });
+            }
+        });
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(cert) = &panel.certificate {
+        egui::Frame::new()
+            .fill(theme.card_fill)
+            .corner_radius(8)
+            .inner_margin(egui::Margin::same(14))
+            .show(ui, |ui| {
+                ui.strong(t!(
+                    language,
+                    en = "Certificate — empirical two-evaluation envelope (research only)",
+                    ja = "証明書 — 経験的2評価エンベロープ(研究のみ)",
+                    it = "Certificato — inviluppo empirico a due valutazioni (solo ricerca)",
+                    zh = "证书 — 经验性双评估包络(仅限研究)",
+                    es = "Certificado — envolvente empírica de dos evaluaciones (solo investigación)"
+                ));
+                egui::Grid::new("avify-actions").num_columns(4).show(ui, |ui| {
+                    for (roi, action) in &cert.actions {
+                        ui.label(roi);
+                        ui.monospace(format!(
+                            "{} {:.2} Gy-w",
+                            action.criterion.0, action.criterion.1
+                        ));
+                        ui.monospace(format!(
+                            "certified [{:.3}, {:.3}]{}",
+                            action.certified_gyw[0],
+                            action.certified_gyw[1],
+                            action
+                                .nominal_gyw
+                                .map(|n| format!(" nominal {n:.3}"))
+                                .unwrap_or_default()
+                        ));
+                        let color = match action.action.as_str() {
+                            "PASS" => theme.brand,
+                            "FAIL" => theme.error,
+                            _ => theme.warn_text,
+                        };
+                        ui.colored_label(color, &action.action);
+                        ui.end_row();
+                    }
+                });
+                if !cert.runs.is_empty() {
+                    ui.add_space(6.0);
+                    for (name, run) in &cert.runs {
+                        ui.monospace(format!(
+                            "run {name:<10} histories={} wall={:.0}s seed={}",
+                            run.histories, run.wall_s, run.seed
+                        ));
+                    }
+                }
+            });
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    if let Some(states) = panel.staleness.clone() {
+        let mut recheck = false;
+        egui::Frame::new()
+            .fill(theme.card_fill)
+            .corner_radius(8)
+            .inner_margin(egui::Margin::same(14))
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.strong(t!(
+                        language,
+                        en = "Input binding",
+                        ja = "入力バインディング",
+                        it = "Binding degli input",
+                        zh = "输入绑定",
+                        es = "Vinculación de entradas"
+                    ));
+                    if ui
+                        .small_button(t!(
+                            language,
+                            en = "recheck",
+                            ja = "再確認",
+                            it = "ricontrolla",
+                            zh = "重新检查",
+                            es = "reverificar"
+                        ))
+                        .clicked()
+                    {
+                        recheck = true;
+                    }
+                });
+                for (name, state) in &states {
+                    let (label, color) = match state {
+                        openbnct_avify::InputState::Current => {
+                            ("current".to_string(), theme.text_dim)
+                        }
+                        openbnct_avify::InputState::Changed(d) => {
+                            (format!("CHANGED — now {d}"), theme.warn_text)
+                        }
+                        openbnct_avify::InputState::Missing => {
+                            ("MISSING".to_string(), theme.error)
+                        }
+                    };
+                    ui.horizontal(|ui| {
+                        ui.monospace(format!("{name:12}"));
+                        ui.colored_label(color, label);
+                    });
+                }
+                if openbnct_avify::is_stale(&states) {
+                    ui.colored_label(
+                        theme.warn_text,
+                        t!(
+                            language,
+                            en = "STALE — inputs changed since this run; re-run Verify for a certificate over the current inputs.",
+                            ja = "STALE — この実行以降に入力が変更されています。現在の入力に対する証明書を得るには Verify を再実行してください。",
+                            it = "STALE — gli input sono cambiati dopo questa esecuzione; riesegui Verify per un certificato sugli input correnti.",
+                            zh = "STALE — 自此次运行以来输入已更改;请重新运行 Verify 以获得当前输入的证书。",
+                            es = "STALE — las entradas cambiaron desde esta ejecución; reejecute Verify para un certificado sobre las entradas actuales."
+                        ),
+                    );
+                }
+            });
+        if recheck {
+            panel.recheck_staleness();
+        }
+    }
 }
 
 fn show_workspace_heading(ui: &mut egui::Ui, theme: Theme, title: &str, subtitle: &str) {
@@ -7142,7 +7675,7 @@ mod tests {
     #[test]
     fn workspace_navigation_has_stable_unique_labels() {
         let labels = WorkspaceTab::ALL.map(WorkspaceTab::label);
-        assert_eq!(labels.len(), 6);
+        assert_eq!(labels.len(), 7);
         assert!(labels.iter().all(|label| !label.is_empty()));
         for (index, left) in labels.iter().enumerate() {
             assert!(!labels[index + 1..].contains(left));
@@ -7586,6 +8119,7 @@ mod tests {
                     Language::English,
                     &mut tour_targets,
                     Theme::resolve(false),
+                    "",
                 );
             });
             output.textures_delta.clear();

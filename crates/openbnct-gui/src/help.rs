@@ -15,6 +15,7 @@ pub(crate) enum HelpWorkspace {
     Plan,
     Dose,
     Evidence,
+    Avify,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -702,6 +703,14 @@ fn workspace_help(workspace: HelpWorkspace, language: Language) -> (&'static str
         (_, HelpWorkspace::Evidence) => (
             "Evidence",
             "Inspect evidence one bounded claim at a time. Frozen project artifacts and a verified local run are intentionally different states; content bindings print alongside.",
+        ),
+        (Language::Japanese, HelpWorkspace::Avify) => (
+            "Avify",
+            "別ライセンスの Avify Dose エンジンへのコネクタ。症例・材料割当・avify 仕様を指定して voxel plan を書き出すか、検証実行(デスクトップのみ)を開始します。結果は経験的な2評価エンベロープであり、認定済みの臨床境界ではありません。",
+        ),
+        (_, HelpWorkspace::Avify) => (
+            "Avify",
+            "Connector for the separately licensed Avify Dose engine. Point it at a case, a material assignment, and an avify spec to export the voxel plan or launch a bounded verify (desktop only). Results are empirical two-evaluation envelopes, not certified clinical bounds.",
         ),
     }
 }
