@@ -38,6 +38,9 @@ use thiserror::Error;
 
 /// MeV → J.
 const MEV_TO_J: f64 = 1.602_177e-13;
+/// eV → MeV. Energy grids and group boundaries are in eV, while every
+/// dose-response term below is formed in barn·MeV before `MEV_TO_J`.
+const EV_TO_MEV: f64 = 1.0e-6;
 /// Avogadro constant.
 const N_A: f64 = 6.022_140_76e23;
 /// kg per g for the mass-kerma conversion.
@@ -834,7 +837,9 @@ fn collapse_material(
                     *val /= wsum;
                 }
                 sigma_s = s_acc / wsum;
-                recoil_sigma = k_acc / wsum;
+                // k carries σ·⟨E−E'⟩ in barn·eV — the kerma conversion
+                // below is per MeV.
+                recoil_sigma = k_acc / wsum * EV_TO_MEV;
             } else {
                 sigma_s = collapse(&sw(&table.elastic));
                 let elastic_weighted = sw(&table.elastic);
@@ -857,14 +862,15 @@ fn collapse_material(
                     row_p1[gp] = collapse(&integrand_p1);
                 }
                 // Iso-CM elastic mean recoil: Ē·(1−α)/2.
-                let ebar = collapse(
+                // Ē comes from the eV grid; the kerma conversion is per MeV.
+                let ebar_ev = collapse(
                     &e.iter()
                         .zip(&table.elastic)
                         .zip(&weight)
                         .map(|((x, s), w)| x * s * w)
                         .collect::<Vec<_>>(),
                 ) / sigma_s.max(f64::MIN_POSITIVE);
-                recoil_sigma = sigma_s * ebar * (1.0 - alpha) / 2.0;
+                recoil_sigma = sigma_s * ebar_ev * EV_TO_MEV * (1.0 - alpha) / 2.0;
             }
             // Higher Legendre moments (l = 2..=5) from the free-gas
             // iso-CM kernel for every nuclide; for TSL-treated nuclides
@@ -1186,5 +1192,108 @@ mod tests {
         // Above the cut: 1/E.
         assert!((w.w(1.0) - 1.0).abs() < 1e-12);
         assert!((w.w(1.0e6) - 1.0e-6).abs() < 1e-18);
+    }
+
+    /// One ENDF-6 record line: six 11-column fields, MAT, MF, MT, sequence.
+    fn endf_line(fields: [&str; 6], mat: u32, mf: u32, mt: u32, seq: u32) -> String {
+        let mut line = String::new();
+        for field in fields {
+            line.push_str(&format!("{field:>11}"));
+        }
+        line.push_str(&format!("{mat:>4}{mf:>2}{mt:>3}{seq:>5}"));
+        line
+    }
+
+    /// ENDF-6 real in 11 columns with an explicit exponent (the reader
+    /// accepts the `E` form).
+    fn endf_real(v: f64) -> String {
+        format!("{v:.5E}")
+    }
+
+    #[test]
+    fn hydrogen_recoil_kerma_is_in_gray_cm2() {
+        // Pure ¹H with a constant 20 b elastic cross section, collapsed
+        // into one group [1.0, 1.1] MeV under 1/E weighting. Iso-CM
+        // elastic on A = 1 deposits Ē/2 per collision, so the kerma
+        // factor is independent of density:
+        //   K = (N_A·10⁻²⁴/M_H)·σ·(Ē/2)·(J/MeV)·(g/kg)
+        // with Ē = ΔE/ln(1.1) under 1/E weighting. Before the eV→MeV fix
+        // this came out 10⁶ too large.
+        let dir = tempfile::tempdir().unwrap();
+        let (mat, mt) = (125, 2);
+        let mut lines = vec![endf_line(
+            ["1.00100E+3", "9.99167E-1", "0", "0", "0", "0"],
+            mat,
+            3,
+            mt,
+            1,
+        )];
+        let grid: Vec<f64> = (0..)
+            .map(|i| 1.0e-5 * 1.005_f64.powi(i))
+            .take_while(|e| *e <= 2.0e7)
+            .collect();
+        let np = grid.len();
+        lines.push(endf_line(
+            ["0.00000E+0", "0.00000E+0", "0", "0", "1", &np.to_string()],
+            mat,
+            3,
+            mt,
+            2,
+        ));
+        lines.push(endf_line(
+            [&np.to_string(), "2", "", "", "", ""],
+            mat,
+            3,
+            mt,
+            3,
+        ));
+        for (row, chunk) in grid.chunks(3).enumerate() {
+            let mut fields: Vec<String> = Vec::new();
+            for e in chunk {
+                fields.push(endf_real(*e));
+                fields.push(endf_real(20.0));
+            }
+            fields.resize(6, String::new());
+            let f: [&str; 6] = std::array::from_fn(|i| fields[i].as_str());
+            lines.push(endf_line(f, mat, 3, mt, 4 + row as u32));
+        }
+        let tape = dir.path().join("H1.endf");
+        std::fs::write(&tape, lines.join("\n") + "\n").unwrap();
+
+        let material = MaterialDefinition {
+            schema_version: "openbnct.material/0.1.0".into(),
+            id: "test.pure-hydrogen".into(),
+            density_g_cm3: 0.5,
+            temperature_k: 294.0,
+            nuclides: vec![openbnct_transport::NuclideMassFraction {
+                name: "H1".into(),
+                mass_fraction: 1.0,
+            }],
+            neutron_thermal_treatment: openbnct_transport::NeutronThermalTreatment::FreeGas,
+            boron_microdistribution: None,
+        };
+        let opts = CollapseOptions {
+            library_dir: dir.path().to_path_buf(),
+            endf_paths: [("H1".to_string(), tape)].into_iter().collect(),
+            materials: vec![material],
+            energy_boundaries_ev: vec![1.1e6, 1.0e6],
+            weighting: WeightingSpectrum::FlatLethargy,
+            tsl_paths: BTreeMap::new(),
+            tsl_temperature_k: 294.0,
+            self_shielding: false,
+            id: "test.hydrogen-kerma".into(),
+            component_profile: None,
+            note: String::new(),
+        };
+        let data = collapse_multigroup(&opts).unwrap();
+        let got = data.materials[0].dose_response_gy_cm2["hydrogen"][0];
+        let e_bar_mev = 0.1 / 1.1_f64.ln();
+        let want = N_A * 1.0e-24 / 1.007_825 * 20.0 * (e_bar_mev / 2.0) * MEV_TO_J * 1.0e3;
+        assert!(
+            (got - want).abs() / want < 1.0e-3,
+            "hydrogen kerma {got:e} Gy·cm², expected {want:e}"
+        );
+        // Sanity anchor: ~1.0e-9 Gy·cm² for pure hydrogen near 1 MeV.
+        assert!((0.9e-9..1.1e-9).contains(&got), "got {got:e}");
     }
 }
