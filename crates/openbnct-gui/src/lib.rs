@@ -2077,6 +2077,8 @@ pub(crate) struct OpenBnctApp {
     drop_receiver: std::sync::mpsc::Receiver<DropMessage>,
     /// UI language — English authoring with Japanese localization.
     language: Language,
+    /// Active slide of the first-launch app tour (`None` = closed).
+    app_tour_slide: Option<usize>,
 }
 
 impl OpenBnctApp {
@@ -2112,8 +2114,13 @@ impl OpenBnctApp {
             #[cfg(target_arch = "wasm32")]
             drop_receiver,
             language: Language::detect(),
+            app_tour_slide: None,
         };
-        app.panels.avify.tutorial_seen = avify_tutorial_seen_from_disk();
+        app.panels.avify.tutorial_seen = tour_seen_from_disk("avify-tutorial");
+        if !tour_seen_from_disk("app-tour") {
+            app.app_tour_slide = Some(0);
+            write_tour_marker("app-tour");
+        }
         if has_initial_case {
             app.load_case();
         }
@@ -2369,6 +2376,16 @@ impl OpenBnctApp {
                     .clicked()
                 {
                     self.help.toggle_center();
+                    ui.close();
+                }
+                if ui
+                    .button(t!(self.language, en = "Replay welcome tour", ja = "ようこそツアーを再生",
+                it = "Rivedi il tour di benvenuto",
+                zh = "重播欢迎导览",
+                es = "Repetir tour de bienvenida"))
+                    .clicked()
+                {
+                    self.app_tour_slide = Some(0);
                     ui.close();
                 }
             });
@@ -2767,7 +2784,7 @@ impl eframe::App for OpenBnctApp {
         if self.workspace == WorkspaceTab::Avify && !self.panels.avify.tutorial_seen {
             self.panels.avify.tutorial_seen = true;
             self.panels.avify.tutorial_slide = Some(0);
-            write_avify_tutorial_marker();
+            write_tour_marker("avify-tutorial");
         }
 
         // Web drops read asynchronously — bytes arrive through the channel
@@ -2973,6 +2990,13 @@ impl eframe::App for OpenBnctApp {
         );
         self.help
             .show_tour(ui.ctx(), &tour_targets, self.language, theme);
+        show_slide_tour(
+            ui.ctx(),
+            "Welcome to OpenBNCT",
+            &mut self.app_tour_slide,
+            &APP_TOUR_SLIDES,
+            theme,
+        );
     }
 }
 
@@ -4056,133 +4080,231 @@ fn show_avify_workspace(
     }
 }
 
-// ── Avify first-visit tutorial ─────────────────────────────────────────
+// ── First-visit slide tours ────────────────────────────────────────────
+//
+// Two modal slide decks explain concepts the spotlight tour can't:
+// `APP_TOUR_SLIDES` fires once on first launch (what OpenBNCT is and how
+// its pieces fit); `AVIFY_TOUR_SLIDES` fires on the first visit to the
+// experimental workspace. Seen-state persists to marker files under
+// `~/.config/openbnct/` on native; on wasm each tour shows once per
+// session. Diagrams are schematic painter figures — they teach the
+// idea, not real geometry.
 
-/// Marker recording that the onboarding tour has been shown; lives in
-/// the user's config dir, not the workspace, so it survives updates and
-/// checkouts. Absent on wasm — the tour shows once per session there.
+/// Marker recording that a tour has been shown; lives in the user's
+/// config dir, not the workspace, so it survives updates and checkouts.
 #[cfg(not(target_arch = "wasm32"))]
-fn avify_tutorial_marker() -> Option<std::path::PathBuf> {
+fn tour_marker(name: &str) -> Option<std::path::PathBuf> {
     std::env::var_os("HOME")
         .map(std::path::PathBuf::from)
         .map(|home| {
             home.join(".config")
                 .join("openbnct")
-                .join("avify-tutorial-seen")
+                .join(format!("{name}-seen"))
         })
 }
 
-fn avify_tutorial_seen_from_disk() -> bool {
+fn tour_seen_from_disk(name: &str) -> bool {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        avify_tutorial_marker().is_some_and(|path| path.exists())
+        tour_marker(name).is_some_and(|path| path.exists())
     }
     #[cfg(target_arch = "wasm32")]
     {
+        let _ = name;
         false
     }
 }
 
-fn write_avify_tutorial_marker() {
+fn write_tour_marker(name: &str) {
     #[cfg(not(target_arch = "wasm32"))]
-    if let Some(path) = avify_tutorial_marker() {
+    if let Some(path) = tour_marker(name) {
         if let Some(parent) = path.parent() {
             let _ = std::fs::create_dir_all(parent);
         }
         let _ = std::fs::write(&path, b"shown\n");
     }
+    #[cfg(target_arch = "wasm32")]
+    let _ = name;
 }
 
-const AVIFY_TUTORIAL_SLIDES: usize = 5;
+/// One schematic figure per slide. Variants are shared across tours
+/// where the same picture teaches both audiences.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum TourDiagram {
+    NominalVsEnvelope,
+    UptakeWhiskers,
+    TwoCorner,
+    Pipeline,
+    Certificate,
+    AppIdentity,
+    Workspaces,
+    Components,
+    HashVerify,
+    StatusHonesty,
+    GettingStarted,
+}
 
-fn avify_tutorial_slide(slide: usize) -> (&'static str, &'static str) {
-    match slide {
-        0 => (
-            "A different question",
-            "OpenBNCT asks \u{201c}what dose does this plan deliver?\u{201d} Avify \
-             asks a second question: \u{201c}how sure are we of that answer, given \
-             that boron uptake is never measured perfectly?\u{201d}\n\n\
+struct TourSlide {
+    title: &'static str,
+    body: &'static str,
+    diagram: TourDiagram,
+}
+
+const APP_TOUR_SLIDES: [TourSlide; 6] = [
+    TourSlide {
+        title: "What OpenBNCT is",
+        body: "An open research workbench for boron neutron capture therapy \
+             dosimetry. You load a patient case, compute dose components, \
+             and inspect the evidence behind every number.\n\n\
+             This is research software — it shows what is known and what is \
+             still uncertain, and never presents unfinished science as a \
+             result.",
+        diagram: TourDiagram::AppIdentity,
+    },
+    TourSlide {
+        title: "One case, seven views",
+        body: "The rail on the left moves ONE case through its whole life:\
+             geometry (the patient as imaged), transport (particle \
+             preparation), plan (source and boron modelling), dose \
+             components, and the evidence ledger. Avify sits last — an \
+             experimental envelope check.\n\n\
+             Everything stays bound to the same case.",
+        diagram: TourDiagram::Workspaces,
+    },
+    TourSlide {
+        title: "Dose is four components, not one number",
+        body: "BNCT dose is a sum with different biological weights: boron \
+             capture, hydrogen recoil, nitrogen capture, and gamma. OpenBNCT \
+             tracks and displays each separately because a plan that wins \
+             on total dose can still lose on the component that matters.\n\n\
+             Biological models weight them later — the components stay \
+             visible underneath.",
+        diagram: TourDiagram::Components,
+    },
+    TourSlide {
+        title: "Every artifact is verified",
+        body: "Every interchange file carries a content hash, and the app \
+             checks integrity before it shows you a voxel. If a file was \
+             edited, truncated, or mismatched, you see the boundary — not \
+             quietly wrong data.",
+        diagram: TourDiagram::HashVerify,
+    },
+    TourSlide {
+        title: "Honest status, not green lights",
+        body: "Status here is scoped, never global. Verified, frozen, \
+             pending, blocked, and input required mean different things — a \
+             green geometry gate does not promote transport, and a computed \
+             dose does not claim clinical readiness.\n\n\
+             Unfinished work stays labelled as unfinished.",
+        diagram: TourDiagram::StatusHonesty,
+    },
+    TourSlide {
+        title: "Start here",
+        body: "\u{2022} Load a case directory — the bundled NF-BNCT-001 \
+             example works out of the box\n\
+             \u{2022} Read the readiness gates on Overview before trusting a \
+             view\n\
+             \u{2022} Press F1 anytime for the element tour — it points at \
+             real buttons instead of explaining concepts",
+        diagram: TourDiagram::GettingStarted,
+    },
+];
+
+const AVIFY_TOUR_SLIDES: [TourSlide; 5] = [
+    TourSlide {
+        title: "A different question",
+        body: "OpenBNCT asks \u{201c}what dose does this plan deliver?\u{201d} \
+             Avify asks a second question: \u{201c}how sure are we of that \
+             answer, given that boron uptake is never measured \
+             perfectly?\u{201d}\n\n\
              Avify Dose is a separate program. This tab only packages the \
-             question and reads the answer back \u{2014} the engine does the \
-             evaluating.",
-        ),
-        1 => (
-            "Why boron is the hard part",
-            "BNCT works because boron-10 inside a tumour cell captures a \
+             question and reads the answer back \u{2014} the engine does \
+             the evaluating.",
+        diagram: TourDiagram::NominalVsEnvelope,
+    },
+    TourSlide {
+        title: "Why boron is the hard part",
+        body: "BNCT works because boron-10 inside a tumour cell captures a \
              neutron and releases a cell-killing burst. But boron maps come \
-             from estimates \u{2014} PET uptake ratios and blood counts, not \
-             a direct measurement of every voxel.\n\n\
+             from estimates \u{2014} PET uptake ratios and blood counts, \
+             not a direct measurement of every voxel.\n\n\
              So the real dose could sit a little above or below the nominal \
              answer everywhere at once.",
-        ),
-        2 => (
-            "The two-corner trick",
-            "Instead of guessing one boron map, you declare a range of \
+        diagram: TourDiagram::UptakeWhiskers,
+    },
+    TourSlide {
+        title: "The two-corner trick",
+        body: "Instead of guessing one boron map, you declare a range of \
              plausible maps. The engine evaluates the two extreme corners \
-             \u{2014} the pessimistic map and the optimistic map \u{2014} and \
-             reports the interval between them.\n\n\
+             \u{2014} the pessimistic map and the optimistic map \u{2014} \
+             and reports the interval between them.\n\n\
              If both ends of that interval satisfy your criteria, the plan \
              holds up across the whole declared uncertainty set.",
-        ),
-        3 => (
-            "What you provide",
-            "\u{2022} Your OpenBNCT case and a tissue-class mapping\n\
+        diagram: TourDiagram::TwoCorner,
+    },
+    TourSlide {
+        title: "What you provide",
+        body: "\u{2022} Your OpenBNCT case and a tissue-class mapping\n\
              \u{2022} Uptake bounds \u{2014} the plausible boron range for \
              tumour and tissue\n\
              \u{2022} A criterion per region, e.g. tumour \u{2265} 20 Gy, \
              brain \u{2264} 10 Gy\n\n\
              The engine runs as its own bounded process; you can watch it \
              work and cancel it here.",
-        ),
-        _ => (
-            "Reading the certificate",
-            "Each region gets a certified interval [L, U] checked against \
+        diagram: TourDiagram::Pipeline,
+    },
+    TourSlide {
+        title: "Reading the certificate",
+        body: "Each region gets a certified interval [L, U] checked against \
              its criterion:\n\n\
              \u{2022} PASS \u{2014} the whole interval meets the criterion\n\
-             \u{2022} FAIL \u{2014} the evidence doesn\u{2019}t support it; \
-             with small runs this often just means \u{201c}not enough \
+             \u{2022} FAIL \u{2014} the evidence doesn\u{2019}t support \
+             it; with small runs this often just means \u{201c}not enough \
              histories yet\u{201d}\n\
              \u{2022} ADDITIONAL_EVIDENCE \u{2014} the interval straddles \
              the line\n\n\
              Research software only \u{2014} an empirical envelope, never a \
              clinical bound.",
-        ),
-    }
-}
+        diagram: TourDiagram::Certificate,
+    },
+];
 
-fn show_avify_tutorial(ctx: &egui::Context, panel: &mut AvifyPanel, theme: Theme) {
-    let Some(slide) = panel.tutorial_slide else {
+fn show_slide_tour(
+    ctx: &egui::Context,
+    window_title: &str,
+    state: &mut Option<usize>,
+    slides: &[TourSlide],
+    theme: Theme,
+) {
+    let Some(index) = *state else {
         return;
     };
+    let slide = &slides[index.min(slides.len() - 1)];
     let mut open = true;
     let mut advance: Option<Option<usize>> = None;
-    egui::Window::new("Welcome to Avify Dose")
+    egui::Window::new(window_title)
         .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
         .collapsible(false)
         .resizable(false)
         .fixed_size([580.0, 470.0])
         .open(&mut open)
         .show(ctx, |ui| {
-            let (title, body) = avify_tutorial_slide(slide);
-            ui.label(egui::RichText::new(title).size(20.0).strong());
+            ui.label(egui::RichText::new(slide.title).size(20.0).strong());
             ui.add_space(6.0);
             ui.label(
-                egui::RichText::new(format!(
-                    "Slide {} of {AVIFY_TUTORIAL_SLIDES} \u{00b7} experimental feature",
-                    slide + 1
-                ))
-                .size(11.0)
-                .color(theme.text_dim),
+                egui::RichText::new(format!("Slide {} of {}", index + 1, slides.len()))
+                    .size(11.0)
+                    .color(theme.text_dim),
             );
             ui.add_space(10.0);
-            ui.label(body);
+            ui.label(slide.body);
             ui.add_space(12.0);
 
             let (rect, _) = ui.allocate_exact_size(
                 egui::vec2(ui.available_width(), 190.0),
                 egui::Sense::hover(),
             );
-            paint_avify_tutorial_diagram(ui.painter(), rect, slide, theme);
+            paint_tour_diagram(ui.painter(), rect, slide.diagram, theme);
 
             ui.add_space(10.0);
             ui.with_layout(egui::Layout::bottom_up(egui::Align::LEFT), |ui| {
@@ -4191,23 +4313,23 @@ fn show_avify_tutorial(ctx: &egui::Context, panel: &mut AvifyPanel, theme: Theme
                         advance = Some(None);
                     }
                     ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                        if slide + 1 < AVIFY_TUTORIAL_SLIDES {
+                        if index + 1 < slides.len() {
                             if ui.button("Next \u{2192}").clicked() {
-                                advance = Some(Some(slide + 1));
+                                advance = Some(Some(index + 1));
                             }
                         } else if ui.button("Get started").clicked() {
                             advance = Some(None);
                         }
-                        if slide > 0 && ui.button("\u{2190} Back").clicked() {
-                            advance = Some(Some(slide - 1));
+                        if index > 0 && ui.button("\u{2190} Back").clicked() {
+                            advance = Some(Some(index - 1));
                         }
                     });
                     ui.with_layout(
                         egui::Layout::centered_and_justified(egui::Direction::LeftToRight),
                         |ui| {
                             ui.horizontal(|ui| {
-                                for dot in 0..AVIFY_TUTORIAL_SLIDES {
-                                    let color = if dot == slide {
+                                for dot in 0..slides.len() {
+                                    let color = if dot == index {
                                         theme.brand
                                     } else {
                                         theme.text_dim.gamma_multiply(0.45)
@@ -4229,13 +4351,23 @@ fn show_avify_tutorial(ctx: &egui::Context, panel: &mut AvifyPanel, theme: Theme
         advance = Some(None);
     }
     if let Some(next) = advance {
-        panel.tutorial_slide = next;
+        *state = next;
     }
 }
 
-/// The per-slide figures. Deliberately schematic — they explain the
-/// envelope idea, not real geometry.
-fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usize, theme: Theme) {
+fn show_avify_tutorial(ctx: &egui::Context, panel: &mut AvifyPanel, theme: Theme) {
+    show_slide_tour(
+        ctx,
+        "Welcome to Avify Dose \u{2014} experimental",
+        &mut panel.tutorial_slide,
+        &AVIFY_TOUR_SLIDES,
+        theme,
+    );
+}
+
+/// The per-slide figures, keyed by variant so app and Avify tours can
+/// share a drawing where the same idea serves both.
+fn paint_tour_diagram(p: &egui::Painter, rect: egui::Rect, diagram: TourDiagram, theme: Theme) {
     let bg = theme.card_alt_fill;
     p.rect_filled(rect, 6.0, bg);
     let text = egui::FontId::proportional(12.0);
@@ -4244,8 +4376,9 @@ fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usiz
     let brand = theme.brand;
     let ok = egui::Color32::from_rgb(70, 160, 90);
     let c = rect.center();
-    match slide {
-        0 => {
+    let stroke = egui::Stroke::new(1.5, dim);
+    match diagram {
+        TourDiagram::NominalVsEnvelope => {
             // Nominal single answer vs envelope band.
             let left =
                 egui::Rect::from_center_size(c + egui::vec2(-140.0, 0.0), egui::vec2(170.0, 120.0));
@@ -4313,7 +4446,7 @@ fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usiz
                 dim,
             );
         }
-        1 => {
+        TourDiagram::UptakeWhiskers => {
             // Uptake estimate bars with uncertainty whiskers.
             for (i, (name, h)) in [("tumour", 96.0_f32), ("tissue", 44.0)].iter().enumerate() {
                 let x = c.x - 110.0 + i as f32 * 220.0;
@@ -4330,24 +4463,18 @@ fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usiz
                         dim.gamma_multiply(0.5)
                     },
                 );
-                // Whisker: the true value could sit higher or lower.
                 let wx = x + 44.0;
+                for dy in [-18.0_f32, 18.0] {
+                    p.line_segment(
+                        [
+                            egui::pos2(wx - 6.0, top + dy),
+                            egui::pos2(wx + 6.0, top + dy),
+                        ],
+                        egui::Stroke::new(2.0, theme.warn_text),
+                    );
+                }
                 p.line_segment(
                     [egui::pos2(wx, top - 18.0), egui::pos2(wx, top + 18.0)],
-                    egui::Stroke::new(2.0, theme.warn_text),
-                );
-                p.line_segment(
-                    [
-                        egui::pos2(wx - 6.0, top - 18.0),
-                        egui::pos2(wx + 6.0, top - 18.0),
-                    ],
-                    egui::Stroke::new(2.0, theme.warn_text),
-                );
-                p.line_segment(
-                    [
-                        egui::pos2(wx - 6.0, top + 18.0),
-                        egui::pos2(wx + 6.0, top + 18.0),
-                    ],
                     egui::Stroke::new(2.0, theme.warn_text),
                 );
                 p.text(
@@ -4366,7 +4493,7 @@ fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usiz
                 dim,
             );
         }
-        2 => {
+        TourDiagram::TwoCorner => {
             // Declared range -> two corner evaluations -> interval.
             let y = rect.min.y + 52.0;
             p.rect_filled(
@@ -4398,11 +4525,7 @@ fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usiz
                 dim,
             );
             for x in [rect.min.x + 60.0, rect.max.x - 60.0] {
-                p.arrow(
-                    egui::pos2(x, y + 34.0),
-                    egui::vec2(0.0, 34.0),
-                    egui::Stroke::new(1.5, dim),
-                );
+                p.arrow(egui::pos2(x, y + 34.0), egui::vec2(0.0, 34.0), stroke);
             }
             let by = rect.max.y - 48.0;
             for (x, w, label, col) in [
@@ -4431,7 +4554,7 @@ fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usiz
                 );
             }
         }
-        3 => {
+        TourDiagram::Pipeline => {
             // OpenBNCT -> engine -> certificate pipeline.
             let boxes = [
                 ("OpenBNCT", "your case + spec", brand),
@@ -4469,7 +4592,7 @@ fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usiz
                     p.arrow(
                         egui::pos2(bx.max.x + 6.0, bx.center().y),
                         egui::vec2(33.0, 0.0),
-                        egui::Stroke::new(1.5, dim),
+                        stroke,
                     );
                 }
             }
@@ -4481,7 +4604,7 @@ fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usiz
                 dim,
             );
         }
-        _ => {
+        TourDiagram::Certificate => {
             // Interval vs criterion line with PASS chip.
             let y = c.y - 20.0;
             p.line_segment(
@@ -4535,6 +4658,320 @@ fn paint_avify_tutorial_diagram(p: &egui::Painter, rect: egui::Rect, slide: usiz
                 "PASS \u{2014} whole interval clears it",
                 text.clone(),
                 ok,
+            );
+        }
+        TourDiagram::AppIdentity => {
+            // Case in, three views out under one roof.
+            let case_box = egui::Rect::from_center_size(
+                egui::pos2(rect.min.x + 85.0, c.y - 12.0),
+                egui::vec2(110.0, 70.0),
+            );
+            p.rect_filled(case_box, 8.0, bg.gamma_multiply(1.15));
+            p.rect_stroke(
+                case_box,
+                8.0,
+                egui::Stroke::new(1.5, brand),
+                egui::StrokeKind::Inside,
+            );
+            p.text(
+                case_box.center() - egui::vec2(0.0, 12.0),
+                egui::Align2::CENTER_CENTER,
+                "patient",
+                strong.clone(),
+                dim,
+            );
+            p.text(
+                case_box.center() + egui::vec2(0.0, 12.0),
+                egui::Align2::CENTER_CENTER,
+                "case",
+                strong.clone(),
+                brand,
+            );
+            let roof = egui::Rect::from_min_max(
+                egui::pos2(rect.min.x + 200.0, rect.min.y + 40.0),
+                egui::pos2(rect.max.x - 40.0, rect.max.y - 60.0),
+            );
+            p.rect_stroke(
+                roof,
+                10.0,
+                egui::Stroke::new(2.0, brand),
+                egui::StrokeKind::Inside,
+            );
+            p.text(
+                roof.center_top() + egui::vec2(0.0, 16.0),
+                egui::Align2::CENTER_CENTER,
+                "OpenBNCT workbench",
+                strong.clone(),
+                brand,
+            );
+            p.arrow(
+                egui::pos2(case_box.max.x + 6.0, case_box.center().y),
+                egui::vec2(30.0, 0.0),
+                stroke,
+            );
+            for (i, label) in ["geometry", "transport + dose", "evidence"]
+                .iter()
+                .enumerate()
+            {
+                let chip = egui::Rect::from_center_size(
+                    egui::pos2(roof.center().x, roof.min.y + 60.0 + i as f32 * 34.0),
+                    egui::vec2(170.0, 24.0),
+                );
+                p.rect_filled(chip, 12.0, dim.gamma_multiply(0.25));
+                p.text(
+                    chip.center(),
+                    egui::Align2::CENTER_CENTER,
+                    *label,
+                    text.clone(),
+                    dim,
+                );
+            }
+        }
+        TourDiagram::Workspaces => {
+            // Left rail of workspace buttons feeding one case.
+            let names = ["Geometry", "Transport", "Plan", "Dose", "Evidence", "Avify"];
+            for (i, name) in names.iter().enumerate() {
+                let btn = egui::Rect::from_min_max(
+                    egui::pos2(rect.min.x + 40.0, rect.min.y + 26.0 + i as f32 * 26.0),
+                    egui::pos2(rect.min.x + 170.0, rect.min.y + 44.0 + i as f32 * 26.0),
+                );
+                p.rect_filled(
+                    btn,
+                    6.0,
+                    if i < 5 {
+                        dim.gamma_multiply(0.3)
+                    } else {
+                        brand.gamma_multiply(0.4)
+                    },
+                );
+                p.text(
+                    btn.center(),
+                    egui::Align2::CENTER_CENTER,
+                    *name,
+                    text.clone(),
+                    if i < 5 { dim } else { brand },
+                );
+            }
+            p.arrow(
+                egui::pos2(rect.min.x + 190.0, c.y - 10.0),
+                egui::vec2(60.0, 0.0),
+                stroke,
+            );
+            let case = egui::Rect::from_center_size(
+                egui::pos2(rect.min.x + 330.0, c.y - 10.0),
+                egui::vec2(130.0, 90.0),
+            );
+            p.rect_filled(case, 10.0, bg.gamma_multiply(1.15));
+            p.rect_stroke(
+                case,
+                10.0,
+                egui::Stroke::new(1.5, brand),
+                egui::StrokeKind::Inside,
+            );
+            p.text(
+                case.center() - egui::vec2(0.0, 12.0),
+                egui::Align2::CENTER_CENTER,
+                "one case",
+                strong.clone(),
+                brand,
+            );
+            p.text(
+                case.center() + egui::vec2(0.0, 12.0),
+                egui::Align2::CENTER_CENTER,
+                "same data throughout",
+                text.clone(),
+                dim,
+            );
+            p.text(
+                egui::pos2(rect.min.x + 105.0, rect.max.y - 14.0),
+                egui::Align2::CENTER_CENTER,
+                "left rail",
+                text.clone(),
+                dim,
+            );
+        }
+        TourDiagram::Components => {
+            // Four stacked dose-component bars.
+            let components = [
+                ("boron", 0.42, brand),
+                ("hydrogen", 0.26, dim),
+                ("nitrogen", 0.12, dim),
+                ("gamma", 0.20, dim),
+            ];
+            let bar = egui::Rect::from_min_max(
+                egui::pos2(rect.min.x + 60.0, c.y - 26.0),
+                egui::pos2(rect.max.x - 60.0, c.y + 26.0),
+            );
+            let mut x = bar.min.x;
+            for (i, (name, frac, col)) in components.iter().enumerate() {
+                let w = bar.width() * frac;
+                let seg = egui::Rect::from_min_max(
+                    egui::pos2(x, bar.min.y),
+                    egui::pos2(x + w - 2.0, bar.max.y),
+                );
+                p.rect_filled(
+                    seg,
+                    if i == 0 { 5.0 } else { 2.0 },
+                    col.gamma_multiply(if i == 0 { 0.8 } else { 0.45 }),
+                );
+                p.text(
+                    seg.center() + egui::vec2(0.0, 34.0),
+                    egui::Align2::CENTER_CENTER,
+                    *name,
+                    text.clone(),
+                    if i == 0 { brand } else { dim },
+                );
+                x += w;
+            }
+            p.text(
+                egui::pos2(c.x, bar.min.y - 18.0),
+                egui::Align2::CENTER_CENTER,
+                "each component tracked separately",
+                strong.clone(),
+                dim,
+            );
+        }
+        TourDiagram::HashVerify => {
+            // File -> sha256 -> check.
+            let file = egui::Rect::from_center_size(
+                egui::pos2(rect.min.x + 100.0, c.y - 10.0),
+                egui::vec2(90.0, 110.0),
+            );
+            p.rect_filled(file, 4.0, bg.gamma_multiply(1.15));
+            p.rect_stroke(file, 4.0, stroke, egui::StrokeKind::Inside);
+            for i in 0..4 {
+                p.line_segment(
+                    [
+                        egui::pos2(file.min.x + 14.0, file.min.y + 24.0 + i as f32 * 18.0),
+                        egui::pos2(file.max.x - 14.0, file.min.y + 24.0 + i as f32 * 18.0),
+                    ],
+                    egui::Stroke::new(1.0, dim.gamma_multiply(0.5)),
+                );
+            }
+            p.arrow(
+                egui::pos2(file.max.x + 10.0, c.y - 10.0),
+                egui::vec2(46.0, 0.0),
+                stroke,
+            );
+            let hash = egui::Rect::from_center_size(
+                egui::pos2(c.x + 30.0, c.y - 10.0),
+                egui::vec2(150.0, 44.0),
+            );
+            p.rect_filled(hash, 6.0, dim.gamma_multiply(0.25));
+            p.text(
+                hash.center(),
+                egui::Align2::CENTER_CENTER,
+                "sha256:9f2a\u{2026}",
+                text.clone(),
+                dim,
+            );
+            p.arrow(
+                egui::pos2(hash.max.x + 10.0, c.y - 10.0),
+                egui::vec2(46.0, 0.0),
+                stroke,
+            );
+            p.circle_filled(
+                egui::pos2(rect.max.x - 80.0, c.y - 10.0),
+                22.0,
+                ok.gamma_multiply(0.4),
+            );
+            p.text(
+                egui::pos2(rect.max.x - 80.0, c.y - 10.0),
+                egui::Align2::CENTER_CENTER,
+                "\u{2713}",
+                strong.clone(),
+                ok,
+            );
+            p.text(
+                egui::pos2(rect.max.x - 80.0, c.y + 24.0),
+                egui::Align2::CENTER_CENTER,
+                "verified",
+                text.clone(),
+                ok,
+            );
+            p.text(
+                egui::pos2(rect.center().x, rect.max.y - 18.0),
+                egui::Align2::CENTER_CENTER,
+                "tampered or mismatched files stop at the boundary",
+                text.clone(),
+                dim,
+            );
+        }
+        TourDiagram::StatusHonesty => {
+            // Scoped status chips: no global green light.
+            let chips = [
+                ("verified", ok),
+                ("frozen", brand),
+                ("pending", theme.warn_text),
+                ("blocked", theme.error),
+                ("input required", dim),
+            ];
+            for (i, (label, col)) in chips.iter().enumerate() {
+                let chip = egui::Rect::from_center_size(
+                    egui::pos2(
+                        rect.min.x + 100.0 + (i % 3) as f32 * 190.0,
+                        c.y - 34.0 + (i / 3) as f32 * 44.0,
+                    ),
+                    egui::vec2(150.0, 30.0),
+                );
+                p.rect_filled(chip, 15.0, col.gamma_multiply(0.3));
+                p.text(
+                    chip.center(),
+                    egui::Align2::CENTER_CENTER,
+                    *label,
+                    text.clone(),
+                    *col,
+                );
+            }
+            p.text(
+                egui::pos2(rect.center().x, rect.max.y - 22.0),
+                egui::Align2::CENTER_CENTER,
+                "each claim is scoped \u{2014} there is no global all-clear badge",
+                text.clone(),
+                dim,
+            );
+        }
+        TourDiagram::GettingStarted => {
+            // Pointer to the Load & verify button, F1 hint chip.
+            let btn = egui::Rect::from_center_size(
+                egui::pos2(c.x - 60.0, c.y - 20.0),
+                egui::vec2(200.0, 44.0),
+            );
+            p.rect_filled(btn, 8.0, brand.gamma_multiply(0.5));
+            p.rect_stroke(
+                btn,
+                8.0,
+                egui::Stroke::new(1.5, brand),
+                egui::StrokeKind::Inside,
+            );
+            p.text(
+                btn.center(),
+                egui::Align2::CENTER_CENTER,
+                "Load & verify",
+                strong.clone(),
+                brand,
+            );
+            p.circle_filled(btn.center() + egui::vec2(90.0, 34.0), 8.0, theme.warn_text);
+            p.line(
+                vec![
+                    btn.center() + egui::vec2(96.0, 42.0),
+                    btn.center() + egui::vec2(112.0, 60.0),
+                    btn.center() + egui::vec2(100.0, 62.0),
+                    btn.center() + egui::vec2(104.0, 74.0),
+                ],
+                egui::Stroke::new(2.0, theme.warn_text),
+            );
+            let f1 = egui::Rect::from_center_size(
+                egui::pos2(rect.max.x - 110.0, rect.max.y - 44.0),
+                egui::vec2(170.0, 30.0),
+            );
+            p.rect_filled(f1, 15.0, dim.gamma_multiply(0.3));
+            p.text(
+                f1.center(),
+                egui::Align2::CENTER_CENTER,
+                "F1 \u{2192} element tour",
+                text.clone(),
+                dim,
             );
         }
     }
