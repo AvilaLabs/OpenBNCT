@@ -110,26 +110,33 @@ recompute any of these, this review must be revisited.
   applicability flags — **not** certified total-dose bounds, not
   clinical plan acceptance (per the paper's own scope).
 
-## 5. Open questions for the owner
+## 5. Owner decisions (recorded 2026-09-23)
 
-1. **Invocation form.** Is `Project-Waddle/verifier/` the integration
-   artifact (invoked as a script), or should R12-02 assume a packaged
-   Avify Dose CLI/API? This decides the connector's process contract.
-2. **Material mapping.** Confirm the v1 restriction to the five engine
-   classes is acceptable, or specify the mapping for additional classes.
-3. **ROI generality.** v1 to the recorded three ROIs, or does the
-   engine already support arbitrary ROI sets?
-4. **Surface order.** CLI-first (`openbnct avify …`) or GUI workspace
-   first (R12-03)? CLI-first is the smaller lift and exercises the same
-   contract.
-5. **Certificate display.** Which fields surface in the GUI, and how is
-   the "empirical envelope — not certified" status rendered (R12-04)?
+1. **Invocation form — a packaged engine CLI is to be created.** The
+   research harness (`verifier/plan_verify.py`) remains the engine core;
+   a thin `avify-dose` command surface wraps it in the proprietary
+   repository so the connector programs against a stable, versioned
+   entry point rather than script internals. `verifier/` is untouched.
+2. **Material mapping — confirmed.** The five engine classes are the
+   Avify-side interchange domain only; OpenBNCT cases reduce to them on
+   export, and OpenBNCT's own material model is unaffected.
+3. **ROI generality — v1 keeps tumour/brain/scalp.** ROI names are
+   bound into the hash-pinned W006 harness; generalizing is an engine
+   revision, not a connector change. The interchange schema carries ROI
+   names as data so a later engine revision needs no contract churn.
+4. **Surface order — CLI first.** `openbnct avify …` exercises the full
+   contract; the R12-03 GUI workspace reuses it.
+5. **Certificate display — the certificate is rendered as returned:**
+   per-ROI certified interval vs criterion + action, nominal dose,
+   applicability flags, run counts and wall time. The view is labelled
+   an empirical two-evaluation envelope — research only, not a
+   certified bound — per the paper's own scope language.
 
 ## 6. Owner sign-off
 
 - [ ] I/O contract above confirmed against the engine
 - [ ] Boundary table §3 approved — connector contains no claimed step
-- [ ] Open questions §5 answered
+- [x] Open questions §5 answered (recorded above)
 - [ ] Approved to proceed to R12-02 (connector design)
 
 **Reviewer:** Connor Avila — **Date:** ____
