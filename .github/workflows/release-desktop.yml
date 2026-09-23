@@ -6,25 +6,28 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  id-token: write
-  attestations: write
+  contents: read
 
 jobs:
   release:
     name: Ensure GitHub release
     if: github.event_name == 'push'
     runs-on: ubuntu-24.04
+    permissions:
+      contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
       - name: Create release if missing
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REF_NAME: ${{ github.ref_name }}
         run: |
-          gh release view "${{ github.ref_name }}" >/dev/null 2>&1 || \
-            gh release create "${{ github.ref_name }}" \
-              --title "${{ github.ref_name }}" --generate-notes
+          gh release view "$REF_NAME" >/dev/null 2>&1 || \
+            gh release create "$REF_NAME" \
+              --title "$REF_NAME" --generate-notes
 
   build:
     name: Native binaries / ${{ matrix.name }}
@@ -51,12 +54,20 @@ jobs:
             os: windows-latest
             target: x86_64-pc-windows-msvc
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@stable
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          target: ${{ matrix.target }}
+          persist-credentials: false
+
+      - name: Install pinned Rust toolchain
+        run: rustup show
+
+      # rust-toolchain.toml pins the channel but not extra targets — install
+      # the release target explicitly onto whichever toolchain rustup just
+      # resolved.
+      - name: Install target
+        env:
+          TARGET: ${{ matrix.target }}
+        run: rustup target add "$TARGET"
 
       - name: Install Linux GUI system dependencies
         if: runner.os == 'Linux'
@@ -66,57 +77,93 @@ jobs:
             libxcb-render0-dev libxcb-shape0-dev libxcb-xfixes0-dev \
             libxkbcommon-dev libwayland-dev libssl-dev pkg-config
 
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: "3.14.4"
+
+      # cargo metadata --offline (inside the notices script) reads every
+      # package in Cargo.lock, including other targets' cfg-gated
+      # dependencies, so fetch the whole lockfile first: `cargo fetch`
+      # without --target covers all targets. Runs before the build so a
+      # notices failure stops the job early. bash (Git Bash on Windows) and
+      # `python` keep this one step valid on every runner.
+      - name: Generate third-party notices
+        shell: bash
+        run: |
+          cargo fetch --locked
+          python scripts/third_party_notices.py --output THIRD_PARTY_NOTICES.txt \
+            --extra "Noto Sans CJK JP (subset)=crates/openbnct-gui/assets/NotoSansCJKjp-UI.LICENSE.txt"
+
       - name: Build release binaries
-        run: cargo build --release --locked --target ${{ matrix.target }} -p openbnct-cli -p openbnct-gui
+        env:
+          TARGET: ${{ matrix.target }}
+        run: cargo build --release --locked --target "$TARGET" -p openbnct-cli -p openbnct-gui
 
       - name: Package artifacts (unix)
         if: runner.os != 'Windows'
         shell: bash
+        env:
+          REF_NAME: ${{ github.ref_name }}
+          NAME: ${{ matrix.name }}
+          TARGET: ${{ matrix.target }}
         run: |
-          stage="openbnct-${{ github.ref_name }}-${{ matrix.name }}"
+          stage="openbnct-$REF_NAME-$NAME"
           mkdir -p "$stage"
-          cp "target/${{ matrix.target }}/release/openbnct" \
-             "target/${{ matrix.target }}/release/openbnct-gui" "$stage/"
-          cp README.md "$stage/" && cp docs/DISCLAIMER.md "$stage/"
+          cp "target/$TARGET/release/openbnct" \
+             "target/$TARGET/release/openbnct-gui" "$stage/"
+          cp LICENSE NOTICE THIRD_PARTY_NOTICES.txt README.md docs/DISCLAIMER.md "$stage/"
           tar -czf "$stage.tar.gz" "$stage"
-          mv "$stage.tar.gz" dist.tar.gz
 
       - name: Package artifacts (windows)
         if: runner.os == 'Windows'
         shell: pwsh
-        run: |
-          $stage = "openbnct-${{ github.ref_name }}-${{ matrix.name }}"
-          New-Item -ItemType Directory -Path $stage | Out-Null
-          Copy-Item "target/${{ matrix.target }}/release/openbnct.exe",
-                    "target/${{ matrix.target }}/release/openbnct-gui.exe" $stage
-          Copy-Item README.md $stage; Copy-Item docs/DISCLAIMER.md $stage
-          Compress-Archive -Path $stage -DestinationPath dist.zip
-
-      - name: Attest build provenance
-        uses: actions/attest-build-provenance@v2
-        with:
-          subject-path: dist.*
-
-      - name: Upload to release
-        if: github.event_name == 'push'
         env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        # Restore the staged archive name before upload — attestation binds
-        # the digest, not the filename, so renaming after attest is safe.
+          REF_NAME: ${{ github.ref_name }}
+          NAME: ${{ matrix.name }}
+          TARGET: ${{ matrix.target }}
         run: |
-          for f in dist.*; do
-            case "$f" in
-              *.zip) mv "$f" "openbnct-${{ github.ref_name }}-${{ matrix.name }}.zip" ;;
-              *)     mv "$f" "openbnct-${{ github.ref_name }}-${{ matrix.name }}.tar.gz" ;;
-            esac
-          done
-          gh release upload "${{ github.ref_name }}" \
-            "openbnct-${{ github.ref_name }}-${{ matrix.name }}".* --clobber
-        shell: bash
+          $stage = "openbnct-$env:REF_NAME-$env:NAME"
+          New-Item -ItemType Directory -Path $stage | Out-Null
+          Copy-Item "target/$env:TARGET/release/openbnct.exe",
+                    "target/$env:TARGET/release/openbnct-gui.exe" $stage
+          Copy-Item LICENSE,NOTICE,THIRD_PARTY_NOTICES.txt,README.md,docs/DISCLAIMER.md $stage
+          Compress-Archive -Path $stage -DestinationPath "$stage.zip"
 
-      - name: Upload artifact (manual run)
-        if: github.event_name != 'push'
-        uses: actions/upload-artifact@v4
+      - name: Upload build artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: openbnct-${{ matrix.name }}
-          path: dist.*
+          path: |
+            openbnct-*.tar.gz
+            openbnct-*.zip
+          if-no-files-found: error
+
+  publish:
+    name: Attest and upload release archives
+    needs: build
+    if: github.event_name == 'push'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
+        with:
+          pattern: openbnct-*
+          path: dist
+          merge-multiple: true
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        with:
+          subject-path: dist/*
+
+      # No checkout in this job, so gh cannot infer the repository from a
+      # git remote — name it explicitly.
+      - name: Upload archives to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+          REF_NAME: ${{ github.ref_name }}
+        run: gh release upload "$REF_NAME" dist/* --clobber

@@ -2,8 +2,8 @@ name: publish Python package
 
 # Manual runs publish to TestPyPI. A v* tag publishes the same validated
 # distribution set to PyPI. Both publishing jobs use short-lived OIDC
-# credentials and a separately protected GitHub environment — no stored
-# tokens.
+# credentials — no stored tokens. The testpypi and pypi environments below
+# carry the release gate (owner-configured required reviewers).
 on:
   workflow_dispatch:
   push:
@@ -23,12 +23,27 @@ jobs:
           - target: x86_64-unknown-linux-gnu
           - target: aarch64-unknown-linux-gnu
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      # pyproject.toml's license-files names both files, but neither is
+      # committed under bindings/python: copy the workspace LICENSE in and
+      # generate the notices from the bindings' own Cargo.lock. The notices
+      # script runs cargo metadata --offline, which reads every locked
+      # package (all targets), so fetch the whole lockfile first. maturin
+      # silently omits a missing license file; check_python_release_set.py
+      # fails the release if either is absent from any distribution.
+      - name: Stage license files for packaging
+        shell: bash
+        run: |
+          cargo fetch --manifest-path bindings/python/Cargo.toml --locked
+          cp LICENSE bindings/python/LICENSE
+          python scripts/third_party_notices.py \
+            --manifest-path bindings/python/Cargo.toml \
+            --output bindings/python/THIRD_PARTY_NOTICES.txt
       - name: Build source distribution
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
@@ -48,7 +63,7 @@ jobs:
       - name: Smoke-test native wheel
         if: matrix.target == 'x86_64-unknown-linux-gnu'
         run: python scripts/smoke_python_wheel.py dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: python-dist-linux-${{ matrix.target }}
           path: |
@@ -73,12 +88,20 @@ jobs:
             target: x86_64-pc-windows-msvc
             label: windows-x86_64
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
+      - name: Stage license files for packaging
+        shell: bash
+        run: |
+          cargo fetch --manifest-path bindings/python/Cargo.toml --locked
+          cp LICENSE bindings/python/LICENSE
+          python scripts/third_party_notices.py \
+            --manifest-path bindings/python/Cargo.toml \
+            --output bindings/python/THIRD_PARTY_NOTICES.txt
       - name: Build stable-ABI wheel
         uses: PyO3/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
@@ -88,7 +111,7 @@ jobs:
           args: --release --locked --compatibility pypi --out ../../dist
       - name: Smoke-test wheel
         run: python scripts/smoke_python_wheel.py dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: python-dist-${{ matrix.label }}
           path: dist/*.whl
@@ -99,13 +122,13 @@ jobs:
     needs: [linux-wheels, native-wheels]
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-python@v7
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.12"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           pattern: python-dist-*
           path: dist
@@ -119,7 +142,7 @@ jobs:
           (os.environ['GITHUB_REF_NAME'], version)"
       - name: Validate complete release set
         run: python scripts/check_python_release_set.py dist
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: python-package-distributions
           path: dist/
@@ -136,7 +159,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: python-package-distributions
           path: dist
@@ -158,7 +181,7 @@ jobs:
     permissions:
       id-token: write
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4.3.0
         with:
           name: python-package-distributions
           path: dist

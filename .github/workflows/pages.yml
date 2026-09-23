@@ -25,8 +25,6 @@ on:
 
 permissions:
   contents: read
-  pages: write
-  id-token: write
 
 concurrency:
   group: pages
@@ -36,40 +34,63 @@ jobs:
   build:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned Rust toolchain
+        run: rustup show
 
-      # rust-toolchain.toml pins channel 1.95.0 — the action's targets input
-      # applies to the requested toolchain, not the pin. Install the wasm
-      # target onto whichever toolchain cargo actually resolves.
+      # rust-toolchain.toml pins the channel but not extra targets — install
+      # wasm32 explicitly onto whichever toolchain rustup just resolved.
       - name: Install wasm32 target
         run: rustup target add wasm32-unknown-unknown
 
       - name: Install trunk
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5 # v2.87.19
         with:
-          tool: trunk
+          tool: trunk@0.21.14
 
       - name: Install wasm-bindgen-cli
-        uses: taiki-e/install-action@v2
+        uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5 # v2.87.19
         with:
-          tool: wasm-bindgen-cli
+          tool: wasm-bindgen-cli@0.2.127
+
+      # cargo metadata --offline (inside the notices script) reads every
+      # package in Cargo.lock, including other targets' cfg-gated
+      # dependencies, so fetch the whole lockfile first: `cargo fetch`
+      # without --target covers all targets.
+      - name: Generate third-party notices
+        run: |
+          cargo fetch --locked
+          python3 scripts/third_party_notices.py --output THIRD_PARTY_NOTICES.txt \
+            --extra "Noto Sans CJK JP (subset)=crates/openbnct-gui/assets/NotoSansCJKjp-UI.LICENSE.txt"
 
       - name: Build wasm bundle
         working-directory: crates/openbnct-gui
         run: trunk build --release --public-url ./
 
-      - uses: actions/upload-pages-artifact@v3
+      # crates/openbnct-gui/dist/ is trunk's build output (already
+      # gitignored). Copying the notices and LICENSE in here — rather than
+      # a trunk copy-file directive on a CI-only generated file — keeps
+      # local `trunk build`/`trunk serve` working without any generated
+      # input, since dist/ only needs to be complete right before upload.
+      - name: Add license and third-party notices to the web bundle
+        run: cp LICENSE THIRD_PARTY_NOTICES.txt crates/openbnct-gui/dist/
+
+      - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:
           path: crates/openbnct-gui/dist
 
   deploy:
     needs: build
     runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
     environment:
       name: github-pages
       url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - id: deployment
-        uses: actions/deploy-pages@v4
+        uses: actions/deploy-pages@d6db90164ac5ed86f2b6aed7e0febac5b3c0c03e # v4.0.5

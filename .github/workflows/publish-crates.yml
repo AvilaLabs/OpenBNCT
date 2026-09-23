@@ -1,14 +1,16 @@
 name: publish Rust crates
 
-# A signed v* tag publishes the matching workspace version to crates.io via
-# short-lived OIDC credentials (trusted publishing — no stored token). A
-# workflow_dispatch run republishes a given tag, skipping crate versions that
-# already exist so a partial release can resume.
+# A v* tag publishes the matching workspace version to crates.io via
+# short-lived OIDC credentials (trusted publishing — no stored token). The
+# tag itself is not signature-verified; the crates.io environment below is
+# the human release gate (owner-configured required reviewers). A
+# workflow_dispatch run republishes a given tag, skipping crate versions
+# that already exist so a partial release can resume.
 on:
   workflow_dispatch:
     inputs:
       release_tag:
-        description: Existing signed vX.Y.Z tag to publish or resume
+        description: Existing vX.Y.Z tag to publish or resume
         required: true
         type: string
   push:
@@ -30,11 +32,12 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ env.OPENBNCT_RELEASE_TAG }}
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned Rust toolchain
+        run: rustup show
       - name: Require tag and workspace versions to agree
         run: >-
           python3 -c "import os, pathlib, re, subprocess, tomllib;
@@ -64,11 +67,12 @@ jobs:
       contents: read
       id-token: write
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
           ref: ${{ env.OPENBNCT_RELEASE_TAG }}
-      - uses: dtolnay/rust-toolchain@stable
+      - name: Install pinned Rust toolchain
+        run: rustup show
       - name: Get short-lived crates.io credential
         id: auth
         uses: rust-lang/crates-io-auth-action@c6f97d42243bad5fab37ca0427f495c86d5b1a18 # v1
