@@ -1372,6 +1372,9 @@ struct AvifyPanel {
     /// Shared tri-planar crosshair, voxel index `[x, y, z]`.
     #[cfg(not(target_arch = "wasm32"))]
     cursor: [usize; 3],
+    /// Path of a prior run to compare the current one against
+    /// (`avify diff` semantics — pure file IO, no engine).
+    compare_path: String,
 }
 
 impl Default for AvifyPanel {
@@ -1398,6 +1401,7 @@ impl Default for AvifyPanel {
             arrays: None,
             #[cfg(not(target_arch = "wasm32"))]
             cursor: [0; 3],
+            compare_path: String::new(),
         }
     }
 }
@@ -1521,6 +1525,52 @@ impl AvifyPanel {
         }
         self.job = None;
         self.status = Some("cancelled".into());
+    }
+
+    /// Diff a prior run against the loaded outdir — in-process file
+    /// IO, same `diff_runs` the CLI uses.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn compare_to(&mut self, other: &str) {
+        let base = PathBuf::from(self.outdir.trim());
+        match openbnct_avify::diff_runs(std::path::Path::new(other.trim()), &base) {
+            Ok(d) => {
+                self.output.push(format!(
+                    "diff {} -> {} — engine {} -> {}, {:.1}s -> {:.1}s",
+                    other.trim(),
+                    self.outdir.trim(),
+                    d.engine_before,
+                    d.engine_after,
+                    d.elapsed_before_s,
+                    d.elapsed_after_s
+                ));
+                for c in &d.input_changes {
+                    self.output.push(format!(
+                        "  input {:12} {} -> {}",
+                        c.name, c.sha256_before, c.sha256_after
+                    ));
+                }
+                for (roi, c) in &d.roi_changes {
+                    let mark = if c.action_changed { "*" } else { " " };
+                    self.output.push(format!(
+                        "  {mark}{roi:8} [{:.2}, {:.2}] -> [{:.2}, {:.2}] Gy-w  {} -> {}",
+                        c.certified_before[0],
+                        c.certified_before[1],
+                        c.certified_after[0],
+                        c.certified_after[1],
+                        c.action_before,
+                        c.action_after
+                    ));
+                }
+                for roi in &d.only_before {
+                    self.output.push(format!("  -{roi} only in earlier run"));
+                }
+                for roi in &d.only_after {
+                    self.output.push(format!("  +{roi} only in later run"));
+                }
+                self.status = Some("diff complete".into());
+            }
+            Err(e) => self.status = Some(format!("diff: {e}")),
+        }
     }
 
     /// Load a previously written result from `outdir` (certificate +
@@ -3726,6 +3776,44 @@ fn show_avify_workspace(
                 }
                 if let Some(status) = &panel.status {
                     ui.monospace(status.clone());
+                }
+            });
+            // Compare against a prior run — in-process
+            // receipt/certificate diff, no engine invocation.
+            ui.horizontal(|ui| {
+                ui.label(t!(
+                    language,
+                    en = "Compare to run",
+                    ja = "比較対象ラン",
+                    it = "Confronta con run",
+                    zh = "对比运行",
+                    es = "Comparar con run"
+                ));
+                ui.add(
+                    egui::TextEdit::singleline(&mut panel.compare_path)
+                        .desired_width(340.0)
+                        .hint_text("prior outdir or avify-run.json"),
+                );
+                #[cfg(not(target_arch = "wasm32"))]
+                if ui
+                    .add_enabled(
+                        !panel.compare_path.trim().is_empty(),
+                        egui::Button::new(t!(
+                            language,
+                            en = "Diff",
+                            ja = "差分",
+                            it = "Diff",
+                            zh = "对比",
+                            es = "Diff"
+                        )),
+                    )
+                    .on_hover_text(
+                        "per-ROI interval/action changes + which bound inputs differ",
+                    )
+                    .clicked()
+                {
+                    let other = panel.compare_path.clone();
+                    panel.compare_to(&other);
                 }
             });
             if cfg!(target_arch = "wasm32") {
