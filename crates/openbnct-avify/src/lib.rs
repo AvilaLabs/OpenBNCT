@@ -16,6 +16,7 @@ pub mod certificate;
 pub mod error;
 pub mod npz;
 pub mod plan;
+pub mod receipt;
 pub mod run;
 pub mod spec;
 pub mod voxel;
@@ -23,6 +24,9 @@ pub mod voxel;
 pub use certificate::{AvifyCertificate, RoiAction, RoiBracket};
 pub use error::AvifyError;
 pub use plan::{AvifyPlan, BeamSpec, DeclaredSet, Normalisation};
+pub use receipt::{
+    AvifyRunReceipt, BoundInput, EngineRecord, InputState, check_staleness, is_stale,
+};
 pub use run::{EngineInvocation, VerifyOutcome};
 pub use spec::{AvifySpec, EngineClass};
 pub use voxel::{VoxelPlanExport, export_voxel_plan};

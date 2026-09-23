@@ -1024,6 +1024,14 @@ enum AvifyCommand {
         #[arg(long)]
         certificate: PathBuf,
     },
+    /// Check a run receipt (`avify-run.json`) against the filesystem:
+    /// reports whether the certificate still corresponds to the inputs
+    /// it was bound to, or which inputs changed/went missing.
+    Status {
+        /// `avify-run.json` written by `avify verify`.
+        #[arg(long)]
+        receipt: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -4363,10 +4371,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 threads,
                 timeout_s,
             } => {
-                let case: TransportCase = serde_json::from_slice(&fs::read(&case)?)?;
+                let (case_path, assignment_path, spec_path) = (case, assignment, spec);
+                let case: TransportCase = serde_json::from_slice(&fs::read(&case_path)?)?;
                 let assignment: MaterialAssignment =
-                    serde_json::from_slice(&fs::read(&assignment)?)?;
-                let spec: openbnct_avify::AvifySpec = serde_json::from_slice(&fs::read(&spec)?)?;
+                    serde_json::from_slice(&fs::read(&assignment_path)?)?;
+                let spec: openbnct_avify::AvifySpec =
+                    serde_json::from_slice(&fs::read(&spec_path)?)?;
                 fs::create_dir_all(&outdir)?;
                 let prefix = outdir.join("openbnct-case");
                 let export = openbnct_avify::export_voxel_plan(&case, &assignment, &spec, &prefix)
@@ -4391,6 +4401,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     return Err(io::Error::other("--engine-cmd must not be empty").into());
                 }
                 let invocation = openbnct_avify::EngineInvocation { argv0, timeout_s };
+                let engine_version = invocation.engine_version();
                 let outcome = invocation
                     .verify(&prefix, &plan_path, &outdir, threads)
                     .map_err(|e| io::Error::other(format!("avify engine: {e}")))?;
@@ -4399,12 +4410,85 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     outcome.elapsed.as_secs_f64(),
                     outcome.certificate_path.display()
                 );
+                let abs = |p: &PathBuf| fs::canonicalize(p).unwrap_or_else(|_| p.clone());
+                let inputs = openbnct_avify::receipt::bind_inputs(&[
+                    ("case", &abs(&case_path)),
+                    ("assignment", &abs(&assignment_path)),
+                    ("spec", &abs(&spec_path)),
+                ])
+                .map_err(|e| io::Error::other(format!("avify receipt: {e}")))?;
+                let exported = openbnct_avify::receipt::bind_inputs(&[
+                    ("arrays", &abs(&export.arrays_path)),
+                    ("meta", &abs(&export.meta_path)),
+                    ("plan", &abs(&plan_path)),
+                ])
+                .map_err(|e| io::Error::other(format!("avify receipt: {e}")))?;
+                let certificate_bound = openbnct_avify::BoundInput {
+                    path: abs(&outcome.certificate_path),
+                    sha256: openbnct_avify::receipt::hex_sha256(&fs::read(
+                        &outcome.certificate_path,
+                    )?),
+                };
+                let receipt = openbnct_avify::receipt::receipt_for_run(
+                    inputs,
+                    exported,
+                    openbnct_avify::EngineRecord {
+                        argv0: invocation.argv0.clone(),
+                        version: engine_version,
+                    },
+                    certificate_bound,
+                    outcome.elapsed.as_secs_f64(),
+                );
+                let receipt_path = outdir.join("avify-run.json");
+                receipt
+                    .write(&receipt_path)
+                    .map_err(|e| io::Error::other(format!("avify receipt: {e}")))?;
+                println!("run receipt: {}", receipt_path.display());
                 print_avify_certificate(&outcome.certificate);
             }
             AvifyCommand::Show { certificate } => {
                 let cert = openbnct_avify::AvifyCertificate::load(&certificate)
                     .map_err(|e| io::Error::other(format!("avify certificate: {e}")))?;
                 print_avify_certificate(&cert);
+            }
+            AvifyCommand::Status { receipt } => {
+                let receipt = openbnct_avify::AvifyRunReceipt::load(&receipt)
+                    .map_err(|e| io::Error::other(format!("avify receipt: {e}")))?;
+                let base = PathBuf::from(&receipt.certificate.path)
+                    .parent()
+                    .map(|p| p.to_path_buf())
+                    .unwrap_or_else(|| PathBuf::from("."));
+                let states = openbnct_avify::check_staleness(&receipt, &base);
+                println!(
+                    "avify run receipt — engine {} ({}), certificate {}",
+                    receipt.engine.version,
+                    receipt.engine.argv0.join(" "),
+                    &receipt.certificate.sha256[..16]
+                );
+                let mut stale = false;
+                for (name, state) in &states {
+                    let label = match state {
+                        openbnct_avify::InputState::Current => "current".to_string(),
+                        openbnct_avify::InputState::Changed(digest) => {
+                            stale = true;
+                            format!("CHANGED — now {digest}")
+                        }
+                        openbnct_avify::InputState::Missing => {
+                            stale = true;
+                            "MISSING".to_string()
+                        }
+                    };
+                    println!("  {name:12} {label}");
+                }
+                println!(
+                    "verdict: {}",
+                    if stale {
+                        "STALE — inputs changed since this run; the certificate no longer \
+                         describes the current inputs (re-run `openbnct avify verify`)"
+                    } else {
+                        "CURRENT — all bound inputs match the receipt"
+                    }
+                );
             }
         },
         Some(Command::Bsa(args)) => match args.command {

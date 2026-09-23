@@ -47,6 +47,32 @@ impl Default for EngineInvocation {
 }
 
 impl EngineInvocation {
+    /// `<argv0> --version` — first stdout line, bounded to 10 s.
+    /// Returns "unknown" rather than failing: an engine build without
+    /// a version flag still verifies.
+    pub fn engine_version(&self) -> String {
+        let argv0: Vec<String> = self.argv0.iter().map(|a| expand_tilde(a)).collect();
+        let mut cmd = Command::new(&argv0[0]);
+        cmd.args(&argv0[1..])
+            .arg("--version")
+            .stdin(Stdio::null())
+            .stdout(Stdio::piped())
+            .stderr(Stdio::null());
+        let mut run = || -> Result<String, AvifyError> {
+            let mut child = cmd.spawn()?;
+            let status = wait_bounded(&mut child, Duration::from_secs(10))?;
+            if !status.success() {
+                return Ok("unknown".to_string());
+            }
+            let mut buf = String::new();
+            if let Some(mut out) = child.stdout.take() {
+                let _ = out.read_to_string(&mut buf);
+            }
+            Ok(buf.lines().next().unwrap_or("unknown").trim().to_string())
+        };
+        run().unwrap_or_else(|_| "unknown".to_string())
+    }
+
     /// `avify-dose verify` (or `<argv0> verify`) — run the corner
     /// evaluations and return the parsed certificate.
     pub fn verify(

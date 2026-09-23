@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: MIT
 
+use std::collections::BTreeMap;
 use std::io::Read;
 
 use openbnct_avify::{AvifyCertificate, AvifySpec, EngineClass, EngineInvocation};
@@ -166,6 +167,65 @@ fn certificate_parses_engine_output() {
     assert_eq!(cert.runs.len(), 3);
     assert!(cert.runs["corner_lo"].wall_s > 0.0);
     assert_eq!(cert.runs["corner_lo"].seed, 1);
+}
+
+#[test]
+fn receipt_roundtrip_and_staleness() {
+    use openbnct_avify::receipt::*;
+    let dir = std::env::temp_dir().join(format!("avify-test-receipt-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let input = dir.join("case.json");
+    std::fs::write(&input, b"{}").unwrap();
+    let inputs = bind_inputs(&[("case", &input)]).unwrap();
+    let receipt = receipt_for_run(
+        inputs,
+        BTreeMap::new(),
+        EngineRecord {
+            argv0: vec!["avify-dose".into()],
+            version: "avify-dose 0.1.0".into(),
+        },
+        BoundInput {
+            path: dir.join("certificate.json"),
+            sha256: "ab".repeat(32),
+        },
+        12.5,
+    );
+    let path = dir.join("avify-run.json");
+    receipt.write(&path).unwrap();
+    let loaded = AvifyRunReceipt::load(&path).unwrap();
+    let states = check_staleness(&loaded, &dir);
+    assert_eq!(states["case"], InputState::Current);
+    assert!(!is_stale(&states));
+    // Mutate the input → Changed; remove it → Missing.
+    std::fs::write(&input, b"{\"changed\":true}").unwrap();
+    let states = check_staleness(&loaded, &dir);
+    assert!(matches!(states["case"], InputState::Changed(_)));
+    assert!(is_stale(&states));
+    std::fs::remove_file(&input).unwrap();
+    assert_eq!(check_staleness(&loaded, &dir)["case"], InputState::Missing);
+    // Wrong schema version is rejected.
+    let mut bad: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    bad["schema_version"] = serde_json::json!("openbnct.avify-run/9.9.9");
+    std::fs::write(&path, serde_json::to_vec(&bad).unwrap()).unwrap();
+    assert!(AvifyRunReceipt::load(&path).is_err());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+#[test]
+fn engine_version_is_bounded_and_optional() {
+    // A real --version responder.
+    let inv = EngineInvocation {
+        argv0: vec!["sh".into(), "-c".into(), "echo 'fake-engine 9.9'".into()],
+        timeout_s: 5,
+    };
+    assert_eq!(inv.engine_version(), "fake-engine 9.9");
+    // No such binary → "unknown", not an error.
+    let inv = EngineInvocation {
+        argv0: vec!["/nonexistent/engine".into()],
+        timeout_s: 5,
+    };
+    assert_eq!(inv.engine_version(), "unknown");
 }
 
 #[test]

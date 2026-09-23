@@ -1460,8 +1460,10 @@ implementation, or public technical disclosure, including connector behavior.
   engine subprocess with kill+reap, typed certificate parse. Verified
   end-to-end against the engine on a layered-head case with a declared
   tumour region (3 OpenMC evaluations, certificate emitted, actions
-  rendered). Version-compatibility negotiation and stale-result rejection
-  beyond hash binding remain open.
+  rendered). `verify` writes a versioned `openbnct.avify-run/0.1.0`
+  receipt binding every input and exported artifact by sha256 plus the
+  engine's self-reported version; `openbnct avify status` recomputes the
+  bound hashes and reports CURRENT/STALE per input.
 - **R12-03 — Avify Dose workspace and continuous case workflow.**
   Provide an optional dedicated workspace, reachable from Dose and Plan,
   carrying over applicable case inputs without manual re-entry. Explain the

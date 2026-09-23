@@ -13,10 +13,10 @@ use std::path::PathBuf;
 
 use openbnct_transport::{MaterialAssignment, MaterialRegionShape, TransportCase};
 use serde::Serialize;
-use sha2::{Digest, Sha256};
 
 use crate::error::AvifyError;
 use crate::npz::write_arrays_npz;
+use crate::receipt::hex_sha256;
 use crate::spec::{AvifySpec, EngineClass};
 
 /// Result of a voxel-plan export.
@@ -228,8 +228,4 @@ pub fn export_voxel_plan(
         meta_sha256,
         class_voxels,
     })
-}
-
-fn hex_sha256(bytes: &[u8]) -> String {
-    format!("{:x}", Sha256::digest(bytes))
 }
