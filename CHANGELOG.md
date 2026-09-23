@@ -147,6 +147,47 @@ own versions independent of the crate version.
   uncertainty), executed in place so committed outputs are evidence they
   run.
 
+### Added — Avify Dose connector
+
+- `openbnct-avify` (new crate, debuting at 0.2.1) is the optional
+  connector for the separately licensed Avify Dose engine — not
+  distributed with OpenBNCT. `openbnct avify export-plan` writes the
+  engine's voxel plan (npz class map + ROI masks + metadata, plan JSON)
+  from a transport case, material assignment and
+  `openbnct.avify-spec/0.1.0`; `avify verify` runs the engine as a
+  bounded child (timeout kills and reaps), prints the returned per-ROI
+  certified `[L,U]` intervals vs criteria, and writes
+  `openbnct.avify-run/0.1.0` — a receipt binding every input and
+  artifact by SHA-256 with engine version, measured
+  export/engine/bind/total timing, resource records, `cold_start`
+  (first-run vs repeat) and non-fatal `warnings` including
+  engine-version drift against the spec's optional `engine_version`
+  pin. `avify status` re-checks bound inputs (CURRENT/STALE), `avify
+  show` renders a certificate, `avify diff` compares two runs, and
+  `avify review` writes `openbnct.avify-review/0.1.0` — a hash-bound
+  reviewer marker that reports STALE when certificate bytes change.
+- The workbench gains an Avify (Experimental) workspace: loaded-case
+  carry-over, explanation card, first-visit five-slide concept tour
+  (persisted seen-state, replayable), bounded run with process-group
+  cancel, certificate + receipt display, staleness recheck, compare-to-
+  run, review marker, and a synchronized tri-planar class-map view with
+  ROI contours and verdict tinting.
+- Python: `avify_export_plan`, `avify_verify`, `avify_status`,
+  `avify_load_certificate`, `avify_diff`, `avify_review` — JSON
+  passthroughs over the same Rust pipeline, never re-derived.
+- `examples/avify/` holds a runnable export example and a documented
+  R12-06 walkthrough (ordinary result vs uncertainty envelope with
+  measured costs).
+
+### Added — interoperability
+
+- `openbnct export phits` emits a full PHITS input deck from a
+  transport case + `--assignment`: `voxel_box` regions become carved
+  RPP cells, `voxel_set`/`voxel_fractions` become `LAT=1` lattices with
+  per-material universe `FILL` blocks (i-fastest ordering), rectangular
+  plane sources (`s-type=2`), tabulated spectra (`e-type=1`), and
+  neutron+photon `[t-track]` tallies.
+
 ## [0.2.0] — 2026-09-22
 
 ### Changed
