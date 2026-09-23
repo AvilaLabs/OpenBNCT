@@ -260,3 +260,67 @@ fn engine_timeout_kills_and_reaps() {
     assert!(err.to_string().contains("timed out"), "{err}");
     std::fs::remove_dir_all(&dir).ok();
 }
+
+#[test]
+fn diff_runs_reports_interval_and_input_changes() {
+    use openbnct_avify::diff_runs;
+    let dir = std::env::temp_dir().join(format!("avify-test-diff-{}", std::process::id()));
+    let make_run = |name: &str, spec_sha: &str, tumour_action: &str| {
+        let d = dir.join(name);
+        std::fs::create_dir_all(&d).unwrap();
+        let cert = serde_json::json!({
+            "plan_sha256": spec_sha,
+            "ingest_meta_sha256": spec_sha,
+            "ingest_arrays_sha256": spec_sha,
+            "scale_Gyw_per_MeVg": 1.0,
+            "runs": {},
+            "brackets": {},
+            "actions": {
+                "tumour": {
+                    "criterion": [">=", 20.0],
+                    "certified_Gyw": [if tumour_action == "PASS" { 21.0 } else { 0.0 },
+                                    if tumour_action == "PASS" { 23.0 } else { 0.0 }],
+                    "nominal_Gyw": 22.0,
+                    "action": tumour_action
+                },
+                "brain": {
+                    "criterion": ["<=", 11.0],
+                    "certified_Gyw": [5.0, 8.0],
+                    "nominal_Gyw": 6.5,
+                    "action": "PASS"
+                }
+            }
+        });
+        let cert_path = d.join("certificate.json");
+        std::fs::write(&cert_path, serde_json::to_vec(&cert).unwrap()).unwrap();
+        let receipt = serde_json::json!({
+            "schema_version": "openbnct.avify-run/0.1.0",
+            "created_unix_seconds": 1,
+            "inputs": {"spec": {"path": d.join("spec.json"), "sha256": spec_sha}},
+            "exported": {},
+            "engine": {"argv0": ["avify-dose"], "version": "avify-dose 0.1.0"},
+            "certificate": {"path": cert_path, "sha256": spec_sha},
+            "engine_elapsed_s": 1.0
+        });
+        std::fs::write(
+            d.join("avify-run.json"),
+            serde_json::to_vec(&receipt).unwrap(),
+        )
+        .unwrap();
+        d
+    };
+    let a = make_run("a", &"aa".repeat(32), "FAIL");
+    let b = make_run("b", &"bb".repeat(32), "PASS");
+    let d = diff_runs(&a, &b).unwrap();
+    assert!(d.roi_changes["tumour"].action_changed);
+    assert_eq!(d.roi_changes["tumour"].certified_after, [21.0, 23.0]);
+    assert!(!d.roi_changes["brain"].action_changed);
+    let mut names: Vec<_> = d.input_changes.iter().map(|c| c.name.as_str()).collect();
+    names.sort_unstable();
+    assert_eq!(names, vec!["certificate", "spec"]);
+    // Same run twice: nothing differs.
+    let same = diff_runs(&a, &a).unwrap();
+    assert!(same.input_changes.is_empty());
+    assert!(!same.roi_changes["tumour"].action_changed);
+    std::fs::remove_dir_all(&dir).ok();
+}

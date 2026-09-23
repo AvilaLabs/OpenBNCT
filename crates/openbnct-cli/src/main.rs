@@ -1032,6 +1032,15 @@ enum AvifyCommand {
         #[arg(long)]
         receipt: PathBuf,
     },
+    /// Compare two runs — per-ROI interval/action changes plus which
+    /// bound inputs differ. Each side is a run directory or its
+    /// `avify-run.json`.
+    Diff {
+        #[arg(long)]
+        before: PathBuf,
+        #[arg(long)]
+        after: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -4460,6 +4469,41 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         "CURRENT — all bound inputs match the receipt"
                     }
                 );
+            }
+            AvifyCommand::Diff { before, after } => {
+                let d = openbnct_avify::diff_runs(&before, &after)
+                    .map_err(|e| io::Error::other(format!("avify diff: {e}")))?;
+                println!(
+                    "avify diff — engine {} -> {}, total {:.1}s -> {:.1}s",
+                    d.engine_before, d.engine_after, d.elapsed_before_s, d.elapsed_after_s
+                );
+                if !d.input_changes.is_empty() {
+                    println!("  inputs changed:");
+                    for c in &d.input_changes {
+                        println!(
+                            "    {:12} {} -> {}",
+                            c.name, c.sha256_before, c.sha256_after
+                        );
+                    }
+                }
+                for (roi, c) in &d.roi_changes {
+                    let arrow = if c.action_changed { "*" } else { " " };
+                    println!(
+                        "  {arrow}{roi:8} [{:.2}, {:.2}] -> [{:.2}, {:.2}] Gy-w  {} -> {}",
+                        c.certified_before[0],
+                        c.certified_before[1],
+                        c.certified_after[0],
+                        c.certified_after[1],
+                        c.action_before,
+                        c.action_after
+                    );
+                }
+                for roi in &d.only_before {
+                    println!("  -{roi:8} present only in the earlier run");
+                }
+                for roi in &d.only_after {
+                    println!("  +{roi:8} present only in the later run");
+                }
             }
         },
         Some(Command::Bsa(args)) => match args.command {

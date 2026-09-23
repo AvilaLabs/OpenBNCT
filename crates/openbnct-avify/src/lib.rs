@@ -13,6 +13,7 @@
 //! what `docs/IP_BOUNDARY.md` protects.
 
 pub mod certificate;
+pub mod diff;
 pub mod error;
 pub mod npz;
 pub mod pipeline;
@@ -23,6 +24,7 @@ pub mod spec;
 pub mod voxel;
 
 pub use certificate::{AvifyCertificate, RoiAction, RoiBracket};
+pub use diff::{AvifyRunDiff, diff_runs};
 pub use error::AvifyError;
 pub use npz::{ArraysNpz, read_arrays_npz};
 pub use pipeline::{VerifyPipelineOutput, export_pipeline, verify_pipeline};

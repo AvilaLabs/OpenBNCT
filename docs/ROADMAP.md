@@ -1500,8 +1500,10 @@ implementation, or public technical disclosure, including connector behavior.
   one crosshair, ROI masks draw as contours, and the legend names every
   class and index so nothing depends on colour alone. `read_arrays_npz`
   reads the connector's own npz back (npy v1/v2, `|i1`/`|b1`, C-order).
-  Still open: region/metric comparison across runs and the annotated
-  synthetic walkthrough.
+  `openbnct avify diff` (CLI + `avify_diff` Python) compares two runs:
+  per-ROI certified-interval shifts and PASS/FAIL transitions plus which
+  bound inputs differ — the "what changed" view. Still open: a GUI
+  compare panel and overlaying dose-product changes on the spatial view.
 - **R12-05 — Computation time and work reporting.**
   Show end-to-end elapsed time and a breakdown of preparation, transport,
   Avify computation, transfer, and result processing where applicable. Record

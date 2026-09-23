@@ -1270,3 +1270,11 @@ def avify_status(receipt: str | PathLike[str]) -> str:
 def avify_load_certificate(certificate: str | PathLike[str]) -> str:
     """Read and validate the engine's ``certificate.json`` — returned
     verbatim as JSON; the binding never re-derives engine results."""
+
+def avify_diff(
+    before: str | PathLike[str], after: str | PathLike[str]
+) -> str:
+    """Compare two Avify run directories (or ``avify-run.json`` paths) —
+    same path as ``openbnct avify diff``. Returns a JSON object with
+    per-ROI certified-interval/action changes and which bound inputs
+    differ."""

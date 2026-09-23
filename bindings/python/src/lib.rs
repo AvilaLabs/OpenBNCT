@@ -4067,6 +4067,16 @@ fn avify_status(receipt: PathBuf) -> PyResult<String> {
     .map_err(reject)
 }
 
+/// Compare two run directories (or `avify-run.json` paths) — per-ROI
+/// certified-interval/action changes plus which bound inputs differ,
+/// as a JSON object. Nothing is recomputed; the diff is verbatim from
+/// the two receipts/certificates.
+#[pyfunction]
+fn avify_diff(before: PathBuf, after: PathBuf) -> PyResult<String> {
+    let d = openbnct_avify::diff_runs(&before, &after).map_err(reject)?;
+    serde_json::to_string_pretty(&d).map_err(reject)
+}
+
 /// Load the engine's `certificate.json` — returned verbatim as JSON;
 /// the surface never re-derives engine results.
 #[pyfunction]
@@ -4220,5 +4230,6 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(avify_verify, m)?)?;
     m.add_function(wrap_pyfunction!(avify_status, m)?)?;
     m.add_function(wrap_pyfunction!(avify_load_certificate, m)?)?;
+    m.add_function(wrap_pyfunction!(avify_diff, m)?)?;
     Ok(())
 }
