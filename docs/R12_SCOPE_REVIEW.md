@@ -9,16 +9,14 @@ Until then it is a working draft and nothing in R12-02..06 may start.
 
 - `avify-dose-paper` — public paper reproducibility package (method,
   envelope construction, declared sets, certificate contents).
-- `Project-Waddle` — internal development repository: protocols
-  W001–W007, `verifier/` engine, `filing/` provisional specification
-  (US provisional 64/132,705).
+- The Avify Dose development repository (internal): its verification
+  protocols, the engine, and the provisional patent specification.
 - `docs/IP_BOUNDARY.md` — the standing boundary this review applies.
 
 ## 1. What Avify Dose is (for connector purposes)
 
-The engine is `Project-Waddle/verifier/plan_verify.py` (with
-`plan_model.py`, `ingest_dicom.py`, `ingest_source.py`): a self-contained
-Python + OpenMC pipeline that
+The engine is a self-contained Python + OpenMC pipeline in the Avify
+Dose repository that
 
 1. ingests a voxel plan (class map + ROI masks + grid metadata),
 2. takes a plan JSON declaring the uptake-uncertainty set, biological
@@ -84,7 +82,7 @@ engine**. The OpenBNCT-side connector therefore consists only of:
 | Connector component | Claimed step? | Basis |
 |---|---|---|
 | Export case → voxel plan (npz + meta) | No — mechanical format conversion of geometry/classes |
-| Assemble plan JSON (declared set passed verbatim) | No — the engine computes the corner maps itself (`ppm_map` inside `plan_verify`); OpenBNCT must NOT precompute extremal maps |
+| Assemble plan JSON (declared set passed verbatim) | No — the engine computes the corner maps itself; OpenBNCT must NOT precompute extremal maps |
 | Beam mapping (case beam → engine beam spec) | No — parameter passing; spectrum/histogram serialization only |
 | Subprocess orchestration (bounded, cancellable) | No — infrastructure; must satisfy AGENTS.md process rules |
 | Ingest + display certificate.json | No — rendering the engine's output; no re-derivation of envelopes |
@@ -113,15 +111,15 @@ recompute any of these, this review must be revisited.
 ## 5. Owner decisions (recorded 2026-09-23)
 
 1. **Invocation form — a packaged engine CLI is to be created.** The
-   research harness (`verifier/plan_verify.py`) remains the engine core;
+   research harness remains the engine core;
    a thin `avify-dose` command surface wraps it in the proprietary
    repository so the connector programs against a stable, versioned
-   entry point rather than script internals. `verifier/` is untouched.
+   entry point rather than script internals. The harness is untouched.
 2. **Material mapping — confirmed.** The five engine classes are the
    Avify-side interchange domain only; OpenBNCT cases reduce to them on
    export, and OpenBNCT's own material model is unaffected.
 3. **ROI generality — v1 keeps tumour/brain/scalp.** ROI names are
-   bound into the hash-pinned W006 harness; generalizing is an engine
+   bound into the hash-pinned engine harness; generalizing is an engine
    revision, not a connector change. The interchange schema carries ROI
    names as data so a later engine revision needs no contract churn.
 4. **Surface order — CLI first.** `openbnct avify …` exercises the full

@@ -272,8 +272,9 @@ feature construction.
 **Implemented OpenBNCT revision:** `5729f8a` (`Attribute the O17 NJOY
 energy-balance findings`)
 
-**Core revision exercised:** `2e58d1d` (`Gate Aftermatter route readiness
-categorically`); no Core source change was made for this OpenBNCT slice
+**Core revision exercised:** `2e58d1d` (a Core commit that gates another
+integration's route readiness); no Core source change was made for this
+OpenBNCT slice
 
 **Package and evidence:**
 [`integrations/avila-core/njoy-evidence-aware/`](../../integrations/avila-core/njoy-evidence-aware/),

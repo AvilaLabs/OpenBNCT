@@ -324,13 +324,6 @@
  },
  "scale_Gyw_per_MeVg": 0.006408706536000001,
  "timestamp_utc": "2026-09-23T13:52:15Z",
- "verifier_sha256": {
-  "ingest_dicom.py": "8f765d0003db45648decef237a572bb541de979f00414cb4879f98bf496ce30f",
-  "ingest_source.py": "b1710f3f7b6e9215daa85e2f0833763e28b595ef10d88430ba3eb02f67963efe",
-  "plan_model.py": "7c2d9fdbf50491ccc4998cf6360eeca7adcce8bd375c37770513eccf40fed021",
-  "plan_verify.py": "b933929446929b9e7b89d483b9ea3b1e5b9436ac92f169e3afaddfc877c2264c"
- },
- "w006_harness_sha256": "d3ac76b4c94dc278b4ed23e1c278be297bb13937d4029e1cd2c9c42850c50f1f",
  "weights": {
   "brain": [
    1.35,

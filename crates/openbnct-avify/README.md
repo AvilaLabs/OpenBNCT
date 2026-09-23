@@ -1,7 +1,7 @@
 # openbnct-avify
 
-Connector surface for the separately licensed **Avify Dose** engine
-(Project Waddle), per `docs/R12_SCOPE_REVIEW.md`.
+Connector surface for the separately licensed **Avify Dose** engine,
+per `docs/R12_SCOPE_REVIEW.md`.
 
 This crate performs claim-free mechanical work only:
 

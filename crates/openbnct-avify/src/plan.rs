@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 
 //! The engine's plan JSON — serialized verbatim; this crate adds no
-//! interpretation. Field names match `verifier/plan_verify.py`.
+//! interpretation. Field names match the engine's plan reader.
 
 use std::collections::BTreeMap;
 
