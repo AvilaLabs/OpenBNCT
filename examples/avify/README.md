@@ -67,3 +67,43 @@ openbnct avify status  --receipt    out/verify/avify-run.json
 `status` recomputes the receipt's bound hashes and reports each input
 `current` / `CHANGED` / `MISSING` with an overall CURRENT/STALE verdict —
 a certificate whose inputs have since changed no longer describes them.
+
+## What each answer establishes (R12-06 walkthrough)
+
+The connector and OpenBNCT's own dose chain answer **different
+questions** on the same case — there is no speedup claim to make.
+
+**The ordinary result.** OpenBNCT's frozen dose bundle for this case
+(`benchmarks/synthetic/layered-head-phantom/dose-28g-v2.json`) is a
+component-wise dose map under the *nominal* declared boron loading —
+"what dose does this plan deliver at one uptake assumption."
+
+**The Avify result.** The certificate is an empirical `[L, U]` interval
+per ROI over the *whole declared uptake set* (`rt ∈ {2.5,3.5,4.5}`,
+`rs ∈ {0.8,1.0,1.2}`, `B ∈ {15,20,25} µg/g`) — "does the dose stay
+inside its criterion for every declared uptake," evaluated at the
+corner maps the engine computes itself. It additionally reports
+statistical uncertainty (`±3σ`) and applicability flags.
+
+At the example's 1k-history budget the certificate degenerates to
+`[0, 0]` per ROI — three toy OpenMC evaluations can't reach 20 Gy-w, so
+`tumour FAIL` here means *the budget was too small to say anything*,
+not that a plan failed. The verdict vocabulary
+(PASS/FAIL/ADDITIONAL_EVIDENCE) is exactly this honesty mechanism:
+FAIL at toy statistics is the engine refusing to certify, which is the
+correct research answer. Raise `histories` in `spec.json` toward the
+`normalisation.source_particles_total` scale for a real envelope.
+
+**Measured costs** (this workstation, 2-thread cgroup, labelled
+**measured** — from `avify-run.json`, not estimated):
+
+| Stage | Wall time |
+|---|---|
+| Voxel-plan export + plan JSON | 0.03 s |
+| Engine (3 OpenMC evaluations, 1k histories each) | 17.0 s |
+| Hash binding + receipt + certificate parse | 0.02 s |
+| **Total** | **17.6 s** |
+
+Baseline savings are **unavailable**: no conventional workflow produces
+this envelope, so no valid comparison exists — running Avify alone
+measures nothing about savings (per R12-05's labelling rules).
