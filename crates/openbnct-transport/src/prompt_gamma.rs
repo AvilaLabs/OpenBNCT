@@ -87,6 +87,8 @@ pub enum PromptGammaError {
     MissingBoronComponent,
     EmptyIdentifier(&'static str),
     NonFiniteValue,
+    ShapeMismatch(&'static str),
+    DetectorOutsideGeometry,
 }
 
 impl std::fmt::Display for PromptGammaError {
@@ -97,6 +99,10 @@ impl std::fmt::Display for PromptGammaError {
             }
             Self::EmptyIdentifier(label) => write!(f, "empty identifier: {label}"),
             Self::NonFiniteValue => write!(f, "non-finite value in boron dose field"),
+            Self::ShapeMismatch(label) => write!(f, "shape mismatch: {label}"),
+            Self::DetectorOutsideGeometry => {
+                write!(f, "detector voxel outside the case geometry")
+            }
         }
     }
 }
@@ -184,6 +190,164 @@ pub fn derive_prompt_gamma_source(
     Ok(source)
 }
 
+/// Versioned contract id for `PromptGammaResponse`.
+pub const PROMPT_GAMMA_RESPONSE_SCHEMA: &str = "openbnct.pg-response/0.1.0";
+
+/// Versioned contract id for `PromptGammaCounts`.
+pub const PROMPT_GAMMA_COUNTS_SCHEMA: &str = "openbnct.pg-counts/0.1.0";
+
+/// Detector-response map for a declared voxel region: the adjoint
+/// solution's value at the 478 keV emission group in every cell —
+/// the importance of a photon born there to a fluence-weighted
+/// tally on the detector region. This is the response-matrix column
+/// for the declared position: expected tally under an emission map
+/// `q` [photons/cm³] is Σ_v q(v)·sensitivity(v)·V_v.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptGammaResponse {
+    pub schema_version: String,
+    pub id: String,
+    pub case_id: String,
+    pub geometry: GridGeometry,
+    /// Detector region as voxel indices on the case grid.
+    pub detector_voxels: Vec<[u32; 3]>,
+    /// Photon group carrying the emission line the response was
+    /// solved for — the group containing `emission_energy_ev`.
+    pub emission_group: u32,
+    pub emission_energy_ev: f64,
+    /// Adjoint sensitivity at `emission_group` per voxel, grid order —
+    /// detector tally per unit volumetric emission density.
+    pub sensitivity: Vec<f64>,
+    /// Quadrature and convergence of the adjoint solve.
+    pub quadrature_order: u32,
+    pub converged: bool,
+    pub residual: f64,
+    pub outer_iterations: u32,
+    /// Content bindings to the transport case and photon data the
+    /// adjoint was solved against.
+    pub case: ContentReference,
+    pub photon_data: ContentReference,
+    pub provenance_id: String,
+    pub qualification: String,
+}
+
+/// Expected detector tally under a prompt-gamma emission map —
+/// `Σ_v emission(v)·voxel_mass(v)·sensitivity(v)`, the forward-model
+/// half of the PG reconstruction chain. Absolute detector efficiency
+/// (crystal volume, collimation) enters only as a declared scalar
+/// calibration — transport through the phantom is already carried by
+/// the response map.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptGammaCounts {
+    pub schema_version: String,
+    pub id: String,
+    pub case_id: String,
+    /// Expected fluence-weighted tally in the emission map's dose
+    /// unit — per source particle for `PhotonsPerKgPerSourceParticle`
+    /// parents.
+    pub expected_tally: f64,
+    /// Declared efficiency calibration applied to the raw tally.
+    pub detector_efficiency: f64,
+    /// Declared uniform voxel density used to convert the per-kg
+    /// emission map into volumetric sources.
+    pub voxel_density_kg_per_m3: f64,
+    pub emission: ContentReference,
+    pub response: ContentReference,
+    pub provenance_id: String,
+    pub qualification: String,
+}
+
+impl PromptGammaResponse {
+    pub fn validate(&self) -> Result<(), PromptGammaError> {
+        for (label, value) in [
+            ("schema_version", self.schema_version.as_str()),
+            ("id", self.id.as_str()),
+            ("case_id", self.case_id.as_str()),
+            ("provenance_id", self.provenance_id.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(PromptGammaError::EmptyIdentifier(label));
+            }
+        }
+        let [nx, ny, nz] = self.geometry.shape;
+        for v in &self.detector_voxels {
+            if v[0] >= nx || v[1] >= ny || v[2] >= nz {
+                return Err(PromptGammaError::DetectorOutsideGeometry);
+            }
+        }
+        let voxels = self
+            .geometry
+            .voxel_count()
+            .map_err(|_| PromptGammaError::NonFiniteValue)?;
+        if self.sensitivity.len() != voxels
+            || self.sensitivity.iter().any(|v| !v.is_finite() || *v < 0.0)
+        {
+            return Err(PromptGammaError::NonFiniteValue);
+        }
+        Ok(())
+    }
+}
+
+/// Expected detector tally under an emission map — the linear inner
+/// product `Σ_v emission(v)·mass(v)·sensitivity(v)` with the declared
+/// uniform density and an optional efficiency calibration. Units
+/// follow the emission map (per source particle for
+/// `PhotonsPerKgPerSourceParticle`).
+#[allow(clippy::too_many_arguments)]
+pub fn expected_prompt_gamma_counts(
+    emission: &PromptGammaSource,
+    response: &PromptGammaResponse,
+    voxel_density_kg_per_m3: f64,
+    detector_efficiency: f64,
+    id: &str,
+    emission_ref: ContentReference,
+    response_ref: ContentReference,
+    provenance_id: &str,
+) -> Result<PromptGammaCounts, PromptGammaError> {
+    emission.validate()?;
+    response.validate()?;
+    if emission.geometry != response.geometry {
+        return Err(PromptGammaError::ShapeMismatch(
+            "emission and response grids differ",
+        ));
+    }
+    if (emission.emission_energy_ev - response.emission_energy_ev).abs() > 1.0 {
+        return Err(PromptGammaError::ShapeMismatch(
+            "emission and response energies differ",
+        ));
+    }
+    if !voxel_density_kg_per_m3.is_finite()
+        || voxel_density_kg_per_m3 <= 0.0
+        || !detector_efficiency.is_finite()
+        || detector_efficiency <= 0.0
+    {
+        return Err(PromptGammaError::NonFiniteValue);
+    }
+    let spacing = &emission.geometry.spacing_mm;
+    let voxel_m3 = spacing[0] * spacing[1] * spacing[2] * 1e-9;
+    let voxel_mass_kg = voxel_density_kg_per_m3 * voxel_m3;
+    let mut tally = 0.0;
+    for (e, s) in emission.values.iter().zip(response.sensitivity.iter()) {
+        tally += e * voxel_mass_kg * s;
+    }
+    if !tally.is_finite() {
+        return Err(PromptGammaError::NonFiniteValue);
+    }
+    Ok(PromptGammaCounts {
+        schema_version: PROMPT_GAMMA_COUNTS_SCHEMA.into(),
+        id: id.into(),
+        case_id: emission.case_id.clone(),
+        expected_tally: tally * detector_efficiency,
+        detector_efficiency,
+        voxel_density_kg_per_m3,
+        emission: emission_ref,
+        response: response_ref,
+        provenance_id: provenance_id.into(),
+        qualification: PROMPT_GAMMA_QUALIFICATION.into(),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -257,6 +421,66 @@ mod tests {
         );
         assert_eq!(source.emission_energy_ev, 478_000.0);
         source.validate().unwrap();
+    }
+
+    #[test]
+    fn folds_emission_into_expected_counts() {
+        let source = derive_prompt_gamma_source(
+            &bundle(DoseUnit::GrayPerSourceParticle),
+            "pg-1",
+            ContentReference {
+                id: "bundle".into(),
+                sha256: "a".repeat(64),
+            },
+            "pg-prov",
+        )
+        .unwrap();
+        let response = PromptGammaResponse {
+            schema_version: PROMPT_GAMMA_RESPONSE_SCHEMA.into(),
+            id: "resp".into(),
+            case_id: "case".into(),
+            geometry: source.geometry.clone(),
+            detector_voxels: vec![[0, 0, 0]],
+            emission_group: 7,
+            emission_energy_ev: 478_000.0,
+            sensitivity: vec![0.25, 0.5],
+            quadrature_order: 8,
+            converged: true,
+            residual: 1e-7,
+            outer_iterations: 3,
+            case: ContentReference {
+                id: "case".into(),
+                sha256: "b".repeat(64),
+            },
+            photon_data: ContentReference {
+                id: "data".into(),
+                sha256: "c".repeat(64),
+            },
+            provenance_id: "resp-prov".into(),
+            qualification: PROMPT_GAMMA_QUALIFICATION.into(),
+        };
+        // 1mm³ voxels at 1000 kg/m³ → 1e-6 kg per voxel.
+        let counts = expected_prompt_gamma_counts(
+            &source,
+            &response,
+            1000.0,
+            0.5,
+            "counts",
+            ContentReference {
+                id: "em".into(),
+                sha256: "d".repeat(64),
+            },
+            ContentReference {
+                id: "rs".into(),
+                sha256: "e".repeat(64),
+            },
+            "counts-prov",
+        )
+        .unwrap();
+        let expected = (source.values[0] * 0.25 + source.values[1] * 0.5) * 1e-6 * 0.5;
+        assert!((counts.expected_tally - expected).abs() < expected * 1e-12);
+        assert_eq!(counts.detector_efficiency, 0.5);
+        assert_eq!(counts.voxel_density_kg_per_m3, 1000.0);
     }
 
     #[test]

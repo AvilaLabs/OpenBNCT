@@ -73,15 +73,17 @@ pub use multigroup::{
 pub use openbnct_core::ContentReference;
 pub use photon::{
     MULTIGROUP_PHOTON_DATA_SCHEMA, MultigroupPhotonData, PHOTON_DOSE_COMPONENT, PhotonMaterial,
-    fold_photon_dose, solve_photon,
+    fold_photon_dose, solve_photon, solve_photon_adjoint,
 };
 pub use positioning::{
     AxisApproach, EntrySide, POSITION_REPORT_SCHEMA, PositionReport, PositioningError,
     aim_disk_source_at_centroid, aim_source_at_centroid, rotate_source,
 };
 pub use prompt_gamma::{
-    PROMPT_GAMMA_ENERGY_EV, PROMPT_GAMMA_QUALIFICATION, PROMPT_GAMMA_SOURCE_SCHEMA,
-    PromptGammaError, PromptGammaSource, PromptGammaUnit, derive_prompt_gamma_source,
+    PROMPT_GAMMA_COUNTS_SCHEMA, PROMPT_GAMMA_ENERGY_EV, PROMPT_GAMMA_QUALIFICATION,
+    PROMPT_GAMMA_RESPONSE_SCHEMA, PROMPT_GAMMA_SOURCE_SCHEMA, PromptGammaCounts, PromptGammaError,
+    PromptGammaResponse, PromptGammaSource, PromptGammaUnit, derive_prompt_gamma_source,
+    expected_prompt_gamma_counts,
 };
 pub use response::{
     AtomDensityBasis, ComponentDefinitionProfile, ComponentEstimator, ComponentRule,

@@ -27,7 +27,8 @@ use openbnct_core::ContentReference;
 use crate::model::TransportCase;
 use crate::multigroup::{
     BoundarySource, MultigroupData, MultigroupError, MultigroupFlux, MultigroupMaterial, SnOptions,
-    cell_compositions, level_symmetric_quadrature, material_composition_map, solve_sn_problem,
+    cell_compositions, level_symmetric_quadrature, material_composition_map,
+    solve_multigroup_adjoint, solve_sn_problem,
 };
 
 /// Versioned contract id for `MultigroupPhotonData`.
@@ -422,4 +423,168 @@ pub fn fold_photon_dose(
         component_profile,
         response_ref,
     )
+}
+
+/// Solve the photon adjoint problem: the importance of a photon born
+/// in each cell and group to a declared volumetric response source.
+///
+/// For prompt-gamma detector work the adjoint source is the detector
+/// voxel region at the emission group — one solve returns the
+/// response-matrix column for that position: expected tally under a
+/// volumetric emission `q(cell,g)` is `Σ q·φ*·V`. The transposed
+/// scatter turns the strictly-downscattering forward cascade into an
+/// upscattering adjoint — handled by the same group iteration.
+pub fn solve_photon_adjoint(
+    case: &TransportCase,
+    data: &MultigroupPhotonData,
+    options: &SnOptions,
+    adjoint_source: &[Vec<f64>],
+    data_ref: ContentReference,
+    case_ref: ContentReference,
+) -> Result<MultigroupFlux, MultigroupError> {
+    data.validate()?;
+    let transport = data.as_transport_data();
+    solve_multigroup_adjoint(
+        case,
+        &transport,
+        options,
+        adjoint_source,
+        data_ref,
+        case_ref,
+    )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::multigroup::{
+        level_symmetric_quadrature, material_composition_map, solve_sn_problem, tests::slab_case,
+    };
+
+    /// Two photon groups over one neutron group; the emission group is
+    /// the lower one so the test exercises a nonzero group index.
+    fn photon_data() -> MultigroupPhotonData {
+        MultigroupPhotonData {
+            schema_version: MULTIGROUP_PHOTON_DATA_SCHEMA.into(),
+            id: "pg-photon-data".into(),
+            energy_boundaries_ev: vec![700_000.0, 550_000.0, 300_000.0],
+            neutron_energy_boundaries_ev: vec![1.0, 1.0e-3],
+            collapse_declaration: "test fixture".into(),
+            component_profile: None,
+            materials: vec![PhotonMaterial {
+                material_id: "absorber".into(),
+                sigma_total_per_cm: vec![0.2, 0.5],
+                // row-major [from][to]: g0 keeps 0.05 in-group and
+                // downscatters 0.10 into g1; g1 keeps 0.05 in-group.
+                scatter_matrix_per_cm: vec![0.05, 0.10, 0.0, 0.05],
+                scatter_p1_matrix_per_cm: None,
+                transport_mu_bar: vec![0.0, 0.0],
+                production_matrix_per_cm: vec![1.0, 0.0],
+                pair_production_matrix_per_cm: vec![],
+                dose_response_gy_cm2: vec![],
+            }],
+        }
+    }
+
+    fn options() -> SnOptions {
+        SnOptions {
+            quadrature_order: 4,
+            convergence: 1e-9,
+            max_inner_iterations: 200,
+            max_outer_iterations: 20,
+            assignment: None,
+            periodic: [false; 3],
+            beam_uncollided_split: false,
+            transport_correction: false,
+            p1_anisotropic: false,
+            anisotropy_order: 0,
+            anderson_depth: 0,
+        }
+    }
+
+    /// Reciprocity: the fluence-weighted tally a detector region sees
+    /// from a unit volumetric source in the emission group must agree
+    /// with the adjoint sensitivity at that source voxel — that is the
+    /// identity `Σ_d φ(d)·V = Σ_v Q(v)·φ*(v)·V` the `pg counts` fold
+    /// relies on. The adjoint solve transposes the scatter matrix but
+    /// keeps the same directional sweep, so the two sides match up to
+    /// diamond-difference discretization error, not bit-exactly.
+    #[test]
+    fn adjoint_sensitivity_matches_forward_detector_tally() {
+        let mut case = slab_case();
+        case.geometry.shape = [4, 4, 4];
+        case.geometry.spacing_mm = [10.0; 3];
+        case.geometry.origin_mm = [-20.0, -20.0, -20.0];
+        let data = photon_data();
+        let transport = data.as_transport_data();
+        let (_, case_material) = material_composition_map(&case, &transport, None).unwrap();
+        let quadrature = level_symmetric_quadrature(4).unwrap();
+        let options = options();
+        let [nx, ny, _nz] = case.geometry.shape.map(|d| d as usize);
+        let n_cells = case.geometry.voxel_count().unwrap();
+        let groups = data.photon_group_count();
+        let emission_group = 1;
+        let at = |i: usize, j: usize, k: usize| k * nx * ny + j * nx + i;
+
+        let source_cell = at(0, 0, 3);
+        let mut fixed = vec![vec![0.0; groups]; n_cells];
+        fixed[source_cell][emission_group] = 1.0;
+        let forward = solve_sn_problem(
+            &case,
+            &transport,
+            &options,
+            &case_material,
+            &quadrature,
+            &boundary_empty(),
+            &fixed,
+            ContentReference {
+                id: "data".into(),
+                sha256: "0".repeat(64),
+            },
+            ContentReference {
+                id: "case".into(),
+                sha256: "1".repeat(64),
+            },
+        )
+        .unwrap();
+        assert!(forward.converged);
+
+        let detector = [at(3, 3, 0), at(2, 3, 0)];
+        let voxel_cm3 = 1.0; // 10 mm a side
+        let tally_forward: f64 = detector
+            .iter()
+            .map(|&d| forward.flux[d][emission_group])
+            .sum::<f64>()
+            * voxel_cm3;
+        assert!(tally_forward > 0.0);
+
+        let mut adjoint_source = vec![vec![0.0; groups]; n_cells];
+        for &d in &detector {
+            adjoint_source[d][emission_group] = 1.0;
+        }
+        let adjoint = solve_photon_adjoint(
+            &case,
+            &data,
+            &options,
+            &adjoint_source,
+            ContentReference {
+                id: "data".into(),
+                sha256: "0".repeat(64),
+            },
+            ContentReference {
+                id: "case".into(),
+                sha256: "1".repeat(64),
+            },
+        )
+        .unwrap();
+        assert!(adjoint.converged);
+        let tally_adjoint = adjoint.flux[source_cell][emission_group] * voxel_cm3;
+
+        let ratio = tally_adjoint / tally_forward;
+        assert!(
+            (ratio - 1.0).abs() < 0.15,
+            "adjoint/forward tally ratio {ratio} outside discretization tolerance \
+             (forward {tally_forward}, adjoint {tally_adjoint})"
+        );
+    }
 }

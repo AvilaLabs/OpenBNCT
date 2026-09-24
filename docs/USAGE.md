@@ -1235,6 +1235,58 @@ error. Scope is honestly bounded: isotropic (P0) scattering, no fission,
 multigroup data as declared input — a verification solver, not a
 production engine, and its output is research-only.
 
+### Prompt-gamma verification chain
+
+The `openbnct prompt-gamma` and `openbnct pg` commands build the
+478 keV delivery-verification chain — the physics source term plus the
+forward model every PG-imaging programme (BNCT-SPECT, Compton camera,
+PG-SPECT) consumes for detector design and reconstruction research.
+Research instruments only — not imaging devices or clinical monitors.
+
+`prompt-gamma` derives the emission map from a dose bundle's boron
+component (`openbnct.prompt-gamma-source/0.1.0`): captures/kg =
+D_boron/E_charged with the declared 2.34 MeV branch-weighted kerma,
+photons = captures × 0.94, monoenergetic 478 keV isotropic emission.
+
+```text
+openbnct prompt-gamma \
+  --dose physical-dose-bundle.json \
+  --id case.pg-source.v1 --output pg-source.json
+```
+
+`pg response` solves the photon *adjoint* problem for a declared
+detector voxel region — one S_N solve returns that position's whole
+response-matrix column: the sensitivity of a fluence-weighted detector
+tally to a photon born in any voxel of the case
+(`openbnct.pg-response/0.1.0`). Detectors outside the phantom live at
+boundary-adjacent or void-assigned voxels; the detector region is one
+or more `i,j,k` voxels on the case grid:
+
+```text
+openbnct pg response \
+  --case validation/fir1-k63-water-phantom/case.json \
+  --photon-data validation/fir1-k63-water-phantom/multigroup-photon-data-16g.json \
+  --detector 13,13,0 --detector 12,13,0 \
+  --order 8 --id case.pg-response.z0.v1 --output pg-response.json
+```
+
+`pg counts` folds an emission map against a response map into the
+expected detector tally (`openbnct.pg-counts/0.1.0`) — the linear
+inner product `Σ_v emission·mass·sensitivity` under a declared uniform
+voxel density and an optional scalar efficiency calibration (crystal
+volume, collimation — declared, not modeled):
+
+```text
+openbnct pg counts \
+  --emission pg-source.json --response pg-response.json \
+  --density-kg-per-m3 1000 --efficiency 1.0 \
+  --id case.pg-counts.v1 --output pg-counts.json
+```
+
+Multiple detector positions each take one adjoint solve; the
+reconstruction half (regularized inversion of measured counts back
+onto the emission grid) is scoped in the roadmap under R13-03.
+
 ### Exposure-plan tables and diagnostics
 
 The `openbnct plan` family bridges spreadsheet workflows and the JSON

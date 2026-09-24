@@ -155,6 +155,13 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Prompt-gamma delivery-verification chain: adjoint detector
+    /// response maps and the expected-counts forward model. Research
+    /// instruments for PG-imaging work — not imaging devices.
+    Pg {
+        #[command(subcommand)]
+        command: PgCommand,
+    },
     /// Export or verify a deterministic evidence bundle.
     Evidence(EvidenceArgs),
     /// Combine or construct RegionMask volumes (subtraction, union,
@@ -381,6 +388,87 @@ enum Command {
         /// New output path for the fitted PK model JSON
         /// (`openbnct.pk-model/0.1.0`), consumable by
         /// `irradiation-time --pk-model`.
+        #[arg(long)]
+        output: PathBuf,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum PgCommand {
+    /// Solve the photon adjoint for a declared detector voxel region:
+    /// the per-voxel sensitivity of a fluence-weighted tally on that
+    /// region to emissions in the 478 keV group
+    /// (`openbnct.pg-response/0.1.0`). One solve = one detector
+    /// position's response-matrix column.
+    Response {
+        /// `openbnct.transport-case/0.1.0` case JSON.
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-photon-data/0.1.0` photon data JSON.
+        #[arg(long)]
+        photon_data: PathBuf,
+        /// Detector voxel as `i,j,k` on the case grid; repeatable —
+        /// all listed voxels form one detector region.
+        #[arg(long)]
+        detector: Vec<String>,
+        /// Emission photon energy in eV — selects the photon group it
+        /// falls in (default: the 478 keV boron line).
+        #[arg(long, default_value_t = 478_000.0)]
+        emission_energy_ev: f64,
+        /// S_N quadrature order (even, 2–16).
+        #[arg(long, default_value_t = 8)]
+        order: u32,
+        /// Relative adjoint-flux convergence target.
+        #[arg(long, default_value_t = 1e-6)]
+        convergence: f64,
+        /// Within-group iterations per group pass.
+        #[arg(long, default_value_t = 64)]
+        max_inner: u32,
+        /// Outer sweeps.
+        #[arg(long, default_value_t = 16)]
+        max_outer: u32,
+        /// Axis treated as periodic; repeatable or comma-separated.
+        #[arg(long, value_delimiter = ',')]
+        periodic: Vec<String>,
+        /// Disable the extended transport correction on the sweep.
+        #[arg(long)]
+        no_transport_correction: bool,
+        /// Response document identifier.
+        #[arg(long)]
+        id: String,
+        /// Provenance identifier; defaults to `pg-response:` + the id.
+        #[arg(long)]
+        provenance_id: Option<String>,
+        /// Output path for the pg-response JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Fold a prompt-gamma emission map against a response map into
+    /// the expected detector tally (`openbnct.pg-counts/0.1.0`) — the
+    /// forward-model half of the reconstruction chain.
+    Counts {
+        /// `openbnct.prompt-gamma-source/0.1.0` emission map JSON.
+        #[arg(long)]
+        emission: PathBuf,
+        /// `openbnct.pg-response/0.1.0` response map JSON.
+        #[arg(long)]
+        response: PathBuf,
+        /// Uniform voxel density in kg/m³ converting the per-kg
+        /// emission map to volumetric sources.
+        #[arg(long)]
+        density_kg_per_m3: f64,
+        /// Declared detector efficiency calibration applied to the
+        /// raw tally (crystal volume, collimation — a scalar, not
+        /// modeled transport).
+        #[arg(long, default_value_t = 1.0)]
+        efficiency: f64,
+        /// Counts document identifier.
+        #[arg(long)]
+        id: String,
+        /// Provenance identifier; defaults to `pg-counts:` + the id.
+        #[arg(long)]
+        provenance_id: Option<String>,
+        /// Output path for the pg-counts JSON.
         #[arg(long)]
         output: PathBuf,
     },
@@ -7968,6 +8056,215 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 source.values.len()
             );
         }
+        Some(Command::Pg { command }) => match command {
+            PgCommand::Response {
+                case,
+                photon_data,
+                detector,
+                emission_energy_ev,
+                order,
+                convergence,
+                max_inner,
+                max_outer,
+                periodic,
+                no_transport_correction,
+                id,
+                provenance_id,
+                output,
+            } => {
+                let case_bytes = fs::read(&case)?;
+                let transport_case: TransportCase = serde_json::from_slice(&case_bytes)
+                    .map_err(|e| io::Error::other(format!("case {}: {e}", case.display())))?;
+                let data_bytes = fs::read(&photon_data)?;
+                let ph_data: openbnct_transport::MultigroupPhotonData =
+                    serde_json::from_slice(&data_bytes).map_err(|e| {
+                        io::Error::other(format!("photon data {}: {e}", photon_data.display()))
+                    })?;
+                ph_data
+                    .validate()
+                    .map_err(|e| io::Error::other(format!("photon data: {e}")))?;
+                if detector.is_empty() {
+                    return Err(io::Error::other("pg response: --detector required").into());
+                }
+                let edges = &ph_data.energy_boundaries_ev;
+                let groups = edges.len() - 1;
+                let emission_group = (0..groups)
+                    .find(|&g| emission_energy_ev <= edges[g] && emission_energy_ev > edges[g + 1])
+                    .ok_or_else(|| {
+                        io::Error::other(format!(
+                            "emission energy {emission_energy_ev} eV outside the photon group structure"
+                        ))
+                    })?;
+                let [nx, ny, nz] = transport_case.geometry.shape;
+                let n_cells = transport_case
+                    .geometry
+                    .voxel_count()
+                    .map_err(|e| io::Error::other(format!("geometry: {e}")))?;
+                let mut adjoint_source = vec![vec![0.0; groups]; n_cells];
+                let mut detector_voxels = Vec::with_capacity(detector.len());
+                for spec in &detector {
+                    let parts: Vec<&str> = spec.split(',').collect();
+                    if parts.len() != 3 {
+                        return Err(io::Error::other(format!(
+                            "detector voxel {spec:?} must be i,j,k"
+                        ))
+                        .into());
+                    }
+                    let parse = |s: &str| {
+                        s.trim().parse::<u32>().map_err(|_| {
+                            io::Error::other(format!("detector voxel {spec:?} must be i,j,k"))
+                        })
+                    };
+                    let v = [parse(parts[0])?, parse(parts[1])?, parse(parts[2])?];
+                    let (i, j, k) = (v[0] as usize, v[1] as usize, v[2] as usize);
+                    if i >= nx as usize || j >= ny as usize || k >= nz as usize {
+                        return Err(io::Error::other(format!(
+                            "detector voxel {i},{j},{k} outside the {nx}x{ny}x{nz} grid"
+                        ))
+                        .into());
+                    }
+                    adjoint_source[i + nx as usize * j + nx as usize * ny as usize * k]
+                        [emission_group] = 1.0;
+                    detector_voxels.push([v[0], v[1], v[2]]);
+                }
+                let mut periodic_axes = [false; 3];
+                for axis in &periodic {
+                    let index = match axis.as_str() {
+                        "x" => 0,
+                        "y" => 1,
+                        "z" => 2,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "periodic axis {other:?} must be x, y, or z"
+                            ))
+                            .into());
+                        }
+                    };
+                    periodic_axes[index] = true;
+                }
+                let options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    convergence,
+                    max_inner_iterations: max_inner,
+                    max_outer_iterations: max_outer,
+                    assignment: None,
+                    periodic: periodic_axes,
+                    beam_uncollided_split: false,
+                    transport_correction: !no_transport_correction,
+                    p1_anisotropic: false,
+                    anisotropy_order: 0,
+                    anderson_depth: 0,
+                };
+                let data_ref = openbnct_core::ContentReference {
+                    id: ph_data.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                };
+                let case_ref = openbnct_core::ContentReference {
+                    id: transport_case.case_id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                };
+                let adjoint = openbnct_transport::solve_photon_adjoint(
+                    &transport_case,
+                    &ph_data,
+                    &options,
+                    &adjoint_source,
+                    data_ref.clone(),
+                    case_ref.clone(),
+                )
+                .map_err(|e| io::Error::other(format!("photon adjoint solve: {e}")))?;
+                if !adjoint.converged {
+                    return Err(io::Error::other(format!(
+                        "photon adjoint did not converge (residual {:.3e} after {} outer iterations)",
+                        adjoint.residual, adjoint.outer_iterations
+                    ))
+                    .into());
+                }
+                let sensitivity: Vec<f64> =
+                    adjoint.flux.iter().map(|row| row[emission_group]).collect();
+                let response = openbnct_transport::PromptGammaResponse {
+                    schema_version: openbnct_transport::PROMPT_GAMMA_RESPONSE_SCHEMA.into(),
+                    id: id.clone(),
+                    case_id: transport_case.case_id.clone(),
+                    geometry: transport_case.geometry.clone(),
+                    detector_voxels,
+                    emission_group: emission_group as u32,
+                    emission_energy_ev,
+                    sensitivity,
+                    quadrature_order: order,
+                    converged: adjoint.converged,
+                    residual: adjoint.residual,
+                    outer_iterations: adjoint.outer_iterations,
+                    case: case_ref,
+                    photon_data: data_ref,
+                    provenance_id: provenance_id
+                        .clone()
+                        .unwrap_or_else(|| format!("pg-response:{id}")),
+                    qualification: openbnct_transport::PROMPT_GAMMA_QUALIFICATION.into(),
+                };
+                response
+                    .validate()
+                    .map_err(|e| io::Error::other(format!("pg response: {e}")))?;
+                write_new_json(&output, &response)?;
+                println!("pg response at {}", output.display());
+                println!(
+                    "emission group {} ({:.0} keV) · {} detector voxels · S{} · residual {:.2e}",
+                    response.emission_group,
+                    response.emission_energy_ev / 1.0e3,
+                    response.detector_voxels.len(),
+                    response.quadrature_order,
+                    response.residual
+                );
+            }
+            PgCommand::Counts {
+                emission,
+                response,
+                density_kg_per_m3,
+                efficiency,
+                id,
+                provenance_id,
+                output,
+            } => {
+                let emission_bytes = fs::read(&emission)?;
+                let emission_source: openbnct_transport::PromptGammaSource =
+                    serde_json::from_slice(&emission_bytes).map_err(|e| {
+                        io::Error::other(format!("emission {}: {e}", emission.display()))
+                    })?;
+                let response_bytes = fs::read(&response)?;
+                let response_map: openbnct_transport::PromptGammaResponse =
+                    serde_json::from_slice(&response_bytes).map_err(|e| {
+                        io::Error::other(format!("response {}: {e}", response.display()))
+                    })?;
+                let emission_ref = openbnct_core::ContentReference {
+                    id: emission_source.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&emission_bytes),
+                };
+                let response_ref = openbnct_core::ContentReference {
+                    id: response_map.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&response_bytes),
+                };
+                let counts = openbnct_transport::expected_prompt_gamma_counts(
+                    &emission_source,
+                    &response_map,
+                    density_kg_per_m3,
+                    efficiency,
+                    &id,
+                    emission_ref,
+                    response_ref,
+                    provenance_id
+                        .as_deref()
+                        .unwrap_or(&format!("pg-counts:{id}")),
+                )
+                .map_err(|e| io::Error::other(format!("pg counts: {e}")))?;
+                write_new_json(&output, &counts)?;
+                println!("pg counts at {}", output.display());
+                println!(
+                    "expected tally {:.4e} (efficiency {:.3} · density {:.0} kg/m³)",
+                    counts.expected_tally,
+                    counts.detector_efficiency,
+                    counts.voxel_density_kg_per_m3
+                );
+            }
+        },
         Some(Command::Accumulate { plan, output }) => {
             let accumulated = openbnct_plan::accumulate_plan_file(&plan)
                 .map_err(|error| io::Error::other(format!("accumulation: {error}")))?;

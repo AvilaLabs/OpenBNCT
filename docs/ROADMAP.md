@@ -1445,6 +1445,63 @@ independent engines, ordered by leverage. None implies a clinical claim.
   entry; only LTY=0 (derived-quantity reference) resolves. Extend if a
   real evaluation needs them.
 
+## R13 — Prompt-gamma delivery verification (draft)
+
+Draft scope, adopted 2026-09-23. R10-01 landed the physics source
+term (`openbnct.prompt-gamma-source` — the spatial 478 keV
+production map). This milestone extends the chain into the part
+R10-01 explicitly deferred — transport to the detector, detector
+response, and reconstruction — because delivered-dose verification
+is the field's largest open problem: boron uptake is inferred from
+a pre-treatment PET scan and nothing measures what is actually
+deposited during the 30–60 min irradiation. The 478 keV prompt line
+(93.9% capture branch) is the only real-time in-vivo signal the
+physics offers. Every PG-detector programme (CdTe arrays,
+scintillator+pinhole, HPGe, PG-SPECT) needs the same forward model;
+no open tool provides one. Research scope only — a forward model and
+inversion research instrument, not an imaging device or a clinical
+monitor.
+
+Architecture (all artifacts versioned and hash-bound):
+
+- **R13-01 — adjoint detector response. (landed)** A detector's
+  per-voxel sensitivity is exactly the adjoint problem:
+  `solve_photon_adjoint` with the detector voxel region as the adjoint
+  source at the 478 keV group returns, in a single solve, the
+  importance of a photon born anywhere to that detector — the response
+  matrix column for that position. `openbnct pg response --case …
+  --photon-data … --detector i,j,k` emits
+  `openbnct.pg-response/0.1.0`: adjoint sensitivity map at the
+  emission group, declared detector voxels and group, content bindings
+  to case + photon data. Real detectors sit outside the phantom in
+  air — v1 detector regions live at boundary/void-adjacent voxels;
+  void-extended cases (material assignment) place distant detectors
+  the same way.
+- **R13-02 — expected counts. (landed)** `openbnct pg counts` folds
+  emission × voxel mass × adjoint sensitivity → expected detector
+  tally, declared in a `openbnct.pg-counts/0.1.0` artifact. Absolute
+  detector efficiency (crystal volume, collimation) is a declared
+  multiplicative calibration, not modeled transport — consistent with
+  the fluence-weighted tally convention.
+- **R13-03 — reconstruction.** Regularized inversion (NNLS/Tikhonov)
+  of measured multi-detector counts back onto the emission grid —
+  with the response matrix from R13-01 this is a bounded linear
+  inverse problem. Deliverable `openbnct.pg-reconstruction/0.1.0`:
+  reconstructed emission map, residual norm, regularization
+  declaration, bindings to every response artifact consumed.
+- **R13-04 — validation.** Forward-inverse closure on a synthetic
+  case (known boron insert distribution → forward counts → recover
+  the map within declared tolerance) plus a literature-geometry
+  comparison (PMMA phantom + boron inserts as published by the
+  Nagoya/Polimi detector programmes) once response artifacts exist
+  to compare against.
+
+Runner-up scope item recorded for later scheduling: cell-level
+microdosimetry (stochastic α/⁷Li track sampling → lineal-energy
+spectra → SMK-model RBE) — PHITS carries it for Tsukuba-Plan, the
+open ecosystem does not; it compounds with the existing
+microdistribution machinery.
+
 ## R12 — Optional Avify Dose integration (planned; IP review required)
 
 **Adopted:** 2026-09-22, at the project owner's direction.
