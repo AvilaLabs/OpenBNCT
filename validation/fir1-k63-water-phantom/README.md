@@ -163,14 +163,42 @@ tallies:
 | photon (transported) | 0.465 | **0.434** |
 
 The closure shifts every channel ~6% lower — the deficits are *not*
-closure artifacts. The decomposition localizes the photon gap on the
-photon side: n→γ production (local-kerma fold) sits at 0.775× the
-MC-deposited tally, consistent with the ~15% MC boundary-escape
-fraction, while transported/production ≈ **0.56 in both eras** — the
-retention deficit is closure-independent. Our transported photon
-loses ~44% to escape/attenuation where MC retains ~85%; the residual
-is a photon-transport-side issue (16-group collapse or face/boundary
-treatment), not neutron normalization or spatial closure.
+closure artifacts.
+
+### Photon balance ledger (2026-09-23, `photon-balance.py` + `photon-escape-mc.py`)
+
+The earlier decomposition above assumed the OpenMC photon tally
+deposits ~85% of produced energy ("~15% boundary escape"), which
+framed transported/production ≈ 0.56 as a 44% transport loss. That
+premise was inferred, never measured — and it is wrong for this
+geometry. The corrected accounting:
+
+- **Ledger over the committed S8 flux** (`photon-balance.py`): the
+  discrete balance closes at 100%. Number escape is 90.7% and
+  **energy escape is 49.4%** (deposited 50.6%).
+- **Independent oracle** (`photon-escape-mc.py`): an analog
+  Klein-Nishina Monte Carlo on continuous NIST cross sections,
+  sampling the committed production map, gives **~61% energy
+  escape / ~39% deposited** for this box — a 22.6 cm mean-free-path
+  2.2 MeV source concentrated in the first ~10 cm of a 47 cm
+  phantom mostly escapes. Escape by face: z0 (entry) ~28%, the four
+  lateral faces ~6–10% each, z1 ~1%.
+- **Consequence**: our transported photon mildly *under*-escapes
+  (~49% vs ~61%) — it over-deposits ~1.3× of its production, which
+  *masks* part of the production deficit rather than adding to it.
+- **The dose gap is upstream, not transport-side**: with MC's true
+  deposition ≈ 39%, the 0.465 dose ratio decomposes as
+  ≈ 0.36 (n→γ production deficit — the same upstream neutron-field
+  normalization as boron 0.386 / nitrogen 0.384) × ~1.3 (our
+  over-deposition). The PMMA phantom independently confirms the
+  transport scale: transported/local-kerma 0.21, and the same oracle
+  on the comparable d20 water cylinder gives ~0.18 deposited —
+  escape-dominated geometries retain little either way.
+
+Residual photon-side item (small): the ~12-point under-escape —
+candidates are the P0-isotropized Compton cascade, the DD boundary
+extrapolation, or quadrature coverage; tracked in the roadmap under
+the photon-transport fidelity follow-up.
 
 Reading:
 
@@ -180,17 +208,13 @@ Reading:
   thermal-profile comparisons on both phantoms (~0.5-0.65×), rooted
   in the 3-bin source histogram + multigroup collapse; it is not a
   transport-shape error.
-- Local-kerma photon production is within ~17% of the MC-deposited
-  photon dose — given MC loses ~15% of photon energy to boundary
-  escape, the underlying n→γ production matrix is close to the MC
-  production.
-- The *transported* photon dose retains ~56% of production; its
-  depth ratio to MC declines smoothly 0.86 → ~0.25, consistent with
-  the neutron-field deficit compounding the photon escape. The
-  hydrogen component's ~2e5× apparent mismatch is definitional —
-  the deterministic component folds recoil-proton kerma while the
-  MC bundle's hydrogen channel carries a different convention —
-  and is excluded from interpretation.
+- The transported photon deficit carries the *same* normalization
+  deficit — photon production ∝ neutron flux — partially offset by
+  our ~1.3× over-deposition. The hydrogen component's ~2e5×
+  apparent mismatch is definitional — the deterministic component
+  folds recoil-proton kerma while the MC bundle's hydrogen channel
+  carries a different convention — and is excluded from
+  interpretation.
 - `beam qa`/`measurement compare` on this dose (artifacts
   `beam-quality-water-28g-tsl-p1-1e.json`,
   `measurement-comparison-water-28g-tsl-p1-1e.json`) are recorded

@@ -1352,17 +1352,27 @@ independent engines, ordered by leverage. None implies a clinical claim.
   requires a published fine-group K63 spectrum (Seppälä 2002 tabulates
   only the 3-group integrals) or a declared intermediate weighting,
   plus a converged P_l solve.
-- **R11-02 — water-phantom photon-channel deficit: localized to
-  photon transport.** The θ-WDD re-solve (committed `*-wdd`
-  artifacts, 72 outers at 9.96e-5) moved every channel ~6% lower —
-  the deficit is not a closure artifact. Decomposition: n→γ
-  production (local-kerma fold) is 0.775× the MC tally ≈ consistent
-  with the ~15% MC escape fraction, but transported/production =
-  0.56 in both closures — our 16-group transported photon loses ~44%
-  vs MC's ~15% escape. Remaining suspects: photon-group collapse
-  and/or face-boundary leakage treatment in `sn photon-solve`.
-  Evidence gate: a photon-transport accounting pass localizing where
-  the extra ~29% escapes.
+- **R11-02 — water-phantom photon-channel deficit: resolved as a
+  misattribution; residual is a small over-deposition, not a
+  transport loss.** The accounting pass is committed as
+  `validation/fir1-k63-water-phantom/photon-balance.py` (per-group
+  ledger over the committed S8 flux — production / in-scatter /
+  removal / implied leakage; discrete closure is exact) and
+  `photon-escape-mc.py` (independent Klein-Nishina oracle on
+  continuous NIST cross sections over the committed production map).
+  Findings: the ledger's energy escape is 49.4%, the oracle says
+  ~61% for this geometry — our transported photon *under*-escapes
+  ~12 points and over-deposits ~1.3× of its production. The "~15%
+  MC escape" premise had assumed the OpenMC tally deposits ~85% of
+  production; for a 22.6 cm-mfp 2.2 MeV source concentrated in the
+  first ~10 cm of a 47 cm box the true deposition is ~39%, and the
+  internal-consistency check confirms it (production ∝ neutron flux
+  cannot exceed the independently-measured ~0.39× neutron-field
+  deficit). The 0.465 dose ratio decomposes as ≈ 0.36 production
+  (the upstream neutron normalization, same deficit as boron/nitrogen)
+  × ~1.3 over-deposition. Follow-up (small): the ~12-point
+  under-escape — candidates are P0-isotropized Compton cascade,
+  DD boundary extrapolation, or quadrature coverage.
 - **R11-03 — θ-WDD + P1 iteration stiffness.** The weighted closure
   under P1 in-scatter converges far slower than the clamp-era map
   (committed solve: 39 outers; WDD+P1 did not reach 1e-4 within ~5h).
