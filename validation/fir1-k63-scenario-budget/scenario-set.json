@@ -1,0 +1,107 @@
+{
+  "schema_version": "openbnct.scenario-set/0.1.0",
+  "id": "fir1-k63-published-budget",
+  "note": "Published FiR 1 / BPA-F uncertainty budget encoded as discrete scenarios. Anchors: Savolainen et al. (Acta Oncol) \u2014 6% total 1\u03c3 decomposed to MCNP model 2.3%, patient geometry 3.9%, distance 3.3%, calibration 1.5%, blood boron \u00b120%, skin = 1.5\u00d7blood; Kotiluoto et al. \u2014 8% total computational 1\u03c3 excluding boron. Values are \u00b11\u03c3 worst cases, not distributions.",
+  "scenarios": [
+    {
+      "name": "boron-uptake-low",
+      "note": "blood-boron measurement spread \u221220% (1\u03c3): Savolainen et al., Acta Oncol \u2014 blood concentration 24.4 \u00b5g/g \u00b120%",
+      "component_scales": {
+        "boron": 0.8
+      }
+    },
+    {
+      "name": "boron-uptake-high",
+      "note": "blood-boron measurement spread +20% (1\u03c3): Savolainen et al.",
+      "component_scales": {
+        "boron": 1.2
+      }
+    },
+    {
+      "name": "beam-model-low",
+      "note": "beam-model uncertainty \u22122.3% (1\u03c3): Savolainen et al. MCNP-model term of the 6% total",
+      "dose_scale": 0.977
+    },
+    {
+      "name": "beam-model-high",
+      "note": "beam-model uncertainty +2.3% (1\u03c3): Savolainen et al.",
+      "dose_scale": 1.023
+    },
+    {
+      "name": "calibration-low",
+      "note": "reference calibration \u22121.5% (1\u03c3): Savolainen et al.",
+      "dose_scale": 0.985
+    },
+    {
+      "name": "calibration-high",
+      "note": "reference calibration +1.5% (1\u03c3): Savolainen et al.",
+      "dose_scale": 1.015
+    },
+    {
+      "name": "distance-minus-2mm",
+      "note": "source\u2013phantom distance term (3.3% in Savolainen) expressed as a 2 mm displacement along the beam axis",
+      "shift_mm": [
+        0.0,
+        0.0,
+        -2.0
+      ]
+    },
+    {
+      "name": "distance-plus-2mm",
+      "note": "source\u2013phantom distance term (3.3% in Savolainen) expressed as a 2 mm displacement along the beam axis",
+      "shift_mm": [
+        0.0,
+        0.0,
+        2.0
+      ]
+    },
+    {
+      "name": "tumor-uptake-low",
+      "note": "tumor/blood uptake ratio at the low end of the published BPA-F range (T/B ~2.5 vs nominal 3.5): region scale 0.7",
+      "region_scales": [
+        {
+          "mask": "tumor",
+          "component_scales": {
+            "boron": 0.7
+          }
+        }
+      ]
+    },
+    {
+      "name": "tumor-uptake-high",
+      "note": "tumor/blood uptake ratio at the high end of the published BPA-F range (T/B ~4.5): region scale 1.3",
+      "region_scales": [
+        {
+          "mask": "tumor",
+          "component_scales": {
+            "boron": 1.3
+          }
+        }
+      ]
+    },
+    {
+      "name": "skin-uptake-low",
+      "note": "skin factor below the published 1.5\u00d7blood convention (\u22481.0): region scale 0.67",
+      "region_scales": [
+        {
+          "mask": "entrance",
+          "component_scales": {
+            "boron": 0.67
+          }
+        }
+      ]
+    },
+    {
+      "name": "skin-uptake-high",
+      "note": "skin factor above the published 1.5\u00d7blood convention (\u22482.0): region scale 1.33",
+      "region_scales": [
+        {
+          "mask": "entrance",
+          "component_scales": {
+            "boron": 1.33
+          }
+        }
+      ]
+    }
+  ]
+}

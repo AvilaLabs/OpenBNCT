@@ -1,0 +1,43 @@
+{
+  "schema_version": "openbnct.inverse-plan-result/0.1.0",
+  "id": "fir1-k63-budget-plan",
+  "case_id": "fir1-k63-cylindrical-phantom",
+  "objective": {
+    "id": "fir1-k63-budget-objective",
+    "sha256": "sha256:ab08c58f7a343e4bc004308219f62cbdd61ddb73bd818b007f30a16d09d40e64"
+  },
+  "dose_quantity": {
+    "component": "boron"
+  },
+  "weights": [
+    {
+      "name": "dose-28g-tsl-p1-1e",
+      "weight": 1.0
+    }
+  ],
+  "outcomes": [
+    {
+      "kind": "min_eud",
+      "mask": "tumor",
+      "achieved": 2.0537400689260307e-17,
+      "bound": 1.9e-17,
+      "satisfied": true,
+      "violation": 0.0,
+      "weight": 1.0
+    },
+    {
+      "kind": "max_mean",
+      "mask": "entrance",
+      "achieved": 3.0659474034200833e-17,
+      "bound": 3.2e-17,
+      "satisfied": true,
+      "violation": 0.0,
+      "weight": 1.0
+    }
+  ],
+  "penalty": 0.0,
+  "iterations": 0,
+  "converged": true,
+  "qualification": "inverse_planning_research_only_not_clinical",
+  "provenance_id": "fir1-k63-scenario-budget"
+}

@@ -1,0 +1,303 @@
+{
+  "schema_version": "openbnct.scenario-report/0.1.0",
+  "id": "openbnct.scenario-report",
+  "result": {
+    "id": "fir1-k63-budget-plan",
+    "sha256": "sha256:267ef4879e4b39fd89eb3b98086814b6a63b4ecb10445c5539bb10e1888bc08d"
+  },
+  "objective": {
+    "id": "fir1-k63-budget-objective",
+    "sha256": "sha256:ab08c58f7a343e4bc004308219f62cbdd61ddb73bd818b007f30a16d09d40e64"
+  },
+  "scenario_set": {
+    "id": "fir1-k63-published-budget",
+    "sha256": "sha256:c637cab16565786c25a50c1ecdbc8743f635290c06e9845bd94beb9646000804"
+  },
+  "dose_references": [
+    {
+      "id": "dose-28g-tsl-p1-1e.dose-bundle",
+      "sha256": "9ea77a2097ecef12b067570916c04230962d3774b8f45d7f89c87d795df3d287"
+    }
+  ],
+  "evaluations": [
+    {
+      "scenario": "nominal",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 2.0537400689260307e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 3.0659474034200833e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "boron-uptake-low",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 1.6429920551408252e-17,
+          "satisfied": false
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 2.452757922736063e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "boron-uptake-high",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 2.4644880827112374e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 3.6791368841041016e-17,
+          "satisfied": false
+        }
+      ]
+    },
+    {
+      "scenario": "beam-model-low",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 2.0065040473407294e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 2.995430613141423e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "beam-model-high",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 2.1009760905113277e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 3.1364641936987404e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "calibration-low",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 2.022933967892139e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 3.0199581923687735e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "calibration-high",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 2.0845461699599215e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 3.1119366144713845e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "distance-minus-2mm",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 1.9086890170137306e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 3.1589835638805353e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "distance-plus-2mm",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 2.253192375229693e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 2.6976677707193543e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "tumor-uptake-low",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 1.43761804824822e-17,
+          "satisfied": false
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 3.0659474034200833e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "tumor-uptake-high",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 2.6698620896038395e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 3.0659474034200833e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "skin-uptake-low",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 2.0537400689260307e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 2.054184760291451e-17,
+          "satisfied": true
+        }
+      ]
+    },
+    {
+      "scenario": "skin-uptake-high",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "tumor",
+          "bound": 1.9e-17,
+          "achieved": 2.0537400689260307e-17,
+          "satisfied": true
+        },
+        {
+          "kind": "max_mean",
+          "mask": "entrance",
+          "bound": 3.2e-17,
+          "achieved": 4.077710046548725e-17,
+          "satisfied": false
+        }
+      ]
+    }
+  ],
+  "bands": [
+    {
+      "kind": "min_eud",
+      "mask": "tumor",
+      "bound": 1.9e-17,
+      "nominal_achieved": 2.0537400689260307e-17,
+      "min_achieved": 1.43761804824822e-17,
+      "max_achieved": 2.6698620896038395e-17,
+      "mean_achieved": 2.057924780802289e-17,
+      "worst_scenario": "tumor-uptake-low",
+      "violated_scenarios": [
+        "boron-uptake-low",
+        "tumor-uptake-low"
+      ]
+    },
+    {
+      "kind": "max_mean",
+      "mask": "entrance",
+      "bound": 3.2e-17,
+      "nominal_achieved": 3.0659474034200833e-17,
+      "min_achieved": 2.054184760291451e-17,
+      "max_achieved": 4.077710046548725e-17,
+      "mean_achieved": 3.044774828632369e-17,
+      "worst_scenario": "skin-uptake-high",
+      "violated_scenarios": [
+        "boron-uptake-high",
+        "skin-uptake-high"
+      ]
+    }
+  ],
+  "qualification": "inverse_plan_scenarios_research_only_not_clinical",
+  "provenance_id": "plan-scenarios:267ef4879e4b"
+}

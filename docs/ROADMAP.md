@@ -1465,10 +1465,13 @@ independent engines, ordered by leverage. None implies a clinical claim.
 - **R11-05 — licensed-engine execution gates.** The MCNP and PHITS
   emitters produce decks, but end-to-end execution requires licensed
   users. External dependency — track, don't block.
-- **R11-06 — ENDF NC-type LTY 1–3 covariances.** Cross-material and
-  weighting-function NC subsections are currently skipped with a ledger
-  entry; only LTY=0 (derived-quantity reference) resolves. Extend if a
-  real evaluation needs them.
+- **R11-06 — ENDF NC-type LTY 1–3 covariances. (closed — no real
+  evaluations declare them)** A 2026-09-23 scan of all 40
+  ENDF/B-VIII.1 neutron tapes on this machine found every NC-type
+  sub-subsection is LTY=0; no tape declares LTY ∈ {1,2,3}.
+  Implementing them would be unverifiable format code — the skip
+  ledger already reports any future tape that does. Closed unless a
+  real evaluation arrives declaring them.
 
 ## R13 — Prompt-gamma delivery verification (draft)
 
@@ -1678,14 +1681,22 @@ uptake error, per-structure T/N, whole-field offsets).
   `method: "worst_case_scenario"`, nominal-plan outcomes, and the
   worst-case penalty; `plan scenarios` on the robust weights shows
   the tightened band.
-- **R16-03 — validation. (partially landed)** Known-answer scenario
+- **R16-03 — validation. (landed)** Known-answer scenario
   fixtures (a field whose worst case is known a priori): landed as
   `benchmarks/synthetic/scenario-robust-planning` — a degenerate
   four-voxel field pair where the worst-case optimum is closed-form
   (w_h* = 1.498875, w_b* = 0 under the declared regularization) and a
   committed conformance test asserts the optimizer reproduces it.
-  Remaining: a published uncertainty budget anchored to a real beam
-  model.
+  A published uncertainty budget anchored to a real beam model:
+  landed as `validation/fir1-k63-scenario-budget` — the published
+  FiR 1 / BPA-F budget (Savolainen: 6% total decomposition, blood
+  boron ±20%, skin 1.5×blood; Kotiluoto: 8% computational excluding
+  boron; published T/B range) encoded as a 12-scenario set and
+  evaluated against the committed S_N transported field. The bands
+  reproduce the literature's ordering — coverage fails only under
+  uptake deficits, the entrance limit only under uptake excesses,
+  and the ~2–3% model/calibration/distance terms do not move either
+  bound at ±1σ.
 
 ## R12 — Optional Avify Dose integration (planned; IP review required)
 

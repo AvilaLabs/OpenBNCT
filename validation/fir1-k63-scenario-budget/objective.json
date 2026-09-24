@@ -1,0 +1,28 @@
+{
+  "schema_version": "openbnct.inverse-plan-objective/0.1.0",
+  "id": "fir1-k63-budget-objective",
+  "case_id": "fir1-k63-cylindrical-phantom",
+  "dose_quantity": {
+    "component": "boron"
+  },
+  "objectives": [
+    {
+      "kind": "min_eud",
+      "mask": "tumor",
+      "target": 1.9e-17,
+      "eud_a": 1.0,
+      "weight": 1.0
+    },
+    {
+      "kind": "max_mean",
+      "mask": "entrance",
+      "limit": 3.2e-17,
+      "weight": 1.0
+    }
+  ],
+  "max_iterations": 200,
+  "gradient_tolerance": 1e-09,
+  "weight_regularization": 0.0,
+  "validity_domain": "research uncertainty-budget demonstration on the FiR 1 validation phantom \u2014 not a clinical plan",
+  "provenance_id": "fir1-k63-scenario-budget"
+}
