@@ -2176,6 +2176,18 @@ enum PlanCommand {
         /// record; without it only `plan fields --beam` lines print.
         #[arg(long)]
         csv: Option<PathBuf>,
+        /// Emit an `openbnct.direction-candidates/0.1.0` document —
+        /// the ranked sweep with both scores, content-bound to the
+        /// case, masks, and (when present) multigroup data.
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Sweep document identifier; defaults to
+        /// `{case_id}.direction-candidates`.
+        #[arg(long)]
+        id: Option<String>,
+        /// Provenance identifier; defaults to `directions:` + the id.
+        #[arg(long)]
+        provenance_id: Option<String>,
     },
     /// Aim and solve a beam per direction through a target mask —
     /// emits a unit-weight dose bundle per beam plus a
@@ -9992,23 +10004,30 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 data,
                 radius_cm,
                 csv,
+                output,
+                id,
+                provenance_id,
             } => {
-                let case_document: TransportCase = serde_json::from_slice(&fs::read(&case)?)
-                    .map_err(|error| {
+                let case_bytes = fs::read(&case)?;
+                let case_document: TransportCase =
+                    serde_json::from_slice(&case_bytes).map_err(|error| {
                         io::Error::other(format!("case {}: {error}", case.display()))
                     })?;
                 let geometry = case_document.geometry.clone();
-                let aim: RegionMask =
-                    serde_json::from_slice(&fs::read(&aim_mask)?).map_err(|error| {
-                        io::Error::other(format!("mask {}: {error}", aim_mask.display()))
-                    })?;
-                let body: Option<RegionMask> = body_mask
-                    .map(|path| {
-                        serde_json::from_slice(&fs::read(&path)?).map_err(|error| {
+                let aim_bytes = fs::read(&aim_mask)?;
+                let aim: RegionMask = serde_json::from_slice(&aim_bytes).map_err(|error| {
+                    io::Error::other(format!("mask {}: {error}", aim_mask.display()))
+                })?;
+                let (body, body_bytes) = match body_mask {
+                    Some(path) => {
+                        let bytes = fs::read(&path)?;
+                        let mask: RegionMask = serde_json::from_slice(&bytes).map_err(|error| {
                             io::Error::other(format!("mask {}: {error}", path.display()))
-                        })
-                    })
-                    .transpose()?;
+                        })?;
+                        (Some(mask), Some(bytes))
+                    }
+                    None => (None, None),
+                };
                 let mut candidates = openbnct_plan::directions::enumerate_directions(
                     &geometry,
                     &aim,
@@ -10020,11 +10039,15 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 // Adjoint scoring: one solve of the transposed problem
                 // with the aim region as adjoint source, then rank every
                 // candidate by its uncollided beam × φ* inner product.
+                let mut data_bytes: Option<Vec<u8>> = None;
+                let mut scoring = "tissue_path_length";
                 if let Some(data_path) = data {
-                    let data: openbnct_transport::MultigroupData =
-                        serde_json::from_slice(&fs::read(&data_path)?).map_err(|error| {
-                            io::Error::other(format!("data {}: {error}", data_path.display()))
-                        })?;
+                    let bytes = fs::read(&data_path)?;
+                    let data: openbnct_transport::MultigroupData = serde_json::from_slice(&bytes)
+                        .map_err(|error| {
+                        io::Error::other(format!("data {}: {error}", data_path.display()))
+                    })?;
+                    data_bytes = Some(bytes);
                     let options = openbnct_transport::SnOptions::default();
                     let n_cells = geometry
                         .voxel_count()
@@ -10089,6 +10112,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         };
                         scored.push((score, index));
                     }
+                    for (score, index) in &scored {
+                        candidates[*index].adjoint_score = Some(*score);
+                    }
                     if scored.is_empty() {
                         return Err(io::Error::other(
                             "no candidate direction admits an aperture that fits its entry face",
@@ -10101,6 +10127,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         .iter()
                         .map(|(_, index)| candidates[*index].clone())
                         .collect();
+                    scoring = "adjoint_importance";
                     eprintln!("adjoint-ranked by uncollided-beam importance");
                 }
                 let take = if top == 0 { candidates.len() } else { top };
@@ -10128,6 +10155,45 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         ));
                     }
                     fs::write(&path, text)?;
+                }
+                if let Some(path) = output {
+                    let id = id.clone().unwrap_or_else(|| {
+                        format!("{}.direction-candidates", case_document.case_id)
+                    });
+                    let document = openbnct_plan::directions::build_direction_candidates_document(
+                        &id,
+                        &case_document.case_id,
+                        candidates.clone(),
+                        scoring,
+                        azimuth_steps,
+                        elevation_steps,
+                        data_bytes.as_ref().map(|_| radius_cm),
+                        openbnct_core::ContentReference {
+                            id: case_document.case_id.clone(),
+                            sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                        },
+                        openbnct_core::ContentReference {
+                            id: aim.name.clone(),
+                            sha256: openbnct_evidence::sha256_hex(&aim_bytes),
+                        },
+                        body_bytes.as_ref().zip(body.as_ref()).map(|(bytes, mask)| {
+                            openbnct_core::ContentReference {
+                                id: mask.name.clone(),
+                                sha256: openbnct_evidence::sha256_hex(bytes),
+                            }
+                        }),
+                        data_bytes
+                            .as_ref()
+                            .map(|bytes| openbnct_core::ContentReference {
+                                id: "multigroup-data".into(),
+                                sha256: openbnct_evidence::sha256_hex(bytes),
+                            }),
+                        provenance_id
+                            .as_deref()
+                            .unwrap_or(&format!("directions:{id}")),
+                    );
+                    write_new_json(&path, &document)?;
+                    println!("direction candidates at {}", path.display());
                 }
                 eprintln!(
                     "{} candidates enumerated, top {take} emitted",

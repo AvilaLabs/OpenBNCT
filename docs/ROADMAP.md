@@ -1290,11 +1290,16 @@ Each item is evidence-gated; none implies a clinical claim.
   rigid transform (frame-of-reference or explicit matrix), and record
   the registration basis in the artifact. Deformable registration stays
   deferred.
-- **R10-04 — beam-direction search.** Extend `plan fields`/`optimize`
-  with a discrete direction sweep — enumerate candidate beam directions
-  over a declared angular grid, score each by the fast transport path,
-  and feed survivors to the weight optimizer. Acceptance: the sweep
-  reproduces a known optimum on a synthetic case and is content-bound.
+- **R10-04 — beam-direction search. (landed)** `plan directions`
+  enumerates an azimuth×elevation grid converging on the aim-mask
+  centroid, ranks by tissue path length to the centroid (zero-transport
+  pre-filter), and — with `--data` — re-ranks by one adjoint solve's
+  uncollided-beam importance. `--output` emits
+  `openbnct.direction-candidates/0.1.0`: the ranked sweep with both
+  scores, grid declaration, and sha256 bindings to case, masks, and
+  data. Spec lines feed `plan fields --beam` directly; the synthetic
+  known-optimum test (`sweep_recovers_known_optimum`) plus the PMMA
+  e2e (directions → fields → optimize) satisfy the acceptance.
 - **R10-05 — S_N plan-iteration quality.** Grow the deterministic solver
   from verification scope toward iteration scope: more groups, wider
   anisotropy support, performance pass. Each increment lands with its

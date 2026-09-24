@@ -1387,6 +1387,26 @@ refused (non-linear — not expressible as component weights), a
 `bio_model` on a physical quantity is rejected, and every
 `region_weights` key must resolve to a supplied mask.
 
+`plan directions` enumerates which beams are worth solving at all:
+an azimuth×elevation grid of propagation vectors converging on the
+aim-mask centroid, ranked by the millimetres of tissue each ray
+crosses before reaching it (epithermal incidence favors shallow
+entry). With `--data` a single adjoint solve with the aim region as
+adjoint source re-ranks every candidate by its uncollided-beam × φ*
+importance — transport-informed ranking at one solve's cost.
+`--output` emits `openbnct.direction-candidates/0.1.0` content-binding
+the ranked sweep (both scores, grid declaration) to the case, masks,
+and data; the printed `name,dx,dy,dz` lines feed `--beam` verbatim:
+
+```text
+openbnct plan directions \
+  --case CASE.json --aim-mask TARGET-MASK.json \
+  [--body-mask BODY-MASK.json] [--azimuth-steps 12 --elevation-steps 3] \
+  [--data MULTIGROUP-DATA.json --radius-cm 4.0] [--top 4] \
+  [--csv candidates.csv] [--output direction-candidates.json]
+# → stdout: name,dx,dy,dz spec lines for plan fields --beam
+```
+
 `plan fields` produces those per-beam dose bundles end to end: it aims
 an on-face disk source per beam direction through an aim mask, solves
 each field with the deterministic multigroup solver, folds a unit-weight

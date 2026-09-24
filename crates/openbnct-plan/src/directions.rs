@@ -13,9 +13,16 @@
 //! dosimetric model — the real ranking stays with `plan optimize` and
 //! `plan robustness` on solved fields.
 
-use openbnct_core::{GridGeometry, RegionMask};
+use openbnct_core::{ContentReference, GridGeometry, RegionMask};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+/// Current schema token for direction-candidate sweeps.
+pub const DIRECTION_CANDIDATES_SCHEMA: &str = "openbnct.direction-candidates/0.1.0";
+
+/// Qualification string carried by every direction-candidates document.
+pub const DIRECTION_CANDIDATES_QUALIFICATION: &str =
+    "beam_direction_sweep_research_only_not_clinical";
 
 /// One candidate direction with its geometric score.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -33,6 +40,83 @@ pub struct DirectionCandidate {
     /// aim centroid — `None` only when no body mask was supplied, in
     /// which case the grid-diagonal bound is reported instead.
     pub tissue_path_mm: Option<f64>,
+    /// Adjoint importance score — the inner product of the
+    /// direction's uncollided beam with the aim-region adjoint field.
+    /// `None` unless the sweep ran with a multigroup-data solve.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub adjoint_score: Option<f64>,
+}
+
+/// The angular grid the sweep enumerated, recorded verbatim.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DirectionGridDeclaration {
+    pub azimuth_steps: u32,
+    pub elevation_steps: u32,
+    /// Aperture radius in cm used for adjoint scoring, when present.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aperture_radius_cm: Option<f64>,
+}
+
+/// Versioned record of a direction sweep: the ranked candidate list
+/// with both scores and every input content-bound.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DirectionCandidatesDocument {
+    pub schema_version: String,
+    pub id: String,
+    pub case_id: String,
+    /// How the list order was produced: `tissue_path_length` or
+    /// `adjoint_importance`.
+    pub scoring: String,
+    pub grid: DirectionGridDeclaration,
+    /// Ranked best-first.
+    pub candidates: Vec<DirectionCandidate>,
+    /// Content bindings to every input consumed.
+    pub case: ContentReference,
+    pub aim_mask: ContentReference,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub body_mask: Option<ContentReference>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub multigroup_data: Option<ContentReference>,
+    pub provenance_id: String,
+    pub qualification: String,
+}
+
+/// Assemble the content-bound sweep document.
+#[allow(clippy::too_many_arguments)]
+pub fn build_direction_candidates_document(
+    id: &str,
+    case_id: &str,
+    candidates: Vec<DirectionCandidate>,
+    scoring: &str,
+    azimuth_steps: u32,
+    elevation_steps: u32,
+    aperture_radius_cm: Option<f64>,
+    case: ContentReference,
+    aim_mask: ContentReference,
+    body_mask: Option<ContentReference>,
+    multigroup_data: Option<ContentReference>,
+    provenance_id: &str,
+) -> DirectionCandidatesDocument {
+    DirectionCandidatesDocument {
+        schema_version: DIRECTION_CANDIDATES_SCHEMA.into(),
+        id: id.into(),
+        case_id: case_id.into(),
+        scoring: scoring.into(),
+        grid: DirectionGridDeclaration {
+            azimuth_steps,
+            elevation_steps,
+            aperture_radius_cm,
+        },
+        candidates,
+        case,
+        aim_mask,
+        body_mask,
+        multigroup_data,
+        provenance_id: provenance_id.into(),
+        qualification: DIRECTION_CANDIDATES_QUALIFICATION.into(),
+    }
 }
 
 #[derive(Debug, Error)]
@@ -202,6 +286,7 @@ pub fn enumerate_directions(
                 azimuth_deg,
                 elevation_deg,
                 tissue_path_mm: tissue_path,
+                adjoint_score: None,
             });
         }
     }
@@ -283,6 +368,57 @@ mod tests {
         let parts: Vec<&str> = lines[0].split(',').collect();
         assert_eq!(parts.len(), 4);
         assert!(parts[1].parse::<f64>().is_ok());
+    }
+
+    /// R10-04 acceptance: the sweep reproduces a known optimum. An aim
+    /// mask pressed against the +x face of a full body must rank the
+    /// direction entering through that face first — azimuth 0 aims
+    /// the beam −x from the +x side, crossing ~1 mm of tissue instead
+    /// of ~9 mm from −x.
+    #[test]
+    fn sweep_recovers_known_optimum() {
+        let mut aim_voxels = vec![false; 1000];
+        aim_voxels[8 + 10 * 5 + 100 * 5] = true;
+        let aim = RegionMask {
+            name: "aim".into(),
+            voxels: aim_voxels,
+        };
+        let body = cube_mask(0, 10);
+        let candidates = enumerate_directions(&geometry(), &aim, Some(&body), 8, 1).unwrap();
+        // Only azimuths sweep — elevation pinned at 0 — so the optimum
+        // is exactly az000: the −x beam enters at the +x face, one
+        // voxel from the aim.
+        assert_eq!(candidates[0].name, "az000-el+00");
+        assert!(candidates[0].tissue_path_mm.unwrap() < 3.0);
+        // The diametrically opposite direction pays the full transit.
+        let worst = candidates.last().unwrap();
+        assert!(worst.tissue_path_mm.unwrap() > 7.0);
+        let document = build_direction_candidates_document(
+            "sweep",
+            "case",
+            candidates.clone(),
+            "tissue_path_length",
+            8,
+            1,
+            None,
+            ContentReference {
+                id: "case".into(),
+                sha256: "0".repeat(64),
+            },
+            ContentReference {
+                id: "aim".into(),
+                sha256: "1".repeat(64),
+            },
+            Some(ContentReference {
+                id: "body".into(),
+                sha256: "2".repeat(64),
+            }),
+            None,
+            "sweep-prov",
+        );
+        assert_eq!(document.scoring, "tissue_path_length");
+        assert_eq!(document.candidates.len(), 8);
+        assert_eq!(document.qualification, DIRECTION_CANDIDATES_QUALIFICATION);
     }
 
     #[test]
