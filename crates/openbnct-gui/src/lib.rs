@@ -719,6 +719,9 @@ struct DosePanel {
     prompt_gamma_error: Option<String>,
     uncertainty_budget: Option<openbnct_transport::DoseUncertaintyBudget>,
     uncertainty_budget_error: Option<String>,
+    /// `openbnct.smk-evaluation` — stochastic-vs-MK survival table.
+    smk: Option<openbnct_bio::SmkEvaluation>,
+    smk_error: Option<String>,
     mask_path: String,
     quantity: String,
     histogram: Option<DoseVolumeHistogram>,
@@ -749,6 +752,8 @@ impl Default for DosePanel {
             prompt_gamma_error: None,
             uncertainty_budget: None,
             uncertainty_budget_error: None,
+            smk: None,
+            smk_error: None,
             mask_path: String::new(),
             quantity: String::new(),
             histogram: None,
@@ -874,6 +879,37 @@ impl DosePanel {
             Err(error) => {
                 self.profile.measurement = None;
                 self.profile.measurement_error = Some(error);
+            }
+        }
+    }
+
+    /// Bytes-only SMK-evaluation loader — web drop path.
+    fn load_smk_bytes(&mut self, bytes: &[u8]) {
+        let outcome =
+            serde_json::from_slice::<openbnct_bio::SmkEvaluation>(bytes)
+                .map_err(|e| e.to_string())
+                .and_then(|report| {
+                    if openbnct_core::schema_matches(
+                        &report.schema_version,
+                        openbnct_bio::SMK_EVALUATION_SCHEMA,
+                    ) {
+                        Ok(report)
+                    } else {
+                        Err(format!(
+                            "unsupported schema {:?} — expected {}",
+                            report.schema_version,
+                            openbnct_bio::SMK_EVALUATION_SCHEMA
+                        ))
+                    }
+                });
+        match outcome {
+            Ok(report) => {
+                self.smk_error = None;
+                self.smk = Some(report);
+            }
+            Err(error) => {
+                self.smk = None;
+                self.smk_error = Some(error);
             }
         }
     }
@@ -1189,6 +1225,14 @@ struct PlanPanel {
     export_status: Option<String>,
     robustness: Option<openbnct_plan::robustness::PlanRobustnessReport>,
     robustness_error: Option<String>,
+    /// `openbnct.scenario-report` — per-scenario objective outcomes and
+    /// cross-scenario bands from a discrete-scenario evaluation.
+    scenario_report: Option<openbnct_plan::scenarios::PlanScenarioReport>,
+    scenario_report_error: Option<String>,
+    /// `openbnct.pk-schedule` — deliverable-dose landscape over the
+    /// beam-on window grid with the optimal window flagged.
+    pk_schedule: Option<openbnct_evidence::PkScheduleReport>,
+    pk_schedule_error: Option<String>,
 }
 
 impl PlanPanel {
@@ -1262,6 +1306,64 @@ impl PlanPanel {
             Err(error) => {
                 self.robustness = None;
                 self.robustness_error = Some(error);
+            }
+        }
+    }
+
+    /// Bytes-only scenario-report loader — web drop path.
+    fn load_scenario_report_bytes(&mut self, bytes: &[u8]) {
+        match serde_json::from_slice::<openbnct_plan::scenarios::PlanScenarioReport>(bytes)
+            .map_err(|e| e.to_string())
+            .and_then(|report| {
+                if openbnct_core::schema_matches(
+                    &report.schema_version,
+                    openbnct_plan::scenarios::PLAN_SCENARIO_REPORT_SCHEMA,
+                ) {
+                    Ok(report)
+                } else {
+                    Err(format!(
+                        "unsupported schema {:?} — expected {}",
+                        report.schema_version,
+                        openbnct_plan::scenarios::PLAN_SCENARIO_REPORT_SCHEMA
+                    ))
+                }
+            }) {
+            Ok(report) => {
+                self.scenario_report_error = None;
+                self.scenario_report = Some(report);
+            }
+            Err(error) => {
+                self.scenario_report = None;
+                self.scenario_report_error = Some(error);
+            }
+        }
+    }
+
+    /// Bytes-only pk-schedule loader — web drop path.
+    fn load_pk_schedule_bytes(&mut self, bytes: &[u8]) {
+        match serde_json::from_slice::<openbnct_evidence::PkScheduleReport>(bytes)
+            .map_err(|e| e.to_string())
+            .and_then(|report| {
+                if openbnct_core::schema_matches(
+                    &report.schema_version,
+                    openbnct_evidence::PK_SCHEDULE_SCHEMA,
+                ) {
+                    Ok(report)
+                } else {
+                    Err(format!(
+                        "unsupported schema {:?} — expected {}",
+                        report.schema_version,
+                        openbnct_evidence::PK_SCHEDULE_SCHEMA
+                    ))
+                }
+            }) {
+            Ok(report) => {
+                self.pk_schedule_error = None;
+                self.pk_schedule = Some(report);
+            }
+            Err(error) => {
+                self.pk_schedule = None;
+                self.pk_schedule_error = Some(error);
             }
         }
     }
@@ -1921,6 +2023,13 @@ enum DropTarget {
     /// A `dose-uncertainty-budget` report — budget table in the dose
     /// workspace.
     UncertaintyBudget,
+    /// A `openbnct.scenario-report` — bands table in the plan workspace.
+    ScenarioReport,
+    /// A `openbnct.pk-schedule` — window landscape in the plan workspace.
+    PkSchedule,
+    /// A `openbnct.smk-evaluation` — survival table in the dose
+    /// workspace.
+    Smk,
     /// Any other recognized `openbnct.*` / `nctforge.*` schema the
     /// workbench has no dedicated panel for — the generic artifact
     /// inspector shows it instead of a dose-bundle validation error.
@@ -2046,6 +2155,9 @@ fn classify_dropped_json(bytes: &[u8]) -> DropTarget {
         s if s.contains("plan-robustness/") => DropTarget::Robustness,
         s if s.contains("prompt-gamma-source/") => DropTarget::PromptGamma,
         s if s.contains("dose-uncertainty-budget/") => DropTarget::UncertaintyBudget,
+        s if s.contains("scenario-report/") => DropTarget::ScenarioReport,
+        s if s.contains("pk-schedule/") => DropTarget::PkSchedule,
+        s if s.contains("smk-evaluation/") => DropTarget::Smk,
         s if s.contains("physical-dose-bundle/") => DropTarget::DoseBundle,
         s if s.starts_with("openbnct.") || s.starts_with("nctforge.") => DropTarget::Inspector,
         _ => DropTarget::DoseBundle,
@@ -2659,6 +2771,27 @@ impl OpenBnctApp {
                     Err(error) => {
                         self.panels.dose.prompt_gamma_error = Some(error);
                     }
+                }
+                self.workspace = WorkspaceTab::Dose;
+            }
+            DropTarget::ScenarioReport => {
+                match bytes {
+                    Ok(b) => self.panels.plan.load_scenario_report_bytes(&b),
+                    Err(error) => self.panels.plan.scenario_report_error = Some(error),
+                }
+                self.workspace = WorkspaceTab::Plan;
+            }
+            DropTarget::PkSchedule => {
+                match bytes {
+                    Ok(b) => self.panels.plan.load_pk_schedule_bytes(&b),
+                    Err(error) => self.panels.plan.pk_schedule_error = Some(error),
+                }
+                self.workspace = WorkspaceTab::Plan;
+            }
+            DropTarget::Smk => {
+                match bytes {
+                    Ok(b) => self.panels.dose.load_smk_bytes(&b),
+                    Err(error) => self.panels.dose.smk_error = Some(error),
                 }
                 self.workspace = WorkspaceTab::Dose;
             }
@@ -6814,6 +6947,157 @@ fn show_plan_workspace(
         }
         ui.monospace(format!("provenance: {}", report.provenance_id));
     });
+
+    ui.add_space(14.0);
+    ui.heading(t!(
+        language,
+        en = "Scenario evaluation",
+        ja = "シナリオ評価",
+        it = "Valutazione scenari",
+        zh = "场景评估",
+        es = "Evaluación de escenarios"
+    ));
+    ui.label(
+        "Drop a scenario-report .json — per-objective achieved bands across the \
+         declared perturbation set, worst-scenario attribution, and violations.",
+    );
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        if let Some(error) = &panel.scenario_report_error {
+            ui.colored_label(theme.error, format!("scenario report rejected: {error}"));
+        }
+        let Some(report) = &panel.scenario_report else {
+            ui.label("No scenario report loaded.");
+            return;
+        };
+        ui.monospace(format!("{} · {}", report.id, report.qualification));
+        ui.add_space(6.0);
+        egui::Grid::new("scenario-bands")
+            .striped(true)
+            .show(ui, |ui| {
+                for header in [
+                    "objective",
+                    "bound",
+                    "nominal",
+                    "min",
+                    "max",
+                    "mean",
+                    "worst scenario",
+                    "violations",
+                ] {
+                    ui.strong(header);
+                }
+                ui.end_row();
+                for band in &report.bands {
+                    ui.monospace(format!("{} · {}", band.kind, band.mask));
+                    ui.monospace(format!("{:.4e}", band.bound));
+                    ui.monospace(format!("{:.4e}", band.nominal_achieved));
+                    ui.monospace(format!("{:.4e}", band.min_achieved));
+                    ui.monospace(format!("{:.4e}", band.max_achieved));
+                    ui.monospace(format!("{:.4e}", band.mean_achieved));
+                    ui.monospace(&band.worst_scenario);
+                    let n = band.violated_scenarios.len();
+                    if n == 0 {
+                        ui.colored_label(egui::Color32::from_rgb(80, 220, 140), "none");
+                    } else {
+                        ui.colored_label(
+                            theme.error,
+                            format!("{n}: {}", band.violated_scenarios.join(", ")),
+                        );
+                    }
+                    ui.end_row();
+                }
+            });
+        ui.add_space(4.0);
+        ui.monospace(format!(
+            "{} evaluations · provenance: {}",
+            report.evaluations.len(),
+            report.provenance_id
+        ));
+    });
+
+    ui.add_space(14.0);
+    ui.heading(t!(
+        language,
+        en = "PK irradiation schedule",
+        ja = "PK 照射スケジュール",
+        it = "Programma di irradiazione PK",
+        zh = "PK 照射计划",
+        es = "Programa de irradiación PK"
+    ));
+    ui.label(
+        "Drop a pk-schedule .json — deliverable tumor dose per beam-on window \
+         against the constant-concentration reference; the optimal window is flagged.",
+    );
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        if let Some(error) = &panel.pk_schedule_error {
+            ui.colored_label(theme.error, format!("pk schedule rejected: {error}"));
+        }
+        let Some(report) = &panel.pk_schedule else {
+            ui.label("No pk schedule loaded.");
+            return;
+        };
+        ui.monospace(format!(
+            "case {} · {} · {} · tumor {} ({:?})",
+            report.case_id,
+            report.quantity,
+            report.endpoint_unit,
+            report.tumor_region,
+            report.tumor_metric
+        ));
+        ui.add_space(6.0);
+        egui::Grid::new("pk-schedule-windows")
+            .striped(true)
+            .show(ui, |ui| {
+                for header in ["beam-on", "tumor dose", "static ref", "Δ", "limiting", ""] {
+                    ui.strong(header);
+                }
+                ui.end_row();
+                for (index, window) in report.windows.iter().enumerate() {
+                    let optimal = report.optimal_window_index == Some(index);
+                    let epoch_h = window.beam_on_epoch_s / 3600.0;
+                    ui.monospace(format!("{epoch_h:.2} h"));
+                    ui.monospace(
+                        window
+                            .tumor_dose
+                            .map(|d| format!("{d:.4e}"))
+                            .unwrap_or_else(|| "—".into()),
+                    );
+                    ui.monospace(
+                        window
+                            .tumor_dose_static
+                            .map(|d| format!("{d:.4e}"))
+                            .unwrap_or_else(|| "—".into()),
+                    );
+                    match (window.tumor_dose, window.tumor_dose_static) {
+                        (Some(pk), Some(st)) if st > 0.0 => {
+                            let gain = (pk - st) / st * 100.0;
+                            let color = if gain >= 0.0 {
+                                egui::Color32::from_rgb(80, 220, 140)
+                            } else {
+                                theme.warn_text
+                            };
+                            ui.colored_label(color, format!("{gain:+.1}%"));
+                        }
+                        _ => {
+                            ui.monospace("—");
+                        }
+                    }
+                    ui.monospace(
+                        window
+                            .limiting
+                            .as_ref()
+                            .map(|l| format!("{} {:.2e} s", l.region, l.max_time_s))
+                            .unwrap_or_else(|| "unbounded".into()),
+                    );
+                    if optimal {
+                        ui.colored_label(egui::Color32::from_rgb(80, 220, 140), "◀ optimal");
+                    } else {
+                        ui.label("");
+                    }
+                    ui.end_row();
+                }
+            });
+    });
 }
 
 /// Tri-planar dose/field map rendered from the loaded bundle's own grid —
@@ -8017,6 +8301,16 @@ fn show_dose_workspace(
         es = "Presupuesto de incertidumbre"
     ));
     show_uncertainty_budget(ui, panel, language, theme);
+    ui.add_space(12.0);
+    ui.heading(t!(
+        language,
+        en = "SMK survival",
+        ja = "SMK 生存率",
+        it = "Sopravvivenza SMK",
+        zh = "SMK 存活",
+        es = "Supervivencia SMK"
+    ));
+    show_smk(ui, panel, language, theme);
     if panel.compare_zone != egui::Rect::NOTHING {
         tour_targets.set(TourTarget::CompareZone, panel.compare_zone);
     }
@@ -8421,6 +8715,141 @@ fn show_dvh_curve(
         egui::FontId::monospace(10.0),
         theme.text_dim,
     );
+}
+
+/// SMK-evaluation section — S(dose) curve for the stochastic population
+/// vs its MK linearization, plus the isosurvival-RBE table.
+fn show_smk(ui: &mut egui::Ui, panel: &mut DosePanel, language: Language, theme: Theme) {
+    ui.label(
+        "Drop an smk-evaluation .json — stochastic population survival against \
+         the MK linearization, with the isosurvival RBE per dose level.",
+    );
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        if let Some(error) = &panel.smk_error {
+            ui.colored_label(theme.error, format!("smk evaluation rejected: {error}"));
+        }
+        let Some(report) = &panel.smk else {
+            ui.label("No SMK evaluation loaded.");
+            return;
+        };
+        ui.monospace(format!(
+            "{} · α {:.4e} Gy⁻¹ · β {:.4e} Gy⁻² · anchor {:.4e} Gy",
+            report.id,
+            report.parameters.alpha_per_gy,
+            report.parameters.beta_per_gy2,
+            report.parameters.boron_dose_gy_at_mean_captures,
+        ));
+        ui.add_space(6.0);
+
+        // Survival curve — SMK solid, MK dashed-ish (second color).
+        let max_dose = report
+            .points
+            .iter()
+            .map(|p| p.dose_gy)
+            .fold(0.0_f64, f64::max);
+        if max_dose > 0.0 {
+            let (response, painter) = ui.allocate_painter(
+                egui::vec2(ui.available_width(), 160.0),
+                egui::Sense::focusable_noninteractive(),
+            );
+            response.widget_info(|| {
+                egui::WidgetInfo::labeled(
+                    egui::WidgetType::Other,
+                    true,
+                    t!(
+                        language,
+                        en = "SMK and MK survival fraction vs boron dose",
+                        ja = "SMK・MK 生存率対ホウ素線量"
+                    ),
+                )
+            });
+            let rect = response.rect.shrink2(egui::vec2(46.0, 12.0));
+            painter.rect_stroke(
+                rect,
+                4.0,
+                egui::Stroke::new(1.0, egui::Color32::from_rgb(72, 82, 99)),
+                egui::StrokeKind::Inside,
+            );
+            let point_at = |dose: f64, survival: f64| {
+                egui::pos2(
+                    rect.left() + (dose / max_dose) as f32 * rect.width(),
+                    rect.bottom() - (survival.clamp(0.0, 1.0) as f32) * rect.height(),
+                )
+            };
+            let smk_points: Vec<egui::Pos2> = report
+                .points
+                .iter()
+                .map(|p| point_at(p.dose_gy, p.smk_survival))
+                .collect();
+            let mk_points: Vec<egui::Pos2> = report
+                .points
+                .iter()
+                .map(|p| point_at(p.dose_gy, p.mk_survival))
+                .collect();
+            painter.add(egui::Shape::line(
+                smk_points,
+                egui::Stroke::new(2.0, theme.brand),
+            ));
+            painter.add(egui::Shape::line(
+                mk_points,
+                egui::Stroke::new(1.5, theme.warn_text),
+            ));
+            painter.text(
+                egui::pos2(rect.left() - 8.0, rect.top()),
+                egui::Align2::RIGHT_CENTER,
+                "S=1",
+                egui::FontId::monospace(10.0),
+                theme.text_dim,
+            );
+            painter.text(
+                egui::pos2(rect.left() - 8.0, rect.bottom()),
+                egui::Align2::RIGHT_CENTER,
+                "0",
+                egui::FontId::monospace(10.0),
+                theme.text_dim,
+            );
+            painter.text(
+                egui::pos2(rect.right(), rect.bottom() + 4.0),
+                egui::Align2::RIGHT_TOP,
+                format!("{max_dose:.3e} Gy"),
+                egui::FontId::monospace(10.0),
+                theme.text_dim,
+            );
+            ui.horizontal(|ui| {
+                ui.colored_label(theme.brand, "— SMK ⟨e^(−az−bz²)⟩");
+                ui.colored_label(theme.warn_text, "— MK linearization");
+            });
+        }
+
+        ui.add_space(6.0);
+        egui::Grid::new("smk-points").striped(true).show(ui, |ui| {
+            for header in ["dose Gy", "S_smk", "S_mk", "isosurvival Gy", "RBE"] {
+                ui.strong(header);
+            }
+            ui.end_row();
+            for point in &report.points {
+                ui.monospace(format!("{:.4e}", point.dose_gy));
+                ui.monospace(format!("{:.4}", point.smk_survival));
+                ui.monospace(format!("{:.4}", point.mk_survival));
+                ui.monospace(
+                    point
+                        .isosurvival_reference_gy
+                        .map(|d| format!("{d:.4e}"))
+                        .unwrap_or_else(|| "—".into()),
+                );
+                ui.monospace(
+                    point
+                        .rbe
+                        .map(|r| format!("{r:.3}"))
+                        .unwrap_or_else(|| "—".into()),
+                );
+                ui.end_row();
+            }
+        });
+        ui.add_space(4.0);
+        ui.monospace(format!("note: {}", report.validity_note));
+        ui.monospace(format!("provenance: {}", report.provenance_id));
+    });
 }
 
 fn show_evidence_workspace(
@@ -9386,14 +9815,17 @@ mod tests {
         };
         assert_eq!(
             route("openbnct.scenario-report/0.1.0"),
-            DropTarget::Inspector
+            DropTarget::ScenarioReport
         );
+        assert_eq!(route("openbnct.pk-schedule/0.1.0"), DropTarget::PkSchedule);
+        assert_eq!(route("openbnct.smk-evaluation/0.1.0"), DropTarget::Smk);
+        // Schemas without dedicated panels land in the inspector.
         assert_eq!(
             route("openbnct.cell-microdosimetry/0.1.0"),
             DropTarget::Inspector
         );
         assert_eq!(
-            route("openbnct.pk-schedule-report/0.1.0"),
+            route("openbnct.pg-reconstruction/0.1.0"),
             DropTarget::Inspector
         );
         // Paneled and dose-bundle schemas keep their routes.
