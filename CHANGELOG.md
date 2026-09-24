@@ -4,6 +4,79 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
+## [Unreleased]
+
+### Added — pharmacokinetics
+
+- `openbnct pk` is now a subcommand family (`pk fit|tissue-scale|
+  schedule|dose`). `pk tissue-scale` declares per-region T/B evolution
+  `T/B(t) = T∞ + (T₀−T∞)·e^(−μt)` against a named blood curve
+  (`openbnct.pk-tissue-spec/0.1.0`) — the product stays analytically
+  inside the exponential family, so tissue curves emit as ordinary
+  `pk-model` documents. `pk schedule` searches a declared
+  irradiation-window grid: beam-on epoch `w` is an exact amplitude
+  rescale `aᵢ→aᵢe^(−λᵢw)`, each window gets a full organ-limit solve,
+  the limiting structure, and the deliverable tumor-region dose against
+  the constant-concentration reference
+  (`openbnct.pk-schedule/0.1.0`). `pk dose` emits the time-integrated
+  map as a Gray `openbnct.physical-dose-bundle/0.2.0` — boron scaled by
+  the region's `I_r(t)/C_plan`, non-boron by `t` — directly consumable
+  by `bio apply`, `dvh`, and `report`.
+
+### Added — robust / scenario planning
+
+- `openbnct.scenario-set/0.1.0` declares named discrete plan
+  perturbations: global component scales (uptake), per-region component
+  scales (T/N on masked voxels), `dose_scale` (output factor), and
+  `shift_mm` (whole-field displacement, trilinear-resampled).
+- `openbnct plan scenarios` refolds optimized weights per scenario and
+  reports per-objective bands — nominal/min/max/mean, worst-scenario
+  attribution, and the violated set
+  (`openbnct.scenario-report/0.1.0`).
+- `openbnct plan optimize --scenario-set` minimizes the *worst-case*
+  penalty across nominal + all scenarios (Danskin subgradient of the
+  argmax scenario folded into the coordinate descent); the result
+  records `method: "worst_case_scenario"`.
+- `benchmarks/synthetic/scenario-robust-planning` is a known-answer
+  fixture whose worst-case optimum is closed-form
+  (`w_h* = 1.498875`, `w_b* = 0`); a committed conformance test asserts
+  the optimizer reproduces it.
+- `validation/fir1-k63-scenario-budget` encodes the published FiR 1 /
+  BPA-F uncertainty budget (Savolainen 6% decomposition, blood boron
+  ±20%, skin 1.5×blood; Kotiluoto 8% computational excluding boron) as a
+  12-scenario set evaluated against the committed S_N transported
+  field.
+
+### Added — boron microdistribution
+
+- `openbnct.boron-microdistribution-measurement/0.1.0` declares an
+  assay (autoradiography, ion microbeam, track imaging, fluorescence,
+  or declared-other), compound, cell system, reduction geometry, and
+  either compartment fractions or a radial boron-density profile with
+  per-bin 1σ. `openbnct boron microdistribution` is now a subcommand
+  family: `import` reduces the measurement to the
+  `openbnct.boron-microdistribution/0.1.0` model (radial bins integrate
+  into compartments by annulus overlap; membrane declared explicitly),
+  `evaluate` keeps the existing correction contract.
+
+### Added — registration
+
+- `openbnct.registration` gains the `shared_frame_of_reference` method:
+  identity transform by construction, with the shared DICOM
+  Frame-of-Reference UID recorded as the basis; `register
+  frame-of-reference` creates it and `register info` prints the FoR
+  basis.
+
+### Fixed — solver
+
+- The θ-WDD multigroup sweep now records the positivity-clamp excess
+  (ideal-vs-clamped cell-average and outgoing-edge flux) in balance
+  units and feeds it into the CMR balance right-hand side, making
+  `f = 1` an exact coarse-mesh-rebalance solution at the transport
+  fixed point. `SnOptions::coarse_rebalance` toggles CMR in code;
+  `OPENBNCT_NO_CMR` remains as an A/B override and `CMR_DEBUG` now
+  prints the per-region defect.
+
 ## [0.2.2] — 2026-09-23
 
 (Supersedes the `v0.2.1` tag, which carried stale lockfiles and was
