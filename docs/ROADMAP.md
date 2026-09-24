@@ -1448,8 +1448,12 @@ independent engines, ordered by leverage. None implies a clinical claim.
   the cylindrical phantom (S4, 28g TSL+P1, 2026-09-24): the
   period-2 limit cycle did not recur — CMR stalled and self-disabled
   at outer 5, after which bare Anderson+θ-WDD descended 0.477 →
-  2.4e-4 at the 30-outer cap without cycling through the old ~2.4e-2
-  floor. δ stayed 0 throughout, so on this case the subtraction is
+  3.755e-5 at the 40-outer cap without cycling through the old
+  ~2.4e-2 floor, crossing the 1e-4 production tolerance near outer
+  35 (the `sn solve` default is 1e-6, so the run reports
+  non-converged at cap while still descending ~0.7×/outer — a
+  continuation to ~55 outers closes it). δ stayed 0 throughout, so
+  on this case the subtraction is
   inactive insurance; the cycle's disappearance under the stall
   handoff identifies CMR itself — not the sweep map — as the cycle
   driver, consistent with the coarse/fine mismatch hypothesis.
