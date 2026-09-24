@@ -1,0 +1,24 @@
+{
+  "schema_version": "openbnct.pk-tissue-spec/0.1.0",
+  "id": "bpa-tissue-published",
+  "regions": [
+    {
+      "region": "gtv",
+      "blood_region": "blood",
+      "t_over_b_initial": 1.4,
+      "t_over_b_asymptote": 3.4,
+      "rate_per_s": 0.00012836058899258246,
+      "planned_concentration_ppm": 0.1
+    },
+    {
+      "region": "skin",
+      "blood_region": "blood",
+      "t_over_b_initial": 1.5,
+      "t_over_b_asymptote": 1.5,
+      "rate_per_s": 0.0,
+      "planned_concentration_ppm": 0.1
+    }
+  ],
+  "basis": "GTV T/B evolves 1.4\u21923.4 \u2014 the reviewed GBM range bound (resected-sample T/B 1.4\u20134.7; melanoma mean 3.40\u00b10.83, Kashino/Kageji review) \u2014 with 90-min uptake dynamics. Skin pinned at the FiR 1 clinical convention 1.5\u00d7blood (Savolainen et al.).",
+  "provenance_id": "fir1-k63-pmma-pk-anchors"
+}

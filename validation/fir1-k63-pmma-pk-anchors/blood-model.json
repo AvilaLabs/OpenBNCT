@@ -1,0 +1,19 @@
+{
+  "schema_version": "openbnct.pk-model/0.1.0",
+  "id": "bpa-blood-published-biphasic",
+  "regions": [
+    {
+      "region": "blood",
+      "planned_concentration_ppm": 0.1,
+      "amplitudes_ppm": [
+        7.32,
+        17.08
+      ],
+      "rates_per_s": [
+        9.627044174443685e-05,
+        2.1393431498763742e-05
+      ]
+    }
+  ],
+  "basis": "Published BPA blood pharmacokinetics: biphasic elimination, t\u00bd\u2081=2 h and t\u00bd\u2082=9 h (midpoints of the reviewed 0.7\u20133.7 h and 7.2\u201312.0 h ranges \u2014 Kashino/Kageji critical review of human 10B-BPA kinetics); end-of-infusion level 24.4 \u00b5g/g (Savolainen et al., Acta Oncol, mean over the FiR 1 glioma series). Amplitude split 30/70 declared."
+}

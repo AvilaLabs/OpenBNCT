@@ -1,0 +1,170 @@
+{
+  "schema_version": "openbnct.pk-schedule/0.1.0",
+  "case_id": "fir1-k63-pmma-phantom",
+  "quantity": "component:boron",
+  "source": {
+    "id": "validation/fir1-k63-pmma-phantom/dose-28g-tsl-p1-1e.json",
+    "sha256": "f07c6af97aa85e1a7ca7f718db5a4a5759d3847e814c924a69394fc8cc3d798c"
+  },
+  "pk_model": {
+    "id": "validation/fir1-k63-pmma-pk-anchors/tissue-model.json",
+    "sha256": "d7a4a098bd537651302a416c43d736dbba71fee7899285ad8aa3f9afa9d6bf6d"
+  },
+  "endpoint_unit": "gray_per_source_particle",
+  "source_strength_per_s": 1000000000.0,
+  "tumor_region": "gtv",
+  "tumor_metric": "mean",
+  "windows": [
+    {
+      "beam_on_epoch_s": 0.0,
+      "regions": [
+        {
+          "region": "skin",
+          "metric": "mean",
+          "limit": 0.02,
+          "region_voxel_count": 632,
+          "pk_modeled": true,
+          "max_time_s": 1816.0737657378738,
+          "static_max_time_s": 639301.9953523288,
+          "relative_deviation": -0.9971592865673179,
+          "concentration_ratio_at_beam_off": 338.62465155805967
+        }
+      ],
+      "limiting": {
+        "region": "skin",
+        "metric": "mean",
+        "max_time_s": 1816.0737657378738,
+        "max_source_particles": 1816073765737.8738
+      },
+      "tumor_dose": 0.01627541400432488,
+      "tumor_dose_static": 0.015132283230521616
+    },
+    {
+      "beam_on_epoch_s": 1800.0,
+      "regions": [
+        {
+          "region": "skin",
+          "metric": "mean",
+          "limit": 0.02,
+          "region_voxel_count": 632,
+          "pk_modeled": true,
+          "max_time_s": 1963.8044930377735,
+          "static_max_time_s": 639301.9953523288,
+          "relative_deviation": -0.996928205281206,
+          "concentration_ratio_at_beam_off": 312.80487096518226
+        }
+      ],
+      "limiting": {
+        "region": "skin",
+        "metric": "mean",
+        "max_time_s": 1963.8044930377735,
+        "max_source_particles": 1963804493037.7734
+      },
+      "tumor_dose": 0.020121013109526287,
+      "tumor_dose_static": 0.015132283230521616
+    },
+    {
+      "beam_on_epoch_s": 3600.0,
+      "regions": [
+        {
+          "region": "skin",
+          "metric": "mean",
+          "limit": 0.02,
+          "region_voxel_count": 632,
+          "pk_modeled": true,
+          "max_time_s": 2115.740254206927,
+          "static_max_time_s": 639301.9953523288,
+          "relative_deviation": -0.9966905464559971,
+          "concentration_ratio_at_beam_off": 290.04450388118863
+        }
+      ],
+      "limiting": {
+        "region": "skin",
+        "metric": "mean",
+        "max_time_s": 2115.740254206927,
+        "max_source_particles": 2115740254206.9272
+      },
+      "tumor_dose": 0.023148598976182173,
+      "tumor_dose_static": 0.015132283230521616
+    },
+    {
+      "beam_on_epoch_s": 5400.0,
+      "regions": [
+        {
+          "region": "skin",
+          "metric": "mean",
+          "limit": 0.02,
+          "region_voxel_count": 632,
+          "pk_modeled": true,
+          "max_time_s": 2271.5980114786807,
+          "static_max_time_s": 639301.9953523288,
+          "relative_deviation": -0.9964467528210564,
+          "concentration_ratio_at_beam_off": 269.8844435292787
+        }
+      ],
+      "limiting": {
+        "region": "skin",
+        "metric": "mean",
+        "max_time_s": 2271.5980114786807,
+        "max_source_particles": 2271598011478.6807
+      },
+      "tumor_dose": 0.02553147079784448,
+      "tumor_dose_static": 0.015132283230521616
+    },
+    {
+      "beam_on_epoch_s": 7200.0,
+      "regions": [
+        {
+          "region": "skin",
+          "metric": "mean",
+          "limit": 0.02,
+          "region_voxel_count": 632,
+          "pk_modeled": true,
+          "max_time_s": 2431.169119242065,
+          "static_max_time_s": 639301.9953523288,
+          "relative_deviation": -0.9961971507410949,
+          "concentration_ratio_at_beam_off": 251.93851427577786
+        }
+      ],
+      "limiting": {
+        "region": "skin",
+        "metric": "mean",
+        "max_time_s": 2431.169119242065,
+        "max_source_particles": 2431169119242.065
+      },
+      "tumor_dose": 0.02740643246693001,
+      "tumor_dose_static": 0.015132283230521616
+    },
+    {
+      "beam_on_epoch_s": 10800.0,
+      "regions": [
+        {
+          "region": "skin",
+          "metric": "mean",
+          "limit": 0.02,
+          "region_voxel_count": 632,
+          "pk_modeled": true,
+          "max_time_s": 2761.0127668578743,
+          "static_max_time_s": 639301.9953523288,
+          "relative_deviation": -0.9956812073371737,
+          "concentration_ratio_at_beam_off": 221.4419008914854
+        }
+      ],
+      "limiting": {
+        "region": "skin",
+        "metric": "mean",
+        "max_time_s": 2761.0127668578743,
+        "max_source_particles": 2761012766857.8745
+      },
+      "tumor_dose": 0.030041504596433302,
+      "tumor_dose_static": 0.015132283230521616
+    }
+  ],
+  "optimal_window_index": 5,
+  "assumptions": [
+    "boron dose scales linearly with regional 10B concentration; other components are concentration-independent",
+    "beam-on epoch shifts are exact on the declared exponential curves; within each window the curves continue their decay",
+    "the optimal window maximizes the declared tumor-region statistic subject to the declared limits — not a clinical prescription",
+    "PK curves are declared research inputs with a stated basis; scheduling conclusions inherit their uncertainty"
+  ]
+}

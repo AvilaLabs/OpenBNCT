@@ -1,0 +1,39 @@
+{
+  "schema_version": "openbnct.pk-model/0.1.0",
+  "id": "bpa-tissue-published",
+  "regions": [
+    {
+      "region": "gtv",
+      "planned_concentration_ppm": 0.1,
+      "amplitudes_ppm": [
+        24.888,
+        58.071999999999996,
+        -14.64,
+        -34.16
+      ],
+      "rates_per_s": [
+        0.00009627044174443685,
+        0.000021393431498763742,
+        0.0002246310307370193,
+        0.0001497540204913462
+      ]
+    },
+    {
+      "region": "skin",
+      "planned_concentration_ppm": 0.1,
+      "amplitudes_ppm": [
+        10.98,
+        25.619999999999997,
+        0.0,
+        0.0
+      ],
+      "rates_per_s": [
+        0.00009627044174443685,
+        0.000021393431498763742,
+        0.00009627044174443685,
+        0.000021393431498763742
+      ]
+    }
+  ],
+  "basis": "tissue-scaled from bpa-blood-published-biphasic under bpa-tissue-published (GTV T/B evolves 1.4→3.4 — the reviewed GBM range bound (resected-sample T/B 1.4–4.7; melanoma mean 3.40±0.83, Kashino/Kageji review) — with 90-min uptake dynamics. Skin pinned at the FiR 1 clinical convention 1.5×blood (Savolainen et al.).)"
+}

@@ -1656,11 +1656,17 @@ tissue kinetics into the same curve family.
   voxels at constant concentration. Window+duration come from a
   `--schedule` report window index or explicit `--window-s`/`--time-s`;
   `bio apply`, `dvh`, and `report` consume it unchanged.
-- **R15-04 — published-anchor validation.** Reproduce the
-  documented ~11% fixed-vs-PK deviation scale and the sign of the
-  optimal-window gain on a declared curve family matching published
-  BPA-F half-lives; the machinery is deterministic so this is a
-  model-fidelity check, not a code check.
+- **R15-04 — published-anchor validation. (landed)**
+  `validation/fir1-k63-pmma-pk-anchors` declares the reviewed BPA
+  blood curve family (biphasic t½ 2 h + 9 h — midpoints of the
+  published 0.7–3.7 / 7.2–12 h ranges; 24.4 µg/g end-of-infusion)
+  and a GBM-range T/B evolution (1.4→3.4). On the committed S_N
+  transported field: the PK-vs-static tumor deviation at the
+  TPS-convention epoch is +7.55% — same sign and order as the
+  published 11.386%; delayed beam-on gains monotonically (+85% at
+  +3 h) — the paper's mechanism with a larger magnitude set by the
+  wider declared T/B dynamics. The fixture pins the mechanism and
+  deviation scale, not a patient-specific constant.
 
 ## R16 — Scenario-set plan evaluation (draft)
 
