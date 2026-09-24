@@ -42,6 +42,7 @@ pub mod fields;
 pub mod openpint;
 pub mod optimize;
 pub mod robustness;
+pub mod scenarios;
 
 /// Format token written into exported tables and required on import when
 /// metadata is present.

@@ -2270,6 +2270,39 @@ enum PlanCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Evaluate the optimized weights under a declared set of discrete
+    /// scenarios — named component/uptake/T-N scalings and whole-field
+    /// mm shifts — reporting every objective's achieved metric per
+    /// scenario plus cross-scenario bands, as an
+    /// `openbnct.scenario-report/0.1.0`. Complements `plan robustness`'s
+    /// first-order Gaussian propagation for structured non-Gaussian
+    /// uncertainties.
+    Scenarios {
+        /// `openbnct.inverse-plan-result` JSON from `plan optimize`.
+        #[arg(long)]
+        result: PathBuf,
+        /// The `openbnct.inverse-plan-objective` JSON the result was
+        /// optimized under (its hash is verified against the result).
+        #[arg(long)]
+        objective: PathBuf,
+        /// `openbnct.scenario-set/0.1.0` JSON document.
+        #[arg(long)]
+        scenario_set: PathBuf,
+        /// Per-beam `openbnct.physical-dose-bundle` JSON in the same
+        /// order `plan optimize` consumed them; repeatable.
+        #[arg(long, required = true)]
+        dose: Vec<PathBuf>,
+        /// `RegionMask` JSON; repeatable — every mask the objectives
+        /// and scenario region scales name must be supplied.
+        #[arg(long, required = true)]
+        mask: Vec<PathBuf>,
+        /// Report identifier.
+        #[arg(long, default_value = "openbnct.scenario-report")]
+        id: String,
+        /// Output path for the scenario report JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Enumerate beam-direction candidates over an azimuth×elevation
     /// grid and rank them by tissue path length to the aim-mask
     /// centroid — the zero-transport pre-filter that selects which
@@ -10381,6 +10414,163 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     );
                 }
                 println!("robustness: {}", output.display());
+            }
+            PlanCommand::Scenarios {
+                result,
+                objective,
+                scenario_set,
+                dose,
+                mask,
+                id,
+                output,
+            } => {
+                use openbnct_plan::optimize::{InversePlanObjective, InversePlanResult};
+                use openbnct_plan::scenarios::{
+                    PLAN_SCENARIO_REPORT_SCHEMA, PlanScenarioReport, PlanScenarioSet,
+                    evaluate_scenarios,
+                };
+                let result_bytes = fs::read(&result)?;
+                let plan_result: InversePlanResult = serde_json::from_slice(&result_bytes)
+                    .map_err(|error| io::Error::other(format!("inverse-plan result: {error}")))?;
+                let spec_bytes = fs::read(&objective)?;
+                let spec: InversePlanObjective =
+                    serde_json::from_slice(&spec_bytes).map_err(|error| {
+                        io::Error::other(format!("inverse-plan objective: {error}"))
+                    })?;
+                let spec_sha = openbnct_evidence::sha256_hex(&spec_bytes);
+                if plan_result.objective.sha256 != format!("sha256:{spec_sha}") {
+                    return Err(io::Error::other(format!(
+                        "objective hash mismatch: result binds {}, supplied file hashes {}",
+                        plan_result.objective.sha256, spec_sha
+                    ))
+                    .into());
+                }
+                let scenario_bytes = fs::read(&scenario_set)?;
+                let set: PlanScenarioSet = serde_json::from_slice(&scenario_bytes)
+                    .map_err(|error| io::Error::other(format!("scenario set: {error}")))?;
+                set.validate()
+                    .map_err(|error| io::Error::other(format!("scenario set: {error}")))?;
+
+                let comp_name = |c: openbnct_core::DoseComponent| match c {
+                    openbnct_core::DoseComponent::Boron => "boron",
+                    openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                    openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                    openbnct_core::DoseComponent::Photon => "photon",
+                };
+                let mut fields = Vec::with_capacity(dose.len());
+                let mut dose_references = Vec::with_capacity(dose.len());
+                let mut geometry: Option<openbnct_core::GridGeometry> = None;
+                for path in &dose {
+                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)?;
+                    bundle
+                        .validate()
+                        .map_err(|error| io::Error::other(error.to_string()))?;
+                    match &geometry {
+                        Some(g) if *g != bundle.geometry => {
+                            return Err(io::Error::other(format!(
+                                "{}: beam fields must share one grid",
+                                path.display()
+                            ))
+                            .into());
+                        }
+                        None => geometry = Some(bundle.geometry.clone()),
+                        _ => {}
+                    }
+                    let components: std::collections::BTreeMap<String, Vec<f64>> = bundle
+                        .components
+                        .iter()
+                        .map(|volume| {
+                            (
+                                comp_name(volume.component).to_string(),
+                                volume.values.clone(),
+                            )
+                        })
+                        .collect();
+                    fields.push(openbnct_plan::optimize::BeamDoseField {
+                        name: path
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| path.display().to_string()),
+                        values: bundle.physical_total.values.clone(),
+                        components: Some(components),
+                    });
+                    dose_references.push(openbnct_core::ContentReference {
+                        id: format!("{}.dose-bundle", fields.last().expect("just pushed").name),
+                        sha256: openbnct_evidence::sha256_file(path)?,
+                    });
+                }
+                for (weight, field) in plan_result.weights.iter().zip(&fields) {
+                    if weight.name != field.name {
+                        return Err(io::Error::other(format!(
+                            "beam order mismatch: result beam {:?} vs supplied field {:?} — pass --dose in optimize order",
+                            weight.name, field.name
+                        ))
+                        .into());
+                    }
+                }
+                let geometry = geometry
+                    .ok_or_else(|| io::Error::other("--dose requires at least one beam field"))?;
+
+                let mut mask_voxels: std::collections::BTreeMap<String, Vec<usize>> =
+                    std::collections::BTreeMap::new();
+                for path in &mask {
+                    let region: RegionMask =
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("{}: {error}", path.display()))
+                        })?;
+                    let voxels: Vec<usize> = region
+                        .voxels
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(v, &on)| on.then_some(v))
+                        .collect();
+                    mask_voxels.insert(region.name.clone(), voxels);
+                }
+
+                let (evaluations, bands) =
+                    evaluate_scenarios(&plan_result, &spec, &fields, &geometry, &set, &mask_voxels)
+                        .map_err(|error| io::Error::other(format!("scenarios: {error}")))?;
+                let result_sha = openbnct_evidence::sha256_hex(&result_bytes);
+                let report = PlanScenarioReport {
+                    schema_version: PLAN_SCENARIO_REPORT_SCHEMA.into(),
+                    id,
+                    result: openbnct_core::ContentReference {
+                        id: plan_result.id.clone(),
+                        sha256: format!("sha256:{result_sha}"),
+                    },
+                    objective: plan_result.objective.clone(),
+                    scenario_set: openbnct_core::ContentReference {
+                        id: set.id.clone(),
+                        sha256: format!(
+                            "sha256:{}",
+                            openbnct_evidence::sha256_hex(&scenario_bytes)
+                        ),
+                    },
+                    dose_references,
+                    evaluations,
+                    bands,
+                    qualification: "inverse_plan_scenarios_research_only_not_clinical".into(),
+                    provenance_id: format!("plan-scenarios:{}", &result_sha[..12]),
+                };
+                write_new_json(&output, &report)?;
+                for band in &report.bands {
+                    println!(
+                        "  {} {}: nominal {:.6e} band [{:.6e}, {:.6e}] worst {:?} bound {:.6e}{}",
+                        band.kind,
+                        band.mask,
+                        band.nominal_achieved,
+                        band.min_achieved,
+                        band.max_achieved,
+                        band.worst_scenario,
+                        band.bound,
+                        if band.violated_scenarios.is_empty() {
+                            String::new()
+                        } else {
+                            format!(" — violated by {}", band.violated_scenarios.join(", "))
+                        }
+                    );
+                }
+                println!("scenarios: {}", output.display());
             }
             PlanCommand::Directions {
                 case,

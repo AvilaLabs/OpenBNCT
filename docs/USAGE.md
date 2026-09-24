@@ -1520,6 +1520,38 @@ correlated cross-beam systematics are a known limitation). A worked
 report lives in
 `benchmarks/synthetic/layered-head-phantom/planning/`.
 
+`plan scenarios` answers a different question with different machinery:
+not *"how uncertain is the metric"* but *"what does the plan actually
+deliver under these named, discrete perturbations?"* Gaussian
+propagation is the wrong shape for bounded, asymmetric, structured
+uncertainties — boron uptake inferred from a single pre-treatment
+scan, per-structure T/N ratios, whole-field positioning offsets. An
+`openbnct.scenario-set/0.1.0` declares them: `component_scales`
+(global uptake/yield), `region_scales` (scale a component only at a
+mask's voxels — how T/N uncertainty is expressed), `dose_scale`
+(output factor), and `shift_mm` (whole-field displacement,
+trilinear-resampled on the beam grid — a declared approximation; no
+transport is re-solved). Each scenario refolds the optimized weights
+and re-evaluates every objective; the report records the nominal
+evaluation, per-scenario outcomes, and per-objective bands (min/max/
+mean, worst scenario, violated set):
+
+```text
+openbnct plan scenarios \
+  --result RESULT.json --objective OBJECTIVE.json \
+  --scenario-set SCENARIO-SET.json \
+  --dose DIR/ap.dose.json --dose DIR/pa.dose.json … `# optimize order` \
+  --mask TARGET-MASK.json --mask OAR-MASK.json \
+  --output NEW-SCENARIO-REPORT.json
+# → openbnct.scenario-report/0.1.0: evaluations + bands
+```
+
+Component and region scales are exact — dose is linear in
+concentration and component yield — and require the beam bundles'
+component maps; `shift_mm` resamples each component so `values` stays
+consistent with the shifted component sum. The same objective-hash
+and beam-order guards as `plan robustness` apply.
+
 ### Dose-volume metrics and endpoint response models
 
 `openbnct metrics` computes exact dose-volume readings over a region mask

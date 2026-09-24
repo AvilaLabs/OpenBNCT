@@ -1621,6 +1621,32 @@ tissue kinetics into the same curve family.
   BPA-F half-lives; the machinery is deterministic so this is a
   model-fidelity check, not a code check.
 
+## R16 — Scenario-set plan evaluation (draft)
+
+Discrete, named perturbations of the delivered plan — complementing
+`plan robustness`'s first-order Gaussian σ propagation, which is the
+wrong shape for BNCT's dominant structured uncertainties (bounded
+uptake error, per-structure T/N, whole-field offsets).
+
+- **R16-01 — scenario evaluation. (landed)** `openbnct.scenario-set`
+  declares named scenarios: global `component_scales` (uptake/yield),
+  per-region `region_scales` (T/N — scale only at mask voxels),
+  uniform `dose_scale` (output factor), and `shift_mm` (whole-field
+  displacement, trilinear-resampled — a declared approximation, no
+  re-solve). `plan scenarios` refolds the optimized weights through
+  every perturbation, re-evaluates each objective's achieved metric,
+  and emits `openbnct.scenario-report`: the nominal evaluation plus
+  per-scenario outcomes and per-objective bands (min/max/mean, worst
+  scenario, violated set). Objective hash and beam order verified
+  against the result's bindings.
+- **R16-02 — robust weight optimization.** Minimize the worst-case
+  composite penalty across the scenario set rather than the nominal —
+  the CCD loop already accepts any objective evaluation; a worst-case
+  fold is a new objective term, no solver changes.
+- **R16-03 — validation.** Known-answer scenario fixtures (a field
+  whose worst case is known a priori) and a published uncertainty
+  budget anchored to a real beam model.
+
 ## R12 — Optional Avify Dose integration (planned; IP review required)
 
 **Adopted:** 2026-09-22, at the project owner's direction.
