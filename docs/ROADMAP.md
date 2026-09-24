@@ -1639,10 +1639,16 @@ uptake error, per-structure T/N, whole-field offsets).
   per-scenario outcomes and per-objective bands (min/max/mean, worst
   scenario, violated set). Objective hash and beam order verified
   against the result's bindings.
-- **R16-02 — robust weight optimization.** Minimize the worst-case
-  composite penalty across the scenario set rather than the nominal —
-  the CCD loop already accepts any objective evaluation; a worst-case
-  fold is a new objective term, no solver changes.
+- **R16-02 — robust weight optimization. (landed)** `plan optimize
+  --scenario-set` minimizes the worst-case composite penalty across
+  the nominal plus declared scenarios. Scenario field sets are
+  pre-perturbed once (the perturbation is weight-independent) and the
+  coordinate descent evaluates `max_s penalty_s(w)` — the argmax
+  scenario's gradient is a valid subgradient (Danskin), so the solver
+  and its stopping rules are unchanged. The result records
+  `method: "worst_case_scenario"`, nominal-plan outcomes, and the
+  worst-case penalty; `plan scenarios` on the robust weights shows
+  the tightened band.
 - **R16-03 — validation.** Known-answer scenario fixtures (a field
   whose worst case is known a priori) and a published uncertainty
   budget anchored to a real beam model.

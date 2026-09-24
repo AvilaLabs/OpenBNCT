@@ -30,9 +30,11 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::optimize::{
-    BeamDoseField, InversePlanObjective, InversePlanResult, objective_mask, objective_metric,
-    objective_view,
+    BeamDoseField, InversePlanObjective, InversePlanResult, OptimizeError, ResultProvenance,
+    coordinate_descent, final_outcomes, objective_mask, objective_metric, objective_view,
+    penalty_and_gradient, resolve_inputs,
 };
+use openbnct_core::RegionMask;
 
 /// Scenario-set artifact schema token.
 pub const PLAN_SCENARIO_SET_SCHEMA: &str = "openbnct.scenario-set/0.1.0";
@@ -334,14 +336,16 @@ fn resample_shifted(
 /// Apply one scenario to every beam field. Component maps are scaled
 /// globally, then per-region at mask voxels; a uniform `dose_scale`
 /// multiplies everything; `shift_mm` resamples each component (and
-/// `values` when no component map exists). `values` is rebuilt as the
-/// component sum when a component map exists — the bundle's own
-/// physical-total convention.
+/// `values` when no component map exists). `values` is rebuilt from
+/// the perturbed components — the component sum under the bundle's
+/// physical-total convention, or the single named component when
+/// `values_component` selects one (a `component:*` dose quantity).
 fn perturb_fields(
     fields: &[BeamDoseField],
     scenario: &PlanScenario,
     geometry: &GridGeometry,
     mask_voxels: &BTreeMap<String, Vec<usize>>,
+    values_component: Option<&str>,
 ) -> Result<Vec<BeamDoseField>, ScenarioError> {
     let dose_scale = scenario.dose_scale.unwrap_or(1.0);
     let needs_components = !scenario.component_scales.is_empty()
@@ -386,12 +390,26 @@ fn perturb_fields(
                         }
                     }
                 }
-                let mut total = vec![0.0; field.values.len()];
-                for map in perturbed.values() {
-                    for (t, &x) in total.iter_mut().zip(map) {
-                        *t += x;
+                let total = match values_component {
+                    Some(name) => perturbed
+                        .get(name)
+                        .ok_or_else(|| {
+                            ScenarioError::Invalid(format!(
+                                "beam field {:?} lacks the {name:?} component its dose quantity selects",
+                                field.name
+                            ))
+                        })?
+                        .clone(),
+                    None => {
+                        let mut total = vec![0.0; field.values.len()];
+                        for map in perturbed.values() {
+                            for (t, &x) in total.iter_mut().zip(map) {
+                                *t += x;
+                            }
+                        }
+                        total
                     }
-                }
+                };
                 (total, Some(perturbed))
             }
             None => {
@@ -419,17 +437,25 @@ fn perturb_fields(
                     })
                     .transpose()?;
                 let total = match &shifted_components {
-                    // Keep `values` consistent with the shifted
-                    // component sum rather than its own resample.
-                    Some(components) => {
-                        let mut total = vec![0.0; values.len()];
-                        for map in components.values() {
-                            for (t, &x) in total.iter_mut().zip(map) {
-                                *t += x;
+                    Some(components) => match values_component {
+                        // Keep `values` the selected component's own
+                        // shifted map under a component quantity…
+                        Some(name) => components
+                            .get(name)
+                            .expect("validated in the component-scale pass")
+                            .clone(),
+                        // …else the shifted component sum, consistent
+                        // with the bundle's physical-total convention.
+                        None => {
+                            let mut total = vec![0.0; values.len()];
+                            for map in components.values() {
+                                for (t, &x) in total.iter_mut().zip(map) {
+                                    *t += x;
+                                }
                             }
+                            total
                         }
-                        total
-                    }
+                    },
                     None => resample_shifted(&values, geometry, shift)?,
                 };
                 (total, shifted_components)
@@ -443,6 +469,17 @@ fn perturb_fields(
         });
     }
     Ok(out)
+}
+
+/// The component whose map a field's `values` represents under the
+/// spec's dose quantity — `Some(name)` for `component:*` (the rebuilt
+/// `values` must track that component alone), `None` for physical
+/// total and isoeffective (component-sum rebuild / unused `values`).
+fn values_component_of(spec: &InversePlanObjective) -> Option<&str> {
+    match &spec.dose_quantity {
+        crate::optimize::DoseQuantity::Component(c) => Some(crate::optimize::component_name(*c)),
+        _ => None,
+    }
 }
 
 /// Evaluate the optimized weight assignment under every declared
@@ -481,7 +518,8 @@ pub fn evaluate_scenarios(
     let all = std::iter::once(&nominal).chain(scenario_set.scenarios.iter());
     let mut evaluations = Vec::with_capacity(scenario_set.scenarios.len() + 1);
     for scenario in all {
-        let perturbed = perturb_fields(fields, scenario, geometry, mask_voxels)?;
+        let values_component = values_component_of(spec);
+        let perturbed = perturb_fields(fields, scenario, geometry, mask_voxels, values_component)?;
         let n = perturbed.first().map(|f| f.values.len()).unwrap_or(0);
         let mut shared = vec![0.0; n];
         for (field, &w) in perturbed.iter().zip(&weights) {
@@ -574,6 +612,100 @@ pub fn evaluate_scenarios(
     Ok((evaluations, bands))
 }
 
+/// Optimize non-negative beam weights against the **worst case** of a
+/// declared scenario set — the robust-planning half of R16.
+///
+/// The penalty landscape at weight `w` is `max{nominal, scenarios}
+/// penalty_s(w)`; each scenario's perturbed field set is computed once
+/// up front (the perturbation is weight-independent), and per Danskin's
+/// theorem the argmax scenario's own penalty gradient is a valid
+/// subgradient for the coordinate descent — same solver, same stopping
+/// rules, no new machinery.
+///
+/// The emitted result carries nominal-plan `outcomes` (what the
+/// unperturbed plan delivers at the robust weights) and `method:
+/// "worst_case_scenario"`; the recorded `penalty` is the worst-case
+/// value the optimizer minimized. `geometry` supplies the grid for
+/// `shift_mm` scenarios; `masks` must cover both the objective masks
+/// and every scenario `region_scales` mask.
+pub fn optimize_weights_scenarios(
+    fields: &[BeamDoseField],
+    masks: &[RegionMask],
+    spec: &InversePlanObjective,
+    scenario_set: &PlanScenarioSet,
+    geometry: &GridGeometry,
+    initial: &[f64],
+    provenance: ResultProvenance,
+) -> Result<InversePlanResult, OptimizeError> {
+    let (n_voxels, mask_voxels) = resolve_inputs(fields, masks, spec, initial)?;
+    scenario_set
+        .validate()
+        .map_err(|e| OptimizeError::InvalidObjective(format!("scenario set: {e}")))?;
+    let mask_map: BTreeMap<String, Vec<usize>> = masks
+        .iter()
+        .map(|m| {
+            (
+                m.name.clone(),
+                m.voxels
+                    .iter()
+                    .enumerate()
+                    .filter_map(|(i, &on)| (on && i < n_voxels).then_some(i))
+                    .collect(),
+            )
+        })
+        .collect();
+    // Perturb once — the scenario's field set is weight-independent.
+    let mut perturbed_sets = Vec::with_capacity(scenario_set.scenarios.len());
+    for scenario in &scenario_set.scenarios {
+        perturbed_sets.push(
+            perturb_fields(
+                fields,
+                scenario,
+                geometry,
+                &mask_map,
+                values_component_of(spec),
+            )
+            .map_err(|e| OptimizeError::InvalidObjective(format!("scenarios: {e}")))?,
+        );
+    }
+    let mut dose = vec![0.0; n_voxels];
+    let eval = |w: &[f64]| -> (f64, Vec<f64>) {
+        let (mut best_p, mut best_g) =
+            penalty_and_gradient(fields, w, spec, &mask_voxels, &mut dose);
+        for perturbed in &perturbed_sets {
+            let (p, g) = penalty_and_gradient(perturbed, w, spec, &mask_voxels, &mut dose);
+            if p > best_p {
+                best_p = p;
+                best_g = g;
+            }
+        }
+        (best_p, best_g)
+    };
+    let (w, penalty, iterations, converged) = coordinate_descent(spec, initial, fields.len(), eval);
+    Ok(InversePlanResult {
+        schema_version: crate::optimize::INVERSE_PLAN_RESULT_SCHEMA.into(),
+        id: provenance.id,
+        case_id: spec.case_id.clone(),
+        objective: provenance.objective,
+        dose_quantity: spec.dose_quantity,
+        weights: fields
+            .iter()
+            .zip(&w)
+            .map(|(f, &wi)| crate::optimize::BeamWeight {
+                name: f.name.clone(),
+                weight: wi,
+            })
+            .collect(),
+        outcomes: final_outcomes(fields, &w, spec, &mask_voxels),
+        penalty,
+        iterations,
+        converged,
+        method: Some("worst_case_scenario".into()),
+        qualification: crate::optimize::INVERSE_PLAN_QUALIFICATION.into(),
+        provenance_id: provenance.provenance_id,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -650,6 +782,7 @@ mod tests {
             penalty: 0.0,
             iterations: 0,
             converged: true,
+            method: None,
             qualification: "test".into(),
             provenance_id: "test".into(),
         }
@@ -793,6 +926,90 @@ mod tests {
         bad.dose_scale = Some(0.5);
         bad.shift_mm = Some([f64::INFINITY, 0.0, 0.0]);
         assert!(set(vec![bad]).validate().is_err());
+    }
+
+    #[test]
+    fn robust_optimization_covers_the_worst_scenario() {
+        // Two beams: "h" delivers hydrogen dose, "b" boron dose, both
+        // 1.0 everywhere. Coverage objective needs mean ≥ 1.5, so the
+        // nominal solver accepts beam b alone — but a boron-zero
+        // scenario zeroes beam b entirely. The worst-case optimizer
+        // must deliver w_h ≈ 1.5 (and let w_b decay under the tiny
+        // regularization, since b buys nothing under the worst case).
+        let fields = vec![
+            BeamDoseField {
+                name: "h".into(),
+                values: vec![1.0; 4],
+                components: Some(BTreeMap::from([
+                    ("hydrogen".into(), vec![1.0; 4]),
+                    ("boron".into(), vec![0.0; 4]),
+                ])),
+            },
+            BeamDoseField {
+                name: "b".into(),
+                values: vec![1.0; 4],
+                components: Some(BTreeMap::from([
+                    ("hydrogen".into(), vec![0.0; 4]),
+                    ("boron".into(), vec![1.0; 4]),
+                ])),
+            },
+        ];
+        let spec = InversePlanObjective {
+            objectives: vec![DoseObjective::MinEud {
+                mask: "all".into(),
+                target: 1.5,
+                eud_a: 1.0,
+                weight: 1.0,
+            }],
+            weight_regularization: 1e-3,
+            ..spec()
+        };
+        let mut zero_boron = scenario("boron-zero");
+        zero_boron.component_scales.insert("boron".into(), 0.0);
+        let set = set(vec![zero_boron]);
+        let mask_docs = vec![RegionMask {
+            name: "all".into(),
+            voxels: vec![true; 4],
+        }];
+        let result = optimize_weights_scenarios(
+            &fields,
+            &mask_docs,
+            &spec,
+            &set,
+            &geometry(),
+            &[1.0, 1.0],
+            ResultProvenance {
+                id: "robust".into(),
+                provenance_id: "test".into(),
+                objective: ContentReference {
+                    id: "spec".into(),
+                    sha256: "ef".repeat(32),
+                },
+            },
+        )
+        .unwrap();
+        assert_eq!(result.method.as_deref(), Some("worst_case_scenario"));
+        assert!(
+            result.weights[0].weight > 1.4,
+            "robust w_h must cover the boron-zero case: {:?}",
+            result.weights
+        );
+        assert!(
+            result.weights[1].weight < 0.5,
+            "boron beam buys nothing under the worst case: {:?}",
+            result.weights
+        );
+        // End-to-end: evaluating the robust weights under the
+        // scenario set leaves the coverage objective satisfied.
+        let (evals, _) =
+            evaluate_scenarios(&result, &spec, &fields, &geometry(), &set, &masks()).unwrap();
+        for eval in &evals {
+            assert!(
+                eval.objectives[0].satisfied,
+                "{} violated at robust weights",
+                eval.scenario
+            );
+        }
     }
 
     #[test]

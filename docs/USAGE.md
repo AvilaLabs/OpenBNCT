@@ -1552,6 +1552,17 @@ component maps; `shift_mm` resamples each component so `values` stays
 consistent with the shifted component sum. The same objective-hash
 and beam-order guards as `plan robustness` apply.
 
+The same set feeds `plan optimize --scenario-set SET.json`: the
+optimizer then minimizes the *worst-case* composite penalty across
+nominal plus all declared scenarios rather than the nominal alone —
+each scenario's perturbed fields are computed once, and the argmax
+scenario's own gradient drives the coordinate descent (a valid
+subgradient by Danskin's theorem). The result records
+`method: "worst_case_scenario"` alongside the nominal-plan outcomes —
+robust plans typically carry deliberate nominal slack so the worst
+scenario still clears its bounds, which `plan scenarios` on the
+result makes explicit.
+
 ### Dose-volume metrics and endpoint response models
 
 `openbnct metrics` computes exact dose-volume readings over a region mask

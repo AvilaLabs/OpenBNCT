@@ -2230,6 +2230,12 @@ enum PlanCommand {
         /// `plan validate`/`plan export` and the GUI Plan workspace).
         #[arg(long)]
         emit_plan: Option<PathBuf>,
+        /// `openbnct.scenario-set/0.1.0` JSON — when supplied, optimize
+        /// against the worst-case penalty across the declared
+        /// perturbations (plus the nominal), not the nominal alone.
+        /// The result records `method: "worst_case_scenario"`.
+        #[arg(long)]
+        scenario_set: Option<PathBuf>,
     },
     /// Propagate declared systematic σ on each beam's component dose
     /// through the optimized weights: per-objective metric 1σ and the
@@ -9992,6 +9998,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 provenance_id,
                 output,
                 emit_plan,
+                scenario_set,
             } => {
                 use openbnct_plan::optimize::{
                     BeamDoseField, DoseQuantity, InversePlanObjective, ResultProvenance,
@@ -10002,11 +10009,55 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     serde_json::from_slice(&spec_bytes).map_err(|error| {
                         io::Error::other(format!("inverse-plan objective: {error}"))
                     })?;
+                let scenario_bytes = scenario_set.as_ref().map(fs::read).transpose()?;
+                let scenarios_doc: Option<openbnct_plan::scenarios::PlanScenarioSet> =
+                    scenario_bytes
+                        .as_ref()
+                        .map(|bytes| {
+                            serde_json::from_slice(bytes)
+                                .map_err(|error| io::Error::other(format!("scenario set: {error}")))
+                        })
+                        .transpose()?;
                 let mut fields = Vec::with_capacity(dose.len());
+                let mut geometry: Option<openbnct_core::GridGeometry> = None;
                 for path in &dose {
                     let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)?;
+                    if scenarios_doc.is_some() {
+                        match &geometry {
+                            Some(g) if *g != bundle.geometry => {
+                                return Err(io::Error::other(format!(
+                                    "{}: scenario evaluation requires a shared beam grid",
+                                    path.display()
+                                ))
+                                .into());
+                            }
+                            None => geometry = Some(bundle.geometry.clone()),
+                            _ => {}
+                        }
+                    }
+                    // Scenario mode needs every component map for
+                    // perturbation, whatever the dose quantity.
+                    let all_components = || {
+                        let name = |c: openbnct_core::DoseComponent| match c {
+                            openbnct_core::DoseComponent::Boron => "boron",
+                            openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                            openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                            openbnct_core::DoseComponent::Photon => "photon",
+                        };
+                        let components: std::collections::BTreeMap<String, Vec<f64>> = bundle
+                            .components
+                            .iter()
+                            .map(|volume| {
+                                (name(volume.component).to_string(), volume.values.clone())
+                            })
+                            .collect();
+                        components
+                    };
                     let (values, components) = match spec.dose_quantity {
-                        DoseQuantity::PhysicalTotal => (bundle.physical_total.values.clone(), None),
+                        DoseQuantity::PhysicalTotal => (
+                            bundle.physical_total.values.clone(),
+                            scenarios_doc.as_ref().map(|_| all_components()),
+                        ),
                         DoseQuantity::Component(component) => (
                             bundle
                                 .components
@@ -10021,23 +10072,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                                 })?
                                 .values
                                 .clone(),
-                            None,
+                            scenarios_doc.as_ref().map(|_| all_components()),
                         ),
                         DoseQuantity::Isoeffective => {
-                            let name = |c: openbnct_core::DoseComponent| match c {
-                                openbnct_core::DoseComponent::Boron => "boron",
-                                openbnct_core::DoseComponent::Nitrogen => "nitrogen",
-                                openbnct_core::DoseComponent::Hydrogen => "hydrogen",
-                                openbnct_core::DoseComponent::Photon => "photon",
-                            };
-                            let components: std::collections::BTreeMap<String, Vec<f64>> = bundle
-                                .components
-                                .iter()
-                                .map(|volume| {
-                                    (name(volume.component).to_string(), volume.values.clone())
-                                })
-                                .collect();
-                            (bundle.physical_total.values.clone(), Some(components))
+                            (bundle.physical_total.values.clone(), Some(all_components()))
                         }
                     };
                     fields.push(BeamDoseField {
@@ -10072,8 +10110,22 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         sha256: format!("sha256:{spec_sha}"),
                     },
                 };
-                let result = optimize_weights(&fields, &masks, &spec, &weights0, provenance)
-                    .map_err(|error| io::Error::other(format!("optimize: {error}")))?;
+                let result = match &scenarios_doc {
+                    Some(set) => openbnct_plan::scenarios::optimize_weights_scenarios(
+                        &fields,
+                        &masks,
+                        &spec,
+                        set,
+                        geometry
+                            .as_ref()
+                            .expect("scenario sets require at least one dose bundle"),
+                        &weights0,
+                        provenance,
+                    )
+                    .map_err(|error| io::Error::other(format!("optimize: {error}")))?,
+                    None => optimize_weights(&fields, &masks, &spec, &weights0, provenance)
+                        .map_err(|error| io::Error::other(format!("optimize: {error}")))?,
+                };
                 fs::write(&output, serde_json::to_vec_pretty(&result)?)?;
                 println!(
                     "optimize: {} beams, penalty {:.6e}, {} iterations, converged={}",

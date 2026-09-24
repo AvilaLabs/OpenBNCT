@@ -232,6 +232,13 @@ pub struct InversePlanResult {
     pub penalty: f64,
     pub iterations: u32,
     pub converged: bool,
+    /// Optimization method tag — absent for the nominal
+    /// penalty-objective optimizer, `"worst_case_scenario"` when the
+    /// weights were optimized against a scenario set's worst-case
+    /// fold (the recorded `penalty`/`outcomes` are then nominal-plan
+    /// values; per-scenario outcomes live in the scenario report).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
     pub qualification: String,
     pub provenance_id: String,
 }
@@ -524,7 +531,7 @@ pub(crate) fn objective_view<'a>(
 /// gradient in weight space. Violations are bound-normalized so the
 /// penalty is scale-free — the same `weight_regularization` and
 /// `gradient_tolerance` apply at any dose magnitude.
-fn penalty_and_gradient(
+pub(crate) fn penalty_and_gradient(
     fields: &[BeamDoseField],
     weights: &[f64],
     spec: &InversePlanObjective,
@@ -588,19 +595,16 @@ fn penalty_and_gradient(
     (penalty, grad)
 }
 
-/// Optimize non-negative beam weights against the objective document.
-///
-/// `fields[i]` is beam `i`'s unit-weight dose field for the declared
-/// `dose_quantity`; `masks` supplies every mask the objectives name.
-/// `initial` seeds the iterate (clamped to the feasible box). The
-/// solver is deterministic: fixed Armijo backtracking, no sampling.
-pub fn optimize_weights(
+/// Shared input validation and mask resolution for both the nominal
+/// and scenario-robust optimizers: spec validation, field shape/unit
+/// checks, voxel count, and the per-objective mask voxel lists.
+#[allow(clippy::type_complexity)]
+pub(crate) fn resolve_inputs(
     fields: &[BeamDoseField],
     masks: &[RegionMask],
     spec: &InversePlanObjective,
     initial: &[f64],
-    provenance: ResultProvenance,
-) -> Result<InversePlanResult, OptimizeError> {
+) -> Result<(usize, Vec<Vec<usize>>), OptimizeError> {
     spec.validate()?;
     if fields.is_empty() {
         return Err(OptimizeError::InvalidObjective(
@@ -706,7 +710,21 @@ pub fn optimize_weights(
             }
         }
     }
+    Ok((n_voxels, mask_voxels))
+}
 
+/// The shared projected cyclic-coordinate-descent loop. `eval` maps a
+/// weight vector to `(penalty, gradient)` — the nominal optimizer
+/// passes [`penalty_and_gradient`] directly; the scenario-robust
+/// optimizer passes the worst-case fold over pre-perturbed field sets
+/// (Danskin: the argmax scenario's gradient is a valid subgradient).
+/// Returns `(weights, penalty, iterations, converged)`.
+pub(crate) fn coordinate_descent(
+    spec: &InversePlanObjective,
+    initial: &[f64],
+    n_fields: usize,
+    mut eval: impl FnMut(&[f64]) -> (f64, Vec<f64>),
+) -> (Vec<f64>, f64, u32, bool) {
     let upper = spec.weight_bound.unwrap_or(f64::INFINITY);
     let project = |w: &mut [f64]| {
         for wi in w.iter_mut() {
@@ -716,8 +734,7 @@ pub fn optimize_weights(
 
     let mut w: Vec<f64> = initial.to_vec();
     project(&mut w);
-    let mut dose = vec![0.0; n_voxels];
-    let (mut penalty, mut grad) = penalty_and_gradient(fields, &w, spec, &mask_voxels, &mut dose);
+    let (mut penalty, mut grad) = eval(&w);
 
     let mut iterations = 0_u32;
     let mut converged = false;
@@ -750,7 +767,7 @@ pub fn optimize_weights(
         // that minimum or shrinks until every coordinate crawls.
         let w_scale = w.iter().fold(1.0_f64, |m, &x| m.max(x));
         let mut improved = false;
-        for i in 0..fields.len() {
+        for i in 0..n_fields {
             let gi = grad[i];
             if !gi.is_finite() || gi == 0.0 {
                 continue;
@@ -760,7 +777,7 @@ pub fn optimize_weights(
                 let mut trial = w.clone();
                 trial[i] = w[i] - step_i * gi;
                 project(&mut trial);
-                let (p2, g2) = penalty_and_gradient(fields, &trial, spec, &mask_voxels, &mut dose);
+                let (p2, g2) = eval(&trial);
                 if p2 < penalty {
                     w = trial;
                     penalty = p2;
@@ -779,18 +796,27 @@ pub fn optimize_weights(
         }
         iterations += 1;
     }
+    (w, penalty, iterations, converged)
+}
 
-    // Final outcomes at the optimized weights.
-    dose.fill(0.0);
+/// Achieved outcomes at a final weight vector — shared by the nominal
+/// and robust optimizers' result emission.
+pub(crate) fn final_outcomes(
+    fields: &[BeamDoseField],
+    w: &[f64],
+    spec: &InversePlanObjective,
+    mask_voxels: &[Vec<usize>],
+) -> Vec<ObjectiveOutcome> {
+    let n_voxels = fields.first().map(|f| f.values.len()).unwrap_or(0);
+    let mut dose = vec![0.0; n_voxels];
     if spec.dose_quantity != DoseQuantity::Isoeffective {
-        accumulate(fields, &w, &mut dose);
+        accumulate(fields, w, &mut dose);
     }
-    let outcomes: Vec<ObjectiveOutcome> = spec
-        .objectives
+    spec.objectives
         .iter()
-        .zip(&mask_voxels)
+        .zip(mask_voxels)
         .map(|(objective, voxels)| {
-            let (odose, _) = objective_view(fields, &w, &dose, spec, objective);
+            let (odose, _) = objective_view(fields, w, &dose, spec, objective);
             let (metric, _) = objective_metric(objective, &odose, voxels);
             let (kind, bound, satisfied, violation, weight) = match objective {
                 DoseObjective::MinEud {
@@ -857,8 +883,28 @@ pub fn optimize_weights(
                 weight,
             }
         })
-        .collect();
+        .collect()
+}
 
+/// Optimize non-negative beam weights against the objective document.
+///
+/// `fields[i]` is beam `i`'s unit-weight dose field for the declared
+/// `dose_quantity`; `masks` supplies every mask the objectives name.
+/// `initial` seeds the iterate (clamped to the feasible box). The
+/// solver is deterministic: fixed Armijo backtracking, no sampling.
+pub fn optimize_weights(
+    fields: &[BeamDoseField],
+    masks: &[RegionMask],
+    spec: &InversePlanObjective,
+    initial: &[f64],
+    provenance: ResultProvenance,
+) -> Result<InversePlanResult, OptimizeError> {
+    let (n_voxels, mask_voxels) = resolve_inputs(fields, masks, spec, initial)?;
+    let mut dose = vec![0.0; n_voxels];
+    let (w, penalty, iterations, converged) =
+        coordinate_descent(spec, initial, fields.len(), |w| {
+            penalty_and_gradient(fields, w, spec, &mask_voxels, &mut dose)
+        });
     Ok(InversePlanResult {
         schema_version: INVERSE_PLAN_RESULT_SCHEMA.into(),
         id: provenance.id,
@@ -873,10 +919,11 @@ pub fn optimize_weights(
                 weight: wi,
             })
             .collect(),
-        outcomes,
+        outcomes: final_outcomes(fields, &w, spec, &mask_voxels),
         penalty,
         iterations,
         converged,
+        method: None,
         qualification: INVERSE_PLAN_QUALIFICATION.into(),
         provenance_id: provenance.provenance_id,
     })
