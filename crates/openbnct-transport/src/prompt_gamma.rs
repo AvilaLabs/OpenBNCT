@@ -196,6 +196,12 @@ pub const PROMPT_GAMMA_RESPONSE_SCHEMA: &str = "openbnct.pg-response/0.1.0";
 /// Versioned contract id for `PromptGammaCounts`.
 pub const PROMPT_GAMMA_COUNTS_SCHEMA: &str = "openbnct.pg-counts/0.1.0";
 
+/// Versioned contract id for `PromptGammaObservation`.
+pub const PROMPT_GAMMA_OBSERVATION_SCHEMA: &str = "openbnct.pg-observation/0.1.0";
+
+/// Versioned contract id for `PromptGammaReconstruction`.
+pub const PROMPT_GAMMA_RECONSTRUCTION_SCHEMA: &str = "openbnct.pg-reconstruction/0.1.0";
+
 /// Detector-response map for a declared voxel region: the adjoint
 /// solution's value at the 478 keV emission group in every cell —
 /// the importance of a photon born there to a fluence-weighted
@@ -348,6 +354,381 @@ pub fn expected_prompt_gamma_counts(
     })
 }
 
+/// One detector's measured tally paired with the response artifact it
+/// was taken against — either synthesized from a `PromptGammaCounts`
+/// (forward-model output, R13-04 closure) or authored by hand for a
+/// real measurement. The response binding is content-hashed; the
+/// reconstruct path verifies every response file against it.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptGammaObservationEntry {
+    pub response: ContentReference,
+    pub measured_tally: f64,
+}
+
+/// The measured half of the reconstruction problem: one tally per
+/// detector position, each bound to the response artifact that
+/// position's sensitivity map lives in.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptGammaObservation {
+    pub schema_version: String,
+    pub id: String,
+    pub case_id: String,
+    pub detectors: Vec<PromptGammaObservationEntry>,
+    pub provenance_id: String,
+    pub qualification: String,
+}
+
+/// Reconstructed emission map: the bounded inverse of the response
+/// matrix under a declared regularization. Values share the emission
+/// map's per-kg unit — the inverse estimate of the 478 keV source
+/// distribution, not an image and not a dose.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptGammaReconstruction {
+    pub schema_version: String,
+    pub id: String,
+    pub case_id: String,
+    pub geometry: GridGeometry,
+    pub unit: PromptGammaUnit,
+    pub emission_energy_ev: f64,
+    /// Reconstructed per-kg emission per voxel, grid order —
+    /// non-negative by construction.
+    pub values: Vec<f64>,
+    /// Declared regularization and its outcome.
+    pub regularization: PromptGammaRegularization,
+    /// Content bindings to the observation and to every response
+    /// artifact that formed the matrix columns.
+    pub observation: ContentReference,
+    pub responses: Vec<ContentReference>,
+    pub provenance_id: String,
+    pub qualification: String,
+}
+
+/// The declared inversion: non-negative least squares with a
+/// Tikhonov term — `min_x ‖Ax − b‖² + λ‖x‖², x ≥ 0` — solved by
+/// projected gradient with a power-iterated step bound.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PromptGammaRegularization {
+    pub method: String,
+    pub lambda: f64,
+    pub iterations: u32,
+    pub converged: bool,
+    /// ‖Ax − b‖ at the returned x, in tally units.
+    pub residual_norm: f64,
+    /// Uniform voxel density used to fold per-kg emissions into the
+    /// operator — kept with the declaration, not hidden.
+    pub voxel_density_kg_per_m3: f64,
+}
+
+impl PromptGammaObservation {
+    pub fn validate(&self) -> Result<(), PromptGammaError> {
+        for (label, value) in [
+            ("schema_version", self.schema_version.as_str()),
+            ("id", self.id.as_str()),
+            ("case_id", self.case_id.as_str()),
+            ("provenance_id", self.provenance_id.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(PromptGammaError::EmptyIdentifier(label));
+            }
+        }
+        if self.detectors.is_empty()
+            || self.detectors.iter().any(|d| {
+                !d.measured_tally.is_finite()
+                    || d.measured_tally < 0.0
+                    || d.response.id.trim().is_empty()
+            })
+        {
+            return Err(PromptGammaError::NonFiniteValue);
+        }
+        Ok(())
+    }
+}
+
+impl PromptGammaReconstruction {
+    pub fn validate(&self) -> Result<(), PromptGammaError> {
+        for (label, value) in [
+            ("schema_version", self.schema_version.as_str()),
+            ("id", self.id.as_str()),
+            ("case_id", self.case_id.as_str()),
+            ("provenance_id", self.provenance_id.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(PromptGammaError::EmptyIdentifier(label));
+            }
+        }
+        let voxels = self
+            .geometry
+            .voxel_count()
+            .map_err(|_| PromptGammaError::NonFiniteValue)?;
+        if self.values.len() != voxels
+            || self.values.iter().any(|v| !v.is_finite() || *v < 0.0)
+            || !self.regularization.residual_norm.is_finite()
+            || self.regularization.residual_norm < 0.0
+        {
+            return Err(PromptGammaError::NonFiniteValue);
+        }
+        Ok(())
+    }
+}
+
+/// Collect synthetic detector readings into an observation: every
+/// `PromptGammaCounts` contributes its bound response reference and
+/// its expected tally as the "measured" value. This is the R13-04
+/// closure path — real measurements are authored as the same schema
+/// directly.
+pub fn collect_prompt_gamma_observation(
+    counts: &[PromptGammaCounts],
+    id: &str,
+    provenance_id: &str,
+) -> Result<PromptGammaObservation, PromptGammaError> {
+    if counts.is_empty() {
+        return Err(PromptGammaError::EmptyIdentifier("counts"));
+    }
+    let case_id = counts[0].case_id.clone();
+    if counts.iter().any(|c| c.case_id != case_id) {
+        return Err(PromptGammaError::ShapeMismatch(
+            "counts artifacts span multiple cases",
+        ));
+    }
+    let observation = PromptGammaObservation {
+        schema_version: PROMPT_GAMMA_OBSERVATION_SCHEMA.into(),
+        id: id.into(),
+        case_id,
+        detectors: counts
+            .iter()
+            .map(|c| PromptGammaObservationEntry {
+                response: c.response.clone(),
+                measured_tally: c.expected_tally,
+            })
+            .collect(),
+        provenance_id: provenance_id.into(),
+        qualification: PROMPT_GAMMA_QUALIFICATION.into(),
+    };
+    observation.validate()?;
+    Ok(observation)
+}
+
+/// Reconstruct the per-kg emission map from an observation and the
+/// response artifacts it binds. `responses[i]` must be the artifact
+/// `observation.detectors[i].response` points at — the caller verifies
+/// content hashes before calling. The matrix column for detector d is
+/// `sensitivity_d(v)·voxel_mass`, so the unknown x is in the emission
+/// map's per-kg unit.
+///
+/// Solver: FISTA (accelerated projected gradient) on
+/// `min_x ‖Ãx − b̃‖² + λ‖x‖², x ≥ 0` over row-normalized rows, with
+/// the step set by a power-iterated Lipschitz bound. Stops on
+/// relative iterate change below 1e-8 or at `max_iterations`.
+#[allow(clippy::too_many_arguments)]
+pub fn reconstruct_prompt_gamma_emission(
+    observation: &PromptGammaObservation,
+    responses: &[PromptGammaResponse],
+    voxel_density_kg_per_m3: f64,
+    lambda: f64,
+    max_iterations: u32,
+    unit: PromptGammaUnit,
+    id: &str,
+    observation_ref: ContentReference,
+    provenance_id: &str,
+) -> Result<PromptGammaReconstruction, PromptGammaError> {
+    observation.validate()?;
+    if responses.len() != observation.detectors.len() {
+        return Err(PromptGammaError::ShapeMismatch(
+            "response count != detector count",
+        ));
+    }
+    for (response, detector) in responses.iter().zip(observation.detectors.iter()) {
+        if response.id != detector.response.id {
+            return Err(PromptGammaError::ShapeMismatch(
+                "response artifact does not match the observation binding",
+            ));
+        }
+    }
+    let geometry = responses[0].geometry.clone();
+    if responses
+        .iter()
+        .any(|r| r.geometry != geometry || !r.converged)
+    {
+        return Err(PromptGammaError::ShapeMismatch(
+            "response grids differ or a response solve did not converge",
+        ));
+    }
+    if !voxel_density_kg_per_m3.is_finite()
+        || voxel_density_kg_per_m3 <= 0.0
+        || !lambda.is_finite()
+        || lambda < 0.0
+        || max_iterations == 0
+    {
+        return Err(PromptGammaError::NonFiniteValue);
+    }
+    let voxels = geometry
+        .voxel_count()
+        .map_err(|_| PromptGammaError::NonFiniteValue)?;
+    let spacing = &geometry.spacing_mm;
+    let voxel_mass_kg = voxel_density_kg_per_m3 * spacing[0] * spacing[1] * spacing[2] * 1e-9;
+
+    // A[d][v] = sensitivity_d(v)·voxel_mass — operator on per-kg x.
+    let n_det = responses.len();
+    let mut a = vec![vec![0.0; voxels]; n_det];
+    for (d, response) in responses.iter().enumerate() {
+        for (v, s) in response.sensitivity.iter().enumerate() {
+            a[d][v] = s * voxel_mass_kg;
+        }
+    }
+    let b: Vec<f64> = observation
+        .detectors
+        .iter()
+        .map(|d| d.measured_tally)
+        .collect();
+
+    // Detector tallies differ by orders of magnitude across
+    // geometries, so the solve runs on row-normalized rows —
+    // Ã_d = A_d/‖A_d‖, b̃_d = b_d/‖A_d‖ — keeping λ meaningful
+    // relative to a unit-scale operator. The reported residual is
+    // computed on the raw operator, in tally units.
+    let a_solve = {
+        let mut rows = a.clone();
+        let mut rhs = b.clone();
+        for (d, row) in rows.iter_mut().enumerate() {
+            let norm = row.iter().map(|v| v * v).sum::<f64>().sqrt();
+            if norm > 0.0 {
+                for v in row.iter_mut() {
+                    *v /= norm;
+                }
+                rhs[d] /= norm;
+            }
+        }
+        (rows, rhs)
+    };
+    let (a_solve, b_solve) = a_solve;
+
+    // FISTA on the normalized system — the passive-set methods churn
+    // combinatorially over tens of thousands of columns, while the
+    // accelerated first-order method's cost is predictable.
+    let (x, converged, iterations) = fista_nnls(&a_solve, &b_solve, lambda, max_iterations);
+
+    let residual_norm = a
+        .iter()
+        .zip(&b)
+        .map(|(row, b)| row.iter().zip(&x).map(|(a, x)| a * x).sum::<f64>() - b)
+        .map(|r| r * r)
+        .sum::<f64>()
+        .sqrt();
+
+    Ok(PromptGammaReconstruction {
+        schema_version: PROMPT_GAMMA_RECONSTRUCTION_SCHEMA.into(),
+        id: id.into(),
+        case_id: observation.case_id.clone(),
+        geometry,
+        unit,
+        emission_energy_ev: PROMPT_GAMMA_ENERGY_EV,
+        values: x,
+        regularization: PromptGammaRegularization {
+            method: "nnls_tikhonov_fista".into(),
+            lambda,
+            iterations,
+            converged,
+            residual_norm,
+            voxel_density_kg_per_m3,
+        },
+        observation: observation_ref,
+        responses: observation
+            .detectors
+            .iter()
+            .map(|d| d.response.clone())
+            .collect(),
+        provenance_id: provenance_id.into(),
+        qualification: PROMPT_GAMMA_QUALIFICATION.into(),
+    })
+}
+
+/// FISTA (Beck–Teboulle accelerated projected gradient) on
+/// `min_x ‖Ax − b‖² + λ‖x‖², x ≥ 0`. Returns
+/// `(x, converged, iterations)` — `converged` when the relative
+/// iterate change drops below 1e-8.
+fn fista_nnls(
+    a: &[Vec<f64>],
+    b: &[f64],
+    lambda: f64,
+    max_iterations: u32,
+) -> (Vec<f64>, bool, u32) {
+    let voxels = a[0].len();
+    let matvec = |x: &[f64]| -> Vec<f64> {
+        a.iter()
+            .map(|row| row.iter().zip(x).map(|(a, x)| a * x).sum())
+            .collect()
+    };
+    let rmatvec = |r: &[f64]| -> Vec<f64> {
+        let mut z = vec![0.0; voxels];
+        for (d, row) in a.iter().enumerate() {
+            for v in 0..voxels {
+                z[v] += row[v] * r[d];
+            }
+        }
+        z
+    };
+    // Lipschitz bound on ‖Ã^T Ã + λI‖ by power iteration.
+    let mut w = vec![1.0_f64; voxels];
+    let mut lipschitz = 1.0;
+    for _ in 0..60 {
+        let z = rmatvec(&matvec(&w));
+        let norm = z.iter().map(|z| z * z).sum::<f64>().sqrt();
+        if norm == 0.0 {
+            break;
+        }
+        lipschitz = norm
+            / w.iter()
+                .map(|w| w * w)
+                .sum::<f64>()
+                .sqrt()
+                .max(f64::MIN_POSITIVE);
+        w = z.iter().map(|z| z / norm).collect();
+    }
+    let step = 1.0 / (lipschitz + lambda).max(f64::MIN_POSITIVE);
+
+    let mut x = vec![0.0_f64; voxels];
+    let mut y = x.clone();
+    let mut t = 1.0_f64;
+    let mut iterations = 0_u32;
+    let mut converged = false;
+    for iter in 0..max_iterations {
+        iterations = iter + 1;
+        // grad = Ã^T(Ãy − b̃) + λy at the accelerated point.
+        let residual = matvec(&y);
+        let g = rmatvec(
+            &residual
+                .iter()
+                .zip(b)
+                .map(|(r, b)| r - b)
+                .collect::<Vec<_>>(),
+        );
+        let mut next = x.clone();
+        let mut change = 0.0_f64;
+        for v in 0..voxels {
+            let nv = (y[v] - step * (g[v] + lambda * y[v])).max(0.0);
+            change = change.max((nv - x[v]).abs());
+            next[v] = nv;
+        }
+        let t_next = 0.5 * (1.0 + (1.0 + 4.0 * t * t).sqrt());
+        let momentum = (t - 1.0) / t_next;
+        for v in 0..voxels {
+            y[v] = next[v] + momentum * (next[v] - x[v]);
+        }
+        let scale = next.iter().map(|v| v.abs()).fold(1.0_f64, f64::max);
+        x = next;
+        t = t_next;
+        if change < 1e-8 * scale {
+            converged = true;
+            break;
+        }
+    }
+    (x, converged, iterations)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -481,6 +862,109 @@ mod tests {
         assert!((counts.expected_tally - expected).abs() < expected * 1e-12);
         assert_eq!(counts.detector_efficiency, 0.5);
         assert_eq!(counts.voxel_density_kg_per_m3, 1000.0);
+    }
+
+    /// R13-04 forward-inverse closure on a synthetic operator: eight
+    /// voxels in a row, eight detectors each dominated by a different
+    /// voxel's neighborhood. A single-voxel emission must come back
+    /// peaked at the true voxel with most of its mass.
+    #[test]
+    fn reconstructs_synthetic_emission() {
+        let geometry = GridGeometry {
+            shape: [8, 1, 1],
+            spacing_mm: [10.0, 10.0, 10.0],
+            origin_mm: [0.0, 0.0, 0.0],
+            direction: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        };
+        let cref = |id: &str, byte: u8| ContentReference {
+            id: id.into(),
+            sha256: format!("{byte:02x}").repeat(64),
+        };
+        // A[d][v] ∝ exp(−2(v−d)²) — each detector's column dominated by
+        // its own voxel with weak neighbor bleed, so the 8×8 system is
+        // well-conditioned and the solve converges quickly.
+        let responses: Vec<PromptGammaResponse> = (0..8u32)
+            .map(|d| PromptGammaResponse {
+                schema_version: PROMPT_GAMMA_RESPONSE_SCHEMA.into(),
+                id: format!("resp-{d}"),
+                case_id: "case".into(),
+                geometry: geometry.clone(),
+                detector_voxels: vec![[d, 0, 0]],
+                emission_group: 1,
+                emission_energy_ev: 478_000.0,
+                sensitivity: (0..8)
+                    .map(|v| (-2.0 * (v as f64 - d as f64).powi(2)).exp())
+                    .collect(),
+                quadrature_order: 8,
+                converged: true,
+                residual: 1e-8,
+                outer_iterations: 2,
+                case: cref("case", 1),
+                photon_data: cref("data", 2),
+                provenance_id: format!("resp-{d}-prov"),
+                qualification: PROMPT_GAMMA_QUALIFICATION.into(),
+            })
+            .collect();
+
+        // Truth: a unit-per-kg blob in voxel 3. measured = A·x exactly.
+        // 10 mm-sided voxels are 1e-6 m³ — 1e-3 kg at 1000 kg/m³.
+        let voxel_mass = 1e-3;
+        let observation = PromptGammaObservation {
+            schema_version: PROMPT_GAMMA_OBSERVATION_SCHEMA.into(),
+            id: "obs".into(),
+            case_id: "case".into(),
+            detectors: responses
+                .iter()
+                .enumerate()
+                .map(|(d, r)| PromptGammaObservationEntry {
+                    response: cref(&r.id, 0x10 + d as u8),
+                    measured_tally: r.sensitivity[3] * voxel_mass,
+                })
+                .collect(),
+            provenance_id: "obs-prov".into(),
+            qualification: PROMPT_GAMMA_QUALIFICATION.into(),
+        };
+        // λ → 0: the synthetic system is exactly consistent, so the
+        // NNLS should recover the blob almost exactly. (A realistic
+        // λ against this ill-conditioned kernel honestly shrinks the
+        // peak — regularization is the point, not a defect.)
+        let reconstruction = reconstruct_prompt_gamma_emission(
+            &observation,
+            &responses,
+            1000.0,
+            1e-10,
+            2000,
+            PromptGammaUnit::PhotonsPerKgPerSourceParticle,
+            "recon",
+            cref("obs", 3),
+            "recon-prov",
+        )
+        .unwrap();
+        reconstruction.validate().unwrap();
+        let peak = reconstruction
+            .values
+            .iter()
+            .enumerate()
+            .max_by(|a, b| a.1.partial_cmp(b.1).unwrap())
+            .map(|(i, _)| i)
+            .unwrap();
+        assert_eq!(peak, 3, "reconstruction {:#?}", reconstruction.values);
+        assert!(
+            reconstruction.values[3] > 0.5,
+            "peak mass {} too low",
+            reconstruction.values[3]
+        );
+        let b_norm = observation
+            .detectors
+            .iter()
+            .map(|d| d.measured_tally * d.measured_tally)
+            .sum::<f64>()
+            .sqrt();
+        assert!(
+            reconstruction.regularization.residual_norm < 1e-3 * b_norm,
+            "residual {} too high vs ‖b‖ {b_norm}",
+            reconstruction.regularization.residual_norm
+        );
     }
 
     #[test]

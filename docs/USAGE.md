@@ -1283,9 +1283,35 @@ openbnct pg counts \
   --id case.pg-counts.v1 --output pg-counts.json
 ```
 
-Multiple detector positions each take one adjoint solve; the
-reconstruction half (regularized inversion of measured counts back
-onto the emission grid) is scoped in the roadmap under R13-03.
+`pg observe` collects counts artifacts into a synthetic observation
+(`openbnct.pg-observation/0.1.0`) — each detector's expected tally
+becomes a measured reading bound to its response artifact. Real
+measurements are authored in the same schema directly.
+
+```text
+openbnct pg observe \
+  --counts pg-counts-z0.json --counts pg-counts-z1.json \
+  --id case.pg-obs.v1 --output pg-observation.json
+```
+
+`pg reconstruct` inverts an observation back onto the emission grid
+(`openbnct.pg-reconstruction/0.1.0`): non-negative least squares with
+a declared Tikhonov λ, FISTA with a power-iterated step bound. Every response file's sha256 is verified against the
+observation's content bindings before the solve — a swapped or stale
+response artifact is a hard error, never a silent column.
+
+```text
+openbnct pg reconstruct \
+  --observation pg-observation.json \
+  --response pg-response-z0.json --response pg-response-z1.json \
+  --density-kg-per-m3 1000 --lambda 1e-4 --max-iterations 2000 \
+  --id case.pg-recon.v1 --output pg-reconstruction.json
+```
+
+Each detector position takes one adjoint solve; the observation pairs
+the resulting response columns with measured tallies, and the
+reconstruction carries residual and convergence diagnostics in its
+regularization declaration.
 
 ### Exposure-plan tables and diagnostics
 

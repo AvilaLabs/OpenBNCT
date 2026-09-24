@@ -472,6 +472,61 @@ enum PgCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Collect counts artifacts into a synthetic observation
+    /// (`openbnct.pg-observation/0.1.0`) — the measured half of the
+    /// reconstruction problem. Real measurements are authored in the
+    /// same schema directly.
+    Observe {
+        /// `openbnct.pg-counts/0.1.0` JSON; repeatable, at least one.
+        #[arg(long)]
+        counts: Vec<PathBuf>,
+        /// Observation document identifier.
+        #[arg(long)]
+        id: String,
+        /// Provenance identifier; defaults to `pg-observation:` + the id.
+        #[arg(long)]
+        provenance_id: Option<String>,
+        /// Output path for the pg-observation JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Reconstruct the per-kg emission map from an observation and the
+    /// response artifacts it binds (`openbnct.pg-reconstruction/0.1.0`)
+    /// — non-negative least squares with a Tikhonov term.
+    Reconstruct {
+        /// `openbnct.pg-observation/0.1.0` JSON.
+        #[arg(long)]
+        observation: PathBuf,
+        /// `openbnct.pg-response/0.1.0` JSON, once per observation
+        /// detector in the same order; each file's sha256 is verified
+        /// against the observation's content binding.
+        #[arg(long)]
+        response: Vec<PathBuf>,
+        /// Uniform voxel density in kg/m³ folding per-kg emissions
+        /// into the operator.
+        #[arg(long)]
+        density_kg_per_m3: f64,
+        /// Tikhonov λ applied to the reconstructed map.
+        #[arg(long, default_value_t = 1e-4)]
+        lambda: f64,
+        /// Projected-gradient iteration budget.
+        #[arg(long, default_value_t = 2000)]
+        max_iterations: u32,
+        /// Emission unit the tallies were taken in:
+        /// `photons-per-kg-per-source-particle` (default) or
+        /// `photons-per-kg`.
+        #[arg(long, default_value = "photons-per-kg-per-source-particle")]
+        unit: String,
+        /// Reconstruction document identifier.
+        #[arg(long)]
+        id: String,
+        /// Provenance identifier; defaults to `pg-reconstruction:` + the id.
+        #[arg(long)]
+        provenance_id: Option<String>,
+        /// Output path for the pg-reconstruction JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -8262,6 +8317,129 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     counts.expected_tally,
                     counts.detector_efficiency,
                     counts.voxel_density_kg_per_m3
+                );
+            }
+            PgCommand::Observe {
+                counts,
+                id,
+                provenance_id,
+                output,
+            } => {
+                if counts.is_empty() {
+                    return Err(io::Error::other("pg observe: --counts required").into());
+                }
+                let mut collected = Vec::with_capacity(counts.len());
+                for path in &counts {
+                    let model: openbnct_transport::PromptGammaCounts =
+                        serde_json::from_slice(&fs::read(path)?).map_err(|e| {
+                            io::Error::other(format!("counts {}: {e}", path.display()))
+                        })?;
+                    collected.push(model);
+                }
+                let observation = openbnct_transport::collect_prompt_gamma_observation(
+                    &collected,
+                    &id,
+                    provenance_id
+                        .as_deref()
+                        .unwrap_or(&format!("pg-observation:{id}")),
+                )
+                .map_err(|e| io::Error::other(format!("pg observe: {e}")))?;
+                write_new_json(&output, &observation)?;
+                println!("pg observation at {}", output.display());
+                println!("{} detector readings", observation.detectors.len());
+            }
+            PgCommand::Reconstruct {
+                observation,
+                response,
+                density_kg_per_m3,
+                lambda,
+                max_iterations,
+                unit,
+                id,
+                provenance_id,
+                output,
+            } => {
+                let observation_bytes = fs::read(&observation)?;
+                let observation_model: openbnct_transport::PromptGammaObservation =
+                    serde_json::from_slice(&observation_bytes).map_err(|e| {
+                        io::Error::other(format!("observation {}: {e}", observation.display()))
+                    })?;
+                observation_model
+                    .validate()
+                    .map_err(|e| io::Error::other(format!("pg reconstruct: {e}")))?;
+                if response.len() != observation_model.detectors.len() {
+                    return Err(io::Error::other(format!(
+                        "pg reconstruct: {} --response files for {} observation detectors",
+                        response.len(),
+                        observation_model.detectors.len()
+                    ))
+                    .into());
+                }
+                let mut responses = Vec::with_capacity(response.len());
+                for (path, detector) in response.iter().zip(observation_model.detectors.iter()) {
+                    let bytes = fs::read(path)?;
+                    let model: openbnct_transport::PromptGammaResponse =
+                        serde_json::from_slice(&bytes).map_err(|e| {
+                            io::Error::other(format!("response {}: {e}", path.display()))
+                        })?;
+                    let sha = openbnct_evidence::sha256_hex(&bytes);
+                    let bound = &detector.response;
+                    if model.id != bound.id
+                        || !(bound.sha256 == sha || bound.sha256 == format!("sha256:{sha}"))
+                    {
+                        return Err(io::Error::other(format!(
+                            "response {} does not match the observation binding {}",
+                            path.display(),
+                            bound.id
+                        ))
+                        .into());
+                    }
+                    responses.push(model);
+                }
+                let observation_ref = openbnct_core::ContentReference {
+                    id: observation_model.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&observation_bytes),
+                };
+                let emission_unit = match unit.as_str() {
+                    "photons-per-kg-per-source-particle" => {
+                        openbnct_transport::PromptGammaUnit::PhotonsPerKgPerSourceParticle
+                    }
+                    "photons-per-kg" => openbnct_transport::PromptGammaUnit::PhotonsPerKg,
+                    other => {
+                        return Err(io::Error::other(format!(
+                            "unit {other:?} must be photons-per-kg-per-source-particle or photons-per-kg"
+                        ))
+                        .into())
+                    }
+                };
+                let reconstruction = openbnct_transport::reconstruct_prompt_gamma_emission(
+                    &observation_model,
+                    &responses,
+                    density_kg_per_m3,
+                    lambda,
+                    max_iterations,
+                    emission_unit,
+                    &id,
+                    observation_ref,
+                    provenance_id
+                        .as_deref()
+                        .unwrap_or(&format!("pg-reconstruction:{id}")),
+                )
+                .map_err(|e| io::Error::other(format!("pg reconstruct: {e}")))?;
+                reconstruction
+                    .validate()
+                    .map_err(|e| io::Error::other(format!("pg reconstruct: {e}")))?;
+                write_new_json(&output, &reconstruction)?;
+                println!("pg reconstruction at {}", output.display());
+                println!(
+                    "residual {:.3e} after {} iterations{}",
+                    reconstruction.regularization.residual_norm,
+                    reconstruction.regularization.iterations,
+                    if reconstruction.regularization.converged {
+                        " (converged)"
+                    } else {
+                        " (budget exhausted)"
+                    }
                 );
             }
         },

@@ -1483,18 +1483,28 @@ Architecture (all artifacts versioned and hash-bound):
   detector efficiency (crystal volume, collimation) is a declared
   multiplicative calibration, not modeled transport — consistent with
   the fluence-weighted tally convention.
-- **R13-03 — reconstruction.** Regularized inversion (NNLS/Tikhonov)
-  of measured multi-detector counts back onto the emission grid —
-  with the response matrix from R13-01 this is a bounded linear
-  inverse problem. Deliverable `openbnct.pg-reconstruction/0.1.0`:
-  reconstructed emission map, residual norm, regularization
-  declaration, bindings to every response artifact consumed.
-- **R13-04 — validation.** Forward-inverse closure on a synthetic
-  case (known boron insert distribution → forward counts → recover
-  the map within declared tolerance) plus a literature-geometry
+- **R13-03 — reconstruction. (landed)** Regularized inversion of
+  measured multi-detector counts back onto the emission grid.
+  `openbnct.pg-observation/0.1.0` pairs each detector's measured
+  tally with its content-bound response artifact (synthesized by
+  `pg observe` from counts artifacts for the closure path, or
+  authored directly for real measurements). `pg reconstruct` runs
+  non-negative least squares with a Tikhonov term — FISTA (accelerated
+  projected gradient) with a power-iterated step bound — and emits
+  `openbnct.pg-reconstruction/0.1.0`: reconstructed per-kg emission
+  map, residual norm, iteration/convergence declaration, bindings
+  to the observation and every response artifact consumed. Each
+  response file's sha256 is verified against the observation
+  binding before the solve.
+- **R13-04 — validation. (partially landed)** Forward-inverse
+  closure on a synthetic operator is a committed unit test: a
+  single-voxel emission folded through eight neighborhood-dominated
+  response columns comes back peaked at the true voxel with the
+  residual declared. Remaining: closure on a real transported case
+  (the water-phantom chain works end-to-end but has no published
+  detector programme to compare against) and a literature-geometry
   comparison (PMMA phantom + boron inserts as published by the
-  Nagoya/Polimi detector programmes) once response artifacts exist
-  to compare against.
+  Nagoya/Polimi detector programmes).
 
 Runner-up scope item recorded for later scheduling: cell-level
 microdosimetry (stochastic α/⁷Li track sampling → lineal-energy
