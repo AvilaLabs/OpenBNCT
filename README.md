@@ -45,11 +45,29 @@ reproducible by construction rather than by convention.
   and a closed-form absorber oracle. Failed checks stay in the record.
 - **Uncertainty propagation** — ENDF MF33 covariances collapsed to
   multigroup form and folded into an auditable dose-uncertainty budget.
-- **Plan research** — beam-direction enumeration with adjoint scoring,
-  multi-field sweeps, non-negative weight optimization against
-  dose-volume and isoeffective objectives.
-- **Prompt-gamma sources** — the 478 keV ¹⁰B(n,α) production field
-  emitted as a versioned artifact for imaging and detector research.
+- **Plan research** — beam-direction sweeps scored by tissue path and
+  adjoint importance, emitted as content-bound candidates; aimed-field
+  solves; non-negative weight optimization against dose-volume and
+  isoeffective objectives.
+- **Prompt-gamma delivery verification** — the 478 keV ¹⁰B(n,α)
+  chain end to end: voxel emission maps, a detector position's full
+  response column in a single adjoint solve, expected-counts folds,
+  and regularized reconstruction (FISTA NNLS with a Tikhonov term)
+  back to a boron-emission field — an open forward/inverse path for
+  in-beam monitoring research.
+- **Cell-level stochastic microdosimetry** — seeded sampling of a
+  declared boron microdistribution: gamma uptake heterogeneity,
+  Poisson captures, compartment-placed isotropic α/⁷Li tracks into a
+  spherical nucleus. Produces the specific-energy distribution P(z),
+  the untouched-cell fraction, and an MKM-consumable nucleus lineal
+  spectrum; an SMK model then integrates survival over the sampled
+  population, compares against the MK mean-field, and folds into
+  voxel dose bundles with `smk_stochastic` semantics.
+- **Biological model families** — component-weight, González & Santa
+  Cruz isoeffective, microdosimetric-kinetic, and stochastic-MK
+  models over one contract, plus BED/EQD2 combination and
+  TCP/NTCP/UTCP endpoints — each emitting versioned artifacts that
+  assert research-only scope.
 
 ## The web build
 

@@ -70,6 +70,24 @@ OpenBNCT は、ホウ素中性子捕捉療法（BNCT）の研究および独立�
   照野 sweep（`plan fields`、aim → ソルブ → 線量折り畳み →
   `openbnct.beam-field-set` マニフェスト）、および S_N ordinate
   sweep の rayon 並列化まで含みます。
+- プロンプトガンマ線量検証チェーンが完成しました — 478 keV の
+  ¹⁰B(n,α) 放出マップ、随伴ソルブによる検出器応答
+  （`openbnct pg response`）、計数値の折り畳み（`pg counts`）、
+  FISTA 非負最小二乗＋Tikhonov 項による再構成
+  （`pg reconstruct`）を、コンテンツバインドされた成果物として
+  発行します。
+- 細胞レベルの確率的マイクロドーズメトリを実装しました —
+  宣言済みホウ素微細分布のもとでガンマ分布の取り込み不均一性、
+  ポアソン捕獲数、等方後ろ向き α/⁷Li トラックをサンプルし、
+  比エネルギー分布 P(z)・未照射細胞割合・細胞核線エネルギー
+  スペクトルを発行します。SMK モデルは標本集団上の生存積分を
+  MK 平均場と比較し、`smk-model` 成果物はその補正をボクセル
+  線量バンドルへ適用します（`bio cell-microdosimetry`／
+  `bio smk`／`bio apply`）。
+- ビーム方向 sweep の順位づけ結果が
+  `openbnct.direction-candidates` 成果物として保存されるように
+  なり、directions → fields → optimize の連鎖がコンテンツ
+  バインドされたまま完結します。
 
 開発段階と合格条件については [ロードマップ（英語）](docs/ROADMAP.md) を参照してください。
 
