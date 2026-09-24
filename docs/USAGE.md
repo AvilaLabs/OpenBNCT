@@ -759,6 +759,41 @@ and protracted-delivery repair. Bundles carry `photon_isoeffective`
 semantics, `isoeffective_*` units, and an `isoeffective` provenance
 block recording the applied G.
 
+The MKM path is a mean-field theory — it consumes only the dose-mean
+lineal energy, so the survival plateau set by untouched and
+under-dosed cells in a heterogeneous-uptake population is invisible to
+it. `bio cell-microdosimetry` samples the population directly under a
+`openbnct.boron-microdistribution` model: each cell's ¹⁰B amount draws
+from a gamma heterogeneity (shape 1/CV²), its captures are Poisson,
+and each capture places an isotropic back-to-back α/⁷Li pair in the
+declared compartment, depositing `ε = E·min(1, l/R)` into the nucleus
+sphere. The `openbnct.cell-microdosimetry/0.1.0` artifact records the
+declared sampling (cell count, mean captures, splitmix64 seed —
+bit-identical replay), the specific-energy histogram P(z), the
+untouched fraction, per-compartment capture tallies, and the
+nucleus-domain `openbnct.lineal-spectrum` (MKM-consumable).
+`bio smk` then replays the declared seed and evaluates the SMK
+population integral `S = ⟨exp(−a·z − b·z²)⟩` at declared dose levels
+alongside the MK mean-field of the same population and the
+isosurvival RBE against a declared photon LQ reference — the model
+document's sha256 is verified against the artifact's binding first.
+Both artifacts are research-only; the z-rescaling anchor and small-λ
+approximation are stated in the record.
+
+```text
+openbnct bio cell-microdosimetry \
+  --model BORON-MICRODISTRIBUTION.json \
+  --mean-captures 5 [--cells 10000 --seed 1] \
+  [--z-edges-gy 0,0.25,... --y-edges-kev-um 0,10,...] \
+  --output NEW-CELL-MICRODOSIMETRY.json
+openbnct bio smk \
+  --cell-microdosimetry CELL-MICRODOSIMETRY.json \
+  --model BORON-MICRODISTRIBUTION.json \
+  --alpha 0.6 --beta 0.05 [--reference-alpha 0.2 --reference-beta 0.02] \
+  --boron-dose-gy 5.0 --dose-levels-gy 1,2.5,5,10 \
+  --output NEW-SMK-EVALUATION.json
+```
+
 The NF-BNCT-001 specification's exclusion of CBE/RBE/Gy-Eq claims is
 preserved: biological bundles exist only when a model artifact is supplied,
 and demonstration models plus a core-region mask live under

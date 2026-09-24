@@ -13,6 +13,7 @@ keywords.workspace = true
 categories.workspace = true
 
 [dependencies]
+openbnct-boron = { path = "../openbnct-boron", version = "0.2.0" }
 openbnct-core = { path = "../openbnct-core", version = "0.2.0" }
 openbnct-transport = { path = "../openbnct-transport", version = "0.2.0" }
 serde.workspace = true

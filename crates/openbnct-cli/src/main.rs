@@ -2959,6 +2959,91 @@ enum BioCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Stochastically sample a cell population under a
+    /// `openbnct.boron-microdistribution` model: gamma-distributed
+    /// uptake, Poisson captures, α/⁷Li tracks through the
+    /// compartmented cell. Emits `openbnct.cell-microdosimetry/0.1.0`
+    /// — the specific-energy distribution P(z), untouched fraction,
+    /// and the nucleus lineal spectrum.
+    CellMicrodosimetry {
+        /// `openbnct.boron-microdistribution` JSON.
+        #[arg(long)]
+        model: PathBuf,
+        /// Expected ¹⁰B captures per cell at the scenario's boron dose.
+        #[arg(long)]
+        mean_captures: f64,
+        /// Cell population size.
+        #[arg(long, default_value = "10000")]
+        cells: u32,
+        /// Deterministic stream seed.
+        #[arg(long, default_value = "1")]
+        seed: u64,
+        /// Specific-energy bin edges in Gy — comma-separated, n+1.
+        #[arg(
+            long,
+            value_delimiter = ',',
+            default_value = "0,0.25,0.5,1,2,4,8,16,32"
+        )]
+        z_edges_gy: Vec<f64>,
+        /// Lineal bin edges in keV/µm — comma-separated, n+1.
+        #[arg(
+            long,
+            value_delimiter = ',',
+            default_value = "0,10,50,100,200,400,1000"
+        )]
+        y_edges_kev_um: Vec<f64>,
+        /// Artifact id (default `{model_id}.cell-microdosimetry`).
+        #[arg(long)]
+        id: Option<String>,
+        /// Provenance identifier; defaults to `cell-microdosimetry:` + id.
+        #[arg(long)]
+        provenance_id: Option<String>,
+        /// New output path for the cell-microdosimetry JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Apply the stochastic-microdosimetric-kinetic survival integral
+    /// over a sampled cell population — SMK vs MK comparison and
+    /// isosurvival RBE against a declared photon LQ reference.
+    /// Emits `openbnct.smk-evaluation/0.1.0`.
+    Smk {
+        /// `openbnct.cell-microdosimetry` JSON.
+        #[arg(long)]
+        cell_microdosimetry: PathBuf,
+        /// The `openbnct.boron-microdistribution` JSON the artifact
+        /// was sampled under — its hash is verified against the
+        /// artifact's binding.
+        #[arg(long)]
+        model: PathBuf,
+        /// SMK domain α (Gy⁻¹).
+        #[arg(long)]
+        alpha: f64,
+        /// SMK domain β (Gy⁻²).
+        #[arg(long)]
+        beta: f64,
+        /// Photon-reference LQ α (Gy⁻¹).
+        #[arg(long, default_value = "0.2")]
+        reference_alpha: f64,
+        /// Photon-reference LQ β (Gy⁻²).
+        #[arg(long, default_value = "0.02")]
+        reference_beta: f64,
+        /// Macroscopic boron dose (Gy) the artifact's mean captures
+        /// correspond to — the z-rescaling anchor.
+        #[arg(long)]
+        boron_dose_gy: f64,
+        /// Dose levels to evaluate, Gy — comma-separated.
+        #[arg(long, value_delimiter = ',', required = true)]
+        dose_levels_gy: Vec<f64>,
+        /// Artifact id (default `{artifact_id}.smk`).
+        #[arg(long)]
+        id: Option<String>,
+        /// Provenance identifier; defaults to `smk:` + id.
+        #[arg(long)]
+        provenance_id: Option<String>,
+        /// New output path for the SMK evaluation JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Args)]
@@ -7894,6 +7979,121 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     );
                 }
                 println!("qualification: {}", sweep.qualification);
+            }
+            BioCommand::CellMicrodosimetry {
+                model,
+                mean_captures,
+                cells,
+                seed,
+                z_edges_gy,
+                y_edges_kev_um,
+                id,
+                provenance_id,
+                output,
+            } => {
+                let model_bytes = fs::read(&model)?;
+                let microdistribution: openbnct_boron::BoronMicrodistribution =
+                    serde_json::from_slice(&model_bytes).map_err(|error| {
+                        io::Error::other(format!("model {}: {error}", model.display()))
+                    })?;
+                let id =
+                    id.unwrap_or_else(|| format!("{}.cell-microdosimetry", microdistribution.id));
+                let artifact = openbnct_bio::sample_cell_microdosimetry(
+                    &microdistribution,
+                    openbnct_core::ContentReference {
+                        id: microdistribution.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&model_bytes),
+                    },
+                    mean_captures,
+                    cells,
+                    seed,
+                    &z_edges_gy,
+                    &y_edges_kev_um,
+                    &id,
+                    provenance_id
+                        .as_deref()
+                        .unwrap_or(&format!("cell-microdosimetry:{id}")),
+                )
+                .map_err(|error| io::Error::other(error.to_string()))?;
+                write_new_json(&output, &artifact)?;
+                println!("cell microdosimetry at {}", output.display());
+                println!(
+                    "{} cells · {} captures · {} nucleus hits · untouched {:.1}% · z̄ {:.3e} Gy",
+                    artifact.statistics.cells_simulated,
+                    artifact.statistics.captures_simulated,
+                    artifact.statistics.nucleus_hits,
+                    artifact.untouched_fraction * 100.0,
+                    artifact.mean_specific_energy_gy
+                );
+            }
+            BioCommand::Smk {
+                cell_microdosimetry,
+                model,
+                alpha,
+                beta,
+                reference_alpha,
+                reference_beta,
+                boron_dose_gy,
+                dose_levels_gy,
+                id,
+                provenance_id,
+                output,
+            } => {
+                let artifact_bytes = fs::read(&cell_microdosimetry)?;
+                let artifact: openbnct_bio::CellMicrodosimetry =
+                    serde_json::from_slice(&artifact_bytes).map_err(|error| {
+                        io::Error::other(format!(
+                            "artifact {}: {error}",
+                            cell_microdosimetry.display()
+                        ))
+                    })?;
+                let model_bytes = fs::read(&model)?;
+                let microdistribution: openbnct_boron::BoronMicrodistribution =
+                    serde_json::from_slice(&model_bytes).map_err(|error| {
+                        io::Error::other(format!("model {}: {error}", model.display()))
+                    })?;
+                let expected = openbnct_evidence::sha256_hex(&model_bytes);
+                if artifact.microdistribution.sha256 != expected {
+                    return Err(io::Error::other(format!(
+                        "model {} hash does not match the artifact's microdistribution binding",
+                        model.display()
+                    ))
+                    .into());
+                }
+                let id = id.unwrap_or_else(|| format!("{}.smk", artifact.id));
+                let evaluation = openbnct_bio::evaluate_smk(
+                    &artifact,
+                    openbnct_core::ContentReference {
+                        id: artifact.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&artifact_bytes),
+                    },
+                    &microdistribution,
+                    openbnct_bio::SmkParameters {
+                        alpha_per_gy: alpha,
+                        beta_per_gy2: beta,
+                        reference_alpha_per_gy: reference_alpha,
+                        reference_beta_per_gy2: reference_beta,
+                        boron_dose_gy_at_mean_captures: boron_dose_gy,
+                        dose_levels_gy,
+                    },
+                    &id,
+                    provenance_id.as_deref().unwrap_or(&format!("smk:{id}")),
+                )
+                .map_err(|error| io::Error::other(error.to_string()))?;
+                write_new_json(&output, &evaluation)?;
+                println!("smk evaluation at {}", output.display());
+                for point in &evaluation.points {
+                    println!(
+                        "  D={:.3} Gy: SMK S={:.4} · MK S={:.4} · RBE {}",
+                        point.dose_gy,
+                        point.smk_survival,
+                        point.mk_survival,
+                        point
+                            .rbe
+                            .map(|r| format!("{r:.3}"))
+                            .unwrap_or_else(|| "n/a".into())
+                    );
+                }
             }
         },
         Some(Command::Dvh {

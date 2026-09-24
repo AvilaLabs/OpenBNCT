@@ -18,6 +18,7 @@
 #![forbid(unsafe_code)]
 
 mod bed;
+mod cell_microdosimetry;
 mod compare;
 mod endpoint;
 mod isoeffective;
@@ -35,6 +36,11 @@ use thiserror::Error;
 pub use bed::{
     BED_BUNDLE_SCHEMA, BedBundle, BedQuantity, COMBINED_DOSE_SCHEMA, CombinedDoseBundle,
     CombinedDoseInput, bed_from_external, combine_biological_doses,
+};
+pub use cell_microdosimetry::{
+    CELL_MICRODOSIMETRY_QUALIFICATION, CELL_MICRODOSIMETRY_SCHEMA, CellMicrodosimetry,
+    CompartmentTallies, SMK_EVALUATION_SCHEMA, SamplingDeclaration, SamplingStatistics,
+    SmkDosePoint, SmkEvaluation, SmkParameters, evaluate_smk, sample_cell_microdosimetry,
 };
 pub use compare::{
     BIO_MODEL_COMPARISON_SCHEMA, BioModelComparison, RegionStatistics, compare_biological_models,

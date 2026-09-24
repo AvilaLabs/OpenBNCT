@@ -1517,6 +1517,51 @@ spectra → SMK-model RBE) — PHITS carries it for Tsukuba-Plan, the
 open ecosystem does not; it compounds with the existing
 microdistribution machinery.
 
+## R14 — Cell-level microdosimetry (draft)
+
+The scheduled form of the runner-up scope item above. The MK model
+family consumes a dose-mean lineal energy and nothing else — the
+linearized MK relation `α* = α₀ + β·z̄₁D` is a mean-field theory that
+cannot express the high-dose survival plateau set by untouched and
+under-dosed cells in a heterogeneous-uptake population. This
+milestone samples the cell population stochastically and evaluates
+the SMK population integral directly, keeping MK alongside as the
+internal comparison.
+
+- **R14-01 — stochastic cell sampling. (landed)**
+  `sample_cell_microdosimetry` draws each cell's ¹⁰B amount from a
+  gamma uptake heterogeneity (shape 1/CV², mean 1 — the declared
+  `intercellular_cv`), its capture count from a Poisson, and each
+  capture's position in the declared compartment with an isotropic
+  back-to-back α/⁷Li axis; energy imparted to the nucleus follows
+  the same rectilinear CSDA chord convention as `lineal_tally`. The
+  `openbnct.cell-microdosimetry/0.1.0` artifact records the declared
+  sampling (cells, mean captures, splitmix64 seed — bit-identical
+  replay), the specific-energy histogram P(z), the untouched
+  fraction P(z = 0), per-compartment capture tallies, and the
+  nucleus-domain `openbnct.lineal-spectrum` — directly consumable by
+  the MKM family. `bio cell-microdosimetry` is the CLI surface.
+- **R14-02 — SMK evaluation. (landed)** `evaluate_smk` replays the
+  artifact's declared seed to recover the per-cell z population and
+  evaluates `S = ⟨exp(−a·z − b·z²)⟩` at declared macroscopic
+  boron-dose levels — the z-rescaling anchor and the small-λ
+  approximation are stated in the record — plus the MK mean-field of
+  the same population and the isosurvival RBE against a declared
+  photon LQ reference. `openbnct.smk-evaluation/0.1.0`, `bio smk`.
+  The model document's sha256 is verified against the artifact's
+  binding before evaluation.
+- **R14-03 — literature anchoring.** Anchor the sampler against a
+  published cell-irradiation scenario (e.g. a BPA/F-BPA survival
+  curve with reported subcellular fractions) and a PHITS-style
+  microdosimetric benchmark where geometry is published. The
+  machinery is deterministic; the validation question is model
+  fidelity, not code correctness.
+- **R14-04 — voxel coupling.** Fold the cell-level correction into
+  the voxel dose pipeline as a microdistribution-resolved component
+  weight — the bridge between the stochastic population and the
+  per-voxel biological bundle. Scope: declared mapping, content-bound
+  artifact, no clinical claim.
+
 ## R12 — Optional Avify Dose integration (planned; IP review required)
 
 **Adopted:** 2026-09-22, at the project owner's direction.
