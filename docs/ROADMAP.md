@@ -1133,7 +1133,7 @@ other and of R8 ordering unless noted.
   declares compartment fractions (nucleus/cytoplasm/membrane/
   extracellular, with 1σ), concentric-sphere cell geometry, adopted
   α/⁷Li energies and CSDA ranges, and intercellular uptake CV;
-  `openbnct boron microdistribution` evaluates per-compartment
+  `openbnct boron microdistribution evaluate` evaluates per-compartment
   energy-deposition fractions to the nucleus by deterministic
   quadrature (straight-line constant-LET tracks, exact ray–sphere
   chords, no RNG) and emits `openbnct.microdistribution-correction/

@@ -104,7 +104,7 @@ never published.)
   draws by the fit's residual RMS, refits, and re-solves `t*`, emitting
   a P05/P50/P95 interval per region. Seeded by the samples' SHA-256 —
   identical inputs reproduce the interval byte-for-byte.
-- `openbnct pk` fits measured concentration draws
+- `openbnct pk fit` fits measured concentration draws
   (`openbnct.pk-samples/0.1.0`) into a `pk-model` artifact —
   monoexponential via log-linear least squares, biexponential via a
   deterministic separable-least-squares rate grid with nonnegativity
