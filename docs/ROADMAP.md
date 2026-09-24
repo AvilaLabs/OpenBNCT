@@ -1422,7 +1422,24 @@ independent engines, ordered by leverage. None implies a clinical claim.
   defect at the fixed point (positivity-clamped edge fluxes are
   inconsistent with the ideal exchange, and the partial-current
   scaling is a linearization). A stall detector therefore disables
-  CMR after four non-improving outers and bare sweeps finish cleanly:
+  CMR after four non-improving outers and bare sweeps finish cleanly.
+  Implemented (2026-09-24): fixed-point-exact CMR — the sweep records
+  the clamp defect Σ_d w_d·[σ·V·max(0,−ψ̄_ideal) +
+  Σ_a |μ_a|A·max(0,−ψ_out,ideal)] per cell during the face-current
+  pass (slot 12) and the regional balance carries it on the source
+  side, making f = 1 an exact solution wherever the measured
+  imbalance is only the defect. Measured on the K63 cylindrical
+  case: δ = 0 in the upscatter block through the early outers —
+  θ-WDD's weight construction keeps edge fluxes positive in the
+  homogeneous regime, so clamps do not fire in-block on this case
+  and the earlier clamp-defect diagnosis does not bind here; the
+  subtraction remains the correct treatment for geometries where
+  they do. If the limit cycle persists with δ = 0 the remaining
+  mechanism is the coarse/fine fixed-point mismatch itself — the
+  coarse correction assumes uniform rescaling within a region the
+  fine map does not share — pointing at a residual-form (defect-
+  correction) CMR as the next candidate. The stall detector and ω
+  fade remain as the safety net in either regime. Bare sweeps:
   the cylindrical case reaches 2e-5 in 45 outers versus >60 outers
   for the bare baseline at 1.6e-3 and counting — roughly 3× fewer
   outers to the 1e-3 production tolerance. `OPENBNCT_NO_CMR=1`

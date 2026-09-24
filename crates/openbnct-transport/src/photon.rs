@@ -499,6 +499,7 @@ mod tests {
             p1_anisotropic: false,
             anisotropy_order: 0,
             anderson_depth: 0,
+            coarse_rebalance: true,
         }
     }
 

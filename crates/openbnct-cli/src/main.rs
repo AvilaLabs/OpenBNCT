@@ -8648,6 +8648,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     p1_anisotropic: false,
                     anisotropy_order: 0,
                     anderson_depth: 0,
+                    coarse_rebalance: true,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: ph_data.id.clone(),
@@ -9578,6 +9579,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     p1_anisotropic: p1,
                     anisotropy_order: anisotropy,
                     anderson_depth: anderson,
+                    coarse_rebalance: true,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: mg_data.id.clone(),
@@ -9882,6 +9884,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     p1_anisotropic: p1,
                     anisotropy_order: anisotropy,
                     anderson_depth: 0,
+                    coarse_rebalance: true,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: ph_data.id.clone(),
@@ -10921,6 +10924,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     p1_anisotropic: p1,
                     anisotropy_order: anisotropy,
                     anderson_depth: anderson,
+                    coarse_rebalance: true,
                 };
                 let profile = mg_data.component_profile.clone().ok_or_else(|| {
                     io::Error::other(
@@ -12312,6 +12316,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     p1_anisotropic: false,
                     anisotropy_order: 0,
                     anderson_depth: 0,
+                    coarse_rebalance: true,
                 };
                 let nominal_flux =
                     match &forward_flux {
@@ -12452,6 +12457,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     p1_anisotropic: false,
                     anisotropy_order: 0,
                     anderson_depth: 0,
+                    coarse_rebalance: true,
                 };
                 let report = openbnct_transport::run_screening(
                     &transport_case,
@@ -12901,6 +12907,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     p1_anisotropic: false,
                     anisotropy_order: 0,
                     anderson_depth: 0,
+                    coarse_rebalance: true,
                 };
                 let forward = forward_flux
                     .as_ref()

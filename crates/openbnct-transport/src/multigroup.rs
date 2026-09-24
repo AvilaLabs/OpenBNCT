@@ -406,6 +406,13 @@ pub struct SnOptions {
     /// bound-atom S(α,β) upscatter introduces (plain sweeps decay
     /// ~0.85–0.9 per pass there).
     pub anderson_depth: usize,
+    /// Coarse-mesh rebalance of the upscatter block: per coarse region
+    /// and block group, multiplicative factors are solved from regional
+    /// balance equations built on the sweep's measured partial
+    /// currents, with the recorded clamp defect carried on the balance
+    /// RHS so f = 1 stays an exact solution at the transport fixed
+    /// point. `OPENBNCT_NO_CMR` also disables it (A/B diagnostics).
+    pub coarse_rebalance: bool,
 }
 
 impl Default for SnOptions {
@@ -422,6 +429,7 @@ impl Default for SnOptions {
             p1_anisotropic: false,
             anisotropy_order: 0,
             anderson_depth: 0,
+            coarse_rebalance: true,
         }
     }
 }
@@ -526,8 +534,14 @@ impl AndersonState {
 /// Per-cell partial-current buffer for the CMR region balance: slots
 /// 0..6 are this cell's outflow across faces 2a+s, slots 6..12 are the
 /// inflow across faces that are domain boundaries (interior inflow is
-/// read from the neighbor's opposite outflow slot).
-type FaceCurrents = Vec<[f64; 12]>;
+/// read from the neighbor's opposite outflow slot). Slot 12 is the
+/// cell's clamp defect — unlike slots 0..12 it is already in balance
+/// units (area and volume folded in at record time):
+/// Σ_d w_d·[σ·V·max(0,−ψ̄_ideal) + Σ_a |μ_a|A·max(0,−ψ_out,ideal)].
+/// The measured region balance is nonzero at the transport fixed
+/// point by exactly this defect — subtracting it (adding it to the
+/// rebalance RHS) makes f = 1 an exact CMR solution there.
+type FaceCurrents = Vec<[f64; 13]>;
 
 /// Region-boundary inflow stubs for CMR: per (region, block group) a
 /// list of (neighbor_region, area-weighted partial current) pairs.
@@ -1345,7 +1359,7 @@ fn sweep_group(
     quadrature: &[([f64; 3], f64)],
     boundary: &BoundarySource,
     periodic: [bool; 3],
-    face_current: Option<&mut Vec<[f64; 12]>>,
+    face_current: Option<&mut Vec<[f64; 13]>>,
 ) {
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
     let groups = data.group_count();
@@ -1364,7 +1378,7 @@ fn sweep_group(
     // partial outflow per face plus boundary inflow per face into a
     // `[cell][12]` accumulator (see the driver below for the order).
     let want_faces = face_current.is_some();
-    let sweep_one = |mut acc: Option<Vec<[f64; 12]>>, (d, psi_d): (usize, &mut Vec<f64>)| {
+    let sweep_one = |mut acc: Option<Vec<[f64; 13]>>, (d, psi_d): (usize, &mut Vec<f64>)| {
         let dir = quadrature[d].0;
         // Sweep order: ascend where the direction points positive,
         // descend where negative.
@@ -1489,11 +1503,19 @@ fn sweep_group(
                         denom_w += w;
                         numer_w += w * psi_in[a];
                     }
-                    let psi_avg = (numer_w / denom_w.max(1e-30)).max(0.0);
+                    let psi_avg_ideal = numer_w / denom_w.max(1e-30);
+                    let psi_avg = psi_avg_ideal.max(0.0);
                     psi_d[cell] = psi_avg;
+                    if let Some(acc) = acc.as_mut() {
+                        // Clamp defect on the removal side: the
+                        // clamped ψ̄ exceeds the balance's ideal by
+                        // max(0, −ψ̄_ideal), contributing σ·V·defect
+                        // to this ordinate's removal term.
+                        acc[cell][12] += quadrature[d].1 * st * volume * (-psi_avg_ideal).max(0.0);
+                    }
                     for a in 0..3 {
-                        let psi_out =
-                            ((psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a]).max(0.0);
+                        let psi_out_ideal = (psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a];
+                        let psi_out = psi_out_ideal.max(0.0);
                         edge[a][cell] = psi_out;
                         if let Some(acc) = acc.as_mut() {
                             // Partial currents, θ-WDD-consistent:
@@ -1512,6 +1534,11 @@ fn sweep_group(
                                 (2 * a + 1, 2 * a)
                             };
                             acc[cell][out_pos] += wmu * psi_out;
+                            // Outflow-face clamp defect: clamped
+                            // ψ_out exceeds the ideal by
+                            // max(0, −ψ_out_ideal) — balance units
+                            // w_d·|μ_a|A·defect.
+                            acc[cell][12] += wmu * face_area[a] * (-psi_out_ideal).max(0.0);
                             if !inflow_inside[a] {
                                 acc[cell][in_pos + 6] += wmu * psi_in[a];
                             }
@@ -1532,24 +1559,24 @@ fn sweep_group(
     // accumulators alive.
     const FACE_SUM_CHUNKS: usize = 16;
     let chunk_len = psi.len().div_ceil(FACE_SUM_CHUNKS).max(1);
-    let chunk_sums: Vec<Option<Vec<[f64; 12]>>> = psi
+    let chunk_sums: Vec<Option<Vec<[f64; 13]>>> = psi
         .par_chunks_mut(chunk_len)
         .enumerate()
         .map(|(chunk, rows)| {
-            let mut acc = want_faces.then(|| vec![[0.0_f64; 12]; nx * ny * nz]);
+            let mut acc = want_faces.then(|| vec![[0.0_f64; 13]; nx * ny * nz]);
             for (offset, psi_d) in rows.iter_mut().enumerate() {
                 acc = sweep_one(acc, (chunk * chunk_len + offset, psi_d));
             }
             acc
         })
         .collect();
-    let mut face_sums: Option<Vec<[f64; 12]>> = None;
+    let mut face_sums: Option<Vec<[f64; 13]>> = None;
     for part in chunk_sums.into_iter().flatten() {
         match face_sums.as_mut() {
             None => face_sums = Some(part),
             Some(total) => {
                 for (t, p) in total.iter_mut().zip(part.iter()) {
-                    for f in 0..12 {
+                    for f in 0..13 {
                         t[f] += p[f];
                     }
                 }
@@ -2263,13 +2290,13 @@ pub(crate) fn solve_sn_problem(
         (start < groups).then_some(start)
     };
     let mut block_faces: Vec<FaceCurrents> = upscatter_block_start
-        .map(|bs| vec![vec![[0.0; 12]; n_cells]; groups - bs])
+        .map(|bs| vec![vec![[0.0; 13]; n_cells]; groups - bs])
         .unwrap_or_default();
 
     // CMR stall detection: when the rebalance is active but the sweep
     // residual stops improving, the composed map is in its limit cycle —
     // disable CMR permanently and let bare sweeps finish.
-    let mut cmr_enabled = std::env::var_os("OPENBNCT_NO_CMR").is_none();
+    let mut cmr_enabled = options.coarse_rebalance && std::env::var_os("OPENBNCT_NO_CMR").is_none();
     let mut cmr_best = f64::MAX;
     let mut cmr_stall = 0usize;
     for outer in 0..options.max_outer_iterations {
@@ -2533,6 +2560,7 @@ pub(crate) fn solve_sn_problem(
             let mut d_term = vec![vec![0.0_f64; nb]; n_regions];
             let mut m_term = vec![vec![vec![0.0_f64; nb]; nb]; n_regions];
             let mut q_term = vec![vec![0.0_f64; nb]; n_regions];
+            let mut clamp_term = vec![vec![0.0_f64; nb]; n_regions];
             let mut out_w = vec![vec![0.0_f64; nb]; n_regions];
             let mut in_w: InflowStubs = vec![vec![Vec::new(); nb]; n_regions];
             for cell in 0..n_cells {
@@ -2540,6 +2568,7 @@ pub(crate) fn solve_sn_problem(
                 let r = region_of(ci, cj, ck);
                 let mi = case_material[cell];
                 let scatter = &scatter_eff[mi];
+                let inv4pi = 1.0 / (4.0 * std::f64::consts::PI);
                 for b in 0..nb {
                     let gi = bs + b;
                     d_term[r][b] += sigma_eff[mi][gi] * flux[cell][gi] * volume;
@@ -2552,6 +2581,13 @@ pub(crate) fn solve_sn_problem(
                         q += scatter[gf * groups + gi] * flux[cell][gf] * volume;
                     }
                     q_term[r][b] += q;
+                    // The sweep's recorded clamp defect — the amount by
+                    // which positivity clamps raised the removal/
+                    // outflow side. At the transport fixed point the
+                    // measured imbalance equals exactly this defect;
+                    // carrying it on the RHS makes f = 1 an exact
+                    // solution there instead of pushing a limit cycle.
+                    clamp_term[r][b] += block_faces[b][cell][12] * inv4pi;
                 }
                 for (axis, &face_area) in area.iter().enumerate() {
                     for (fi, sign) in [(2 * axis, -1_i64), (2 * axis + 1, 1)] {
@@ -2616,8 +2652,9 @@ pub(crate) fn solve_sn_problem(
                 }
             }
             if std::env::var_os("CMR_DEBUG").is_some() {
-                // Region-balance residual at f = 1: if the assembly is
-                // consistent with the sweep's cell balance, this is ~0.
+                // Region-balance residual at f = 1 minus the recorded
+                // clamp defect: at the transport fixed point res ≈ δ,
+                // so res − δ ≈ 0 is the consistency check.
                 let mut entries: Vec<CmrImbalance> = Vec::new();
                 for r in 0..n_regions {
                     for i in 0..nb {
@@ -2626,17 +2663,18 @@ pub(crate) fn solve_sn_problem(
                         let m: f64 = m_term[r][i].iter().sum();
                         let q = q_term[r][i];
                         let inflow: f64 = in_w_c[r][i].iter().map(|&(_, w)| w).sum();
-                        let res = (d + out - m) - (q + inflow);
+                        let res = (d + out - m) - (q + inflow) - clamp_term[r][i];
                         entries.push((res.abs(), r, i, d, out, m, q, inflow));
                     }
                 }
                 entries.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap());
-                eprintln!("[cmr] outer {outer} top imbalances:");
+                eprintln!("[cmr] outer {outer} top imbalances (res is δ-subtracted):");
                 for e in entries.iter().take(6) {
                     let &(res, r, i, d, out, m, q, inflow) = e;
                     let nrr = nr[0] * nr[1];
+                    let defect = clamp_term[r][i];
                     eprintln!(
-                        "  R{r} (rx={},ry={},rz={}) g{}: res={res:.3e} D={d:.3e} out={out:.3e} M={m:.3e} Q={q:.3e} in={inflow:.3e}",
+                        "  R{r} (rx={},ry={},rz={}) g{}: res={res:.3e} δ={defect:.3e} D={d:.3e} out={out:.3e} M={m:.3e} Q={q:.3e} in={inflow:.3e}",
                         r % nr[0],
                         (r / nr[0]) % nr[1],
                         r / nrr,
@@ -2687,6 +2725,7 @@ pub(crate) fn solve_sn_problem(
                         }
                         scratch_a[i][i] += d_term[r][i] + out_w[r][i];
                         scratch_b[i] = q_term[r][i]
+                            + clamp_term[r][i]
                             + in_w_c[r][i]
                                 .iter()
                                 .map(|&(rr, w)| f[rr][i] * w)
@@ -3032,6 +3071,7 @@ pub(crate) mod tests {
             p1_anisotropic: false,
             anisotropy_order: 0,
             anderson_depth: 0,
+            coarse_rebalance: true,
         }
     }
 
@@ -3560,6 +3600,46 @@ pub(crate) mod tests {
             assert!(
                 (a - b).abs() <= b.abs().max(1e-30) * 1e-5 + 1e-12,
                 "accelerated flux diverged: {a} vs {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn cmr_preserves_the_transport_fixed_point() {
+        // The rebalance solves (D+P_out−M)·f = Q + inflow + δ_clamp —
+        // the sweep-recorded clamp defect keeps f = 1 an exact
+        // solution at the fixed point, so a converged CMR run must
+        // land on the same flux as bare sweeps (OPENBNCT_NO_CMR).
+        let case = slab_case();
+        // σ_t = 50/cm on 1 mm cells puts θ-WDD in the clamping
+        // regime — ψ_out_ideal < 0 downstream — so the recorded
+        // clamp defect is exercised, not just the f = 1 path.
+        let mg = data(
+            &[50.0, 50.0],
+            vec![
+                1.0, 0.3, // g0: self + down to g1
+                0.3, 1.0, // g1: up to g0 — weakly contractive block
+            ],
+        );
+        let mut opts = options();
+        opts.max_outer_iterations = 80;
+        let cmr = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap();
+        let bare = solve_multigroup(
+            &case,
+            &mg,
+            &SnOptions {
+                coarse_rebalance: false,
+                ..opts
+            },
+            cref("mg"),
+            cref("case"),
+        )
+        .unwrap();
+        assert!(cmr.converged && bare.converged);
+        for (a, b) in cmr.flux.iter().flatten().zip(bare.flux.iter().flatten()) {
+            assert!(
+                (a - b).abs() <= b.abs().max(1e-30) * 1e-5 + 1e-12,
+                "CMR moved the fixed point: {a} vs {b}"
             );
         }
     }
