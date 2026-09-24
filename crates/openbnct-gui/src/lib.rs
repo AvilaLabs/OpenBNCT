@@ -1921,6 +1921,10 @@ enum DropTarget {
     /// A `dose-uncertainty-budget` report — budget table in the dose
     /// workspace.
     UncertaintyBudget,
+    /// Any other recognized `openbnct.*` / `nctforge.*` schema the
+    /// workbench has no dedicated panel for — the generic artifact
+    /// inspector shows it instead of a dose-bundle validation error.
+    Inspector,
     Unsupported,
 }
 
@@ -2042,8 +2046,18 @@ fn classify_dropped_json(bytes: &[u8]) -> DropTarget {
         s if s.contains("plan-robustness/") => DropTarget::Robustness,
         s if s.contains("prompt-gamma-source/") => DropTarget::PromptGamma,
         s if s.contains("dose-uncertainty-budget/") => DropTarget::UncertaintyBudget,
+        s if s.contains("physical-dose-bundle/") => DropTarget::DoseBundle,
+        s if s.starts_with("openbnct.") || s.starts_with("nctforge.") => DropTarget::Inspector,
         _ => DropTarget::DoseBundle,
     }
+}
+
+/// A recognized `openbnct.*` / `nctforge.*` artifact with no dedicated
+/// panel — rendered by the generic inspector window.
+struct InspectorArtifact {
+    name: String,
+    schema: String,
+    value: serde_json::Value,
 }
 
 /// One picked/dropped file in flight: name, drop position (for painted
@@ -2107,6 +2121,9 @@ pub(crate) struct OpenBnctApp {
     /// Dormant by owner decision: content and renderer stay compiled —
     /// set to `Some(0)` to re-enable (see `APP_TOUR_SLIDES`).
     app_tour_slide: Option<usize>,
+    /// Most recent recognized-but-unpaneled artifact — the floating
+    /// inspector window shows it.
+    inspector: Option<InspectorArtifact>,
 }
 
 impl OpenBnctApp {
@@ -2143,6 +2160,7 @@ impl OpenBnctApp {
             drop_receiver,
             language: Language::detect(),
             app_tour_slide: None,
+            inspector: None,
         };
         app.panels.avify.tutorial_seen = tour_seen_from_disk("avify-tutorial");
         if has_initial_case {
@@ -2644,6 +2662,27 @@ impl OpenBnctApp {
                 }
                 self.workspace = WorkspaceTab::Dose;
             }
+            DropTarget::Inspector => {
+                match bytes.and_then(|b| {
+                    serde_json::from_slice::<serde_json::Value>(&b).map_err(|e| e.to_string())
+                }) {
+                    Ok(value) => {
+                        let schema = value
+                            .get("schema_version")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or("unknown")
+                            .to_owned();
+                        self.inspector = Some(InspectorArtifact {
+                            name: name.to_owned(),
+                            schema,
+                            value,
+                        });
+                    }
+                    Err(error) => {
+                        self.load_error = Some(format!("could not parse {name}: {error}"));
+                    }
+                }
+            }
             DropTarget::Unsupported => {
                 self.load_error = Some(format!("unsupported drop {name}"));
             }
@@ -3011,6 +3050,99 @@ impl eframe::App for OpenBnctApp {
             &APP_TOUR_SLIDES,
             theme,
         );
+        show_inspector_window(ui.ctx(), &mut self.inspector);
+    }
+}
+
+/// Floating inspector for any recognized artifact schema without a
+/// dedicated panel — header fields plus a collapsible JSON tree so
+/// every CLI-emitted document stays viewable.
+fn show_inspector_window(context: &egui::Context, inspector: &mut Option<InspectorArtifact>) {
+    let Some(artifact) = inspector.as_ref() else {
+        return;
+    };
+    let mut open = true;
+    egui::Window::new(format!("artifact — {}", artifact.name))
+        .open(&mut open)
+        .default_size([560.0, 480.0])
+        .show(context, |ui| {
+            ui.monospace(&artifact.schema);
+            ui.separator();
+            egui::ScrollArea::vertical().show(ui, |ui| {
+                if let serde_json::Value::Object(map) = &artifact.value {
+                    for (key, value) in map {
+                        show_json_tree(ui, key, value);
+                    }
+                }
+            });
+        });
+    if !open {
+        *inspector = None;
+    }
+}
+
+/// Recursive collapsible JSON tree for the inspector: objects and
+/// arrays collapse; long numeric arrays summarize to min/max/mean with
+/// a peek at the first elements rather than a wall of rows.
+fn show_json_tree(ui: &mut egui::Ui, key: &str, value: &serde_json::Value) {
+    match value {
+        serde_json::Value::Object(map) => {
+            egui::CollapsingHeader::new(format!("{key}  {{ {} fields }}", map.len()))
+                .default_open(false)
+                .show(ui, |ui| {
+                    for (k, v) in map {
+                        show_json_tree(ui, k, v);
+                    }
+                });
+        }
+        serde_json::Value::Array(items) => {
+            let header = format!("{key}  [ {} items ]", items.len());
+            if items.len() > 16 && items.iter().all(|v| v.is_number()) {
+                egui::CollapsingHeader::new(header)
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        let nums: Vec<f64> = items.iter().filter_map(|v| v.as_f64()).collect();
+                        let (mut lo, mut hi, mut sum) = (f64::MAX, f64::MIN, 0.0);
+                        for n in &nums {
+                            lo = lo.min(*n);
+                            hi = hi.max(*n);
+                            sum += *n;
+                        }
+                        if nums.is_empty() {
+                            ui.label("(empty)");
+                        } else {
+                            ui.monospace(format!(
+                                "min {lo:.6e} · max {hi:.6e} · mean {:.6e}",
+                                sum / nums.len() as f64
+                            ));
+                        }
+                        egui::CollapsingHeader::new("first 50 values")
+                            .default_open(false)
+                            .show(ui, |ui| {
+                                for v in items.iter().take(50) {
+                                    ui.monospace(v.to_string());
+                                }
+                            });
+                    });
+            } else {
+                egui::CollapsingHeader::new(header)
+                    .default_open(false)
+                    .show(ui, |ui| {
+                        for (i, v) in items.iter().enumerate().take(200) {
+                            show_json_tree(ui, &i.to_string(), v);
+                        }
+                        if items.len() > 200 {
+                            ui.label(format!("… {} more", items.len() - 200));
+                        }
+                    });
+            }
+        }
+        scalar => {
+            ui.horizontal(|ui| {
+                ui.label(format!("{key}:"));
+                ui.monospace(scalar.to_string());
+            });
+        }
     }
 }
 
@@ -9242,6 +9374,39 @@ mod tests {
             readiness_gates(true, Language::English)[0].state,
             GateState::Verified
         );
+    }
+
+    #[test]
+    fn json_drops_route_recognized_schemas_to_the_inspector() {
+        let route = |schema: &str| {
+            let bytes = serde_json::json!({"schema_version": schema, "id": "t"})
+                .to_string()
+                .into_bytes();
+            classify_dropped_json(&bytes)
+        };
+        assert_eq!(
+            route("openbnct.scenario-report/0.1.0"),
+            DropTarget::Inspector
+        );
+        assert_eq!(
+            route("openbnct.cell-microdosimetry/0.1.0"),
+            DropTarget::Inspector
+        );
+        assert_eq!(
+            route("openbnct.pk-schedule-report/0.1.0"),
+            DropTarget::Inspector
+        );
+        // Paneled and dose-bundle schemas keep their routes.
+        assert_eq!(
+            route("openbnct.physical-dose-bundle/0.2.0"),
+            DropTarget::DoseBundle
+        );
+        assert_eq!(
+            route("openbnct.plan-robustness/0.1.0"),
+            DropTarget::Robustness
+        );
+        // Unrecognized non-project JSON still tries the dose loader.
+        assert_eq!(route("com.example.other/1.0"), DropTarget::DoseBundle);
     }
 
     #[test]
