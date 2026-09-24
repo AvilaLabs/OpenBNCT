@@ -43,6 +43,12 @@ are source-controlled.
   on this case folds a boron dose that reproduces the oracle's 0.2308 cm⁻¹
   slope to 0.000% relative deviation — the cross-method check between the
   deterministic and Monte Carlo transport paths.
+- [`scenario-robust-planning`](scenario-robust-planning/SPECIFICATION.md)
+  is the optimizer's known-answer fixture: a degenerate four-voxel field
+  pair where the worst-case-scenario optimum is closed-form
+  (`w_h* = 1.498875`, `w_b* = 0` under the declared regularization), so
+  `plan optimize --scenario-set` is checked against analysis rather than
+  another optimizer's output.
 
 Evaluate an analytic oracle against a dose bundle with:
 

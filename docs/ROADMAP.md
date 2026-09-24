@@ -1666,9 +1666,14 @@ uptake error, per-structure T/N, whole-field offsets).
   `method: "worst_case_scenario"`, nominal-plan outcomes, and the
   worst-case penalty; `plan scenarios` on the robust weights shows
   the tightened band.
-- **R16-03 — validation.** Known-answer scenario fixtures (a field
-  whose worst case is known a priori) and a published uncertainty
-  budget anchored to a real beam model.
+- **R16-03 — validation. (partially landed)** Known-answer scenario
+  fixtures (a field whose worst case is known a priori): landed as
+  `benchmarks/synthetic/scenario-robust-planning` — a degenerate
+  four-voxel field pair where the worst-case optimum is closed-form
+  (w_h* = 1.498875, w_b* = 0 under the declared regularization) and a
+  committed conformance test asserts the optimizer reproduces it.
+  Remaining: a published uncertainty budget anchored to a real beam
+  model.
 
 ## R12 — Optional Avify Dose integration (planned; IP review required)
 

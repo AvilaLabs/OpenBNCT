@@ -1,0 +1,20 @@
+{
+  "schema_version": "openbnct.inverse-plan-objective/0.1.0",
+  "id": "scenario-robust-objective",
+  "case_id": "scenario-robust-planning",
+  "dose_quantity": "physical_total",
+  "objectives": [
+    {
+      "kind": "min_eud",
+      "mask": "all",
+      "target": 1.5,
+      "eud_a": 1.0,
+      "weight": 1.0
+    }
+  ],
+  "max_iterations": 200,
+  "gradient_tolerance": 1e-09,
+  "weight_regularization": 0.001,
+  "validity_domain": "synthetic known-answer fixture \u2014 not a clinical plan",
+  "provenance_id": "scenario-robust-planning-fixture"
+}

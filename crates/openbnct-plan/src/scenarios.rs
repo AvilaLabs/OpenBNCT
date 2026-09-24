@@ -815,6 +815,17 @@ mod tests {
         }
     }
 
+    /// Geometry of the committed fixture (all fields share it).
+    fn fields_geometry(fields: &[BeamDoseField]) -> openbnct_core::GridGeometry {
+        let _ = fields;
+        openbnct_core::GridGeometry {
+            shape: [2, 2, 1],
+            spacing_mm: [10.0, 10.0, 10.0],
+            origin_mm: [-10.0, -10.0, -5.0],
+            direction: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        }
+    }
+
     #[test]
     fn component_scales_reach_metrics_and_bands() {
         let mut low_boron = scenario("low-boron");
@@ -1010,6 +1021,85 @@ mod tests {
                 eval.scenario
             );
         }
+    }
+
+    #[test]
+    fn committed_known_answer_fixture_matches_the_analytic_optimum() {
+        // benchmarks/synthetic/scenario-robust-planning freezes a
+        // degenerate fixture whose worst-case optimum is closed-form:
+        // w_h* = 1.5 − reg·bound²/2 = 1.498875, w_b* = 0.
+        let base = format!(
+            "{}/../../benchmarks/synthetic/scenario-robust-planning",
+            env!("CARGO_MANIFEST_DIR")
+        );
+        let spec: InversePlanObjective =
+            serde_json::from_slice(&std::fs::read(format!("{base}/objective.json")).unwrap())
+                .unwrap();
+        let set: PlanScenarioSet =
+            serde_json::from_slice(&std::fs::read(format!("{base}/scenario-set.json")).unwrap())
+                .unwrap();
+        set.validate().unwrap();
+        let read_field = |name: &str| -> BeamDoseField {
+            let bundle: openbnct_core::PhysicalDoseBundle =
+                serde_json::from_slice(&std::fs::read(format!("{base}/{name}.json")).unwrap())
+                    .unwrap();
+            bundle.validate().unwrap();
+            let components = bundle
+                .components
+                .iter()
+                .map(|v| {
+                    (
+                        match v.component {
+                            openbnct_core::DoseComponent::Boron => "boron",
+                            openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                            openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                            openbnct_core::DoseComponent::Photon => "photon",
+                        }
+                        .to_string(),
+                        v.values.clone(),
+                    )
+                })
+                .collect();
+            BeamDoseField {
+                name: name.into(),
+                values: bundle.physical_total.values.clone(),
+                components: Some(components),
+            }
+        };
+        let fields = vec![read_field("field-h"), read_field("field-b")];
+        let masks: Vec<RegionMask> = vec![
+            serde_json::from_slice(&std::fs::read(format!("{base}/mask-all.json")).unwrap())
+                .unwrap(),
+        ];
+        let result = optimize_weights_scenarios(
+            &fields,
+            &masks,
+            &spec,
+            &set,
+            &fields_geometry(&fields),
+            &[1.0, 1.0],
+            ResultProvenance {
+                id: "conformance".into(),
+                provenance_id: "test".into(),
+                objective: ContentReference {
+                    id: "spec".into(),
+                    sha256: "ef".repeat(32),
+                },
+            },
+        )
+        .unwrap();
+        assert_eq!(result.method.as_deref(), Some("worst_case_scenario"));
+        assert!(result.converged);
+        assert!(
+            (result.weights[0].weight - 1.498875).abs() < 1e-3,
+            "analytic optimum w_h* = 1.498875: {:?}",
+            result.weights
+        );
+        assert!(
+            result.weights[1].weight < 1e-2,
+            "analytic optimum w_b* = 0: {:?}",
+            result.weights
+        );
     }
 
     #[test]

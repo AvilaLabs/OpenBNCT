@@ -1,0 +1,37 @@
+{
+  "schema_version": "openbnct.inverse-plan-result/0.1.0",
+  "id": "scenario-robust-result",
+  "case_id": "scenario-robust-planning",
+  "objective": {
+    "id": "scenario-robust-objective",
+    "sha256": "sha256:22c1c6796e234610a85af2da828795f7ba015ba67dd2a57a5802a9bd04510acd"
+  },
+  "dose_quantity": "physical_total",
+  "weights": [
+    {
+      "name": "field-h",
+      "weight": 1.4988749993659527
+    },
+    {
+      "name": "field-b",
+      "weight": 0.0
+    }
+  ],
+  "outcomes": [
+    {
+      "kind": "min_eud",
+      "mask": "all",
+      "achieved": 1.4988749993659527,
+      "bound": 1.5,
+      "satisfied": false,
+      "violation": 0.0011250006340473018,
+      "weight": 1.0
+    }
+  ],
+  "penalty": 0.0014994375000000001,
+  "iterations": 11,
+  "converged": true,
+  "method": "worst_case_scenario",
+  "qualification": "inverse_planning_research_only_not_clinical",
+  "provenance_id": "scenario-robust-planning-fixture"
+}

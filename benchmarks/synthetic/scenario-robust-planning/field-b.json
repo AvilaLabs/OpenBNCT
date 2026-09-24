@@ -1,0 +1,99 @@
+{
+  "schema_version": "openbnct.physical-dose-bundle/0.2.0",
+  "case_id": "scenario-robust-planning",
+  "frame_of_reference_uid": null,
+  "geometry": {
+    "shape": [
+      2,
+      2,
+      1
+    ],
+    "spacing_mm": [
+      10.0,
+      10.0,
+      10.0
+    ],
+    "origin_mm": [
+      -10.0,
+      -10.0,
+      -5.0
+    ],
+    "direction": [
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  },
+  "component_profile": {
+    "id": "synthetic-component-profile",
+    "sha256": "9e56b3e3ee43afcaaf1a0d2383f48952c1ab0a5c513586ca095fac6735d6fc66"
+  },
+  "response_set": {
+    "id": "synthetic-response-set",
+    "sha256": "e5c93e7eead0058f0ea0be1d2fdc3efb2ed59a859589070b45971c6f0f4b5f62"
+  },
+  "components": [
+    {
+      "component": "boron",
+      "unit": "gray",
+      "values": [
+        1.0,
+        1.0,
+        1.0,
+        1.0
+      ],
+      "absolute_standard_uncertainty": null
+    },
+    {
+      "component": "nitrogen",
+      "unit": "gray",
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "absolute_standard_uncertainty": null
+    },
+    {
+      "component": "hydrogen",
+      "unit": "gray",
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "absolute_standard_uncertainty": null
+    },
+    {
+      "component": "photon",
+      "unit": "gray",
+      "values": [
+        0.0,
+        0.0,
+        0.0,
+        0.0
+      ],
+      "absolute_standard_uncertainty": null
+    }
+  ],
+  "physical_total": {
+    "unit": "gray",
+    "values": [
+      1.0,
+      1.0,
+      1.0,
+      1.0
+    ],
+    "absolute_standard_uncertainty": null,
+    "uncertainty_method": "unavailable"
+  },
+  "provenance_id": "scenario-robust-planning-fixture"
+}

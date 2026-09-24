@@ -1,0 +1,69 @@
+{
+  "schema_version": "openbnct.scenario-report/0.1.0",
+  "id": "openbnct.scenario-report",
+  "result": {
+    "id": "scenario-robust-result",
+    "sha256": "sha256:e834c2566107dc3d5c15a5225167fb58b2e7d67d443fba38571fdeb8b768f1cf"
+  },
+  "objective": {
+    "id": "scenario-robust-objective",
+    "sha256": "sha256:22c1c6796e234610a85af2da828795f7ba015ba67dd2a57a5802a9bd04510acd"
+  },
+  "scenario_set": {
+    "id": "scenario-robust-set",
+    "sha256": "sha256:f52b047c440f3892f74f625bf6447346880ca430a67003c078b1746f4b0c61de"
+  },
+  "dose_references": [
+    {
+      "id": "field-h.dose-bundle",
+      "sha256": "4200df9e661216f3c6bf43fe59c251339359fc1a1e8b9502475d160df583abf3"
+    },
+    {
+      "id": "field-b.dose-bundle",
+      "sha256": "bf7c151604f68ff9adcf09f98ab410b5ea99fe1e1aa328da174666ab886dd30c"
+    }
+  ],
+  "evaluations": [
+    {
+      "scenario": "nominal",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "all",
+          "bound": 1.5,
+          "achieved": 1.4988749993659527,
+          "satisfied": false
+        }
+      ]
+    },
+    {
+      "scenario": "boron-zero",
+      "objectives": [
+        {
+          "kind": "min_eud",
+          "mask": "all",
+          "bound": 1.5,
+          "achieved": 1.4988749993659527,
+          "satisfied": false
+        }
+      ]
+    }
+  ],
+  "bands": [
+    {
+      "kind": "min_eud",
+      "mask": "all",
+      "bound": 1.5,
+      "nominal_achieved": 1.4988749993659527,
+      "min_achieved": 1.4988749993659527,
+      "max_achieved": 1.4988749993659527,
+      "mean_achieved": 1.4988749993659527,
+      "worst_scenario": "nominal",
+      "violated_scenarios": [
+        "boron-zero"
+      ]
+    }
+  ],
+  "qualification": "inverse_plan_scenarios_research_only_not_clinical",
+  "provenance_id": "plan-scenarios:e834c2566107"
+}

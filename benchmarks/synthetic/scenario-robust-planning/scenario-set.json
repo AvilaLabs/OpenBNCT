@@ -1,0 +1,14 @@
+{
+  "schema_version": "openbnct.scenario-set/0.1.0",
+  "id": "scenario-robust-set",
+  "scenarios": [
+    {
+      "name": "boron-zero",
+      "note": "complete loss of boron uptake",
+      "component_scales": {
+        "boron": 0.0
+      }
+    }
+  ],
+  "note": "Known-answer fixture: boron carrier fails entirely."
+}
