@@ -1444,11 +1444,20 @@ independent engines, ordered by leverage. None implies a clinical claim.
   for the bare baseline at 1.6e-3 and counting — roughly 3× fewer
   outers to the 1e-3 production tolerance. `OPENBNCT_NO_CMR=1`
   disables the correction for A/B diagnostics; `CMR_DEBUG=1` prints
-  regional balance residuals and factor ranges. Remaining candidates
-  to close the tail further: consistent-DSA on the thermal block
-  (Alcouffe derivation), or a fixed-point-exact CMR formulation that
-  subtracts the systematic clamp defect. Anderson-5 remains the
-  production configuration pending the P1 verification solve.
+  regional balance residuals and factor ranges. Deep-run result on
+  the cylindrical phantom (S4, 28g TSL+P1, 2026-09-24): the
+  period-2 limit cycle did not recur — CMR stalled and self-disabled
+  at outer 5, after which bare Anderson+θ-WDD descended 0.477 →
+  2.4e-4 at the 30-outer cap without cycling through the old ~2.4e-2
+  floor. δ stayed 0 throughout, so on this case the subtraction is
+  inactive insurance; the cycle's disappearance under the stall
+  handoff identifies CMR itself — not the sweep map — as the cycle
+  driver, consistent with the coarse/fine mismatch hypothesis.
+  Remaining candidates to close the tail further: consistent-DSA on
+  the thermal block (Alcouffe derivation), or a residual-form
+  (defect-correction) CMR that rebalances the fine-level error
+  rather than the flux. Anderson-5 remains the production
+  configuration pending the P1 verification solve.
 - **R11-04 — VR chi-square gate seeds (R6-09 remainder).** Two
   ~196M-history OpenMC runs outstanding for the
   variance-reduction acceptance gate (~27h each on this workstation).
