@@ -2810,6 +2810,15 @@ enum BioCommand {
         /// spectrum-sourced lineal energies.
         #[arg(long = "spectrum")]
         spectra: Vec<PathBuf>,
+        /// `openbnct.cell-microdosimetry` JSON — required when the model
+        /// is `openbnct.smk-model/0.1.0`.
+        #[arg(long)]
+        cell_microdosimetry: Option<PathBuf>,
+        /// `openbnct.boron-microdistribution` JSON — required when the
+        /// model is `openbnct.smk-model/0.1.0`; its hash is verified
+        /// against the population artifact's binding.
+        #[arg(long)]
+        microdistribution: Option<PathBuf>,
         /// New output path for the biological dose bundle JSON.
         #[arg(long)]
         output: PathBuf,
@@ -7561,6 +7570,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 physical_bundle,
                 region_masks,
                 spectra,
+                cell_microdosimetry,
+                microdistribution,
                 output,
             } => {
                 let model_bytes = fs::read(&model)?;
@@ -7611,6 +7622,49 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         })
                         .collect();
                     apply_microdosimetric_model(&model, &model_bytes, &physical, &masks, &inputs)?
+                } else if openbnct_core::schema_matches(&schema, openbnct_bio::SMK_MODEL_SCHEMA) {
+                    if !spectra.is_empty() {
+                        return Err(io::Error::other(
+                            "--spectrum applies only to openbnct.microdosimetric-model/0.1.0 models",
+                        )
+                        .into());
+                    }
+                    let smk_model: openbnct_bio::SmkModel = serde_json::from_slice(&model_bytes)?;
+                    let artifact_path = cell_microdosimetry.ok_or_else(|| {
+                        io::Error::other(
+                            "--cell-microdosimetry is required for openbnct.smk-model models",
+                        )
+                    })?;
+                    let microdist_path = microdistribution.ok_or_else(|| {
+                        io::Error::other(
+                            "--microdistribution is required for openbnct.smk-model models",
+                        )
+                    })?;
+                    let artifact_bytes = fs::read(&artifact_path)?;
+                    let artifact: openbnct_bio::CellMicrodosimetry =
+                        serde_json::from_slice(&artifact_bytes).map_err(|e| {
+                            io::Error::other(format!(
+                                "cell-microdosimetry {}: {e}",
+                                artifact_path.display()
+                            ))
+                        })?;
+                    let microdist_bytes = fs::read(&microdist_path)?;
+                    let microdist: openbnct_boron::BoronMicrodistribution =
+                        serde_json::from_slice(&microdist_bytes).map_err(|e| {
+                            io::Error::other(format!(
+                                "microdistribution {}: {e}",
+                                microdist_path.display()
+                            ))
+                        })?;
+                    openbnct_bio::apply_smk_model(
+                        &smk_model,
+                        &model_bytes,
+                        &artifact,
+                        &artifact_bytes,
+                        &microdist,
+                        &microdist_bytes,
+                        &physical,
+                    )?
                 } else if openbnct_core::schema_matches(
                     &schema,
                     openbnct_bio::ISOEFFECTIVE_MODEL_SCHEMA,
@@ -12684,8 +12738,8 @@ fn fold_region_masks(
 
 /// A loaded physical or biological dose bundle, resolved by schema.
 enum DoseBundle {
-    Physical(PhysicalDoseBundle),
-    Biological(openbnct_bio::BiologicalDoseBundle),
+    Physical(Box<PhysicalDoseBundle>),
+    Biological(Box<openbnct_bio::BiologicalDoseBundle>),
 }
 
 /// Load a dose bundle whose `schema_version` is a known dose contract.
@@ -12699,12 +12753,12 @@ fn load_dose_bundle(bytes: &[u8]) -> Result<DoseBundle, Box<dyn Error>> {
     )
     .as_str()
     {
-        openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
-            Ok(DoseBundle::Physical(serde_json::from_slice(bytes)?))
-        }
-        openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
-            Ok(DoseBundle::Biological(serde_json::from_slice(bytes)?))
-        }
+        openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => Ok(DoseBundle::Physical(Box::new(
+            serde_json::from_slice(bytes)?,
+        ))),
+        openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => Ok(DoseBundle::Biological(Box::new(
+            serde_json::from_slice(bytes)?,
+        ))),
         other => Err(io::Error::other(format!("unsupported dose bundle schema {other:?}")).into()),
     }
 }

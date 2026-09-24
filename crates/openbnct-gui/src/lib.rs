@@ -420,8 +420,8 @@ fn readiness_gates(case_loaded: bool, language: Language) -> [ReadinessGate; 5] 
 /// A loaded dose artifact — physical or biological — with the same contract
 /// validation the CLI enforces. Weighted bundles stay visually distinct.
 enum DoseArtifact {
-    Physical(PhysicalDoseBundle),
-    Biological(BiologicalDoseBundle),
+    Physical(Box<PhysicalDoseBundle>),
+    Biological(Box<BiologicalDoseBundle>),
 }
 
 struct LoadedDose {
@@ -454,13 +454,13 @@ impl DoseArtifact {
                 let bundle: PhysicalDoseBundle =
                     serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
                 bundle.validate().map_err(|error| error.to_string())?;
-                Self::Physical(bundle)
+                Self::Physical(Box::new(bundle))
             }
             openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
                 let bundle: BiologicalDoseBundle =
                     serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
                 bundle.validate().map_err(|error| error.to_string())?;
-                Self::Biological(bundle)
+                Self::Biological(Box::new(bundle))
             }
             other => return Err(format!("unsupported dose bundle schema {other:?}")),
         };

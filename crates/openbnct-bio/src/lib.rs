@@ -39,8 +39,9 @@ pub use bed::{
 };
 pub use cell_microdosimetry::{
     CELL_MICRODOSIMETRY_QUALIFICATION, CELL_MICRODOSIMETRY_SCHEMA, CellMicrodosimetry,
-    CompartmentTallies, SMK_EVALUATION_SCHEMA, SamplingDeclaration, SamplingStatistics,
-    SmkDosePoint, SmkEvaluation, SmkParameters, evaluate_smk, sample_cell_microdosimetry,
+    CompartmentTallies, SMK_EVALUATION_SCHEMA, SMK_MODEL_SCHEMA, SamplingDeclaration,
+    SamplingStatistics, SmkApplied, SmkDosePoint, SmkEvaluation, SmkModel, SmkParameters,
+    apply_smk_model, evaluate_smk, sample_cell_microdosimetry,
 };
 pub use compare::{
     BIO_MODEL_COMPARISON_SCHEMA, BioModelComparison, RegionStatistics, compare_biological_models,
@@ -88,6 +89,9 @@ pub enum WeightSemantics {
     FixedPerComponent,
     PhotonIsoeffective,
     MicrodosimetricKinetic,
+    /// Stochastic microdosimetric kinetic — the SMK population
+    /// integral over a sampled cell z-distribution.
+    SmkStochastic,
 }
 
 /// Linear-quadratic fractionation parameters for the biological total.
@@ -246,6 +250,11 @@ impl BiologicalModel {
                 "microdosimetric_kinetic semantics are not expressible as component weights; use an openbnct.microdosimetric-model/0.1.0 artifact".into(),
             ));
         }
+        if self.weight_semantics == WeightSemantics::SmkStochastic {
+            return Err(BioError::Invalid(
+                "smk_stochastic semantics are not expressible as component weights; use an openbnct.smk-model/0.1.0 artifact".into(),
+            ));
+        }
         if self.weight_semantics == WeightSemantics::PhotonIsoeffective {
             let photon = component_name(DoseComponent::Photon);
             if self.component_weights[photon] != 1.0
@@ -382,6 +391,11 @@ pub struct BiologicalDoseBundle {
     /// records the applied repair factor and delivery structure.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub isoeffective: Option<isoeffective::IsoeApplied>,
+    /// SMK provenance block — present exactly when `weight_semantics`
+    /// is `smk_stochastic`; records the consumed population artifact
+    /// and microdistribution bindings.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub smk: Option<cell_microdosimetry::SmkApplied>,
 }
 
 impl BiologicalDoseBundle {
@@ -712,6 +726,7 @@ pub fn apply_biological_model(
         qualification: "synthetic_research_only_not_clinical".into(),
         microdosimetry: None,
         isoeffective: None,
+        smk: None,
     };
     bundle.validate()?;
     Ok(bundle)

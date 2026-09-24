@@ -1556,11 +1556,25 @@ internal comparison.
   microdosimetric benchmark where geometry is published. The
   machinery is deterministic; the validation question is model
   fidelity, not code correctness.
-- **R14-04 — voxel coupling.** Fold the cell-level correction into
-  the voxel dose pipeline as a microdistribution-resolved component
-  weight — the bridge between the stochastic population and the
-  per-voxel biological bundle. Scope: declared mapping, content-bound
-  artifact, no clinical claim.
+- **R14-04 — voxel coupling. (landed)** `openbnct.smk-model/0.1.0`
+  declares the nucleus-domain SMK coefficients, the photon reference,
+  the macroscopic boron-dose ↔ mean-captures anchor (absolute Gy —
+  the population's z is absolute), the per-particle → per-fraction
+  scale required on `gray_per_source_particle` input, and the id of
+  the population artifact it was built against. `apply_smk_model`
+  folds a physical dose bundle through the artifact's stored P(z)
+  histogram — exact within bin resolution — with non-boron
+  components entering as declared photon-LQ exponents; the total
+  inverts once through the reference LQ and components carry
+  effect-share photon-equivalent doses that sum to it exactly.
+  `bio apply` routes on the model's `schema_version`, with new
+  `--cell-microdosimetry`/`--microdistribution` inputs whose hashes
+  are verified against the artifact's bindings. The bundle carries
+  `smk_stochastic` semantics, `smk_weighted_*` units, an `smk`
+  provenance block, and `unavailable` uncertainty (the
+  population-integral derivative is declared out of scope, not
+  surrogated). Region masks and fractionated EQD2 are open follow-on
+  scope.
 
 ## R12 — Optional Avify Dose integration (planned; IP review required)
 

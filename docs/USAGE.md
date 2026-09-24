@@ -780,6 +780,28 @@ document's sha256 is verified against the artifact's binding first.
 Both artifacts are research-only; the z-rescaling anchor and small-λ
 approximation are stated in the record.
 
+An `openbnct.smk-model/0.1.0` folds that population into the voxel
+dose pipeline: it declares the nucleus-domain SMK coefficients, the
+photon reference, the boron-dose ↔ mean-captures anchor in absolute
+Gy, and — required on `gray_per_source_particle` input — the
+`source_particles_per_fraction` scale. `bio apply` routes on the
+model's `schema_version` and needs two extra inputs verified against
+the artifact's bindings; per voxel the boron dose rescales the
+stored P(z), non-boron components add declared photon-LQ exponents,
+and the total inverts once through the reference LQ. The bundle
+carries `smk_stochastic` semantics, effect-share component volumes
+that sum to the total, an `smk` provenance block, and `unavailable`
+uncertainty.
+
+```text
+openbnct bio apply \
+  --model SMK-MODEL.json \
+  --physical-bundle DOSE-BUNDLE.json \
+  --cell-microdosimetry CELL-MICRODOSIMETRY.json \
+  --microdistribution BORON-MICRODISTRIBUTION.json \
+  --output NEW-SMK-BUNDLE.json
+```
+
 ```text
 openbnct bio cell-microdosimetry \
   --model BORON-MICRODISTRIBUTION.json \

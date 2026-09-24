@@ -297,6 +297,7 @@ mod tests {
             qualification: "test".into(),
             microdosimetry: None,
             isoeffective: None,
+            smk: None,
         }
     }
 

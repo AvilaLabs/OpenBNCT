@@ -538,6 +538,7 @@ pub fn apply_isoeffective_model(
             g_factor: g,
             irradiation: model.irradiation,
         }),
+        smk: None,
     };
     bundle.validate()?;
     Ok(bundle)

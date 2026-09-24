@@ -514,6 +514,7 @@ mod tests {
             qualification: "research".into(),
             microdosimetry: None,
             isoeffective: None,
+            smk: None,
         }
     }
 

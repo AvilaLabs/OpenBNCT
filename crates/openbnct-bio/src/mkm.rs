@@ -807,6 +807,7 @@ pub fn apply_microdosimetric_model(
             spectra_applied,
         }),
         isoeffective: None,
+        smk: None,
     };
     bundle.validate()?;
     Ok(bundle)

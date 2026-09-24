@@ -515,6 +515,340 @@ pub fn evaluate_smk(
     })
 }
 
+/// Versioned SMK biological-model artifact schema.
+pub const SMK_MODEL_SCHEMA: &str = "openbnct.smk-model/0.1.0";
+
+/// An SMK biological model — the declared coefficients, reference,
+/// and population binding for `apply_smk_model`.
+///
+/// Non-boron components enter the exponent as photon-like LQ terms
+/// (`α_r·d + β_r·d²` each, summed) — a declared approximation
+/// recorded in every emitted bundle's provenance.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SmkModel {
+    #[serde(deserialize_with = "openbnct_core::deserialize_contract_id")]
+    pub schema_version: String,
+    pub id: String,
+    /// Nucleus-domain SMK α (Gy⁻¹).
+    pub alpha_per_gy: f64,
+    /// Nucleus-domain SMK β (Gy⁻²).
+    pub beta_per_gy2: f64,
+    /// Photon-reference LQ α (Gy⁻¹).
+    pub reference_alpha_per_gy: f64,
+    /// Photon-reference LQ β (Gy⁻²).
+    pub reference_beta_per_gy2: f64,
+    /// Boron-component dose in absolute Gy corresponding to the
+    /// population artifact's declared `mean_captures_per_cell` — the
+    /// per-voxel z-rescaling anchor. The population's z is in Gy, so
+    /// the anchor is absolute regardless of `input_unit`.
+    pub boron_dose_at_mean_captures: f64,
+    /// Per-particle → per-fraction scale, mirroring the other model
+    /// families: required (and positive) when `input_unit` is
+    /// `gray_per_source_particle`, since the SMK exponent needs
+    /// absolute nucleus dose. Absent on absolute-Gy input.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub source_particles_per_fraction: Option<f64>,
+    /// `id` of the `openbnct.cell-microdosimetry` artifact this model
+    /// was built against — verified at apply time.
+    pub cell_microdosimetry_id: String,
+    /// Dose unit of the physical bundle this model accepts.
+    pub input_unit: openbnct_core::DoseUnit,
+    /// Required free-text validity domain.
+    pub validity_domain: String,
+    pub provenance_id: String,
+}
+
+impl SmkModel {
+    pub fn validate(&self) -> Result<(), BioError> {
+        if !openbnct_core::schema_matches(&self.schema_version, SMK_MODEL_SCHEMA) {
+            return Err(BioError::UnsupportedSchema(self.schema_version.clone()));
+        }
+        for (label, value) in [
+            ("id", self.id.as_str()),
+            (
+                "cell_microdosimetry_id",
+                self.cell_microdosimetry_id.as_str(),
+            ),
+            ("validity_domain", self.validity_domain.as_str()),
+            ("provenance_id", self.provenance_id.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(BioError::Invalid(format!(
+                    "smk model {label} is required and must not be empty"
+                )));
+            }
+        }
+        if self.alpha_per_gy < 0.0
+            || self.beta_per_gy2 < 0.0
+            || self.reference_alpha_per_gy < 0.0
+            || self.reference_beta_per_gy2 < 0.0
+            || !self.boron_dose_at_mean_captures.is_finite()
+            || self.boron_dose_at_mean_captures <= 0.0
+        {
+            return Err(BioError::Invalid(
+                "smk model coefficients must be ≥ 0 and the anchor dose finite and > 0".into(),
+            ));
+        }
+        match self.input_unit {
+            openbnct_core::DoseUnit::GrayPerSourceParticle => {
+                let p = self.source_particles_per_fraction.ok_or_else(|| {
+                    BioError::Invalid(
+                        "smk model on gray_per_source_particle input requires \
+                         source_particles_per_fraction — the exponent needs \
+                         absolute nucleus dose"
+                            .into(),
+                    )
+                })?;
+                if !p.is_finite() || p <= 0.0 {
+                    return Err(BioError::Invalid(
+                        "source_particles_per_fraction must be positive".into(),
+                    ));
+                }
+            }
+            openbnct_core::DoseUnit::Gray => {
+                if self.source_particles_per_fraction.is_some() {
+                    return Err(BioError::Invalid(
+                        "source_particles_per_fraction applies only to \
+                         gray_per_source_particle input"
+                            .into(),
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+}
+
+/// SMK provenance recorded on the emitted bundle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SmkApplied {
+    /// The consumed `openbnct.cell-microdosimetry` artifact.
+    pub cell_microdosimetry: ContentReference,
+    /// The microdistribution model the population was sampled under.
+    pub microdistribution: ContentReference,
+    /// The declared anchor dose the z-rescaling pivots about.
+    pub boron_dose_at_mean_captures: f64,
+    /// The applied per-particle → per-fraction scale (1.0 on
+    /// absolute-Gy input).
+    pub source_particles_per_fraction: f64,
+    /// The population's untouched fraction — the plateau term.
+    pub untouched_fraction: f64,
+    /// Cells in the consumed population.
+    pub cells_simulated: u32,
+}
+
+/// Apply an SMK model to a physical dose bundle: per voxel, the boron
+/// dose rescales the sampled z-population (`s = d_boron / anchor`),
+/// the boron exponent is `−ln ⟨e^{−(a·z + b·z²)}⟩` over the artifact's
+/// declared histogram (exact within bin resolution — the replayed
+/// per-cell z is not needed, the stored P(z) is the sufficient
+/// statistic), non-boron components add declared photon-LQ exponents,
+/// and the total inverts once through the reference photon LQ.
+///
+/// Component volumes carry effect-share photon-equivalent doses —
+/// `X_c/X_total·D_eq` — so they sum to the total exactly, the same
+/// decomposition MKM declares. Uncertainty propagation is declared
+/// `unavailable` for this family: the population-integral derivative
+/// is out of v1 scope and no surrogate is emitted.
+pub fn apply_smk_model(
+    model: &SmkModel,
+    model_bytes: &[u8],
+    artifact: &CellMicrodosimetry,
+    artifact_bytes: &[u8],
+    microdistribution: &openbnct_boron::BoronMicrodistribution,
+    microdistribution_bytes: &[u8],
+    physical: &openbnct_core::PhysicalDoseBundle,
+) -> Result<crate::BiologicalDoseBundle, BioError> {
+    use crate::{
+        BIOLOGICAL_DOSE_BUNDLE_SCHEMA, BiologicalDoseBundle, BiologicalTotal,
+        BiologicalUncertaintyMethod, WeightSemantics, WeightedDoseVolume,
+    };
+    model.validate()?;
+    physical
+        .validate()
+        .map_err(|e| BioError::Invalid(format!("physical bundle: {e}")))?;
+    if artifact.id != model.cell_microdosimetry_id {
+        return Err(BioError::Invalid(format!(
+            "smk model expects cell-microdosimetry artifact {:?}, got {:?}",
+            model.cell_microdosimetry_id, artifact.id
+        )));
+    }
+    let artifact_sha = sha256_hex(artifact_bytes);
+    let microdist_sha = sha256_hex(microdistribution_bytes);
+    if artifact.microdistribution.sha256 != microdist_sha {
+        return Err(BioError::Invalid(
+            "microdistribution document hash does not match the population artifact's binding"
+                .into(),
+        ));
+    }
+    let voxel_count = physical
+        .geometry
+        .voxel_count()
+        .map_err(|e| BioError::Invalid(format!("geometry: {e}")))?;
+    if physical
+        .components
+        .first()
+        .is_some_and(|c| c.unit != model.input_unit)
+    {
+        return Err(BioError::Invalid(format!(
+            "model input_unit {:?} does not match the physical bundle",
+            model.input_unit
+        )));
+    }
+    let boron = physical
+        .components
+        .iter()
+        .find(|c| c.component == openbnct_core::DoseComponent::Boron)
+        .ok_or_else(|| BioError::Invalid("physical bundle carries no boron component".into()))?;
+    // Population histogram → per-cell weights at bin midpoints.
+    let n_cells = artifact.sampling.cell_count as f64;
+    let untouched = artifact.untouched_fraction;
+    let z_bins: Vec<(f64, f64)> = artifact
+        .z_bin_edges_gy
+        .windows(2)
+        .zip(&artifact.z_bin_counts)
+        .map(|(w, &count)| ((w[0] + w[1]) / 2.0, count as f64 / n_cells))
+        .collect();
+    let anchor = model.boron_dose_at_mean_captures;
+    let a = model.alpha_per_gy;
+    let b = model.beta_per_gy2;
+    let ar = model.reference_alpha_per_gy;
+    let br = model.reference_beta_per_gy2;
+    // Per-particle → absolute-dose scale (1.0 on absolute input).
+    let p = model.source_particles_per_fraction.unwrap_or(1.0);
+    // Per-voxel exponents.
+    let mut x_boron = vec![0.0_f64; voxel_count];
+    for (v, x) in x_boron.iter_mut().enumerate() {
+        let s = boron.values[v].max(0.0) * p / anchor;
+        if s == 0.0 {
+            continue;
+        }
+        let mut survival = untouched;
+        for &(z_mid, weight) in &z_bins {
+            if weight == 0.0 {
+                continue;
+            }
+            let zs = z_mid * s;
+            survival += weight * (-a * zs - b * zs * zs).exp();
+        }
+        *x = -survival.ln();
+    }
+    // Non-boron components: declared photon-LQ exponents.
+    let other_components: Vec<(&openbnct_core::DoseComponent, &[f64])> = physical
+        .components
+        .iter()
+        .filter(|c| c.component != openbnct_core::DoseComponent::Boron)
+        .map(|c| (&c.component, c.values.as_slice()))
+        .collect();
+    let x_other: Vec<Vec<f64>> = other_components
+        .iter()
+        .map(|(_, values)| {
+            values
+                .iter()
+                .map(|d| {
+                    let d_abs = d.max(0.0) * p;
+                    ar * d_abs + br * d_abs * d_abs
+                })
+                .collect()
+        })
+        .collect();
+    let x_total: Vec<f64> = x_boron
+        .iter()
+        .enumerate()
+        .map(|(v, xb)| xb + x_other.iter().map(|xc| xc[v]).sum::<f64>())
+        .collect();
+    let totals: Vec<f64> = x_total
+        .iter()
+        .map(|x| photon_isodose(*x, ar, br).unwrap_or(0.0))
+        .collect();
+    // Effect-share decomposition: component eq = X_c/X·D_eq.
+    let unit_label = format!("smk_weighted_{}", component_unit_label(&model.input_unit));
+    let share = |xs: &[f64]| -> Vec<f64> {
+        xs.iter()
+            .enumerate()
+            .map(|(v, xc)| {
+                if x_total[v] > 0.0 {
+                    xc / x_total[v] * totals[v]
+                } else {
+                    0.0
+                }
+            })
+            .collect()
+    };
+    let mut components = Vec::with_capacity(physical.components.len());
+    components.push(WeightedDoseVolume {
+        component: openbnct_core::DoseComponent::Boron,
+        unit: unit_label.clone(),
+        values: share(&x_boron),
+        absolute_standard_uncertainty: None,
+    });
+    for (i, (component, _)) in other_components.iter().enumerate() {
+        components.push(WeightedDoseVolume {
+            component: **component,
+            unit: unit_label.clone(),
+            values: share(&x_other[i]),
+            absolute_standard_uncertainty: None,
+        });
+    }
+    let bundle = BiologicalDoseBundle {
+        schema_version: BIOLOGICAL_DOSE_BUNDLE_SCHEMA.into(),
+        case_id: physical.case_id.clone(),
+        geometry: physical.geometry.clone(),
+        physical_bundle_provenance: physical.provenance_id.clone(),
+        model: ContentReference {
+            id: model.id.clone(),
+            sha256: sha256_hex(model_bytes),
+        },
+        weight_semantics: WeightSemantics::SmkStochastic,
+        unit: unit_label,
+        components,
+        fractionation: None,
+        total: BiologicalTotal {
+            unit: "smk_weighted_total".into(),
+            values: totals,
+            absolute_standard_uncertainty: None,
+            uncertainty_method: BiologicalUncertaintyMethod::Unavailable,
+        },
+        regions_applied: Vec::new(),
+        qualification: "smk_stochastic_research_only_not_clinical".into(),
+        microdosimetry: None,
+        isoeffective: None,
+        smk: Some(SmkApplied {
+            cell_microdosimetry: ContentReference {
+                id: artifact.id.clone(),
+                sha256: artifact_sha,
+            },
+            microdistribution: ContentReference {
+                id: microdistribution.id.clone(),
+                sha256: microdist_sha,
+            },
+            boron_dose_at_mean_captures: anchor,
+            source_particles_per_fraction: p,
+            untouched_fraction: untouched,
+            cells_simulated: artifact.sampling.cell_count,
+        }),
+    };
+    bundle.validate()?;
+    Ok(bundle)
+}
+
+fn component_unit_label(unit: &openbnct_core::DoseUnit) -> &'static str {
+    match unit {
+        openbnct_core::DoseUnit::GrayPerSourceParticle => "gray_per_source_particle",
+        _ => "gray",
+    }
+}
+
+/// sha256 of raw bytes — same helper the other bio families use.
+fn sha256_hex(bytes: &[u8]) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(bytes);
+    format!("{:x}", hasher.finalize())
+}
+
 /// Solve α·D + β·D² = X for D ≥ 0 (X ≥ 0); `None` when X ≤ 0.
 fn photon_isodose(x: f64, alpha: f64, beta: f64) -> Option<f64> {
     if x <= 0.0 || (alpha <= 0.0 && beta <= 0.0) {
@@ -772,6 +1106,136 @@ mod tests {
         assert_eq!(a.untouched_fraction, 1.0);
         assert_eq!(a.mean_specific_energy_gy, 0.0);
         assert!(a.nucleus_lineal_spectrum.values.iter().all(|v| *v == 0.0));
+    }
+
+    #[test]
+    fn smk_apply_emits_effect_share_bundle() {
+        use openbnct_core::{
+            DoseComponent, DoseUnit, DoseVolume, GridGeometry, PHYSICAL_DOSE_BUNDLE_SCHEMA,
+            PhysicalDoseBundle, PhysicalTotalDoseVolume, TotalUncertaintyMethod,
+        };
+        let microdist = model(0.3, 0.5, 0.1, 0.1);
+        let microdist_bytes = serde_json::to_vec(&microdist).unwrap();
+        let artifact = sample_cell_microdosimetry(
+            &microdist,
+            ContentReference {
+                id: microdist.id.clone(),
+                sha256: crate::cell_microdosimetry::sha256_hex(&microdist_bytes),
+            },
+            4.0,
+            2000,
+            3,
+            &z_edges(),
+            &y_edges(),
+            "pop",
+            "p",
+        )
+        .unwrap();
+        let artifact_bytes = serde_json::to_vec(&artifact).unwrap();
+        let smk_model = SmkModel {
+            schema_version: SMK_MODEL_SCHEMA.into(),
+            id: "smk".into(),
+            alpha_per_gy: 0.5,
+            beta_per_gy2: 0.05,
+            reference_alpha_per_gy: 0.2,
+            reference_beta_per_gy2: 0.02,
+            // Anchor at 1 Gy boron dose → the two fixture voxels scale
+            // z by 1.0 and 0.5.
+            boron_dose_at_mean_captures: 1.0,
+            source_particles_per_fraction: None,
+            cell_microdosimetry_id: "pop".into(),
+            input_unit: DoseUnit::Gray,
+            validity_domain: "test".into(),
+            provenance_id: "p".into(),
+        };
+        let model_bytes = serde_json::to_vec(&smk_model).unwrap();
+        let cref = |id: &str| ContentReference {
+            id: id.into(),
+            sha256: "a".repeat(64),
+        };
+        let physical = PhysicalDoseBundle {
+            schema_version: PHYSICAL_DOSE_BUNDLE_SCHEMA.into(),
+            case_id: "c".into(),
+            frame_of_reference_uid: None,
+            geometry: GridGeometry {
+                shape: [2, 1, 1],
+                spacing_mm: [5.0; 3],
+                origin_mm: [-2.5; 3],
+                direction: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            },
+            component_profile: cref("p"),
+            response_set: cref("r"),
+            components: vec![
+                DoseVolume {
+                    component: DoseComponent::Boron,
+                    unit: DoseUnit::Gray,
+                    values: vec![1.0, 0.5],
+                    absolute_standard_uncertainty: None,
+                },
+                DoseVolume {
+                    component: DoseComponent::Nitrogen,
+                    unit: DoseUnit::Gray,
+                    values: vec![0.05, 0.05],
+                    absolute_standard_uncertainty: None,
+                },
+                DoseVolume {
+                    component: DoseComponent::Hydrogen,
+                    unit: DoseUnit::Gray,
+                    values: vec![0.02, 0.02],
+                    absolute_standard_uncertainty: None,
+                },
+                DoseVolume {
+                    component: DoseComponent::Photon,
+                    unit: DoseUnit::Gray,
+                    values: vec![0.1, 0.1],
+                    absolute_standard_uncertainty: None,
+                },
+            ],
+            physical_total: PhysicalTotalDoseVolume {
+                unit: DoseUnit::Gray,
+                values: vec![1.1, 0.6],
+                absolute_standard_uncertainty: Some(vec![0.01, 0.01]),
+                uncertainty_method: TotalUncertaintyMethod::DedicatedEstimator,
+            },
+            provenance_id: "p".into(),
+        };
+        let bundle = apply_smk_model(
+            &smk_model,
+            &model_bytes,
+            &artifact,
+            &artifact_bytes,
+            &microdist,
+            &microdist_bytes,
+            &physical,
+        )
+        .unwrap();
+        assert_eq!(
+            bundle.weight_semantics,
+            crate::WeightSemantics::SmkStochastic
+        );
+        assert!(bundle.smk.is_some());
+        // Effect-share components sum to the total.
+        for v in 0..2 {
+            let sum: f64 = bundle.components.iter().map(|c| c.values[v]).sum();
+            assert!((sum - bundle.total.values[v]).abs() < 1e-9);
+        }
+        // More boron dose → more photon-equivalent dose.
+        assert!(bundle.total.values[0] > bundle.total.values[1]);
+        // Wrong artifact id must be rejected.
+        let mut wrong = smk_model.clone();
+        wrong.cell_microdosimetry_id = "other".into();
+        assert!(
+            apply_smk_model(
+                &wrong,
+                &model_bytes,
+                &artifact,
+                &artifact_bytes,
+                &microdist,
+                &microdist_bytes,
+                &physical,
+            )
+            .is_err()
+        );
     }
 
     #[test]
