@@ -458,6 +458,47 @@ enum PkCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Emit the PK-integrated dose map for one beam-on window as a
+    /// real `openbnct.physical-dose-bundle` in Gray — directly
+    /// consumable by `bio apply`, `dvh`, and `report`.
+    Dose {
+        /// Physical dose bundle JSON (per-source-particle rates).
+        #[arg(long)]
+        dose: PathBuf,
+        /// PK model JSON (`openbnct.pk-model/0.1.0`).
+        #[arg(long)]
+        pk_model: PathBuf,
+        /// RegionMask binding `NAME=path`; repeatable — first match
+        /// wins per voxel, unmasked voxels keep constant
+        /// concentration.
+        #[arg(long = "mask")]
+        masks: Vec<String>,
+        /// Source strength in source particles per second.
+        #[arg(long)]
+        source_strength: f64,
+        /// Schedule report JSON to take the window from — combines
+        /// with `--window-index` (mutually exclusive with
+        /// `--window-s`/`--time-s`).
+        #[arg(long, requires = "window_index")]
+        schedule: Option<PathBuf>,
+        /// Window index inside `--schedule`.
+        #[arg(long, requires = "schedule")]
+        window_index: Option<usize>,
+        /// Beam-on epoch after infusion end, seconds — combine with
+        /// `--time-s` (mutually exclusive with `--schedule`).
+        #[arg(long, requires = "time_s", conflicts_with = "schedule")]
+        window_s: Option<f64>,
+        /// Beam-on duration, seconds.
+        #[arg(long, requires = "window_s", conflicts_with = "schedule")]
+        time_s: Option<f64>,
+        /// Provenance identifier for the emitted bundle; defaults to a
+        /// deterministic `pk-dose-*` id.
+        #[arg(long)]
+        provenance_id: Option<String>,
+        /// New output path for the dose bundle JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -11342,6 +11383,100 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         w.tumor_dose.unwrap_or(0.0)
                     );
                 }
+            }
+            PkCommand::Dose {
+                dose,
+                pk_model,
+                masks,
+                source_strength,
+                schedule,
+                window_index,
+                window_s,
+                time_s,
+                provenance_id,
+                output,
+            } => {
+                let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(&dose)?)?;
+                let pk: openbnct_evidence::PkModel = serde_json::from_slice(&fs::read(&pk_model)?)?;
+                let mut region_masks = Vec::with_capacity(masks.len());
+                for binding in &masks {
+                    let (name, path) = binding
+                        .split_once('=')
+                        .ok_or_else(|| io::Error::other("--mask entries must be NAME=path"))?;
+                    let mask = read_region_mask(Path::new(path))?;
+                    if mask.name != name {
+                        return Err(io::Error::other(format!(
+                            "--mask {name}: mask file names itself {:?}",
+                            mask.name
+                        ))
+                        .into());
+                    }
+                    region_masks.push(mask);
+                }
+                let (epoch, duration) = match (schedule, window_index, window_s, time_s) {
+                    (Some(schedule_path), Some(index), None, None) => {
+                        let report: openbnct_evidence::PkScheduleReport =
+                            serde_json::from_slice(&fs::read(&schedule_path)?)?;
+                        let window = report.windows.get(index).ok_or_else(|| {
+                            io::Error::other(format!(
+                                "--window-index {index} out of range ({} windows)",
+                                report.windows.len()
+                            ))
+                        })?;
+                        let limiting = window.limiting.as_ref().ok_or_else(|| {
+                            io::Error::other(format!(
+                                "schedule window {index} is unbounded — no finite beam-on duration"
+                            ))
+                        })?;
+                        (window.beam_on_epoch_s, limiting.max_time_s)
+                    }
+                    (None, None, Some(w), Some(t)) => (w, t),
+                    _ => {
+                        return Err(io::Error::other(
+                            "declare either --schedule PATH --window-index N, or --window-s W --time-s T",
+                        )
+                        .into())
+                    }
+                };
+                let prov = provenance_id.unwrap_or_else(|| {
+                    format!(
+                        "pk-dose-{}-{}-{:.0}-{:.0}",
+                        bundle.case_id, pk.id, epoch, duration
+                    )
+                });
+                let integrated = openbnct_evidence::pk_integrated_dose_bundle(
+                    &bundle,
+                    &pk,
+                    &region_masks,
+                    epoch,
+                    duration,
+                    source_strength,
+                    prov,
+                )?;
+                write_new_json(&output, &integrated)?;
+                let boron = integrated
+                    .components
+                    .iter()
+                    .find(|c| c.component == openbnct_core::DoseComponent::Boron);
+                println!(
+                    "pk-integrated dose at {} (beam-on +{:.0} s, {:.0} s)",
+                    output.display(),
+                    epoch,
+                    duration
+                );
+                if let Some(b) = boron {
+                    let max = b.values.iter().copied().fold(0.0, f64::max);
+                    println!("  boron component: max {:.6} Gy", max);
+                }
+                println!(
+                    "  physical total: max {:.6} Gy",
+                    integrated
+                        .physical_total
+                        .values
+                        .iter()
+                        .copied()
+                        .fold(0.0, f64::max)
+                );
             }
         },
         Some(Command::Metrics {

@@ -2036,7 +2036,16 @@ stays in the exponential family so the tissue curves are exact.
 epoch it shifts the curves, solves the organ limits, and reports the
 deliverable tumor-region dose, emitting `openbnct.pk-schedule/0.1.0`
 with the full landscape, the dose-maximizing window, and the
-constant-concentration reference for comparison:
+constant-concentration reference for comparison. `pk dose` then
+emits the integrated map for a chosen window — either a solved
+schedule window (`--schedule REPORT --window-index N`, which reuses
+the report's limiting beam-off time) or an explicit
+`--window-s W --time-s T` — as a real
+`openbnct.physical-dose-bundle/0.2.0` in Gray. The boron component
+scales per voxel by the region's integrated concentration; every
+other component scales by the beam-on duration; voxels no mask
+covers keep the constant-concentration scale. The bundle feeds
+`bio apply`, `dvh`, and `report` unchanged:
 
 ```text
 openbnct pk fit --samples PK-SAMPLES.json --id blood.v1 \
@@ -2049,6 +2058,10 @@ openbnct pk schedule --dose DOSE-BUNDLE.json --quantity physical_total \
   --pk-model NEW-TISSUE-PK.json \
   --window-s 0,900,1800,3600 --tumor-region GTV --tumor-metric mean \
   --output NEW-SCHEDULE.json
+openbnct pk dose --dose DOSE-BUNDLE.json --pk-model NEW-TISSUE-PK.json \
+  --mask SKIN=skin.json --mask GTV=gtv.json --source-strength 1e9 \
+  --schedule NEW-SCHEDULE.json --window-index 3 \
+  --output NEW-INTEGRATED-DOSE.json
 ```
 
 All three artifacts are research-only: the curves are declared inputs

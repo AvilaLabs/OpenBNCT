@@ -1605,9 +1605,13 @@ tissue kinetics into the same curve family.
   limiting structure. `openbnct.pk-schedule/0.1.0` records the full
   window table, the dose-maximizing window, the bindings, and the
   constant-concentration reference for deviation reporting.
-- **R15-03 — cumulative map emission.** The time-integrated field
-  `O·t* + B·f_r(t*)` (per-region f) as a real dose-volume artifact
-  per solved schedule — feedable to `bio apply` and `report`.
+- **R15-03 — cumulative map emission. (landed)** `pk dose` emits
+  the time-integrated field as a real
+  `openbnct.physical-dose-bundle/0.2.0` in Gray: boron scaled per
+  voxel by the region's `I_r(t)/C_plan`, non-boron by `t`, unmasked
+  voxels at constant concentration. Window+duration come from a
+  `--schedule` report window index or explicit `--window-s`/`--time-s`;
+  `bio apply`, `dvh`, and `report` consume it unchanged.
 - **R15-04 — published-anchor validation.** Reproduce the
   documented ~11% fixed-vs-PK deviation scale and the sign of the
   optimal-window gain on a declared curve family matching published

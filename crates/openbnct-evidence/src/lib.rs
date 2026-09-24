@@ -55,7 +55,7 @@ pub use pk::{
     PK_TISSUE_SPEC_SCHEMA, PkIrradiationReport, PkModel, PkRegion, PkRegionResult, PkSample,
     PkSampleSeries, PkSamples, PkScheduleReport, PkScheduleWindow, PkTimeUncertainty,
     PkTissueRegion, PkTissueSpec, apply_tissue_spec, evaluate_pk_schedule, fit_pk_model,
-    pk_integrated_scale, pk_region_endpoint, pk_shifted,
+    pk_integrated_dose_bundle, pk_integrated_scale, pk_region_endpoint, pk_shifted,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -1418,6 +1418,111 @@ pub fn evaluate_pk_schedule(
     })
 }
 
+/// Integrated dose over one beam-on window, emitted as a real
+/// `openbnct.physical-dose-bundle/0.2.0` in absolute Gray — the map
+/// `bio apply`, `dvh`, and `report` consume without learning new
+/// contracts. Per voxel, the boron component scales by the region's
+/// integrated concentration `I_r(t)/C_plan` and every other component
+/// by `t`; voxels no mask covers get the constant-concentration
+/// scale (`I = C_plan·t`), matching the solver's unmodeled-region
+/// convention. Uncertainty is declared `Unavailable` — the PK
+/// curves' own uncertainty is not propagated into the map.
+#[allow(clippy::too_many_arguments)]
+pub fn pk_integrated_dose_bundle(
+    source: &openbnct_core::PhysicalDoseBundle,
+    pk: &PkModel,
+    masks: &[RegionMask],
+    beam_on_epoch_s: f64,
+    beam_time_s: f64,
+    source_strength: f64,
+    provenance_id: String,
+) -> Result<openbnct_core::PhysicalDoseBundle, ManifestError> {
+    use openbnct_core::{DoseComponent, DoseUnit, PhysicalTotalDoseVolume, TotalUncertaintyMethod};
+    source
+        .validate()
+        .map_err(|e| ManifestError::Invalid(format!("source bundle: {e}")))?;
+    pk.validate()?;
+    if !beam_on_epoch_s.is_finite() || beam_on_epoch_s < 0.0 {
+        return Err(ManifestError::Invalid(
+            "beam-on epoch must be finite and non-negative".into(),
+        ));
+    }
+    if !beam_time_s.is_finite() || beam_time_s < 0.0 {
+        return Err(ManifestError::Invalid(
+            "beam time must be finite and non-negative".into(),
+        ));
+    }
+    if !source_strength.is_finite() || source_strength <= 0.0 {
+        return Err(ManifestError::Invalid(
+            "source strength must be finite and positive".into(),
+        ));
+    }
+    for volume in &source.components {
+        if volume.unit != DoseUnit::GrayPerSourceParticle {
+            return Err(ManifestError::Invalid(format!(
+                "component {:?} has unit {:?}; pk dose integration needs gray_per_source_particle rates",
+                volume.component, volume.unit
+            )));
+        }
+    }
+    let shifted = pk_shifted(pk, beam_on_epoch_s);
+    // Per-voxel region assignment — first matching mask wins, in the
+    // caller's declared order. Unmasked voxels keep `f = t`.
+    let voxel_count = source
+        .components
+        .first()
+        .map(|v| v.values.len())
+        .unwrap_or(0);
+    let mut region_scale = vec![beam_time_s; voxel_count];
+    for (voxel, scale) in region_scale.iter_mut().enumerate() {
+        if let Some(mask) = masks.iter().find(|m| m.voxels.get(voxel) == Some(&true)) {
+            *scale = pk_integrated_scale(&shifted, &mask.name, beam_time_s);
+        }
+    }
+    let mut components = Vec::with_capacity(source.components.len());
+    for volume in &source.components {
+        let values = if volume.component == DoseComponent::Boron {
+            volume
+                .values
+                .iter()
+                .zip(region_scale.iter())
+                .map(|(b, scale)| source_strength * scale * b)
+                .collect()
+        } else {
+            volume
+                .values
+                .iter()
+                .map(|o| source_strength * beam_time_s * o)
+                .collect()
+        };
+        components.push(openbnct_core::DoseVolume {
+            component: volume.component,
+            unit: DoseUnit::Gray,
+            values,
+            absolute_standard_uncertainty: None,
+        });
+    }
+    let total: Vec<f64> = (0..voxel_count)
+        .map(|v| components.iter().map(|c| c.values[v]).sum())
+        .collect();
+    Ok(openbnct_core::PhysicalDoseBundle {
+        schema_version: openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA.into(),
+        case_id: source.case_id.clone(),
+        frame_of_reference_uid: source.frame_of_reference_uid.clone(),
+        geometry: source.geometry.clone(),
+        component_profile: source.component_profile.clone(),
+        response_set: source.response_set.clone(),
+        components,
+        physical_total: PhysicalTotalDoseVolume {
+            unit: DoseUnit::Gray,
+            values: total,
+            absolute_standard_uncertainty: None,
+            uncertainty_method: TotalUncertaintyMethod::Unavailable,
+        },
+        provenance_id,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1810,5 +1915,81 @@ mod tests {
         let integral = |t: f64| 100.0 * (1.0 - (-0.1 * t).exp());
         let f_direct = (integral(w + t) - integral(w)) / 10.0;
         assert!((f_shifted - f_direct).abs() < 1e-12 * f_direct);
+    }
+
+    #[test]
+    fn integrated_dose_bundle_scales_boron_by_region() {
+        use openbnct_core::{
+            ComponentProfileReference, DoseComponent, DoseUnit, DoseVolume, GridGeometry,
+            PhysicalDoseBundle, PhysicalTotalDoseVolume, TotalUncertaintyMethod,
+        };
+        let geometry = GridGeometry {
+            shape: [1, 1, 2],
+            spacing_mm: [10.0; 3],
+            origin_mm: [0.0; 3],
+            direction: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        };
+        let component = |c: DoseComponent, v: Vec<f64>| DoseVolume {
+            component: c,
+            unit: DoseUnit::GrayPerSourceParticle,
+            values: v,
+            absolute_standard_uncertainty: None,
+        };
+        // Voxel 0 inside "A" (decaying curve), voxel 1 unmasked —
+        // constant concentration. t = 2 s.
+        let bundle = PhysicalDoseBundle {
+            schema_version: openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA.into(),
+            case_id: "case".into(),
+            frame_of_reference_uid: None,
+            geometry: geometry.clone(),
+            component_profile: ComponentProfileReference {
+                id: "test.profile".into(),
+                sha256: "ef".repeat(32),
+            },
+            response_set: source(),
+            components: vec![
+                component(DoseComponent::Boron, vec![2.0, 2.0]),
+                component(DoseComponent::Nitrogen, vec![1.0, 1.0]),
+                component(DoseComponent::Hydrogen, vec![1.0, 1.0]),
+                component(DoseComponent::Photon, vec![1.0, 1.0]),
+            ],
+            physical_total: PhysicalTotalDoseVolume {
+                unit: DoseUnit::GrayPerSourceParticle,
+                values: vec![5.0, 5.0],
+                absolute_standard_uncertainty: None,
+                uncertainty_method: TotalUncertaintyMethod::Unavailable,
+            },
+            provenance_id: "src".into(),
+        };
+        let t = 2.0;
+        let out = pk_integrated_dose_bundle(
+            &bundle,
+            &decaying_model(),
+            &[mask("A", &[true, false])],
+            0.0,
+            t,
+            3.0,
+            "prov".into(),
+        )
+        .unwrap();
+        out.validate().unwrap();
+        let boron = &out.components[0];
+        let nitrogen = &out.components[1];
+        assert_eq!(boron.unit, DoseUnit::Gray);
+        // Masked voxel: S·I(t)/C_plan·B — I/C = 10(1−e^(−0.2)).
+        let i_a = 10.0 * (1.0 - (-0.2_f64).exp());
+        assert!((boron.values[0] - 3.0 * i_a * 2.0).abs() < 1e-9);
+        // Unmasked voxel: constant concentration → S·t·B.
+        assert!((boron.values[1] - 3.0 * t * 2.0).abs() < 1e-9);
+        // Non-boron components scale by duration only.
+        assert!((nitrogen.values[0] - 3.0 * t * 1.0).abs() < 1e-9);
+        assert_eq!(
+            out.physical_total.values[0],
+            out.components.iter().map(|c| c.values[0]).sum::<f64>()
+        );
+        assert_eq!(
+            out.physical_total.uncertainty_method,
+            TotalUncertaintyMethod::Unavailable
+        );
     }
 }
