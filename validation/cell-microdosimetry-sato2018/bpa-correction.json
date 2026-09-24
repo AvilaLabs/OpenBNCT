@@ -1,0 +1,42 @@
+{
+  "schema_version": "openbnct.microdistribution-correction/0.1.0",
+  "id": "bpa-sato2018",
+  "deposition": {
+    "nucleus": {
+      "alpha_to_nucleus": 0.2500190915265807,
+      "li_to_nucleus": 0.44737121981213057,
+      "combined_to_nucleus": 0.3217835018122352
+    },
+    "cytoplasm": {
+      "alpha_to_nucleus": 0.0725115456832043,
+      "li_to_nucleus": 0.1087359415190731,
+      "combined_to_nucleus": 0.08568405325988386
+    },
+    "membrane": {
+      "alpha_to_nucleus": 0.0432978944051748,
+      "li_to_nucleus": 0.048105711983006706,
+      "combined_to_nucleus": 0.04504619170620458
+    },
+    "extracellular": {
+      "alpha_to_nucleus": 0.03534438634513976,
+      "li_to_nucleus": 0.030814684445159838,
+      "combined_to_nucleus": 0.03369722201787433
+    }
+  },
+  "uniform_reference": {
+    "alpha_to_nucleus": 0.07905433706340774,
+    "li_to_nucleus": 0.11826123384362772,
+    "combined_to_nucleus": 0.09331139043803319
+  },
+  "nucleus_dose_fraction": 0.07424695038664177,
+  "nucleus_dose_factor": 0.7956901085505541,
+  "nucleus_dose_factor_1sigma": 0.049335903821885504,
+  "intercellular_dose_cv": 0.0,
+  "heterogeneity_note": "nucleus dose scales linearly with per-cell ¹⁰B uptake, so the declared intercellular_cv transfers unchanged to the cell-to-cell dose distribution; its effect on population survival is nonlinear and materializes in downstream isoeffective/survival evaluation, not in this record",
+  "model": {
+    "id": "bpa-sato2018",
+    "sha256": "f612909e635792b6d1a7520f461e2cd52de9cbc319199ef9dcdd3a094c281e0f"
+  },
+  "qualification": "first_order_geometric_microdosimetry_research_only_not_clinical",
+  "provenance_id": "microdistribution:bpa-sato2018"
+}

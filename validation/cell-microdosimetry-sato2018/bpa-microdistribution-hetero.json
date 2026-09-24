@@ -1,0 +1,25 @@
+{
+  "schema_version": "openbnct.boron-microdistribution/0.1.0",
+  "id": "bpa-sato2018-hetero",
+  "cell_radius_um": 5.0,
+  "nucleus_radius_um": 3.0,
+  "extracellular_extent_um": 6.0,
+  "compartments": {
+    "nucleus": 0.0,
+    "nucleus_1sigma": 0.0,
+    "cytoplasm": 0.78,
+    "cytoplasm_1sigma": 0.05,
+    "membrane": 0.0,
+    "membrane_1sigma": 0.0,
+    "extracellular": 0.22,
+    "extracellular_1sigma": 0.05
+  },
+  "intercellular_cv": 0.4,
+  "intercellular_cv_1sigma": 0.1,
+  "alpha_energy_mev": 1.47,
+  "alpha_range_um": 9.0,
+  "li_energy_mev": 0.84,
+  "li_range_um": 5.0,
+  "validity_domain": "Sato et al. 2018 (Sci Rep 8:988) BPA compartment fractions: N_n=N_s=0 (amino-acid-transporter uptake distributes in cytoplasm, not nucleus), N_c=0.78, N_e=0.22 \u2014 intra/extra \u2248 3.2 measured for malignant cells. Concentric cell r=5 \u00b5m, nucleus r=3 \u00b5m matching their PHITS geometry (their concentric case). Intercellular CV 0.4 declared \u2014 inside Sato et al.\u2019s studied \u03c3 range 0\u20130.6 for uptake heterogeneity.",
+  "provenance_id": "cell-microdosimetry-sato2018"
+}

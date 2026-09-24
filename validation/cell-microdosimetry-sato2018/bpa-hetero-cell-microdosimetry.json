@@ -1,0 +1,79 @@
+{
+  "schema_version": "openbnct.cell-microdosimetry/0.1.0",
+  "id": "bpa-sato2018-hetero",
+  "microdistribution": {
+    "id": "bpa-sato2018-hetero",
+    "sha256": "82099a90c1c206602ee356c89106f7cc6baee6f618995bc8c93dec13485f746b"
+  },
+  "cell_radius_um": 5.0,
+  "nucleus_radius_um": 3.0,
+  "extracellular_extent_um": 6.0,
+  "sampling": {
+    "mean_captures_per_cell": 20.0,
+    "cell_count": 20000,
+    "seed": 42,
+    "nucleus_density_kg_m3": 1000.0
+  },
+  "z_bin_edges_gy": [
+    0.0,
+    0.25,
+    0.5,
+    1.0,
+    2.0,
+    4.0,
+    8.0,
+    16.0,
+    32.0
+  ],
+  "z_bin_counts": [
+    36,
+    108,
+    472,
+    1678,
+    4991,
+    8665,
+    3655,
+    92
+  ],
+  "untouched_fraction": 0.01515,
+  "mean_specific_energy_gy": 5.335730841349167,
+  "nucleus_lineal_spectrum": {
+    "schema_version": "openbnct.lineal-spectrum/0.1.0",
+    "id": "bpa-sato2018-hetero.nucleus-spectrum",
+    "bin_edges_kev_um": [
+      0.0,
+      10.0,
+      50.0,
+      100.0,
+      200.0,
+      400.0,
+      1000.0
+    ],
+    "values": [
+      261.0,
+      6583.0,
+      18212.0,
+      60570.0,
+      36596.0,
+      0.0
+    ],
+    "weighting": "event_frequency",
+    "value_unit": "compound_capture_events",
+    "derivation": null,
+    "note": "nucleus-domain lineal spectrum sampled in the compartmented cell under the bound microdistribution; per-capture compound events (α+⁷Li), rectilinear CSDA tracks, unit-density tissue"
+  },
+  "statistics": {
+    "cells_simulated": 20000,
+    "captures_simulated": 400009,
+    "nucleus_hits": 122222,
+    "compartment_captures": {
+      "nucleus": 0,
+      "cytoplasm": 312221,
+      "membrane": 0,
+      "extracellular": 87788
+    }
+  },
+  "validity_note": "Stochastic sample under model \"bpa-sato2018-hetero\" (Sato et al. 2018 (Sci Rep 8:988) BPA compartment fractions: N_n=N_s=0 (amino-acid-transporter uptake distributes in cytoplasm, not nucleus), N_c=0.78, N_e=0.22 — intra/extra ≈ 3.2 measured for malignant cells. Concentric cell r=5 µm, nucleus r=3 µm matching their PHITS geometry (their concentric case). Intercellular CV 0.4 declared — inside Sato et al.’s studied σ range 0–0.6 for uptake heterogeneity.): straight CSDA tracks, constant LET, isotropic α/⁷Li back-to-back emission, Poisson captures, gamma uptake heterogeneity (CV = 0.4), unit-density nucleus. No straggling, no non-concentric geometry, no cell-to-cell track sharing beyond the extracellular shell.",
+  "provenance_id": "cell-microdosimetry:bpa-sato2018-hetero",
+  "qualification": "cell_microdosimetry_research_only_not_clinical"
+}

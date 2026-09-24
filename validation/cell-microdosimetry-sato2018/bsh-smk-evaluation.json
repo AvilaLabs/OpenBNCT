@@ -1,0 +1,54 @@
+{
+  "schema_version": "openbnct.smk-evaluation/0.1.0",
+  "id": "bsh-sato2018",
+  "cell_microdosimetry": {
+    "id": "bsh-sato2018",
+    "sha256": "bd615a2051776b88816d3ecfee2a3be03201e6e294a37b2155ae6756e0aca83f"
+  },
+  "parameters": {
+    "alpha_per_gy": 0.0422,
+    "beta_per_gy2": 0.00822,
+    "reference_alpha_per_gy": 0.0422,
+    "reference_beta_per_gy2": 0.00822,
+    "boron_dose_gy_at_mean_captures": 5.0,
+    "dose_levels_gy": [
+      1.0,
+      2.0,
+      4.0,
+      8.0
+    ]
+  },
+  "points": [
+    {
+      "dose_gy": 1.0,
+      "smk_survival": 0.9683934004419485,
+      "mk_survival": 0.9692651454041367,
+      "isosurvival_reference_gy": 0.6728721904419108,
+      "rbe": 0.6728721904419108
+    },
+    {
+      "dose_gy": 2.0,
+      "smk_survival": 0.9298794836637057,
+      "mk_survival": 0.9328531757665289,
+      "isosurvival_reference_gy": 1.3616195433899796,
+      "rbe": 0.6808097716949898
+    },
+    {
+      "dose_gy": 4.0,
+      "smk_survival": 0.83858285289824,
+      "mk_survival": 0.8459389059447474,
+      "isosurvival_reference_gy": 2.7250948766737193,
+      "rbe": 0.6812737191684298
+    },
+    {
+      "dose_gy": 8.0,
+      "smk_survival": 0.6416934951947374,
+      "mk_survival": 0.6390394075341196,
+      "isosurvival_reference_gy": 5.21514492902351,
+      "rbe": 0.6518931161279388
+    }
+  ],
+  "validity_note": "Sampled per-cell z rescales linearly with macroscopic boron dose about the declared anchor — the SMK small-λ approximation; exact in the capture-rich limit. Survival is the population integral over the declared LQ-domain coefficients; RBE is the isosurvival ratio against the declared photon LQ reference. Research scope only — not a clinical RBE claim.",
+  "provenance_id": "smk:bsh-sato2018",
+  "qualification": "cell_microdosimetry_research_only_not_clinical"
+}

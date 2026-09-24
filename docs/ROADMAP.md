@@ -1582,12 +1582,19 @@ internal comparison.
   photon LQ reference. `openbnct.smk-evaluation/0.1.0`, `bio smk`.
   The model document's sha256 is verified against the artifact's
   binding before evaluation.
-- **R14-03 — literature anchoring.** Anchor the sampler against a
-  published cell-irradiation scenario (e.g. a BPA/F-BPA survival
-  curve with reported subcellular fractions) and a PHITS-style
-  microdosimetric benchmark where geometry is published. The
-  machinery is deterministic; the validation question is model
-  fidelity, not code correctness.
+- **R14-03 — literature anchoring. (landed)**
+  `validation/cell-microdosimetry-sato2018` anchors both layers on
+  Sato et al. 2018 (Sci Rep 8:988 — the same SMK family, PHITS
+  microdosimetry): their published compartment fractions (BPA
+  cytoplasm 0.78/extracellular 0.22; BSH membrane 0.48/extracellular
+  0.52) on their published geometry (cell 5 µm, nucleus 3 µm,
+  concentric) reproduce their published nucleus-dose conversion
+  factors within 3–7% (0.796 vs κ_B 0.82; 0.420 vs κ_B 0.45), and
+  their fitted SMK parameters (α₀ 0.0422, β₀ 0.00822) reproduce
+  their published findings — S_BPA < S_BSH at equal dose,
+  intercellular heterogeneity lifting high-dose survival, a larger
+  untouched fraction for membrane-bound BSH, and the SMK–MK
+  high-dose divergence.
 - **R14-05 — measured-microdistribution import. (landed)**
   `openbnct.boron-microdistribution-measurement/0.1.0` declares an
   assay (autoradiography, ion microbeam, track imaging,
