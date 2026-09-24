@@ -969,6 +969,455 @@ fn endpoint_at_scaled(
     Ok(stat * source_strength * t)
 }
 
+pub const PK_TISSUE_SPEC_SCHEMA: &str = "openbnct.pk-tissue-spec/0.1.0";
+pub const PK_SCHEDULE_SCHEMA: &str = "openbnct.pk-schedule/0.1.0";
+
+/// `openbnct.pk-tissue-spec/0.1.0` — declared tumor-to-blood ratio
+/// evolution for one or more regions, applied to a blood PK model.
+///
+/// `T/B(t) = t_over_b_asymptote + (t_over_b_initial −
+/// t_over_b_asymptote)·e^(−μt)` from infusion end; the product with a
+/// blood curve `Σaᵢe^(−λᵢt)` stays in the exponential family, so the
+/// derived tissue curve is exact, not sampled.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PkTissueSpec {
+    #[serde(deserialize_with = "openbnct_core::deserialize_contract_id")]
+    pub schema_version: String,
+    pub id: String,
+    pub regions: Vec<PkTissueRegion>,
+    /// Free-text basis — the PET time series, literature ratio, or
+    /// compartment model the evolution was derived from. Required.
+    pub basis: String,
+    pub provenance_id: String,
+}
+
+/// One region's declared T/B evolution, applied to a named blood
+/// curve from the parent model.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PkTissueRegion {
+    /// The dose region this tissue curve describes (e.g. `gtv`).
+    pub region: String,
+    /// The blood-model region whose curve carries the blood
+    /// concentration — typically the model's single `blood` entry;
+    /// one blood curve feeds as many tissue regions as the spec
+    /// declares.
+    pub blood_region: String,
+    /// T/B at infusion end (epoch zero of the blood curves).
+    pub t_over_b_initial: f64,
+    /// Asymptotic T/B as t → ∞.
+    pub t_over_b_asymptote: f64,
+    /// Evolution rate μ in s⁻¹; 0 pins T/B constant at the asymptote
+    /// (initial is then ignored for the dynamics but still declared).
+    pub rate_per_s: f64,
+    /// The tissue concentration in ppm the dose map was computed at
+    /// for this region — the normalization the PK scaling divides by.
+    pub planned_concentration_ppm: f64,
+}
+
+impl PkTissueSpec {
+    pub fn validate(&self) -> Result<(), ManifestError> {
+        if !openbnct_core::schema_matches(&self.schema_version, PK_TISSUE_SPEC_SCHEMA) {
+            return Err(ManifestError::Invalid(format!(
+                "unsupported pk-tissue-spec schema {:?}",
+                self.schema_version
+            )));
+        }
+        if self.id.trim().is_empty()
+            || self.basis.trim().is_empty()
+            || self.provenance_id.trim().is_empty()
+        {
+            return Err(ManifestError::Invalid(
+                "pk-tissue-spec id, basis, and provenance_id must be non-empty".into(),
+            ));
+        }
+        if self.regions.is_empty() {
+            return Err(ManifestError::Invalid(
+                "pk-tissue-spec declares no regions".into(),
+            ));
+        }
+        for region in &self.regions {
+            if region.region.trim().is_empty()
+                || region.blood_region.trim().is_empty()
+                || !region.t_over_b_initial.is_finite()
+                || !region.t_over_b_asymptote.is_finite()
+                || region.t_over_b_initial <= 0.0
+                || region.t_over_b_asymptote <= 0.0
+                || !region.rate_per_s.is_finite()
+                || region.rate_per_s < 0.0
+                || !region.planned_concentration_ppm.is_finite()
+                || region.planned_concentration_ppm <= 0.0
+            {
+                return Err(ManifestError::Invalid(format!(
+                    "pk-tissue-spec region {:?}: ratios and planned concentration must be finite positive, rate non-negative",
+                    region.region
+                )));
+            }
+        }
+        Ok(())
+    }
+}
+
+/// Fold a T/B-evolution spec into a blood PK model: each spec region
+/// emits a *new* curve under its own dose-region name — the product
+/// `C_blood[blood_region](t)·T/B(t)`, analytically a sum of `2n`
+/// exponentials. Blood regions no spec references keep their curve
+/// (so the emitted model still carries `blood` for regions that track
+/// it). The basis records both parents for audit.
+pub fn apply_tissue_spec(
+    spec: &PkTissueSpec,
+    blood: &PkModel,
+    model_id: &str,
+) -> Result<PkModel, ManifestError> {
+    spec.validate()?;
+    blood.validate()?;
+    let mut regions = Vec::with_capacity(blood.regions.len() + spec.regions.len());
+    let mut referenced = Vec::new();
+    for tissue in &spec.regions {
+        let blood_region = blood
+            .regions
+            .iter()
+            .find(|r| r.region == tissue.blood_region)
+            .ok_or_else(|| {
+                ManifestError::Invalid(format!(
+                    "pk-tissue-spec region {:?}: blood region {:?} not in the model",
+                    tissue.region, tissue.blood_region
+                ))
+            })?;
+        referenced.push(tissue.blood_region.clone());
+        let mut amplitudes = Vec::with_capacity(blood_region.amplitudes_ppm.len() * 2);
+        let mut rates = Vec::with_capacity(amplitudes.capacity());
+        // Σ aᵢ·T_∞ e^(−λᵢt) — the asymptotic branch.
+        for (a, l) in blood_region
+            .amplitudes_ppm
+            .iter()
+            .zip(blood_region.rates_per_s.iter())
+        {
+            amplitudes.push(a * tissue.t_over_b_asymptote);
+            rates.push(*l);
+        }
+        // Σ aᵢ·(T₀ − T_∞) e^(−(λᵢ+μ)t) — the transient branch.
+        for (a, l) in blood_region
+            .amplitudes_ppm
+            .iter()
+            .zip(blood_region.rates_per_s.iter())
+        {
+            amplitudes.push(a * (tissue.t_over_b_initial - tissue.t_over_b_asymptote));
+            rates.push(*l + tissue.rate_per_s);
+        }
+        regions.push(PkRegion {
+            region: tissue.region.clone(),
+            planned_concentration_ppm: tissue.planned_concentration_ppm,
+            amplitudes_ppm: amplitudes,
+            rates_per_s: rates,
+        });
+    }
+    for blood_region in &blood.regions {
+        if !referenced.iter().any(|r| r == &blood_region.region) {
+            regions.push(blood_region.clone());
+        }
+    }
+    Ok(PkModel {
+        schema_version: PK_MODEL_SCHEMA.into(),
+        id: model_id.into(),
+        basis: format!(
+            "tissue-scaled from {} under {} ({})",
+            blood.id, spec.id, spec.basis
+        ),
+        regions,
+    })
+}
+
+/// The region's integrated boron exposure `I_r(t) = (1/C_plan)·∫₀ᵗ
+/// C(τ)dτ` — the total concentration-time product the boron map
+/// scales by. The effective *rate* factor on the `O + f·B` map is
+/// `I(t)/t`. Regions without a declared curve return `t` (constant
+/// concentration).
+pub fn pk_integrated_scale(pk: &PkModel, region: &str, t: f64) -> f64 {
+    let Some(curve) = pk.regions.iter().find(|r| r.region == region) else {
+        return t;
+    };
+    curve
+        .amplitudes_ppm
+        .iter()
+        .zip(curve.rates_per_s.iter())
+        .map(|(a, l)| {
+            if *l == 0.0 {
+                a * t
+            } else {
+                a * (1.0 - (-l * t).exp()) / l
+            }
+        })
+        .sum::<f64>()
+        / curve.planned_concentration_ppm
+}
+
+/// The model evaluated at a beam-on epoch `w` after the curves' epoch
+/// zero — each term's amplitude rescales by `e^(−λᵢw)`, which is exact
+/// for the exponential family (no refit).
+pub fn pk_shifted(pk: &PkModel, beam_on_epoch_s: f64) -> PkModel {
+    let mut shifted = pk.clone();
+    for region in &mut shifted.regions {
+        for (a, l) in region
+            .amplitudes_ppm
+            .iter_mut()
+            .zip(region.rates_per_s.iter())
+        {
+            *a *= (-l * beam_on_epoch_s).exp();
+        }
+    }
+    shifted
+}
+
+/// Endpoint statistic of the time-scaled map `O + f_r(t)·B` over one
+/// region's mask — the same quantity the irradiation-time solver
+/// solves against, exposed for schedule evaluation.
+#[allow(clippy::too_many_arguments)]
+pub fn pk_region_endpoint(
+    pk: &PkModel,
+    region: &str,
+    mask: &RegionMask,
+    metric: LimitMetric,
+    t_s: f64,
+    other: &[f64],
+    boron: &[f64],
+    source_strength: f64,
+) -> Result<f64, ManifestError> {
+    let invalid = |e: openbnct_core::ValidationError| {
+        ManifestError::Invalid(format!("region {region:?}: {e}"))
+    };
+    // Same convention as the solver: the effective rate is the
+    // time-averaged map O + (I(t)/t)·B — f = I(t)/(C_plan·t).
+    let f = if t_s > 0.0 {
+        pk_integrated_scale(pk, region, t_s) / t_s
+    } else {
+        1.0
+    };
+    let mut selected = Vec::new();
+    for (inside, (o, b)) in mask.voxels.iter().zip(other.iter().zip(boron.iter())) {
+        if *inside {
+            selected.push(o + f * b);
+        }
+    }
+    if selected.is_empty() {
+        return Err(invalid(openbnct_core::ValidationError::EmptyMask(
+            region.into(),
+        )));
+    }
+    let stat = match metric {
+        LimitMetric::Max => selected.iter().copied().fold(0.0, f64::max),
+        LimitMetric::Mean => openbnct_core::mean(&selected),
+        LimitMetric::DoseCoverage { percent } => {
+            openbnct_core::dose_covering_percent(&selected, f64::from(percent)).map_err(invalid)?
+        }
+    };
+    Ok(stat * source_strength * t_s)
+}
+
+/// One candidate beam-on window's outcome.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PkScheduleWindow {
+    /// Beam-on epoch after the curves' epoch zero, in seconds.
+    pub beam_on_epoch_s: f64,
+    /// Per-organ-limit solves at this window (same shape as the
+    /// irradiation-time report).
+    pub regions: Vec<PkRegionResult>,
+    /// The limiting structure and admissible beam-on duration.
+    pub limiting: Option<crate::limits::LimitingStructure>,
+    /// Tumor-region dose deliverable inside the limiting duration, in
+    /// `endpoint_unit × source_strength` units (Gy when the source is
+    /// declared). `None` when the irradiation is unbounded.
+    pub tumor_dose: Option<f64>,
+    /// The constant-concentration reference for the same quantity.
+    pub tumor_dose_static: Option<f64>,
+}
+
+/// `openbnct.pk-schedule/0.1.0` — the deliverable-dose landscape over
+/// a declared beam-on-window grid. The optimal window maximizes the
+/// tumor-region dose subject to the organ limits; the whole landscape
+/// is recorded, not just the winner.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PkScheduleReport {
+    #[serde(deserialize_with = "openbnct_core::deserialize_contract_id")]
+    pub schema_version: String,
+    pub case_id: String,
+    pub quantity: String,
+    /// Content binding of the dose artifact evaluated.
+    pub source: ContentReference,
+    /// Content binding of the PK model evaluated.
+    pub pk_model: ContentReference,
+    pub endpoint_unit: String,
+    pub source_strength_per_s: f64,
+    /// The tumor region and statistic the deliverable dose reports.
+    pub tumor_region: String,
+    pub tumor_metric: LimitMetric,
+    pub windows: Vec<PkScheduleWindow>,
+    /// Index into `windows` of the dose-maximizing feasible window;
+    /// `None` when no window yields a finite deliverable dose.
+    pub optimal_window_index: Option<usize>,
+    pub assumptions: Vec<String>,
+}
+
+/// Evaluate the irradiation-window landscape: for each declared
+/// beam-on epoch, shift the PK curves, solve the organ limits, and
+/// report the tumor-region dose deliverable inside the limiting
+/// duration — alongside the constant-concentration reference so the
+/// PK-vs-fixed gap is explicit per window.
+#[allow(clippy::too_many_arguments)]
+pub fn evaluate_pk_schedule(
+    case_id: &str,
+    quantity: &str,
+    source: ContentReference,
+    pk_model: ContentReference,
+    pk: &PkModel,
+    unit: &str,
+    total_values: &[f64],
+    boron_values: &[f64],
+    masks: &[RegionMask],
+    limits: &[OrganLimit],
+    tumor_region: &str,
+    tumor_metric: LimitMetric,
+    source_strength: f64,
+    window_epochs_s: &[f64],
+) -> Result<PkScheduleReport, ManifestError> {
+    if window_epochs_s.is_empty() {
+        return Err(ManifestError::Invalid(
+            "pk schedule requires at least one beam-on epoch".into(),
+        ));
+    }
+    for &w in window_epochs_s {
+        if !w.is_finite() || w < 0.0 {
+            return Err(ManifestError::Invalid(
+                "beam-on epochs must be finite and non-negative".into(),
+            ));
+        }
+    }
+    let tumor_mask = masks
+        .iter()
+        .find(|m| m.name == tumor_region)
+        .ok_or_else(|| {
+            ManifestError::Invalid(format!("no mask for tumor region {tumor_region:?}"))
+        })?;
+    if tumor_mask.voxels.len() != total_values.len() {
+        return Err(ManifestError::Invalid(format!(
+            "tumor mask covers {} voxels, endpoint map has {}",
+            tumor_mask.voxels.len(),
+            total_values.len()
+        )));
+    }
+    let other: Vec<f64> = total_values
+        .iter()
+        .zip(boron_values.iter())
+        .map(|(t, b)| (t - b).max(0.0))
+        .collect();
+    // Constant-concentration tumor reference at each window — the
+    // duration the static model would allow times its static rate.
+    let static_rate = {
+        let mut selected = Vec::new();
+        for (inside, (o, b)) in tumor_mask
+            .voxels
+            .iter()
+            .zip(other.iter().zip(boron_values.iter()))
+        {
+            if *inside {
+                selected.push(o + b);
+            }
+        }
+        let stat = match tumor_metric {
+            LimitMetric::Max => selected.iter().copied().fold(0.0, f64::max),
+            LimitMetric::Mean => openbnct_core::mean(&selected),
+            LimitMetric::DoseCoverage { percent } => {
+                openbnct_core::dose_covering_percent(&selected, f64::from(percent)).map_err(
+                    |e| ManifestError::Invalid(format!("tumor region {tumor_region:?}: {e}")),
+                )?
+            }
+        };
+        stat * source_strength
+    };
+    let mut windows = Vec::with_capacity(window_epochs_s.len());
+    for &epoch in window_epochs_s {
+        let shifted = pk_shifted(pk, epoch);
+        let evaluation = PkIrradiationReport::evaluate(
+            case_id,
+            quantity,
+            source.clone(),
+            pk_model.clone(),
+            &shifted,
+            unit,
+            total_values,
+            boron_values,
+            masks,
+            limits,
+            source_strength,
+            None,
+        )?;
+        // Static reference: limiting static duration × static rate.
+        let static_limiting = evaluation
+            .regions
+            .iter()
+            .filter_map(|r| r.static_max_time_s)
+            .min_by(f64::total_cmp);
+        let tumor_dose_static = static_limiting.map(|t| static_rate * t);
+        let tumor_dose = evaluation
+            .limiting
+            .as_ref()
+            .map(|limiting| {
+                pk_region_endpoint(
+                    &shifted,
+                    tumor_region,
+                    tumor_mask,
+                    tumor_metric,
+                    limiting.max_time_s,
+                    &other,
+                    boron_values,
+                    source_strength,
+                )
+            })
+            .transpose()?;
+        windows.push(PkScheduleWindow {
+            beam_on_epoch_s: epoch,
+            regions: evaluation.regions,
+            limiting: evaluation.limiting,
+            tumor_dose,
+            tumor_dose_static,
+        });
+    }
+    let optimal_window_index = windows
+        .iter()
+        .enumerate()
+        .filter_map(|(i, w)| w.tumor_dose.map(|d| (i, d)))
+        .max_by(|(ia, da), (ib, db)| {
+            da.total_cmp(db).then_with(|| {
+                windows[*ia]
+                    .beam_on_epoch_s
+                    .total_cmp(&windows[*ib].beam_on_epoch_s)
+            })
+        })
+        .map(|(i, _)| i);
+    Ok(PkScheduleReport {
+        schema_version: PK_SCHEDULE_SCHEMA.into(),
+        case_id: case_id.into(),
+        quantity: quantity.into(),
+        source,
+        pk_model,
+        endpoint_unit: unit.into(),
+        source_strength_per_s: source_strength,
+        tumor_region: tumor_region.into(),
+        tumor_metric,
+        windows,
+        optimal_window_index,
+        assumptions: vec![
+            "boron dose scales linearly with regional 10B concentration; other components are concentration-independent".into(),
+            "beam-on epoch shifts are exact on the declared exponential curves; within each window the curves continue their decay".into(),
+            "the optimal window maximizes the declared tumor-region statistic subject to the declared limits — not a clinical prescription".into(),
+            "PK curves are declared research inputs with a stated basis; scheduling conclusions inherit their uncertainty".into(),
+        ],
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1217,5 +1666,149 @@ mod tests {
         .unwrap();
         assert_eq!(report.regions[0].max_time_s, None);
         assert!(report.limiting.is_none());
+    }
+
+    #[test]
+    fn tissue_scale_product_is_exact() {
+        // Blood curve C_b = 10·e^(−0.1t); T/B rises 1 → 4 at μ = 0.05.
+        // C_t(t) = C_b·T/B must equal the direct product at any t.
+        let blood = PkModel {
+            schema_version: PK_MODEL_SCHEMA.into(),
+            id: "blood".into(),
+            basis: "unit test".into(),
+            regions: vec![PkRegion {
+                region: "tumor".into(),
+                planned_concentration_ppm: 10.0,
+                amplitudes_ppm: vec![10.0],
+                rates_per_s: vec![0.1],
+            }],
+        };
+        let spec = PkTissueSpec {
+            schema_version: PK_TISSUE_SPEC_SCHEMA.into(),
+            id: "tb".into(),
+            basis: "unit test".into(),
+            provenance_id: "t".into(),
+            regions: vec![PkTissueRegion {
+                region: "tumor".into(),
+                blood_region: "tumor".into(),
+                t_over_b_initial: 1.0,
+                t_over_b_asymptote: 4.0,
+                rate_per_s: 0.05,
+                planned_concentration_ppm: 40.0,
+            }],
+        };
+        let model = apply_tissue_spec(&spec, &blood, "tissue").unwrap();
+        let curve = &model.regions[0];
+        assert_eq!(curve.amplitudes_ppm.len(), 2);
+        // Direct product vs the derived exponential pair.
+        for t in [0.0, 5.0, 20.0, 100.0] {
+            let blood_c = 10.0 * (-0.1_f64 * t).exp();
+            let tb = 4.0 + (1.0 - 4.0) * (-0.05_f64 * t).exp();
+            let derived: f64 = curve
+                .amplitudes_ppm
+                .iter()
+                .zip(curve.rates_per_s.iter())
+                .map(|(a, l)| a * (-l * t).exp())
+                .sum();
+            assert!(
+                (derived - blood_c * tb).abs() < 1e-9 * (blood_c * tb).max(1.0),
+                "t={t}: derived {derived} vs product {}",
+                blood_c * tb
+            );
+        }
+        assert_eq!(curve.planned_concentration_ppm, 40.0);
+    }
+
+    #[test]
+    fn schedule_recovers_known_optimal_window() {
+        // OAR boron curve decays fast (washes out), tumor T/B-evolving
+        // curve peaks late: the optimal beam-on must be the late
+        // window, never epoch zero.
+        let pk = PkModel {
+            schema_version: PK_MODEL_SCHEMA.into(),
+            id: "sched".into(),
+            basis: "unit test".into(),
+            regions: vec![
+                PkRegion {
+                    region: "skin".into(),
+                    planned_concentration_ppm: 10.0,
+                    // C_s = 5 + 5·e^(−0.02t): normal tissue keeps a 5
+                    // ppm floor while the blood component washes out —
+                    // every window still binds, but later beam-on sees
+                    // a weaker skin rate.
+                    amplitudes_ppm: vec![5.0, 5.0],
+                    rates_per_s: vec![0.0, 0.02],
+                },
+                PkRegion {
+                    region: "tumor".into(),
+                    planned_concentration_ppm: 20.0,
+                    // Rising then flat: C_t = 20·(2 − e^(−t/600)) —
+                    // asymptotic 40 ppm term plus a −20·e^(−t/600)
+                    // transient (negative amplitude is admissible).
+                    amplitudes_ppm: vec![40.0, -20.0],
+                    rates_per_s: vec![0.0, 1.0 / 600.0],
+                },
+            ],
+        };
+        // Endpoint per source particle: boron-only map, uniform.
+        let total = vec![1.0];
+        let boron = vec![1.0];
+        let masks = [mask("skin", &[true]), mask("tumor", &[true])];
+        let limits = [OrganLimit {
+            region: "skin".into(),
+            metric: LimitMetric::Mean,
+            limit: 5.0,
+        }];
+        let report = evaluate_pk_schedule(
+            "case",
+            "component:boron",
+            source(),
+            pk_ref(),
+            &pk,
+            "gray_per_source_particle",
+            &total,
+            &boron,
+            &masks,
+            &limits,
+            "tumor",
+            LimitMetric::Mean,
+            1.0,
+            &[0.0, 30.0, 90.0],
+        )
+        .unwrap();
+        // Waiting lets the skin transient wash out while the tumor
+        // curve keeps rising — deliverable dose must grow with wait.
+        let doses: Vec<f64> = report
+            .windows
+            .iter()
+            .map(|w| w.tumor_dose.unwrap())
+            .collect();
+        assert!(doses[1] > doses[0], "{doses:?}");
+        assert!(doses[2] > doses[1], "{doses:?}");
+        assert_eq!(report.optimal_window_index, Some(2));
+        // The static reference ignores PK evolution — identical
+        // across windows and equal to the zero-PK answer.
+        let statics: Vec<f64> = report
+            .windows
+            .iter()
+            .map(|w| w.tumor_dose_static.unwrap())
+            .collect();
+        assert!((statics[0] - statics[2]).abs() < 1e-9 * statics[0]);
+    }
+
+    #[test]
+    fn shifted_model_matches_epoch_offset() {
+        // f at beam-on epoch w must equal integrating the unshifted
+        // curve from w to w+t — the algebraic identity the schedule
+        // relies on.
+        let pk = decaying_model();
+        let w = 3.0;
+        let t = 2.0;
+        let shifted = pk_shifted(&pk, w);
+        let f_shifted = pk_integrated_scale(&shifted, "A", t);
+        // Unshifted: [I(w+t) − I(w)] / C_plan with I(t)=100(1−e^(−0.1t)).
+        let integral = |t: f64| 100.0 * (1.0 - (-0.1 * t).exp());
+        let f_direct = (integral(w + t) - integral(w)) / 10.0;
+        assert!((f_shifted - f_direct).abs() < 1e-12 * f_direct);
     }
 }

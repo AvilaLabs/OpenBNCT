@@ -2023,6 +2023,37 @@ Endpoints in absolute units (not per-source-particle), non-positive source
 strengths, limits without a same-named mask, and zero-statistic regions
 are reported explicitly — the last as unbounded rather than an error.
 
+`openbnct pk` carries the pharmacokinetic layer the `--pk-model` flag
+consumes. `pk fit` builds an `openbnct.pk-model/0.1.0` — per-region
+exponential concentration curves — from measured draws
+(`openbnct.pk-samples/0.1.0`); `irradiation-time --pk-model` then solves
+beam-off under decaying concentration instead of the fixed-concentration
+approximation. `pk tissue-scale` folds a declared tumor-to-blood
+evolution (`openbnct.pk-tissue-spec/0.1.0`,
+`T/B(t) = T∞ + (T₀ − T∞)·e^(−μt)`) into a blood model — the product
+stays in the exponential family so the tissue curves are exact.
+`pk schedule` searches the irradiation window: for each declared beam-on
+epoch it shifts the curves, solves the organ limits, and reports the
+deliverable tumor-region dose, emitting `openbnct.pk-schedule/0.1.0`
+with the full landscape, the dose-maximizing window, and the
+constant-concentration reference for comparison:
+
+```text
+openbnct pk fit --samples PK-SAMPLES.json --id blood.v1 \
+  --output NEW-PK-MODEL.json
+openbnct pk tissue-scale --blood-model PK-MODEL.json \
+  --spec PK-TISSUE-SPEC.json --id tissue.v1 --output NEW-TISSUE-PK.json
+openbnct pk schedule --dose DOSE-BUNDLE.json --quantity physical_total \
+  --source-strength 1e9 \
+  --limit SKIN=mean:5.0 --mask SKIN=skin.json --mask GTV=gtv.json \
+  --pk-model NEW-TISSUE-PK.json \
+  --window-s 0,900,1800,3600 --tumor-region GTV --tumor-metric mean \
+  --output NEW-SCHEDULE.json
+```
+
+All three artifacts are research-only: the curves are declared inputs
+with a stated basis, not a fitted clinical model.
+
 `openbnct position` provides research positioning helpers. `position aim`
 derives a fixed source whose beam axis passes through a region mask's
 centroid: the source plane is placed just inside the bounding-box face the

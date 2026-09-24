@@ -51,8 +51,11 @@ pub use metrics::{
     CoverageMetric, DOSE_METRICS_SCHEMA, EudMetric, RegionDoseMetrics, VolumeMetric,
 };
 pub use pk::{
-    PK_IRRADIATION_SCHEMA, PK_MODEL_SCHEMA, PK_SAMPLES_SCHEMA, PkIrradiationReport, PkModel,
-    PkRegion, PkRegionResult, PkSample, PkSampleSeries, PkSamples, PkTimeUncertainty, fit_pk_model,
+    PK_IRRADIATION_SCHEMA, PK_MODEL_SCHEMA, PK_SAMPLES_SCHEMA, PK_SCHEDULE_SCHEMA,
+    PK_TISSUE_SPEC_SCHEMA, PkIrradiationReport, PkModel, PkRegion, PkRegionResult, PkSample,
+    PkSampleSeries, PkSamples, PkScheduleReport, PkScheduleWindow, PkTimeUncertainty,
+    PkTissueRegion, PkTissueSpec, apply_tissue_spec, evaluate_pk_schedule, fit_pk_model,
+    pk_integrated_scale, pk_region_endpoint, pk_shifted,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

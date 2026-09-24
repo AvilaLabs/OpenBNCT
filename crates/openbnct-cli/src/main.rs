@@ -375,6 +375,17 @@ enum Command {
     },
     /// Pharmacokinetic boron-concentration tooling.
     Pk {
+        #[command(subcommand)]
+        command: PkCommand,
+    },
+}
+
+/// Pharmacokinetic boron-concentration tooling.
+#[derive(Debug, Subcommand)]
+enum PkCommand {
+    /// Fit per-region exponential concentration curves from measured
+    /// draws (`openbnct.pk-model/0.1.0`).
+    Fit {
         /// PkSamples JSON (`openbnct.pk-samples/0.1.0`) — measured
         /// concentration draws per region.
         #[arg(long)]
@@ -387,7 +398,63 @@ enum Command {
         exponentials: usize,
         /// New output path for the fitted PK model JSON
         /// (`openbnct.pk-model/0.1.0`), consumable by
-        /// `irradiation-time --pk-model`.
+        /// `irradiation-time --pk-model` and `pk schedule`.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Fold a declared tumor-to-blood evolution into a blood PK
+    /// model — `C_tissue = C_blood·T/B(t)` stays in the exponential
+    /// family, so the emitted `openbnct.pk-model` is exact.
+    TissueScale {
+        /// Blood PK model JSON (`openbnct.pk-model/0.1.0`).
+        #[arg(long)]
+        blood_model: PathBuf,
+        /// T/B evolution spec JSON (`openbnct.pk-tissue-spec/0.1.0`).
+        #[arg(long)]
+        spec: PathBuf,
+        /// Identifier for the emitted tissue PK model artifact.
+        #[arg(long)]
+        id: String,
+        /// New output path for the tissue-scaled PK model JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Irradiation-window search: solve the organ limits at each
+    /// declared beam-on epoch and report the deliverable tumor dose —
+    /// the PK-vs-fixed gap is explicit per window
+    /// (`openbnct.pk-schedule/0.1.0`).
+    Schedule {
+        /// Physical or biological dose bundle JSON.
+        #[arg(long)]
+        dose: PathBuf,
+        /// `component:NAME`, `physical_total`, or `biological_total`.
+        #[arg(long)]
+        quantity: String,
+        /// Source strength in source particles per second.
+        #[arg(long)]
+        source_strength: f64,
+        /// Region limit `NAME=max|mean|dN:LIMIT` in endpoint dose
+        /// units. Repeatable.
+        #[arg(long = "limit", required = true)]
+        limits: Vec<String>,
+        /// RegionMask binding `NAME=path`; repeatable.
+        #[arg(long = "mask", required = true)]
+        masks: Vec<String>,
+        /// PK model JSON (`openbnct.pk-model/0.1.0`) — blood or
+        /// tissue-scaled curves over the post-infusion epoch.
+        #[arg(long)]
+        pk_model: PathBuf,
+        /// Beam-on epochs after the curves' epoch zero, seconds —
+        /// comma-separated or repeatable.
+        #[arg(long = "window-s", required = true, value_delimiter = ',')]
+        windows_s: Vec<f64>,
+        /// Tumor region the deliverable dose reports.
+        #[arg(long)]
+        tumor_region: String,
+        /// Tumor statistic: `max`, `mean`, or `dN` (default `mean`).
+        #[arg(long, default_value = "mean")]
+        tumor_metric: String,
+        /// New output path for the schedule report JSON.
         #[arg(long)]
         output: PathBuf,
     },
@@ -11056,26 +11123,227 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 }
             }
         }
-        Some(Command::Pk {
-            samples,
-            id,
-            exponentials,
-            output,
-        }) => {
-            let samples_doc: openbnct_evidence::PkSamples =
-                serde_json::from_slice(&fs::read(&samples)?)?;
-            let model = openbnct_evidence::fit_pk_model(&samples_doc, &id, exponentials)?;
-            write_new_json(&output, &model)?;
-            println!("pk model at {}", output.display());
-            for region in &model.regions {
-                println!(
-                    "{}: {} exponential terms, planned {} ppm",
-                    region.region,
-                    region.amplitudes_ppm.len(),
-                    region.planned_concentration_ppm
-                );
+        Some(Command::Pk { command }) => match command {
+            PkCommand::Fit {
+                samples,
+                id,
+                exponentials,
+                output,
+            } => {
+                let samples_doc: openbnct_evidence::PkSamples =
+                    serde_json::from_slice(&fs::read(&samples)?)?;
+                let model = openbnct_evidence::fit_pk_model(&samples_doc, &id, exponentials)?;
+                write_new_json(&output, &model)?;
+                println!("pk model at {}", output.display());
+                for region in &model.regions {
+                    println!(
+                        "{}: {} exponential terms, planned {} ppm",
+                        region.region,
+                        region.amplitudes_ppm.len(),
+                        region.planned_concentration_ppm
+                    );
+                }
             }
-        }
+            PkCommand::TissueScale {
+                blood_model,
+                spec,
+                id,
+                output,
+            } => {
+                let blood: openbnct_evidence::PkModel =
+                    serde_json::from_slice(&fs::read(&blood_model)?)?;
+                let tissue_spec: openbnct_evidence::PkTissueSpec =
+                    serde_json::from_slice(&fs::read(&spec)?)?;
+                let model = openbnct_evidence::apply_tissue_spec(&tissue_spec, &blood, &id)?;
+                write_new_json(&output, &model)?;
+                println!("tissue-scaled pk model at {}", output.display());
+                for region in &model.regions {
+                    println!(
+                        "{}: {} exponential terms, planned {} ppm",
+                        region.region,
+                        region.amplitudes_ppm.len(),
+                        region.planned_concentration_ppm
+                    );
+                }
+            }
+            PkCommand::Schedule {
+                dose,
+                quantity,
+                source_strength,
+                limits,
+                masks,
+                pk_model,
+                windows_s,
+                tumor_region,
+                tumor_metric,
+                output,
+            } => {
+                let dose_bytes = fs::read(&dose)?;
+                let schema: serde_json::Value = serde_json::from_slice(&dose_bytes)?;
+                let mut region_masks = Vec::with_capacity(masks.len());
+                for binding in &masks {
+                    let (name, path) = binding
+                        .split_once('=')
+                        .ok_or_else(|| io::Error::other("--mask entries must be NAME=path"))?;
+                    let mask = read_region_mask(Path::new(path))?;
+                    if mask.name != name {
+                        return Err(io::Error::other(format!(
+                            "--mask {name}: mask file names itself {:?}",
+                            mask.name
+                        ))
+                        .into());
+                    }
+                    region_masks.push(mask);
+                }
+                let metric_of = |name: &str, token: &str| {
+                    Ok(match token {
+                        "max" => openbnct_evidence::LimitMetric::Max,
+                        "mean" => openbnct_evidence::LimitMetric::Mean,
+                        other if other.starts_with('d') && other.len() > 1 => {
+                            let percent: u16 = other[1..].parse().map_err(|_| {
+                                io::Error::other(format!(
+                                    "{name}: invalid dose-coverage metric {other:?}"
+                                ))
+                            })?;
+                            if !(1..=100).contains(&percent) {
+                                return Err(io::Error::other(format!(
+                                    "{name}: dose-coverage percent {percent} out of 1..=100"
+                                )));
+                            }
+                            openbnct_evidence::LimitMetric::DoseCoverage { percent }
+                        }
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "{name}: unknown metric {other:?} (max|mean|dN)"
+                            )));
+                        }
+                    })
+                };
+                let mut organ_limits = Vec::with_capacity(limits.len());
+                for entry in &limits {
+                    let (name, rest) = entry.split_once('=').ok_or_else(|| {
+                        io::Error::other("--limit entries must be NAME=max|mean|dN:LIMIT")
+                    })?;
+                    let (metric, value) = rest.split_once(':').ok_or_else(|| {
+                        io::Error::other("--limit entries must be NAME=max|mean|dN:LIMIT")
+                    })?;
+                    let limit: f64 = value.parse().map_err(|_| {
+                        io::Error::other(format!("--limit {name}: invalid limit {value:?}"))
+                    })?;
+                    organ_limits.push(openbnct_evidence::OrganLimit {
+                        region: name.to_owned(),
+                        metric: metric_of(&format!("--limit {name}"), metric)?,
+                        limit,
+                    });
+                }
+                let tumor_metric = metric_of("--tumor-metric", &tumor_metric)?;
+                let dose_source = openbnct_core::ContentReference {
+                    id: dose.display().to_string(),
+                    sha256: openbnct_evidence::sha256_file(&dose)?,
+                };
+                let dose_schema = openbnct_core::normalize_contract_id(
+                    schema
+                        .get("schema_version")
+                        .and_then(|v| v.as_str())
+                        .unwrap_or_default(),
+                );
+                let pk: openbnct_evidence::PkModel = serde_json::from_slice(&fs::read(&pk_model)?)?;
+                let (case_id, total, boron, unit) = match dose_schema.as_str() {
+                    openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
+                        let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+                        let (total, total_unit) = dose_values(&bundle, &quantity)?;
+                        let (total, boron, unit) = pk_boron_split(
+                            &quantity,
+                            total,
+                            total_unit,
+                            bundle.components.iter().map(|v| {
+                                (
+                                    v.component,
+                                    v.values.as_slice(),
+                                    match v.unit {
+                                        openbnct_core::DoseUnit::Gray => "gray",
+                                        openbnct_core::DoseUnit::GrayPerSourceParticle => {
+                                            "gray_per_source_particle"
+                                        }
+                                    },
+                                )
+                            }),
+                        )?;
+                        (bundle.case_id.clone(), total, boron, unit)
+                    }
+                    openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
+                        let bundle: openbnct_bio::BiologicalDoseBundle =
+                            serde_json::from_slice(&dose_bytes)?;
+                        let (total, total_unit) = biological_dose_values(&bundle, &quantity)?;
+                        let (total, boron, unit) = pk_boron_split(
+                            &quantity,
+                            total,
+                            total_unit,
+                            bundle
+                                .components
+                                .iter()
+                                .map(|v| (v.component, v.values.as_slice(), v.unit.as_str())),
+                        )?;
+                        (bundle.case_id.clone(), total, boron, unit)
+                    }
+                    other => {
+                        return Err(io::Error::other(format!(
+                            "unsupported dose bundle schema {other:?}"
+                        ))
+                        .into());
+                    }
+                };
+                let report = openbnct_evidence::evaluate_pk_schedule(
+                    &case_id,
+                    &quantity,
+                    dose_source,
+                    openbnct_core::ContentReference {
+                        id: pk_model.display().to_string(),
+                        sha256: openbnct_evidence::sha256_file(&pk_model)?,
+                    },
+                    &pk,
+                    &unit,
+                    &total,
+                    &boron,
+                    &region_masks,
+                    &organ_limits,
+                    &tumor_region,
+                    tumor_metric,
+                    source_strength,
+                    &windows_s,
+                )?;
+                write_new_json(&output, &report)?;
+                println!("pk schedule at {}", output.display());
+                for window in &report.windows {
+                    let limiting = window
+                        .limiting
+                        .as_ref()
+                        .map(|l| format!("{:.0} s ({})", l.max_time_s, l.region))
+                        .unwrap_or_else(|| "unbounded".into());
+                    println!(
+                        "  +{:.0} s: beam-on {} | tumor dose {} | static {}",
+                        window.beam_on_epoch_s,
+                        limiting,
+                        window
+                            .tumor_dose
+                            .map(|d| format!("{d:.6}"))
+                            .unwrap_or_else(|| "—".into()),
+                        window
+                            .tumor_dose_static
+                            .map(|d| format!("{d:.6}"))
+                            .unwrap_or_else(|| "—".into()),
+                    );
+                }
+                if let Some(index) = report.optimal_window_index {
+                    let w = &report.windows[index];
+                    println!(
+                        "optimal window: beam-on at +{:.0} s, tumor dose {:.6}",
+                        w.beam_on_epoch_s,
+                        w.tumor_dose.unwrap_or(0.0)
+                    );
+                }
+            }
+        },
         Some(Command::Metrics {
             dose,
             quantity,

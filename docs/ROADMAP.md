@@ -1576,6 +1576,44 @@ internal comparison.
   surrogated). Region masks and fractionated EQD2 are open follow-on
   scope.
 
+## R15 — Pharmacokinetic completion (draft)
+
+Published patient data put the fixed-concentration approximation's
+error at ~11%: boron concentration changes *during* the beam-on
+window, and the tumor-to-blood ratio evolves on its own timescale
+after infusion ends. The existing `openbnct.pk-model` layer already
+carries per-region exponential concentration curves, an implicit
+beam-off solve, and bootstrap time intervals — but it pins beam-on
+to epoch zero and accepts only hand-authored or blood-fitted
+curves. This milestone closes the scheduling loop the literature
+optimizes (~4% GTV dose from window choice alone) and bridges
+tissue kinetics into the same curve family.
+
+- **R15-01 — tissue-PK authoring. (landed)** `openbnct.pk-tissue-spec`
+  declares a tumor-to-blood evolution `T/B(t) = T_∞ +
+  (T₀ − T_∞)·e^(−μt)` per region. The product with a blood
+  concentration curve `Σaᵢe^(−λᵢt)` stays in the exponential family
+  — `ΣaᵢT_∞e^(−λᵢt) + Σaᵢ(T₀−T_∞)e^(−(λᵢ+μ)t)` — so tissue curves
+  drop out exactly as an `openbnct.pk-model`, with the blood model's
+  hash bound into the spec application. `pk tissue-scale`.
+- **R15-02 — irradiation-window search. (landed)** A beam-on epoch
+  `w` after infusion-end rescales each term's amplitude by
+  `e^(−λᵢw)` — an exact operation on the declared curves, no solver
+  changes. `pk schedule` evaluates a declared window grid: per
+  window it solves every organ-limit beam-off, then reports the
+  deliverable dose at a declared tumor region/metric and the
+  limiting structure. `openbnct.pk-schedule/0.1.0` records the full
+  window table, the dose-maximizing window, the bindings, and the
+  constant-concentration reference for deviation reporting.
+- **R15-03 — cumulative map emission.** The time-integrated field
+  `O·t* + B·f_r(t*)` (per-region f) as a real dose-volume artifact
+  per solved schedule — feedable to `bio apply` and `report`.
+- **R15-04 — published-anchor validation.** Reproduce the
+  documented ~11% fixed-vs-PK deviation scale and the sign of the
+  optimal-window gain on a declared curve family matching published
+  BPA-F half-lives; the machinery is deterministic so this is a
+  model-fidelity check, not a code check.
+
 ## R12 — Optional Avify Dose integration (planned; IP review required)
 
 **Adopted:** 2026-09-22, at the project owner's direction.
