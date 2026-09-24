@@ -30,6 +30,7 @@ pub use interchange::{
 pub use registration::{
     LandmarkPair, REGISTRATION_SCHEMA, Registration, RegistrationError, RegistrationMethod,
     RigidTransform, declared_registration, fit_landmark_transform, landmark_registration,
+    shared_for_registration,
 };
 pub use stats::{
     dose_covering_percent, equivalent_uniform_dose, masked_values, mean, volume_at_least,

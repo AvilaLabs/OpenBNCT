@@ -182,6 +182,11 @@ pub enum RegistrationMethod {
     /// record carries no residual evidence — accuracy is the declared
     /// source's responsibility.
     Declared,
+    /// Both series declare the same DICOM Frame of Reference UID —
+    /// the transform is identity by construction and the shared UID
+    /// is the evidence. Common case for PET/MR co-acquired with the
+    /// planning CT.
+    SharedFrameOfReference,
 }
 
 /// A versioned registration record: the transform, its method, the
@@ -207,6 +212,11 @@ pub struct Registration {
     /// RMS point residual of the fit in millimetres.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub rms_residual_mm: Option<f64>,
+    /// The DICOM Frame of Reference UID both series declare — the
+    /// evidence for a `shared_frame_of_reference` record, absent on
+    /// other methods.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub frame_of_reference_uid: Option<String>,
     /// Free-text provenance note (fiducial system, external tool).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub note: Option<String>,
@@ -271,6 +281,50 @@ impl Registration {
                     ));
                 }
             }
+            RegistrationMethod::SharedFrameOfReference => {
+                if self.landmarks.is_some() || self.rms_residual_mm.is_some() {
+                    return Err(RegistrationError::Invalid(
+                        "shared frame-of-reference registrations carry no landmark evidence".into(),
+                    ));
+                }
+                if self
+                    .frame_of_reference_uid
+                    .as_deref()
+                    .is_none_or(|uid| uid.trim().is_empty())
+                {
+                    return Err(RegistrationError::Invalid(
+                        "shared frame-of-reference registrations require frame_of_reference_uid"
+                            .into(),
+                    ));
+                }
+                let identity = RigidTransform::identity();
+                let transform_is_identity = self
+                    .transform
+                    .rotation
+                    .iter()
+                    .zip(identity.rotation.iter())
+                    .all(|(a, b)| (a - b).abs() <= ROTATION_TOLERANCE)
+                    && self
+                        .transform
+                        .translation_mm
+                        .iter()
+                        .zip(identity.translation_mm.iter())
+                        .all(|(a, b)| (a - b).abs() <= ROTATION_TOLERANCE);
+                if !transform_is_identity {
+                    return Err(RegistrationError::Invalid(
+                        "shared frame-of-reference registrations must carry the identity transform"
+                            .into(),
+                    ));
+                }
+            }
+        }
+        if self.method != RegistrationMethod::SharedFrameOfReference
+            && self.frame_of_reference_uid.is_some()
+        {
+            return Err(RegistrationError::Invalid(
+                "frame_of_reference_uid is only meaningful on shared_frame_of_reference records"
+                    .into(),
+            ));
         }
         Ok(())
     }
@@ -567,6 +621,7 @@ pub fn landmark_registration(
         method: RegistrationMethod::LandmarkLeastSquares,
         landmarks: Some(landmarks),
         rms_residual_mm: Some(rms),
+        frame_of_reference_uid: None,
         note,
     };
     registration.validate()?;
@@ -590,6 +645,36 @@ pub fn declared_registration(
         method: RegistrationMethod::Declared,
         landmarks: None,
         rms_residual_mm: None,
+        frame_of_reference_uid: None,
+        note,
+    };
+    registration.validate()?;
+    Ok(registration)
+}
+
+/// Build a validated shared-frame-of-reference registration: the
+/// transform is identity by construction, the declared Frame of
+/// Reference UID both series share is the evidence. This is the
+/// common case for a PET or MR series co-acquired with the planning
+/// CT — no fit, no external matrix, just the declared coordinate
+/// system.
+pub fn shared_for_registration(
+    id: impl Into<String>,
+    moving: Option<ContentReference>,
+    fixed: Option<ContentReference>,
+    frame_of_reference_uid: impl Into<String>,
+    note: Option<String>,
+) -> Result<Registration, RegistrationError> {
+    let registration = Registration {
+        schema_version: REGISTRATION_SCHEMA.into(),
+        id: id.into(),
+        moving,
+        fixed,
+        transform: RigidTransform::identity(),
+        method: RegistrationMethod::SharedFrameOfReference,
+        landmarks: None,
+        rms_residual_mm: None,
+        frame_of_reference_uid: Some(frame_of_reference_uid.into()),
         note,
     };
     registration.validate()?;
@@ -798,5 +883,49 @@ mod tests {
         // A declared record must not carry fabricated landmark evidence.
         declared.landmarks = Some(vec![]);
         assert!(declared.validate().is_err());
+    }
+
+    #[test]
+    fn shared_for_registration_is_identity_and_self_evident() {
+        let registration = shared_for_registration(
+            "reg.shared-for",
+            None,
+            None,
+            "1.2.840.113619.2.55.3",
+            Some("co-acquired PET/CT".into()),
+        )
+        .unwrap();
+        registration.validate().unwrap();
+        assert_eq!(
+            registration.method,
+            RegistrationMethod::SharedFrameOfReference
+        );
+        assert_eq!(registration.transform, RigidTransform::identity());
+        assert_eq!(
+            registration.frame_of_reference_uid.as_deref(),
+            Some("1.2.840.113619.2.55.3")
+        );
+
+        // A non-identity transform is not a shared-FoR registration —
+        // that claim needs a fit or a declared matrix.
+        let mut broken = registration.clone();
+        broken.transform.translation_mm[0] = 1.0;
+        assert!(broken.validate().is_err());
+        let mut rotated = registration.clone();
+        rotated.transform.rotation[0] = 0.0;
+        rotated.transform.rotation[3] = -1.0;
+        assert!(rotated.validate().is_err());
+
+        // The shared UID is the record's evidence — absent or empty
+        // fails; other methods must not carry the field.
+        let mut no_uid = registration.clone();
+        no_uid.frame_of_reference_uid = None;
+        assert!(no_uid.validate().is_err());
+        let mut empty_uid = registration.clone();
+        empty_uid.frame_of_reference_uid = Some(" ".into());
+        assert!(empty_uid.validate().is_err());
+        let mut mislabeled = registration.clone();
+        mislabeled.method = RegistrationMethod::Declared;
+        assert!(mislabeled.validate().is_err());
     }
 }

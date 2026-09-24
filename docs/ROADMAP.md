@@ -1284,12 +1284,15 @@ Each item is evidence-gated; none implies a clinical claim.
   inherits OpenMC defaults; expose declared thread/particle parallelism
   (OMP thread count, MPI launch where present) on run manifests and the
   GUI run surface so runs are reproducible under resource limits.
-- **R10-03 — DICOM MR import and PET/MR-to-CT resampling.** Research
-  targeting is MRI-defined; accept MR Image Storage series for display
-  and overlay, resample PET/MR volumes onto the case CT grid by declared
-  rigid transform (frame-of-reference or explicit matrix), and record
-  the registration basis in the artifact. Deformable registration stays
-  deferred.
+- **R10-03 — DICOM MR import and PET/MR-to-CT resampling. (landed)**
+  MR Image Storage series import via `dicom import-mr` (rescaled
+  intensities, TR/TE metadata, never pseudo-HU) → NIfTI; resampling
+  onto the case CT grid flows through `register apply` under a
+  recorded `openbnct.registration` basis — landmark fits, declared
+  matrices, and now `shared_frame_of_reference` for series
+  co-acquired on one FoR (identity transform by construction, the
+  declared UID as evidence; a non-identity transform under this
+  method is rejected). Deformable registration stays deferred.
 - **R10-04 — beam-direction search. (landed)** `plan directions`
   enumerates an azimuth×elevation grid converging on the aim-mask
   centroid, ranks by tissue path length to the centroid (zero-transport

@@ -1627,6 +1627,11 @@ paths exist:
   exported from an external registration tool). It requires a provenance
   note stating where the numbers came from; no landmark evidence is
   fabricated for declared transforms.
+- `frame-of-reference` records the common case where the moving and
+  fixed series share one DICOM Frame of Reference UID — the transform
+  is identity *by construction* and the declared UID (tag 0020,0052)
+  is the evidence. A non-identity transform fails validation under
+  this method: a real offset needs a fit or a declared matrix.
 
 ```text
 openbnct register landmarks \
@@ -1638,6 +1643,11 @@ openbnct register declare \
   --id REG-002 --rotation "1,0,0,0,1,0,0,0,1" \
   --translation-mm "0,0,0" \
   --note "identity: PET and CT acquired in one session" \
+  --output NEW-REGISTRATION.json
+openbnct register frame-of-reference \
+  --id REG-003 --uid 1.2.826.0.1.3680043.9.7 \
+  --moving PET.nii.gz --fixed CT-STACK.nii.gz \
+  --note "co-acquired PET/CT session" \
   --output NEW-REGISTRATION.json
 openbnct register info --registration REGISTRATION.json
 openbnct register apply \

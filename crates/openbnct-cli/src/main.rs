@@ -741,6 +741,32 @@ enum RegisterCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Record a shared-DICOM-frame-of-reference registration — the
+    /// transform is identity by construction; the shared Frame of
+    /// Reference UID both series declare is the evidence. The common
+    /// case for a PET or MR series co-acquired with the planning CT.
+    FrameOfReference {
+        /// Registration id.
+        #[arg(long)]
+        id: String,
+        /// Frame of Reference UID both series declare
+        /// (DICOM tag 0020,0052).
+        #[arg(long)]
+        uid: String,
+        /// Moving image file whose content hash is bound into the
+        /// record.
+        #[arg(long)]
+        moving: Option<PathBuf>,
+        /// Fixed (target) image file whose content hash is bound.
+        #[arg(long)]
+        fixed: Option<PathBuf>,
+        /// Free-text provenance note (acquisition, protocol).
+        #[arg(long)]
+        note: Option<String>,
+        /// New output path for the registration JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Print a registration document's transform and evidence.
     Info {
         /// `openbnct.registration/0.1.0` JSON document.
@@ -11672,6 +11698,29 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 println!("registration at {}", output.display());
                 println!("method: declared");
             }
+            RegisterCommand::FrameOfReference {
+                id,
+                uid,
+                moving,
+                fixed,
+                note,
+                output,
+            } => {
+                let registration = openbnct_core::shared_for_registration(
+                    id,
+                    image_reference(&moving)?,
+                    image_reference(&fixed)?,
+                    uid,
+                    note,
+                )?;
+                write_new_json(&output, &registration)?;
+                println!("registration at {}", output.display());
+                println!("method: shared_frame_of_reference (identity transform)");
+                println!(
+                    "frame of reference: {}",
+                    registration.frame_of_reference_uid.as_deref().unwrap_or("")
+                );
+            }
             RegisterCommand::Info { registration } => {
                 let registration: openbnct_core::Registration =
                     serde_json::from_slice(&fs::read(&registration)?)?;
@@ -11688,6 +11737,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 );
                 if let Some(rms) = registration.rms_residual_mm {
                     println!("rms residual: {rms:.6} mm");
+                }
+                if let Some(for_uid) = &registration.frame_of_reference_uid {
+                    println!("frame of reference: {for_uid}");
                 }
                 for (label, reference) in [
                     ("moving", &registration.moving),
