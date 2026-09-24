@@ -1,0 +1,233 @@
+{
+  "schema_version": "openbnct.pg-observation/0.1.0",
+  "id": "pg-observation-two-vials-r2",
+  "case_id": "fir1-k63-cylindrical-phantom",
+  "detectors": [
+    {
+      "response": {
+        "id": "pg-response-d0",
+        "sha256": "1498bab313d39568a770b4a2ab8129e3daff575ed30c8c88ff948ff8b665ac57"
+      },
+      "measured_tally": 2.946031945016972e-17
+    },
+    {
+      "response": {
+        "id": "pg-response-d1",
+        "sha256": "99ee6274fad550047dca847603f2315db0673c93b60e0127b7a4b97fc26d7157"
+      },
+      "measured_tally": 3.6195996137127825e-18
+    },
+    {
+      "response": {
+        "id": "pg-response-d2",
+        "sha256": "bb418a46c3d1fa8dd3325bf6172c397768c378600d475717a05c8c59e03c21bf"
+      },
+      "measured_tally": 1.369634335005771e-16
+    },
+    {
+      "response": {
+        "id": "pg-response-d3",
+        "sha256": "750a05f5f200bea5f75d32aa9ed98565855a2f42fe7d4420df588d78e7084025"
+      },
+      "measured_tally": 1.8129396211436534e-17
+    },
+    {
+      "response": {
+        "id": "pg-response-d4",
+        "sha256": "493df733a74f83749ef1265f15fffd55657326bad0a8e19d6f4d52e37f2ae561"
+      },
+      "measured_tally": 2.6496922906374356e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d5",
+        "sha256": "d7c715ca62ce5df141798200a340ec31b93838f576c75b296b24db9fe24e5b22"
+      },
+      "measured_tally": 1.8408969759161173e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d6",
+        "sha256": "b0112c2aaf6b599b1563127f820ae3d55cd051a1d5804c50648aab2417007439"
+      },
+      "measured_tally": 6.344562883609296e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d7",
+        "sha256": "a93373b75b3a474abfcea6c3d81f0eb176b064a767040a5dfc59518ede28500a"
+      },
+      "measured_tally": 3.876082056573032e-14
+    },
+    {
+      "response": {
+        "id": "pg-response-d8",
+        "sha256": "2bcc4daeb33cbf16d6261c6788940d4acb4fd3ddce6166aa033cb635a914f3ac"
+      },
+      "measured_tally": 7.733952066402801e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d9",
+        "sha256": "2656776398d775dab77032b8572fe9f0fa1c581719d38ba418e193eec6c460f8"
+      },
+      "measured_tally": 4.1609233789137107e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d10",
+        "sha256": "f881b98c31214e47aca9c23ea4f2b270de461a7803579ece21d39c5898e7ee06"
+      },
+      "measured_tally": 3.9053218887801066e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d11",
+        "sha256": "cab8379fce612e7f807cd7412f30d6c7b3f4fb5a4adee9712ba77efa424fcffe"
+      },
+      "measured_tally": 3.6106891398886444e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d12",
+        "sha256": "60d2191dc66a74b44e25d8330a1dcdc1422f65a9a9560f6da275a45e52d4c1d6"
+      },
+      "measured_tally": 2.87083555214477e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d13",
+        "sha256": "696b60b3b0eb4536b9344569ef695567454ffc1a7b26e61c1314628686e5ade0"
+      },
+      "measured_tally": 2.165732135016673e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d14",
+        "sha256": "14d171d6b88252d77ea971f106a45c0e81e44de7e4bb04cf25000639e6858bd2"
+      },
+      "measured_tally": 2.9667374857307616e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d15",
+        "sha256": "3743c5a464feec3a20b18a7e5a8ceb17072e298ed8eaeefa121e5a44a081fac9"
+      },
+      "measured_tally": 1.773543300240994e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d16",
+        "sha256": "6df1267e2df299b4221c62e22e0a08a7ae3bb3c03a1d1c158e75848db37ee8e0"
+      },
+      "measured_tally": 7.520324168515311e-16
+    },
+    {
+      "response": {
+        "id": "pg-response-d17",
+        "sha256": "0183c884fdf50fd251c5ecfbc1f7ab233fcb58c73fdeb43b80e66b4ba2aa6653"
+      },
+      "measured_tally": 1.0597429911059881e-16
+    },
+    {
+      "response": {
+        "id": "pg-response-d18",
+        "sha256": "041c0c8aeabf0b60b59317d78e232115ec4ea23266a5a41466c9a24c5903bc25"
+      },
+      "measured_tally": 3.6018838481157254e-15
+    },
+    {
+      "response": {
+        "id": "pg-response-d19",
+        "sha256": "a7d4d3cee846470b182f5b7ac838c9b7f73f8db65b4132a17386029d0c909a5c"
+      },
+      "measured_tally": 5.446230976408498e-16
+    },
+    {
+      "response": {
+        "id": "pg-response-d20",
+        "sha256": "9b7e85263db6c8fe63989a7114bc0cc778ec766d506e2e2ded184913d5ce970e"
+      },
+      "measured_tally": 4.719535603831298e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d21",
+        "sha256": "12be0498adbc920c54c0f40a877b692b4e34dcadbd12cb15410998e41306706d"
+      },
+      "measured_tally": 6.418122211419268e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d22",
+        "sha256": "acf76acbf938247367d97e6e51b276495ef6f4920d18d2923442d188faf6aef4"
+      },
+      "measured_tally": 2.217377563661257e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-d23",
+        "sha256": "9d87e1feb421c4188107dc7b3381ea51384499b8bee525add90a4f21f43bde6e"
+      },
+      "measured_tally": 2.313649781564355e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-d24",
+        "sha256": "ba7f741b8c2331a42f26000a3836dabd4275446f6d99c6217103a1c2e49bf960"
+      },
+      "measured_tally": 5.934352926804161e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-d25",
+        "sha256": "30aeb1779ff3a33f87459580f177b9a53520ead12aadf4866d43aa1f098ae0ce"
+      },
+      "measured_tally": 3.828468659966017e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-d26",
+        "sha256": "a36aa1ec35b4c8dd996c6e707c357e1fef9a6b438fe69b028d60c88e74925fbf"
+      },
+      "measured_tally": 4.31015721299535e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-d27",
+        "sha256": "dbd18d6cce2f7b0e32ce0ef7c8d2caa6560fa552f09a5888d93dbecd78ac2a9d"
+      },
+      "measured_tally": 3.6164185171016546e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-d28",
+        "sha256": "4c1d54a175e0c998b30744d9ab02da4c2562f1253d6ff95ed1cfc83832df54b1"
+      },
+      "measured_tally": 1.8279091686117358e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-d29",
+        "sha256": "32f65ec48f3cf7589ce2725d61cf4caf13415f6d62642cd3f9f76576beee4acd"
+      },
+      "measured_tally": 2.512695156927401e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-d30",
+        "sha256": "bcff74420bbdccba273956f4491eb8151f911fbd228a5da73209ba67e91a30eb"
+      },
+      "measured_tally": 2.1480134447658614e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-d31",
+        "sha256": "c5d9017d4af367350782756db40fee9815bbc8a3b19efeaffded2751c559b876"
+      },
+      "measured_tally": 2.0925434172182873e-12
+    }
+  ],
+  "provenance_id": "pg-observation:pg-observation-two-vials-r2",
+  "qualification": "prompt_gamma_production_research_only_not_clinical"
+}

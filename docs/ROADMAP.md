@@ -1543,11 +1543,20 @@ Architecture (all artifacts versioned and hash-bound):
   closure on a synthetic operator is a committed unit test: a
   single-voxel emission folded through eight neighborhood-dominated
   response columns comes back peaked at the true voxel with the
-  residual declared. Remaining: closure on a real transported case
-  (the water-phantom chain works end-to-end but has no published
-  detector programme to compare against) and a literature-geometry
-  comparison (PMMA phantom + boron inserts as published by the
-  Nagoya/Polimi detector programmes).
+  residual declared. The real-transported-case and
+  literature-geometry halves are run and documented in
+  `validation/pg-benedicte-geometry` (BeNEdiCTE/LENA-style: two
+  transported boron vials 2 cm apart, void-ring detectors, ~60%
+  published efficiency). Honest result: the forward chain closes
+  end-to-end on real adjoint response maps, but **uncollimated
+  detectors cannot localize** — with 8 or 32 ring detectors the
+  response columns are near-identical smooth kernels, the inverse
+  is rank-deficient, and NNLS parks emission at detector-adjacent
+  voxels (~1e-9 vs true ~2e-6). The published <1 cm resolution
+  comes from the pinhole collimator our response model doesn't
+  carry. Remaining scope this identifies: collimation-aware `pg
+  response` (aperture geometry in the transport case or an angular
+  restriction on the detector tally).
 
 Runner-up scope item recorded for later scheduling: cell-level
 microdosimetry (stochastic α/⁷Li track sampling → lineal-energy

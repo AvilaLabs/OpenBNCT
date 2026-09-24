@@ -1,0 +1,65 @@
+{
+  "schema_version": "openbnct.pg-observation/0.1.0",
+  "id": "pg-observation-two-vials",
+  "case_id": "fir1-k63-cylindrical-phantom",
+  "detectors": [
+    {
+      "response": {
+        "id": "pg-response-det0",
+        "sha256": "d9d2950e2cb5c638233d4efdafbf03a16ddaff27a583f6b296e42894a777969c"
+      },
+      "measured_tally": 4.646138027850121e-17
+    },
+    {
+      "response": {
+        "id": "pg-response-det1",
+        "sha256": "cb24a5f6ed3287e23ee810a773cba70404716a220b27583aaf4cebda2a0d1f30"
+      },
+      "measured_tally": 5.740372125013389e-18
+    },
+    {
+      "response": {
+        "id": "pg-response-det2",
+        "sha256": "2b1a8fe947b8db3b5ca26749977c922894d2003420ba6725ceafd28596e66526"
+      },
+      "measured_tally": 2.1626062621093388e-16
+    },
+    {
+      "response": {
+        "id": "pg-response-det3",
+        "sha256": "a38d2fb52a1d421108c9ec190eea7af42d04431842860e11b0a809ca43536ab2"
+      },
+      "measured_tally": 2.877616952448142e-17
+    },
+    {
+      "response": {
+        "id": "pg-response-det4",
+        "sha256": "820727efbd7ab807005d70581925879443c76cf1d85bc8f715d9729883b3ffc9"
+      },
+      "measured_tally": 3.091124578300015e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-det5",
+        "sha256": "975a80483be0e845d59c3bbf3795cdd0a32059fca3f74de2e4058a04391e31b4"
+      },
+      "measured_tally": 2.623750313898792e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-det6",
+        "sha256": "edea7a71a61f17ecbbeb3be1e0c5c58620d3618ef406c7b4a110124a014ba84a"
+      },
+      "measured_tally": 8.348877736992349e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-det7",
+        "sha256": "6b6dacffddec11daaa62198e7e3b540899d42d8c5040b3a55c480f36aa3362a8"
+      },
+      "measured_tally": 5.3063243544645296e-14
+    }
+  ],
+  "provenance_id": "pg-observation:pg-observation-two-vials",
+  "qualification": "prompt_gamma_production_research_only_not_clinical"
+}
