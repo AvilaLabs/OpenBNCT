@@ -82,10 +82,11 @@ pub use positioning::{
 pub use prompt_gamma::{
     PROMPT_GAMMA_COUNTS_SCHEMA, PROMPT_GAMMA_ENERGY_EV, PROMPT_GAMMA_OBSERVATION_SCHEMA,
     PROMPT_GAMMA_QUALIFICATION, PROMPT_GAMMA_RECONSTRUCTION_SCHEMA, PROMPT_GAMMA_RESPONSE_SCHEMA,
-    PROMPT_GAMMA_SOURCE_SCHEMA, PromptGammaCounts, PromptGammaError, PromptGammaObservation,
-    PromptGammaObservationEntry, PromptGammaReconstruction, PromptGammaRegularization,
-    PromptGammaResponse, PromptGammaSource, PromptGammaUnit, collect_prompt_gamma_observation,
-    derive_prompt_gamma_source, expected_prompt_gamma_counts, reconstruct_prompt_gamma_emission,
+    PROMPT_GAMMA_SOURCE_SCHEMA, PgCollimation, PromptGammaCounts, PromptGammaError,
+    PromptGammaObservation, PromptGammaObservationEntry, PromptGammaReconstruction,
+    PromptGammaRegularization, PromptGammaResponse, PromptGammaSource, PromptGammaUnit,
+    collect_prompt_gamma_observation, derive_prompt_gamma_source, expected_prompt_gamma_counts,
+    reconstruct_prompt_gamma_emission,
 };
 pub use response::{
     AtomDensityBasis, ComponentDefinitionProfile, ComponentEstimator, ComponentRule,

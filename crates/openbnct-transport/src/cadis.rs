@@ -169,6 +169,7 @@ pub fn resolve_adjoint_windows(
                     data,
                     options,
                     &adjoint_source,
+                    None,
                     data_ref.clone(),
                     case_ref.clone(),
                 )?;
@@ -617,12 +618,14 @@ mod tests {
             &quadrature,
             &BoundarySource::new(),
             &q_fwd,
+            None,
             cref("d"),
             cref("c"),
         )
         .unwrap();
         let adjoint =
-            solve_multigroup_adjoint(&case, &mg, &opts, &q_adj, cref("d"), cref("c")).unwrap();
+            solve_multigroup_adjoint(&case, &mg, &opts, &q_adj, None, cref("d"), cref("c"))
+                .unwrap();
         let r_fwd: f64 = q_adj
             .iter()
             .zip(forward.flux.iter())
@@ -658,7 +661,8 @@ mod tests {
             }
         }
         let adjoint =
-            solve_multigroup_adjoint(&case, &mg, &opts, &q_adj, cref("d"), cref("c")).unwrap();
+            solve_multigroup_adjoint(&case, &mg, &opts, &q_adj, None, cref("d"), cref("c"))
+                .unwrap();
         assert!(adjoint.converged);
         // Profile along z at a fixed transverse cell — periodic x/y make
         // it uniform, so cell (0,0,k) suffices.

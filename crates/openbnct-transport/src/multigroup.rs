@@ -413,6 +413,11 @@ pub struct SnOptions {
     /// RHS so f = 1 stays an exact solution at the transport fixed
     /// point. `OPENBNCT_NO_CMR` also disables it (A/B diagnostics).
     pub coarse_rebalance: bool,
+    /// Within-group sweep break tolerance, overriding `convergence`
+    /// when set. The outer residual cannot descend far below the inner
+    /// accuracy floor, so a deep outer target needs a tighter inner
+    /// one; `None` keeps them equal (historic behavior).
+    pub inner_convergence: Option<f64>,
 }
 
 impl Default for SnOptions {
@@ -430,6 +435,7 @@ impl Default for SnOptions {
             anisotropy_order: 0,
             anderson_depth: 0,
             coarse_rebalance: true,
+            inner_convergence: None,
         }
     }
 }
@@ -1347,6 +1353,7 @@ fn sweep_group(
     g: usize,
     flux: &[Vec<f64>],
     fixed_source: &[Vec<f64>],
+    source_weights: Option<&[f64]>,
     psi_prev: &[Vec<f64>],
     psi: &mut [Vec<f64>],
     case_material: &[usize],
@@ -1458,7 +1465,7 @@ fn sweep_group(
                     // the fixed (first-collision or volumetric) source.
                     // The P1 term adds 3·Σ_a Ω_{d,a}·S_a(cell) — the
                     // anisotropic part of the scattering source.
-                    let q: f64 = fixed_source[cell][g]
+                    let q: f64 = fixed_source[cell][g] * source_weights.map_or(1.0, |w| w[d])
                         + (0..groups)
                             .map(|gp| scatter_eff[mi][gp * groups + g] * flux[cell][gp])
                             .sum::<f64>()
@@ -1677,6 +1684,7 @@ pub(crate) fn solve_multigroup_unchecked(
         &quadrature,
         &boundary,
         &fixed_source,
+        None,
         data_ref,
         case_ref,
     )?;
@@ -1705,11 +1713,16 @@ pub(crate) fn solve_multigroup_unchecked(
 /// vacuum/periodic faces, and the adjoint source as a volumetric
 /// emission density. `adjoint_source` is `[cell][group]` in arbitrary
 /// consistent units — importance is only ever used up to a global scale.
+/// `adjoint_source_weights` optionally restricts the source to a
+/// direction subset (per-ordinate factors, e.g. a collimator's
+/// acceptance cone): the adjoint then solves importance to a tally that
+/// only accepts forward particles arriving along those ordinates.
 pub fn solve_multigroup_adjoint(
     case: &TransportCase,
     data: &MultigroupData,
     options: &SnOptions,
     adjoint_source: &[Vec<f64>],
+    adjoint_source_weights: Option<&[f64]>,
     data_ref: ContentReference,
     case_ref: ContentReference,
 ) -> Result<MultigroupFlux, MultigroupError> {
@@ -1751,6 +1764,7 @@ pub fn solve_multigroup_adjoint(
         &quadrature,
         &BoundarySource::new(),
         adjoint_source,
+        adjoint_source_weights,
         data_ref,
         case_ref,
     )?;
@@ -2124,6 +2138,7 @@ pub(crate) fn solve_sn_problem(
     quadrature: &[([f64; 3], f64)],
     boundary: &BoundarySource,
     fixed_source: &[Vec<f64>],
+    source_weights: Option<&[f64]>,
     data_ref: ContentReference,
     case_ref: ContentReference,
 ) -> Result<MultigroupFlux, MultigroupError> {
@@ -2134,6 +2149,13 @@ pub(crate) fn solve_sn_problem(
     let n_dirs = quadrature.len();
     if fixed_source.len() != n_cells || fixed_source.iter().any(|row| row.len() != groups) {
         return Err(invalid("fixed source must be [cells][groups]".into()));
+    }
+    if let Some(w) = source_weights
+        && (w.len() != n_dirs || w.iter().any(|x| !x.is_finite() || *x < 0.0))
+    {
+        return Err(invalid(
+            "source weights must be one nonnegative finite value per ordinate".into(),
+        ));
     }
     // Effective removal cross section and self-scatter per (material,
     // group) under the extended transport correction: σ_t,tr = σ_t −
@@ -2299,6 +2321,21 @@ pub(crate) fn solve_sn_problem(
     let mut cmr_enabled = options.coarse_rebalance && std::env::var_os("OPENBNCT_NO_CMR").is_none();
     let mut cmr_best = f64::MAX;
     let mut cmr_stall = 0usize;
+    // The outer residual cannot descend far below the inner sweep's
+    // own break accuracy — a separate, tighter inner tolerance keeps
+    // deep outer targets reachable.
+    let inner_tolerance = options.inner_convergence.unwrap_or(options.convergence);
+    // Quadrature-averaged source weight — a direction-restricted
+    // source's scalar emission. The CMR balance integrates the source
+    // over directions, so it carries this factor, not the raw q.
+    let mean_source_weight = source_weights.map_or(1.0, |w| {
+        let omega_sum: f64 = quadrature.iter().map(|(_, omega)| omega).sum();
+        w.iter()
+            .zip(quadrature.iter())
+            .map(|(wd, (_, omega))| wd * omega)
+            .sum::<f64>()
+            / omega_sum.max(1e-30)
+    });
     for outer in 0..options.max_outer_iterations {
         let previous = flux.clone();
         if anderson.is_some() && outer % 2 == 0 {
@@ -2395,6 +2432,7 @@ pub(crate) fn solve_sn_problem(
                     g,
                     &flux,
                     fixed_source,
+                    source_weights,
                     &psi_prev,
                     &mut psi,
                     case_material,
@@ -2470,7 +2508,7 @@ pub(crate) fn solve_sn_problem(
                         change.max((new_flux - flux[cell][g]).abs() / new_flux.abs().max(1e-30));
                     flux[cell][g] = *new_flux;
                 }
-                if change < options.convergence {
+                if change < inner_tolerance {
                     break;
                 }
             }
@@ -2576,7 +2614,7 @@ pub(crate) fn solve_sn_problem(
                         m_term[r][b][bj] +=
                             scatter[(bs + bj) * groups + gi] * flux[cell][bs + bj] * volume;
                     }
-                    let mut q = fixed_source[cell][gi] * volume;
+                    let mut q = fixed_source[cell][gi] * mean_source_weight * volume;
                     for gf in 0..bs {
                         q += scatter[gf * groups + gi] * flux[cell][gf] * volume;
                     }
@@ -3072,6 +3110,7 @@ pub(crate) mod tests {
             anisotropy_order: 0,
             anderson_depth: 0,
             coarse_rebalance: true,
+            inner_convergence: None,
         }
     }
 
@@ -3629,6 +3668,7 @@ pub(crate) mod tests {
             &mg,
             &SnOptions {
                 coarse_rebalance: false,
+                inner_convergence: None,
                 ..opts
             },
             cref("mg"),
@@ -4036,5 +4076,41 @@ mod artifact_tests {
                 "{dir} profile comparison must pass"
             );
         }
+    }
+
+    /// `inner_convergence` splits the within-group break tolerance from
+    /// the outer-residual target: `None` preserves the historical
+    /// shared value, and a tighter explicit value still solves the same
+    /// problem to the same fixed point.
+    #[test]
+    fn inner_convergence_option_splits_from_outer_tolerance() {
+        let case = crate::multigroup::tests::slab_case();
+        let mg = crate::multigroup::tests::data(&[0.5], vec![0.0]);
+        let mut shared = crate::multigroup::tests::options();
+        shared.convergence = 1e-8;
+        let mut split = shared.clone();
+        split.inner_convergence = Some(1e-12);
+        let cref = |id: &str, b: u8| ContentReference {
+            id: id.into(),
+            sha256: (b.to_string()).repeat(64),
+        };
+        let a = solve_multigroup(&case, &mg, &shared, cref("d", 0), cref("c", 1)).unwrap();
+        let b = solve_multigroup(&case, &mg, &split, cref("d", 0), cref("c", 1)).unwrap();
+        assert!(a.converged && b.converged);
+        let max_dev: f64 = a
+            .flux
+            .iter()
+            .zip(b.flux.iter())
+            .flat_map(|(ra, rb)| ra.iter().zip(rb.iter()).map(|(x, y)| (x - y).abs()))
+            .fold(0.0, f64::max);
+        let scale: f64 = a
+            .flux
+            .iter()
+            .flat_map(|r| r.iter().copied())
+            .fold(0.0, f64::max);
+        assert!(
+            max_dev < 1e-4 * scale.max(1e-30),
+            "split inner tolerance moved the fixed point: dev {max_dev} vs scale {scale}"
+        );
     }
 }

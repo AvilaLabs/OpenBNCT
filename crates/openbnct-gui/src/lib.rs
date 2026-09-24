@@ -885,23 +885,22 @@ impl DosePanel {
 
     /// Bytes-only SMK-evaluation loader — web drop path.
     fn load_smk_bytes(&mut self, bytes: &[u8]) {
-        let outcome =
-            serde_json::from_slice::<openbnct_bio::SmkEvaluation>(bytes)
-                .map_err(|e| e.to_string())
-                .and_then(|report| {
-                    if openbnct_core::schema_matches(
-                        &report.schema_version,
-                        openbnct_bio::SMK_EVALUATION_SCHEMA,
-                    ) {
-                        Ok(report)
-                    } else {
-                        Err(format!(
-                            "unsupported schema {:?} — expected {}",
-                            report.schema_version,
-                            openbnct_bio::SMK_EVALUATION_SCHEMA
-                        ))
-                    }
-                });
+        let outcome = serde_json::from_slice::<openbnct_bio::SmkEvaluation>(bytes)
+            .map_err(|e| e.to_string())
+            .and_then(|report| {
+                if openbnct_core::schema_matches(
+                    &report.schema_version,
+                    openbnct_bio::SMK_EVALUATION_SCHEMA,
+                ) {
+                    Ok(report)
+                } else {
+                    Err(format!(
+                        "unsupported schema {:?} — expected {}",
+                        report.schema_version,
+                        openbnct_bio::SMK_EVALUATION_SCHEMA
+                    ))
+                }
+            });
         match outcome {
             Ok(report) => {
                 self.smk_error = None;

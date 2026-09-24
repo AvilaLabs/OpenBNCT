@@ -1553,10 +1553,19 @@ Architecture (all artifacts versioned and hash-bound):
   response columns are near-identical smooth kernels, the inverse
   is rank-deficient, and NNLS parks emission at detector-adjacent
   voxels (~1e-9 vs true ~2e-6). The published <1 cm resolution
-  comes from the pinhole collimator our response model doesn't
-  carry. Remaining scope this identifies: collimation-aware `pg
-  response` (aperture geometry in the transport case or an angular
-  restriction on the detector tally).
+  comes from the pinhole collimator — since landed: `pg response
+  --aperture x,y,z --aperture-radius-mm r` restricts the adjoint
+  detector source to the ordinates inside the aperture's acceptance
+  cone (per-ordinate source weights through the whole sweep stack,
+  declared on the artifact via `collimation`). The collimated
+  rerun (`validation/pg-benedicte-geometry/collimated/`,
+  `run-collimated-chain.sh`) shows the expected physics: counts
+  discriminate ~50× across the ring and NNLS localizes emission to
+  a ~20-mm-central blob near the true vial pair instead of the
+  detector walls. With one tally per head, 8 pencil lines cannot
+  separate the two 2-cm vials — the residual limit is measurement
+  dimension (pixellated crystals → many lines per aperture), not
+  the model.
 
 Runner-up scope item recorded for later scheduling: cell-level
 microdosimetry (stochastic α/⁷Li track sampling → lineal-energy

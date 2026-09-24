@@ -77,6 +77,26 @@ own versions independent of the crate version.
   `OPENBNCT_NO_CMR` remains as an A/B override and `CMR_DEBUG` now
   prints the per-region defect.
 
+### Added — transport
+
+- `SnOptions::inner_convergence` / `sn solve --inner-convergence`:
+  the within-group sweep break tolerance now splits from the outer
+  residual target (`None` preserves the historical shared value).
+  The outer residual cannot descend far below the inner sweep's own
+  break accuracy, so deep convergence targets may need a tighter
+  inner tolerance.
+- `pg response --aperture x,y,z --aperture-radius-mm r`: pinhole
+  collimation for the prompt-gamma response — the adjoint detector
+  source is restricted to quadrature ordinates inside the aperture's
+  acceptance cone via per-ordinate source weights carried through
+  `solve_sn_problem`/`solve_multigroup_adjoint`/`solve_photon_adjoint`.
+  The response artifact declares the aperture via a `collimation`
+  field (additive optional on `openbnct.pg-response/0.1.0`), and the
+  command errors when no ordinate falls inside the cone. The
+  collimated rerun of the BeNEdiCTE-style fixture
+  (`validation/pg-benedicte-geometry/collimated/`) localizes emission
+  to the imaged volume where the uncollimated chain could not.
+
 ## [0.2.2] — 2026-09-23
 
 (Supersedes the `v0.2.1` tag, which carried stale lockfiles and was

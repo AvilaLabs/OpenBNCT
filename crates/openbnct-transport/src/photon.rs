@@ -363,6 +363,7 @@ pub fn solve_photon(
             &quadrature,
             &boundary_empty(),
             &fixed_source,
+            None,
             data_ref.clone(),
             case_ref.clone(),
         )?;
@@ -439,6 +440,7 @@ pub fn solve_photon_adjoint(
     data: &MultigroupPhotonData,
     options: &SnOptions,
     adjoint_source: &[Vec<f64>],
+    adjoint_source_weights: Option<&[f64]>,
     data_ref: ContentReference,
     case_ref: ContentReference,
 ) -> Result<MultigroupFlux, MultigroupError> {
@@ -449,6 +451,7 @@ pub fn solve_photon_adjoint(
         &transport,
         options,
         adjoint_source,
+        adjoint_source_weights,
         data_ref,
         case_ref,
     )
@@ -500,6 +503,7 @@ mod tests {
             anisotropy_order: 0,
             anderson_depth: 0,
             coarse_rebalance: true,
+            inner_convergence: None,
         }
     }
 
@@ -538,6 +542,7 @@ mod tests {
             &quadrature,
             &boundary_empty(),
             &fixed,
+            None,
             ContentReference {
                 id: "data".into(),
                 sha256: "0".repeat(64),
@@ -568,6 +573,7 @@ mod tests {
             &data,
             &options,
             &adjoint_source,
+            None,
             ContentReference {
                 id: "data".into(),
                 sha256: "0".repeat(64),
@@ -586,6 +592,62 @@ mod tests {
             (ratio - 1.0).abs() < 0.15,
             "adjoint/forward tally ratio {ratio} outside discretization tolerance \
              (forward {tally_forward}, adjoint {tally_adjoint})"
+        );
+    }
+
+    /// Direction-restricted adjoint: limiting the detector source to
+    /// ordinates pointing −z must concentrate sensitivity in cells the
+    /// adjoint particles actually reach — below the detector, not
+    /// beside it. This is the pinhole-collimation mechanism `pg
+    /// response --aperture` exposes.
+    #[test]
+    fn direction_restricted_adjoint_concentrates_along_the_cone() {
+        let mut case = slab_case();
+        case.geometry.shape = [4, 4, 4];
+        case.geometry.spacing_mm = [10.0; 3];
+        case.geometry.origin_mm = [-20.0, -20.0, -20.0];
+        let data = photon_data();
+        let options = options();
+        let [nx, ny, _nz] = case.geometry.shape.map(|d| d as usize);
+        let n_cells = case.geometry.voxel_count().unwrap();
+        let groups = data.photon_group_count();
+        let emission_group = 1;
+        let at = |i: usize, j: usize, k: usize| k * nx * ny + j * nx + i;
+
+        let detector = at(3, 3, 3); // top corner
+        let mut adjoint_source = vec![vec![0.0; groups]; n_cells];
+        adjoint_source[detector][emission_group] = 1.0;
+        let quadrature = level_symmetric_quadrature(4).unwrap();
+        // Accept only ordinates with u_z < −0.5 — adjoint emission
+        // toward lower z.
+        let weights: Vec<f64> = quadrature
+            .iter()
+            .map(|(u, _)| if u[2] < -0.5 { 1.0 } else { 0.0 })
+            .collect();
+        assert!(weights.iter().any(|w| *w > 0.0), "S4 must cover −z");
+        let adjoint = solve_photon_adjoint(
+            &case,
+            &data,
+            &options,
+            &adjoint_source,
+            Some(&weights),
+            ContentReference {
+                id: "data".into(),
+                sha256: "0".repeat(64),
+            },
+            ContentReference {
+                id: "case".into(),
+                sha256: "1".repeat(64),
+            },
+        )
+        .unwrap();
+        assert!(adjoint.converged);
+        let below = adjoint.flux[at(3, 3, 1)][emission_group];
+        let beside = adjoint.flux[at(0, 3, 3)][emission_group];
+        assert!(
+            below > 10.0 * beside,
+            "restricted adjoint is not directionally selective: \
+             below-detector {below} vs beside-detector {beside}"
         );
     }
 }

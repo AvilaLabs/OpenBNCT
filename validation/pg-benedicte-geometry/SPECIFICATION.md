@@ -51,11 +51,32 @@ on uncollimated detectors does not.**
   detector views a narrow ray bundle through the aperture. Our
   response model carries no aperture/collimation structure.
 
-## Follow-on scope this measurement identifies
+## Collimated extension — landed
 
-Collimation-aware `pg response`: model the detector aperture
-(pinhole/slit) in the adjoint — either as declared shielding
-geometry in the transport case (collimator channel voxels) or as an
-angular restriction on the detector tally. That is the missing
-capability for a true PG-SPECT reconstruction claim; the forward
-chain and the solver itself need no further work for it.
+`pg response` now accepts `--aperture x,y,z --aperture-radius-mm r`:
+the adjoint detector source is restricted to ordinates inside the
+cone the pinhole subtends at the detector centroid (the
+`collimation` field on the response artifact records the declared
+aperture and the accepted ordinate fraction). `run-collimated-chain.sh`
+places each aperture ~50 mm from its detector along the S8 ordinate
+nearest the detector→vial-region axis — one pencil line per head.
+
+Measured result (`collimated/`):
+
+- Counts now discriminate 50× across the ring (2.3e-14 … 6.4e-12)
+  vs the near-degenerate uncollimated columns — each response map
+  is a narrow ray bundle through the aperture.
+- NNLS places the emission in a tight ~3×4×2-voxel blob centred
+  ~(0, 0, 105 mm) — inside the imaged volume and within ~20 mm of
+  the true vial centres (±10, 0, 120–130 mm), instead of on the
+  detector walls ~100 mm off. The two 20 mm-separated vials merge
+  into one blob: with one tally per head the system carries 8
+  pencil lines total — real pinhole systems resolve finer detail
+  because each crystal is pixellated (many lines per aperture).
+  Residual resolution limit is measurement dimension, not model.
+
+Remaining honest limit: angular selectivity is bounded by
+quadrature resolution — a cone narrower than the ordinate spacing
+captures zero or one ordinate (the CLI errors on zero). Sub-cm
+claims still need either detector-voxel imaging (multiple tallies
+per aperture) or shielding-geometry collimators in the case itself.

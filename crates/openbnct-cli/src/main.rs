@@ -519,6 +519,17 @@ enum PgCommand {
         /// all listed voxels form one detector region.
         #[arg(long)]
         detector: Vec<String>,
+        /// Pinhole aperture center in patient mm as `x,y,z`. With
+        /// `--aperture-radius-mm`, the adjoint detector source emits
+        /// only along ordinates inside the acceptance cone — the
+        /// response then carries a real pinhole collimator's spatial
+        /// selectivity. Requires `--order` fine enough that ordinates
+        /// land inside the cone (the command errors otherwise).
+        #[arg(long)]
+        aperture: Option<String>,
+        /// Pinhole aperture radius in mm — required with `--aperture`.
+        #[arg(long, requires = "aperture")]
+        aperture_radius_mm: Option<f64>,
         /// Emission photon energy in eV — selects the photon group it
         /// falls in (default: the 478 keV boron line).
         #[arg(long, default_value_t = 478_000.0)]
@@ -2520,6 +2531,12 @@ enum SnCommand {
         /// Relative scalar-flux convergence target.
         #[arg(long, default_value_t = 1e-6)]
         convergence: f64,
+        /// Within-group sweep break tolerance (defaults to
+        /// `--convergence`). The outer residual cannot descend far
+        /// below the inner accuracy floor — tighten this for deep
+        /// outer targets.
+        #[arg(long)]
+        inner_convergence: Option<f64>,
         /// Within-group iterations per group pass.
         #[arg(long, default_value_t = 64)]
         max_inner: u32,
@@ -8580,6 +8597,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 case,
                 photon_data,
                 detector,
+                aperture,
+                aperture_radius_mm,
                 emission_energy_ev,
                 order,
                 convergence,
@@ -8646,6 +8665,92 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         [emission_group] = 1.0;
                     detector_voxels.push([v[0], v[1], v[2]]);
                 }
+                // Collimation: restrict the adjoint source to ordinates
+                // inside the cone the aperture subtends at the detector
+                // centroid — adjoint directions run detector→aperture,
+                // tracing back the photons a real pinhole accepts.
+                let geometry = &transport_case.geometry;
+                let (source_weights, collimation) = match (&aperture, aperture_radius_mm) {
+                    (None, None) => (None, None),
+                    (Some(_), None) => {
+                        return Err(io::Error::other(
+                            "pg response: --aperture requires --aperture-radius-mm",
+                        )
+                        .into());
+                    }
+                    (None, Some(_)) => unreachable!("clap requires aperture with the radius"),
+                    (Some(spec), Some(radius)) => {
+                        let parts: Vec<&str> = spec.split(',').collect();
+                        let parse = |s: &str| {
+                            s.trim().parse::<f64>().map_err(|_| {
+                                io::Error::other(format!("aperture {spec:?} must be x,y,z mm"))
+                            })
+                        };
+                        if parts.len() != 3 {
+                            return Err(io::Error::other(format!(
+                                "aperture {spec:?} must be x,y,z mm"
+                            ))
+                            .into());
+                        }
+                        let aperture_mm = [parse(parts[0])?, parse(parts[1])?, parse(parts[2])?];
+                        if !(radius > 0.0 && radius.is_finite())
+                            || aperture_mm.iter().any(|v| !v.is_finite())
+                        {
+                            return Err(io::Error::other(
+                                "pg response: aperture position must be finite and radius > 0",
+                            )
+                            .into());
+                        }
+                        // Detector centroid in mm from voxel centers.
+                        let mut centroid = [0.0_f64; 3];
+                        for v in &detector_voxels {
+                            for a in 0..3 {
+                                centroid[a] += geometry.origin_mm[a]
+                                    + (v[a] as f64 + 0.5) * geometry.spacing_mm[a];
+                            }
+                        }
+                        for c in &mut centroid {
+                            *c /= detector_voxels.len() as f64;
+                        }
+                        let axis: Vec<f64> = (0..3).map(|a| aperture_mm[a] - centroid[a]).collect();
+                        let dist = axis.iter().map(|x| x * x).sum::<f64>().sqrt();
+                        if dist <= 0.0 {
+                            return Err(io::Error::other(
+                                "pg response: aperture must not coincide with the detector",
+                            )
+                            .into());
+                        }
+                        let axis: Vec<f64> = axis.iter().map(|x| x / dist).collect();
+                        let cos_min = dist / (dist * dist + radius * radius).sqrt();
+                        let quadrature = openbnct_transport::level_symmetric_quadrature(order)
+                            .map_err(|e| io::Error::other(format!("quadrature: {e}")))?;
+                        let weights: Vec<f64> = quadrature
+                            .iter()
+                            .map(|(u, _)| {
+                                let dot: f64 = (0..3).map(|a| u[a] * axis[a]).sum();
+                                if dot >= cos_min { 1.0 } else { 0.0 }
+                            })
+                            .collect();
+                        let accepted = weights.iter().filter(|w| **w > 0.0).count();
+                        if accepted == 0 {
+                            return Err(io::Error::other(format!(
+                                "pg response: no S{order} ordinate falls inside the \
+                                 {radius} mm aperture cone at {dist:.1} mm — raise --order \
+                                 or the radius"
+                            ))
+                            .into());
+                        }
+                        (
+                            Some(weights),
+                            Some(openbnct_transport::PgCollimation {
+                                aperture_mm,
+                                aperture_radius_mm: radius,
+                                accepted_ordinate_fraction: accepted as f64
+                                    / quadrature.len() as f64,
+                            }),
+                        )
+                    }
+                };
                 let mut periodic_axes = [false; 3];
                 for axis in &periodic {
                     let index = match axis.as_str() {
@@ -8674,6 +8779,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: 0,
                     anderson_depth: 0,
                     coarse_rebalance: true,
+                    inner_convergence: None,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: ph_data.id.clone(),
@@ -8688,6 +8794,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     &ph_data,
                     &options,
                     &adjoint_source,
+                    source_weights.as_deref(),
                     data_ref.clone(),
                     case_ref.clone(),
                 )
@@ -8714,6 +8821,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     converged: adjoint.converged,
                     residual: adjoint.residual,
                     outer_iterations: adjoint.outer_iterations,
+                    collimation,
                     case: case_ref,
                     photon_data: data_ref,
                     provenance_id: provenance_id
@@ -9555,6 +9663,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 assignment,
                 order,
                 convergence,
+                inner_convergence,
                 max_inner,
                 max_outer,
                 periodic,
@@ -9605,6 +9714,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: anisotropy,
                     anderson_depth: anderson,
                     coarse_rebalance: true,
+                    inner_convergence,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: mg_data.id.clone(),
@@ -9910,6 +10020,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: anisotropy,
                     anderson_depth: 0,
                     coarse_rebalance: true,
+                    inner_convergence: None,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: ph_data.id.clone(),
@@ -10724,6 +10835,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         &data,
                         &options,
                         &adjoint_source,
+                        None,
                         openbnct_core::ContentReference {
                             id: "multigroup-data".into(),
                             sha256: format!(
@@ -10950,6 +11062,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: anisotropy,
                     anderson_depth: anderson,
                     coarse_rebalance: true,
+                    inner_convergence: None,
                 };
                 let profile = mg_data.component_profile.clone().ok_or_else(|| {
                     io::Error::other(
@@ -12368,6 +12481,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: 0,
                     anderson_depth: 0,
                     coarse_rebalance: true,
+                    inner_convergence: None,
                 };
                 let nominal_flux =
                     match &forward_flux {
@@ -12509,6 +12623,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: 0,
                     anderson_depth: 0,
                     coarse_rebalance: true,
+                    inner_convergence: None,
                 };
                 let report = openbnct_transport::run_screening(
                     &transport_case,
@@ -12959,6 +13074,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: 0,
                     anderson_depth: 0,
                     coarse_rebalance: true,
+                    inner_convergence: None,
                 };
                 let forward = forward_flux
                     .as_ref()

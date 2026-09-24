@@ -1102,6 +1102,7 @@ mod solver_invariants {
             &quadrature,
             &BoundarySource::new(),
             &q,
+            None,
             cref("d"),
             cref("c"),
         )

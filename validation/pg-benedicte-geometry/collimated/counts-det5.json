@@ -1,0 +1,18 @@
+{
+  "schema_version": "openbnct.pg-counts/0.1.0",
+  "id": "pg-counts-coll-det5",
+  "case_id": "fir1-k63-cylindrical-phantom",
+  "expected_tally": 4.935152438801195e-12,
+  "detector_efficiency": 0.6,
+  "voxel_density_kg_per_m3": 1000.0,
+  "emission": {
+    "id": "fir1-k63-cyl-pg478-two-vials",
+    "sha256": "bb1bc4d6c4d5f44d64da79fee2dd490614b54e9c75a4adf81e64ca94ff943f47"
+  },
+  "response": {
+    "id": "pg-response-coll-det5",
+    "sha256": "63e38f73a3031265b906b89e2af6a2d25607fecd58ab5f3d7f20896bb43fa12f"
+  },
+  "provenance_id": "pg-counts:pg-counts-coll-det5",
+  "qualification": "prompt_gamma_production_research_only_not_clinical"
+}

@@ -1,0 +1,65 @@
+{
+  "schema_version": "openbnct.pg-observation/0.1.0",
+  "id": "pg-observation-coll",
+  "case_id": "fir1-k63-cylindrical-phantom",
+  "detectors": [
+    {
+      "response": {
+        "id": "pg-response-coll-det0",
+        "sha256": "44822bc70477fc8cef1e53223013f75787c609c24ea297c0844c7a7e55a5e1b0"
+      },
+      "measured_tally": 6.090673944196849e-14
+    },
+    {
+      "response": {
+        "id": "pg-response-coll-det1",
+        "sha256": "c6e6585b38c0f878cbeb960fbd343ea642f1b6021f505f9afcb50cd0fdabb707"
+      },
+      "measured_tally": 2.5516801169687985e-14
+    },
+    {
+      "response": {
+        "id": "pg-response-coll-det2",
+        "sha256": "b8e42e290776af814e7bb7c2685be0b0a4bd3a575c98f827f12b82d6c17baef0"
+      },
+      "measured_tally": 2.33727024833527e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-coll-det3",
+        "sha256": "779bca558b5e17cd539bf76b22f551b5cdb5a8518b911d840ffb678cae66c1e4"
+      },
+      "measured_tally": 1.0568757975906234e-13
+    },
+    {
+      "response": {
+        "id": "pg-response-coll-det4",
+        "sha256": "df605f62760073e5e4a4a906f6e162f1449640d52b579ddd1368036969633762"
+      },
+      "measured_tally": 6.4227456158292155e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-coll-det5",
+        "sha256": "63e38f73a3031265b906b89e2af6a2d25607fecd58ab5f3d7f20896bb43fa12f"
+      },
+      "measured_tally": 4.935152438801195e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-coll-det6",
+        "sha256": "51655fbde7af10fe80198a44ffa18791f8fe5178d374b6a0da70b4ff7d6ec8e7"
+      },
+      "measured_tally": 4.4222202389546935e-12
+    },
+    {
+      "response": {
+        "id": "pg-response-coll-det7",
+        "sha256": "7069a4e96bf0dd86369aa9ce8ecc70ee8964398056dcf43260f4ce45977d6f1d"
+      },
+      "measured_tally": 4.996858362423692e-12
+    }
+  ],
+  "provenance_id": "pg-observation:pg-observation-coll",
+  "qualification": "prompt_gamma_production_research_only_not_clinical"
+}

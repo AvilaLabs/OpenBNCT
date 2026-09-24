@@ -229,12 +229,35 @@ pub struct PromptGammaResponse {
     pub converged: bool,
     pub residual: f64,
     pub outer_iterations: u32,
+    /// Pinhole-collimation declaration when the adjoint source was
+    /// direction-restricted — `None` for an uncollimated (all-ordinate)
+    /// response. Omitted from the wire format when absent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collimation: Option<PgCollimation>,
     /// Content bindings to the transport case and photon data the
     /// adjoint was solved against.
     pub case: ContentReference,
     pub photon_data: ContentReference,
     pub provenance_id: String,
     pub qualification: String,
+}
+
+/// Pinhole-collimator geometry a collimated `pg response` was solved
+/// under. The adjoint detector source emits only along ordinates inside
+/// the cone subtended by the aperture as seen from the detector
+/// centroid — the response then carries the spatial selectivity a real
+/// pinhole measurement has.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PgCollimation {
+    /// Aperture center in the case's mm coordinates.
+    pub aperture_mm: [f64; 3],
+    /// Aperture radius in mm — the acceptance cone subtends
+    /// `atan(radius / distance)` about the detector→aperture axis.
+    pub aperture_radius_mm: f64,
+    /// Fraction of quadrature ordinates falling inside the acceptance
+    /// cone — recorded so consumers can check angular resolution.
+    pub accepted_ordinate_fraction: f64,
 }
 
 /// Expected detector tally under a prompt-gamma emission map —
@@ -290,6 +313,14 @@ impl PromptGammaResponse {
             || self.sensitivity.iter().any(|v| !v.is_finite() || *v < 0.0)
         {
             return Err(PromptGammaError::NonFiniteValue);
+        }
+        if let Some(c) = &self.collimation {
+            let bad = c.aperture_mm.iter().any(|v| !v.is_finite())
+                || !(c.aperture_radius_mm > 0.0 && c.aperture_radius_mm.is_finite())
+                || !(c.accepted_ordinate_fraction > 0.0 && c.accepted_ordinate_fraction <= 1.0);
+            if bad {
+                return Err(PromptGammaError::NonFiniteValue);
+            }
         }
         Ok(())
     }
@@ -829,6 +860,7 @@ mod tests {
             converged: true,
             residual: 1e-7,
             outer_iterations: 3,
+            collimation: None,
             case: ContentReference {
                 id: "case".into(),
                 sha256: "b".repeat(64),
@@ -899,6 +931,7 @@ mod tests {
                 converged: true,
                 residual: 1e-8,
                 outer_iterations: 2,
+                collimation: None,
                 case: cref("case", 1),
                 photon_data: cref("data", 2),
                 provenance_id: format!("resp-{d}-prov"),
