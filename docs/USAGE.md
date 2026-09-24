@@ -1775,15 +1775,38 @@ distinct material in the deck. The emitted field asserts
 `pet_derived_boron_research_only_not_clinical`: it is a modeled estimate
 with propagated parameter uncertainty, not an assayed measurement.
 
-`openbnct boron microdistribution` evaluates a ¹⁰B subcellular
+`openbnct boron microdistribution evaluate` evaluates a ¹⁰B subcellular
 microdistribution model (`openbnct.boron-microdistribution/0.1.0`) into
 a correction record (`openbnct.microdistribution-correction/0.1.0`):
 
 ```text
-openbnct boron microdistribution \
+openbnct boron microdistribution evaluate \
   --model microdistribution.json \
   --id openbnct.microcorr.bpa.v1 --output correction.json
 ```
+
+Measured subcellular data enters the same model document through
+`openbnct boron microdistribution import`, which reduces a declared
+`openbnct.boron-microdistribution-measurement/0.1.0` artifact — an assay
+method (autoradiography, ion microbeam, track imaging, fluorescence, or
+a declared other), the compound and cell system, the reduction geometry,
+and either directly-reported compartment fractions or a radial
+boron-density profile — to the model JSON:
+
+```text
+openbnct boron microdistribution import \
+  --measurement bpa-trackimaging-measurement.json \
+  --output bpa-microdistribution-model.json
+```
+
+A radial profile integrates each measured bin's annulus mass into the
+nucleus/cytoplasm/extracellular regions by radial overlap (the membrane
+is unresolvable at bin scale — the measurement declares its fraction
+explicitly); per-bin 1σ propagates through the linear mass map to the
+fraction σ's. The emitted model carries the measurement's compound,
+cell system, and assay in its validity domain, and is consumable by
+`microdistribution evaluate`, `bio cell-microdosimetry`, and the
+`smk-model` path unchanged.
 
 The model declares how ¹⁰B partitions across nucleus, cytoplasm, cell
 membrane, and extracellular space (fractions with 1σ, summing to 1), the

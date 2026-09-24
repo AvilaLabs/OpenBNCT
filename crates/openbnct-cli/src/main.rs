@@ -861,10 +861,19 @@ enum BoronCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Microdistribution model evaluation and measured-data import.
+    Microdistribution {
+        #[command(subcommand)]
+        command: BoronMicrodistributionCommand,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+enum BoronMicrodistributionCommand {
     /// Evaluate a ¹⁰B subcellular microdistribution model: per-compartment
     /// α/⁷Li energy-deposition fractions to the nucleus and the
     /// nucleus-dose factor relative to uniform concentration.
-    Microdistribution {
+    Evaluate {
         /// `openbnct.boron-microdistribution/0.1.0` JSON document.
         #[arg(long)]
         model: PathBuf,
@@ -873,6 +882,22 @@ enum BoronCommand {
         id: String,
         /// New output path for the
         /// `openbnct.microdistribution-correction/0.1.0` JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Reduce a declared
+    /// `openbnct.boron-microdistribution-measurement/0.1.0` (assay
+    /// compartment fractions or a radial boron-density profile) to the
+    /// `openbnct.boron-microdistribution/0.1.0` model document.
+    Import {
+        /// `openbnct.boron-microdistribution-measurement/0.1.0` JSON.
+        #[arg(long)]
+        measurement: PathBuf,
+        /// Emitted model id — defaults to `"{measurement.id}.model"`.
+        #[arg(long)]
+        id: Option<String>,
+        /// New output path for the
+        /// `openbnct.boron-microdistribution/0.1.0` JSON.
         #[arg(long)]
         output: PathBuf,
     },
@@ -12215,7 +12240,33 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 println!("material assignment at {}", output.display());
                 println!("tiers populated: {}", assignment.regions.len());
             }
-            BoronCommand::Microdistribution { model, id, output } => {
+            BoronCommand::Microdistribution {
+                command:
+                    BoronMicrodistributionCommand::Import {
+                        measurement,
+                        id,
+                        output,
+                    },
+            } => {
+                let measurement: openbnct_boron::BoronMicrodistributionMeasurement =
+                    serde_json::from_slice(&fs::read(&measurement)?).map_err(|error| {
+                        io::Error::other(format!("microdistribution measurement: {error}"))
+                    })?;
+                let model = openbnct_boron::import_measurement(&measurement, id)
+                    .map_err(|error| io::Error::other(format!("measurement import: {error}")))?;
+                model
+                    .validate()
+                    .map_err(|error| io::Error::other(format!("imported model: {error}")))?;
+                fs::write(&output, serde_json::to_vec_pretty(&model)?)?;
+                println!(
+                    "microdistribution model: {} -> {}",
+                    measurement.id,
+                    output.display()
+                );
+            }
+            BoronCommand::Microdistribution {
+                command: BoronMicrodistributionCommand::Evaluate { model, id, output },
+            } => {
                 let model_bytes = fs::read(&model)?;
                 let model: openbnct_boron::BoronMicrodistribution =
                     serde_json::from_slice(&model_bytes)?;

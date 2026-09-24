@@ -1576,6 +1576,18 @@ internal comparison.
   microdosimetric benchmark where geometry is published. The
   machinery is deterministic; the validation question is model
   fidelity, not code correctness.
+- **R14-05 — measured-microdistribution import. (landed)**
+  `openbnct.boron-microdistribution-measurement/0.1.0` declares an
+  assay (autoradiography, ion microbeam, track imaging,
+  fluorescence, or declared-other), the compound and cell system,
+  the reduction geometry, and either directly-reported compartment
+  fractions or a radial boron-density profile with per-bin 1σ.
+  `boron microdistribution import` reduces it to the
+  `openbnct.boron-microdistribution/0.1.0` model — radial profiles
+  integrate each bin's annulus mass into the compartments by radial
+  overlap (membrane declared explicitly, unresolvable at bin scale)
+  with first-order fraction σ — consumable by `microdistribution
+  evaluate`, `bio cell-microdosimetry`, and `smk-model` unchanged.
 - **R14-04 — voxel coupling. (landed)** `openbnct.smk-model/0.1.0`
   declares the nucleus-domain SMK coefficients, the photon reference,
   the macroscopic boron-dose ↔ mean-captures anchor (absolute Gy —

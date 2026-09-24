@@ -614,8 +614,13 @@ pub fn materialize_field(
     })
 }
 
+pub mod measurement;
 pub mod microdistribution;
 
+pub use measurement::{
+    BORON_MICRODISTRIBUTION_MEASUREMENT_SCHEMA, BoronMicrodistributionMeasurement,
+    MicrodistributionAssay, MicrodistributionEvidence, RadialDensityBin, import_measurement,
+};
 pub use microdistribution::{
     BORON_MICRODISTRIBUTION_SCHEMA, BoronMicrodistribution, CompartmentDeposition,
     CompartmentFractions, CorrectionDeposition, MICRODISTRIBUTION_CORRECTION_QUALIFICATION,
