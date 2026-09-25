@@ -1327,11 +1327,31 @@ fn kernel_eigenbasis(quadrature: &[([f64; 3], f64)], l: u32) -> Vec<(f64, Vec<f6
     pairs
 }
 
-/// One diamond-difference sweep of group `g`: fills `psi` with
-/// cell-average angular flux per direction. `flux` supplies the scatter
-/// source from the current iterate (Jacobi across groups and
-/// within-group alike); `psi_prev` supplies periodic-boundary inflow
-/// (the wrap-around cell's previous-iterate cell average).
+/// Periodic-wrap inflow planes per direction: `wrap[d][a]` holds the
+/// previous iterate's cell-average ψ̄ over the far a-plane (index
+/// `u + n_u·v` over the other two axes), empty when axis `a` is
+/// non-periodic. Only these face cells are ever read — the full
+/// `[direction][cell]` previous-iterate buffer is never materialized.
+type WrapPlanes = Vec<[Vec<f64>; 3]>;
+
+/// Per-cell angular reduction accumulators: `scalar` collects
+/// Σ_d w_d·ψ_d, `current` collects Σ_d w_d·Ω_d·ψ_d, and `kernel`
+/// collects Σ_d w_d·u_k(d)·ψ_d per eigenbasis mode — the unnormalized
+/// sums the caller rescales (÷4π, ×λ_k) after the sweep.
+struct CellAccum {
+    scalar: f64,
+    current: [f64; 3],
+    kernel: Vec<f64>,
+}
+
+/// One diamond-difference sweep of group `g`: folds each direction's
+/// cell-average angular flux into `cell_acc` as the direction
+/// completes — the full `[direction][cell]` field is never
+/// materialized. `flux` supplies the scatter source from the current
+/// iterate (Jacobi across groups and within-group alike);
+/// `wrap_prev` supplies periodic-boundary inflow (the wrap-around
+/// face's previous-iterate cell averages) and `wrap_next` receives
+/// this iterate's for the next pass.
 /// `sigma_eff[material][group]` is the effective removal cross section —
 /// physical σ_t or the transport-corrected σ_t,tr when the solve
 /// enables it and the data carries `transport_mu_bar`.
@@ -1348,14 +1368,23 @@ fn kernel_eigenbasis(quadrature: &[([f64; 3], f64)], l: u32) -> Vec<(f64, Vec<f6
 /// outflow across face f, index 2a+s) and `[f+6]` = the inflow across
 /// f when f is a domain boundary (interior inflow is the neighbor's
 /// outflow, read from its slot). These feed the coarse-mesh rebalance.
+///
+/// Directions are swept in fixed-size chunks so the scratch is
+/// `chunk_len × n_cells` rather than `n_dirs × n_cells` — the
+/// difference between ~40 MB and ~1.3 GB of sweep storage at
+/// patient-scale (1M cells, S8). Accumulation order is fixed (chunks
+/// sequential, directions in index order within and across chunks, the
+/// per-cell fold reads the chunk's rows in order) — bit-identical for
+/// any thread count.
 #[allow(clippy::too_many_arguments)]
 fn sweep_group(
     g: usize,
     flux: &[Vec<f64>],
     fixed_source: &[Vec<f64>],
     source_weights: Option<&[f64]>,
-    psi_prev: &[Vec<f64>],
-    psi: &mut [Vec<f64>],
+    wrap_prev: &WrapPlanes,
+    wrap_next: &mut WrapPlanes,
+    cell_acc: &mut [CellAccum],
     case_material: &[usize],
     sigma_eff: &[Vec<f64>],
     scatter_eff: &[Vec<f64>],
@@ -1366,6 +1395,7 @@ fn sweep_group(
     quadrature: &[([f64; 3], f64)],
     boundary: &BoundarySource,
     periodic: [bool; 3],
+    eigen: &[Vec<(f64, Vec<f64>)>],
     face_current: Option<&mut Vec<[f64; 13]>>,
 ) {
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
@@ -1377,15 +1407,17 @@ fn sweep_group(
     ];
     let face_area = [dx[1] * dx[2], dx[0] * dx[2], dx[0] * dx[1]];
     let volume = dx[0] * dx[1] * dx[2];
+    let n_dirs = quadrature.len();
+    let n_cells = nx * ny * nz;
 
-    // `psi`/`psi_prev` are [ordinate][cell]: each ordinate's sweep is
-    // independent given the lagged iterate, so every direction owns its
-    // row with no shared writes. Per-ordinate work is unchanged math.
-    // When face currents are requested, each ordinate also adds its
-    // partial outflow per face plus boundary inflow per face into a
-    // `[cell][12]` accumulator (see the driver below for the order).
+    // Each ordinate's sweep is independent given the lagged iterate, so
+    // every direction owns its row with no shared writes. Per-ordinate
+    // work is unchanged math. When face currents are requested, each
+    // ordinate also adds its partial outflow per face plus boundary
+    // inflow per face into a `[cell][12]` accumulator.
     let want_faces = face_current.is_some();
-    let sweep_one = |mut acc: Option<Vec<[f64; 13]>>, (d, psi_d): (usize, &mut Vec<f64>)| {
+    let sweep_one = |d: usize, psi_d: &mut Vec<f64>| {
+        let mut acc = want_faces.then(|| vec![[0.0_f64; 13]; n_cells]);
         let dir = quadrature[d].0;
         // Sweep order: ascend where the direction points positive,
         // descend where negative.
@@ -1433,12 +1465,15 @@ fn sweep_group(
                             edge[a][nc[0] + nx * nc[1] + nx * ny * nc[2]]
                         } else if periodic[a] {
                             // Periodic face: inflow is the wrap-around
-                            // cell's previous-iterate average — exact
-                            // under transverse uniformity, lagged
+                            // plane's previous-iterate cell average —
+                            // exact under transverse uniformity, lagged
                             // otherwise.
-                            let mut wc = coord;
-                            wc[a] = if positive { [nx, ny, nz][a] - 1 } else { 0 };
-                            psi_prev[d][wc[0] + nx * wc[1] + nx * ny * wc[2]]
+                            let idx = match a {
+                                0 => coord[1] + ny * coord[2],
+                                1 => coord[0] + nx * coord[2],
+                                _ => coord[0] + nx * coord[1],
+                            };
+                            wrap_prev[d][a].get(idx).copied().unwrap_or(0.0)
                         } else {
                             // Boundary face: declared incident flux or
                             // vacuum.
@@ -1554,40 +1589,97 @@ fn sweep_group(
                 }
             }
         }
-        acc
+        // The wrap planes this direction's next iterate reads — the
+        // far-side a-plane for each periodic axis.
+        let wrap_row = if periodic.iter().any(|p| *p) {
+            std::array::from_fn(|a| {
+                if !periodic[a] {
+                    return Vec::new();
+                }
+                let plane = if dir[a] > 0.0 { [nx, ny, nz][a] - 1 } else { 0 };
+                let (nu, nv) = match a {
+                    0 => (ny, nz),
+                    1 => (nx, nz),
+                    _ => (nx, ny),
+                };
+                let mut face = vec![0.0; nu * nv];
+                for v in 0..nv {
+                    for u in 0..nu {
+                        let coord = match a {
+                            0 => [plane, u, v],
+                            1 => [u, plane, v],
+                            _ => [u, v, plane],
+                        };
+                        face[u + nu * v] = psi_d[coord[0] + nx * coord[1] + nx * ny * coord[2]];
+                    }
+                }
+                face
+            })
+        } else {
+            [Vec::new(), Vec::new(), Vec::new()]
+        };
+        (wrap_row, acc)
     };
-    // Floating-point addition is not associative, so the face sums must
-    // be formed in an order that never depends on the thread pool: the
-    // ordinates are split into a fixed number of contiguous chunks (a
-    // function of the ordinate count only), each chunk accumulates its
-    // ordinates in index order, and the chunk totals are combined
-    // serially in chunk order. The result is bit-identical for any
-    // RAYON_NUM_THREADS or scheduling, with at most FACE_SUM_CHUNKS
-    // accumulators alive.
-    const FACE_SUM_CHUNKS: usize = 16;
-    let chunk_len = psi.len().div_ceil(FACE_SUM_CHUNKS).max(1);
-    let chunk_sums: Vec<Option<Vec<[f64; 13]>>> = psi
-        .par_chunks_mut(chunk_len)
-        .enumerate()
-        .map(|(chunk, rows)| {
-            let mut acc = want_faces.then(|| vec![[0.0_f64; 13]; nx * ny * nz]);
-            for (offset, psi_d) in rows.iter_mut().enumerate() {
-                acc = sweep_one(acc, (chunk * chunk_len + offset, psi_d));
-            }
-            acc
-        })
-        .collect();
+    // Floating-point addition is not associative, so both the face
+    // sums and the per-cell moment accumulations must be formed in an
+    // order that never depends on the thread pool: the ordinates are
+    // swept in sequential contiguous chunks of `chunk_len` (the row
+    // scratch is only that wide — see the doc comment), each chunk's
+    // directions sweep in parallel, and the folds over the chunk
+    // apply each direction in index order. Bit-identical for any
+    // thread count.
+    let chunk_len = n_dirs.div_ceil(rayon::current_num_threads().max(1)).max(1);
+    /// One swept direction: its ψ̄ row, its wrap-plane snapshot, and
+    /// its face-current accumulator (when requested).
+    type SweptDir = (Vec<f64>, [Vec<f64>; 3], Option<Vec<[f64; 13]>>);
     let mut face_sums: Option<Vec<[f64; 13]>> = None;
-    for part in chunk_sums.into_iter().flatten() {
-        match face_sums.as_mut() {
-            None => face_sums = Some(part),
-            Some(total) => {
-                for (t, p) in total.iter_mut().zip(part.iter()) {
-                    for f in 0..13 {
-                        t[f] += p[f];
+    for chunk_start in (0..n_dirs).step_by(chunk_len) {
+        let d_end = (chunk_start + chunk_len).min(n_dirs);
+        // Sweep the chunk's directions in parallel, each into its own
+        // row scratch.
+        let mut swept: Vec<SweptDir> = Vec::with_capacity(d_end - chunk_start);
+        (chunk_start..d_end)
+            .into_par_iter()
+            .map(|d| {
+                let mut row = vec![0.0; n_cells];
+                let (wrap_row, acc) = sweep_one(d, &mut row);
+                (row, wrap_row, acc)
+            })
+            .collect_into_vec(&mut swept);
+        // Fold the chunk: wrap-plane snapshots, face sums, and the
+        // per-cell moment accumulators — all in direction order.
+        for (off, (row, wrap_row, part)) in swept.into_iter().enumerate() {
+            let d = chunk_start + off;
+            wrap_next[d] = wrap_row;
+            if let Some(part) = part {
+                match face_sums.as_mut() {
+                    None => face_sums = Some(part),
+                    Some(total) => {
+                        for (t, p) in total.iter_mut().zip(part.iter()) {
+                            for f in 0..13 {
+                                t[f] += p[f];
+                            }
+                        }
                     }
                 }
             }
+            let (dir, w) = quadrature[d];
+            cell_acc
+                .par_iter_mut()
+                .zip(row.par_iter())
+                .for_each(|(acc, &psi_d)| {
+                    acc.scalar += w * psi_d;
+                    for (jc, &mu) in acc.current.iter_mut().zip(dir.iter()) {
+                        *jc += w * mu * psi_d;
+                    }
+                    let mut kk = 0;
+                    for eigs in eigen.iter() {
+                        for (_, u) in eigs.iter() {
+                            acc.kernel[kk] += w * u[d] * psi_d;
+                            kk += 1;
+                        }
+                    }
+                });
         }
     }
     if let (Some(out), Some(sums)) = (face_current, face_sums) {
@@ -2285,10 +2377,20 @@ pub(crate) fn solve_sn_problem(
     // moments for l = 2..=lmax, iterated Jacobi-style alongside the
     // currents.
     let mut kernel_moments = vec![vec![vec![0.0_f64; n_kernel_moments]; groups]; n_cells];
-    // Angular storage is [ordinate][cell] so the sweep can hand each
-    // direction an exclusive row under `par_iter_mut` (see `sweep_group`).
-    let mut psi = vec![vec![0.0; n_cells]; n_dirs];
-    let mut psi_prev = vec![vec![0.0; n_cells]; n_dirs];
+    // Streaming angular reduction: the sweep never materializes the
+    // `[direction][cell]` field — directions fold into `cell_acc` as
+    // they complete, and periodic inflow reads only the wrap planes in
+    // `wrap_prev`/`wrap_next` (face storage, ~O(n^(2/3)) not O(n)).
+    let empty_wrap = || -> WrapPlanes { (0..n_dirs).map(|_| Default::default()).collect() };
+    let mut wrap_prev = empty_wrap();
+    let mut wrap_next = empty_wrap();
+    let mut cell_acc: Vec<CellAccum> = (0..n_cells)
+        .map(|_| CellAccum {
+            scalar: 0.0,
+            current: [0.0; 3],
+            kernel: vec![0.0; n_kernel_moments],
+        })
+        .collect();
     let mut converged = false;
     let mut residual = f64::MAX;
     let mut outer_done = 0;
@@ -2436,7 +2538,12 @@ pub(crate) fn solve_sn_problem(
                 } else {
                     None
                 };
-                std::mem::swap(&mut psi, &mut psi_prev);
+                std::mem::swap(&mut wrap_prev, &mut wrap_next);
+                cell_acc.par_iter_mut().for_each(|acc| {
+                    acc.scalar = 0.0;
+                    acc.current = [0.0; 3];
+                    acc.kernel.fill(0.0);
+                });
                 // Face currents are only needed while CMR is active —
                 // below the cutoff the accumulation is pure overhead.
                 let faces = upscatter_block_start
@@ -2447,8 +2554,9 @@ pub(crate) fn solve_sn_problem(
                     &flux,
                     fixed_source,
                     source_weights,
-                    &psi_prev,
-                    &mut psi,
+                    &wrap_prev,
+                    &mut wrap_next,
+                    &mut cell_acc,
                     case_material,
                     &sigma_eff,
                     &scatter_eff,
@@ -2459,56 +2567,32 @@ pub(crate) fn solve_sn_problem(
                     quadrature,
                     boundary,
                     options.periodic,
+                    &eigen,
                     faces,
                 );
-                // Moment reduction is per-cell independent — computed in
-                // parallel into an indexed buffer, then applied serially
-                // so `change` and the stores stay deterministic.
-                let reduced: Vec<(f64, [f64; 3], Vec<f64>)> = (0..n_cells)
-                    .into_par_iter()
-                    .map(|cell| {
-                        let mut new_flux = 0.0_f64;
-                        let mut j = [0.0_f64; 3];
-                        for d in 0..n_dirs {
-                            let (dir, w) = quadrature[d];
-                            new_flux += w * psi[d][cell];
-                            if p1 {
-                                for a in 0..3 {
-                                    j[a] += w * dir[a] * psi[d][cell];
-                                }
-                            }
-                        }
-                        new_flux /= 4.0 * std::f64::consts::PI;
-                        if p1 {
-                            for ja in &mut j {
-                                *ja /= 4.0 * std::f64::consts::PI;
-                            }
-                        }
-                        let mut moments = Vec::new();
-                        if lmax >= 2 {
-                            // M_k = λ_k·Σ_d w_d u_k(d)ψ_d — eigenbasis
-                            // moments of the refreshed angular flux.
-                            moments.reserve(n_kernel_moments);
-                            for eigs in eigen.iter() {
-                                for (lam, u) in eigs.iter() {
-                                    let mut m = 0.0;
-                                    for d in 0..n_dirs {
-                                        m += quadrature[d].1 * u[d] * psi[d][cell];
-                                    }
-                                    moments.push(lam * m);
-                                }
-                            }
-                        }
-                        (new_flux, j, moments)
-                    })
-                    .collect();
+                // The sweep accumulated the unnormalized angular sums;
+                // apply the scalings (÷4π scalar/current, ×λ_k moments)
+                // and the iterate update serially so `change` and the
+                // stores stay deterministic.
+                let inv_4pi = 1.0 / (4.0 * std::f64::consts::PI);
                 let mut change = 0.0_f64;
-                for (cell, (new_flux, j, moments)) in reduced.iter().enumerate() {
+                for (cell, acc) in cell_acc.iter().enumerate() {
+                    let new_flux = acc.scalar * inv_4pi;
                     if p1 {
-                        current[cell][g] = *j;
+                        for (jc, &ja) in current[cell][g].iter_mut().zip(acc.current.iter()) {
+                            *jc = ja * inv_4pi;
+                        }
                     }
                     if lmax >= 2 {
-                        kernel_moments[cell][g].copy_from_slice(moments);
+                        // M_k = λ_k·Σ_d w_d u_k(d)ψ_d — eigenbasis
+                        // moments of the refreshed angular flux.
+                        let mut kk = 0;
+                        for eigs in eigen.iter() {
+                            for (lam, _) in eigs.iter() {
+                                kernel_moments[cell][g][kk] = lam * acc.kernel[kk];
+                                kk += 1;
+                            }
+                        }
                     }
                     // f64::max ignores NaN, so a non-finite iterate would
                     // slip past the convergence test — fail instead.
@@ -2520,7 +2604,7 @@ pub(crate) fn solve_sn_problem(
                     }
                     change =
                         change.max((new_flux - flux[cell][g]).abs() / new_flux.abs().max(1e-30));
-                    flux[cell][g] = *new_flux;
+                    flux[cell][g] = new_flux;
                 }
                 if change < inner_tolerance {
                     break;

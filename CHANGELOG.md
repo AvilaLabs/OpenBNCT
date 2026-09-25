@@ -157,6 +157,15 @@ own versions independent of the crate version.
   --response` accepts the bank for those bindings — the full
   imaging chain now runs on pixellated crystals. With `--aperture`,
   each pixel's acceptance cone axis runs that voxel→aperture.
+- Patient-scale sweep memory: `sweep_group` no longer materializes the
+  `[direction][cell]` angular field — directions sweep in
+  thread-count-sized chunks and fold into per-cell moment
+  accumulators (scalar, current, kernel) in fixed order, and periodic
+  inflow reads wrap-plane snapshots (`wrap_prev`/`wrap_next`) instead
+  of a full previous-iterate field. The dominant sweep storage drops
+  from `2·n_dirs·n_cells` to `~n_threads·n_cells` — e.g. ~40 MB vs
+  ~1.3 GB at 1M voxels, S8 — while remaining bit-identical for any
+  thread count.
 - Self-shielding regression coverage: `sn collapse --self-shielding`'s
   Bondarenko heterogeneous-dilution weighting now has a synthetic
   resonance test — a narrow 10⁴ b capture spike on B10 against a flat
