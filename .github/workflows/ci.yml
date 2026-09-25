@@ -26,6 +26,11 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace --all-targets
+      - name: Check wasm32 targets (GUI + in-browser plan solver)
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo check -p openbnct-gui -p openbnct-plan \
+            --target wasm32-unknown-unknown
       - name: Test OpenMC nuclear-data evidence tools
         run: |
           python3 -m pip install --requirement \
