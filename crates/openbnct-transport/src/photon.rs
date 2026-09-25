@@ -84,6 +84,14 @@ pub struct PhotonMaterial {
     /// source when the solve enables `p1_anisotropic`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub scatter_p1_matrix_per_cm: Option<Vec<f64>>,
+    /// Optional higher Legendre transfer moments for l = 2..=5, cm⁻¹.
+    /// Layout `moments[l − 2][g_from × Gγ + g_to]` — the Klein–Nishina
+    /// collapse emits per-bin `⟨P_l⟩`-weighted transfers; coherent
+    /// (elastic forward) scatter contributes σ_coh·P_l(1) = σ_coh on
+    /// the in-group diagonal. Consumed when the solve sets
+    /// `anisotropy_order ≥ 2`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub scatter_legendre_moments_per_cm: Option<Vec<Vec<f64>>>,
     /// Scatter-weighted mean lab-frame cosine per photon group `[Gγ]`
     /// — Klein–Nishina weighted; coherent contributes its forward bias.
     /// In [−1, 1]; used by the transport correction.
@@ -174,6 +182,32 @@ impl MultigroupPhotonData {
             {
                 return Err(invalid(format!("{m} scatter_p1 len != {g_gamma}²")));
             }
+            if let Some(moments) = &material.scatter_legendre_moments_per_cm {
+                // |Σ_sl| ≤ Σ_s0 — the mean-cosine bound generalized
+                // (|P_l| ≤ 1), same invariant as the neutron tables.
+                if moments.len() > 4 {
+                    return Err(invalid(format!(
+                        "{m} legendre moments support l = 2..=5 ({} provided)",
+                        moments.len()
+                    )));
+                }
+                for (l, mat) in moments.iter().enumerate() {
+                    if mat.len() != g_gamma * g_gamma {
+                        return Err(invalid(format!(
+                            "{m} legendre moment l={} must be {g_gamma}²",
+                            l + 2
+                        )));
+                    }
+                    for (i, v) in mat.iter().enumerate() {
+                        if !v.is_finite() || v.abs() > material.scatter_matrix_per_cm[i] + 1e-12 {
+                            return Err(invalid(format!(
+                                "{m} legendre l={} entry {i} must be finite and |Σ_sl| ≤ Σ_s0",
+                                l + 2
+                            )));
+                        }
+                    }
+                }
+            }
             if !material.pair_production_matrix_per_cm.is_empty()
                 && (material.pair_production_matrix_per_cm.len() != g_gamma * g_gamma
                     || material
@@ -256,7 +290,7 @@ impl MultigroupPhotonData {
                         sigma_total_per_cm: m.sigma_total_per_cm.clone(),
                         scatter_matrix_per_cm: m.scatter_matrix_per_cm.clone(),
                         scatter_p1_matrix_per_cm: m.scatter_p1_matrix_per_cm.clone(),
-                        scatter_legendre_moments_per_cm: None,
+                        scatter_legendre_moments_per_cm: m.scatter_legendre_moments_per_cm.clone(),
                         transport_mu_bar: Some(m.transport_mu_bar.clone()),
                         dose_response_gy_cm2: dose,
                     }
@@ -481,6 +515,7 @@ mod tests {
                 // downscatters 0.10 into g1; g1 keeps 0.05 in-group.
                 scatter_matrix_per_cm: vec![0.05, 0.10, 0.0, 0.05],
                 scatter_p1_matrix_per_cm: None,
+                scatter_legendre_moments_per_cm: None,
                 transport_mu_bar: vec![0.0, 0.0],
                 production_matrix_per_cm: vec![1.0, 0.0],
                 pair_production_matrix_per_cm: vec![],
@@ -649,5 +684,148 @@ mod tests {
             "restricted adjoint is not directionally selective: \
              below-detector {below} vs beside-detector {beside}"
         );
+    }
+    /// The photon adapter must carry l ≥ 2 moments into the shared
+    /// sweep data — the kernel already consumes them; the risk is the
+    /// plumbing silently dropping the field.
+    #[test]
+    fn legendre_moments_flow_through_transport_adapter() {
+        let mut data = photon_data();
+        data.materials[0].scatter_legendre_moments_per_cm =
+            Some(vec![vec![0.02, 0.04, 0.0, 0.02]; 4]);
+        let transport = data.as_transport_data();
+        assert_eq!(
+            transport.materials[0]
+                .scatter_legendre_moments_per_cm
+                .as_ref(),
+            Some(&vec![vec![0.02, 0.04, 0.0, 0.02]; 4])
+        );
+        data.validate().unwrap();
+    }
+
+    /// |Σ_sl| ≤ Σ_s0 — a Legendre moment larger than its P0 entry is
+    /// unphysical and must be rejected, same bound as the neutron
+    /// tables.
+    #[test]
+    fn legendre_moment_validation_enforces_p0_bound() {
+        let mut data = photon_data();
+        data.materials[0].scatter_legendre_moments_per_cm = Some(vec![vec![0.60, 0.0, 0.0, 0.0]]);
+        let err = data.validate().unwrap_err();
+        assert!(err.to_string().contains("Σ_sl"), "{err}");
+    }
+
+    /// anisotropy_order ≥ 2 must require the moment tables — and a
+    /// zero-moment solve must reproduce the P0 answer exactly (the
+    /// kernel contribution vanishes), while nonzero moments move it.
+    #[test]
+    fn p2_photon_scatter_changes_flux_only_when_present() {
+        let mut case = slab_case();
+        case.geometry.shape = [4, 4, 4];
+        case.geometry.spacing_mm = [10.0; 3];
+        case.geometry.origin_mm = [-20.0, -20.0, -20.0];
+        let mut data = photon_data();
+        // Forward-peaked in-group/downscatter moments within the
+        // |Σ_l| ≤ Σ_s0 bound.
+        data.materials[0].scatter_p1_matrix_per_cm = Some(vec![0.04, 0.08, 0.0, 0.04]);
+        let transport0 = data.as_transport_data();
+        let (_, case_material) = material_composition_map(&case, &transport0, None).unwrap();
+        let quadrature = level_symmetric_quadrature(4).unwrap();
+        let n_cells = case.geometry.voxel_count().unwrap();
+        let groups = data.photon_group_count();
+        let mut fixed = vec![vec![0.0; groups]; n_cells];
+        fixed[0][1] = 1.0;
+        let refs = (
+            ContentReference {
+                id: "data".into(),
+                sha256: "0".repeat(64),
+            },
+            ContentReference {
+                id: "case".into(),
+                sha256: "1".repeat(64),
+            },
+        );
+        let mut options = options();
+        options.p1_anisotropic = true;
+        options.anisotropy_order = 2;
+
+        // Moments absent → explicit data error, not a silent P1 fall-back.
+        let err = solve_sn_problem(
+            &case,
+            &transport0,
+            &options,
+            &case_material,
+            &quadrature,
+            &boundary_empty(),
+            &fixed,
+            None,
+            refs.0.clone(),
+            refs.1.clone(),
+        )
+        .unwrap_err();
+        assert!(err.to_string().contains("legendre moments"), "{err}");
+
+        // Zero moments → identical to P0-upgraded solve path.
+        data.materials[0].scatter_legendre_moments_per_cm = Some(vec![vec![0.0; groups * groups]]);
+        let transport_z = data.as_transport_data();
+        let zero = solve_sn_problem(
+            &case,
+            &transport_z,
+            &options,
+            &case_material,
+            &quadrature,
+            &boundary_empty(),
+            &fixed,
+            None,
+            refs.0.clone(),
+            refs.1.clone(),
+        )
+        .unwrap();
+        let mut p1_only = options.clone();
+        p1_only.anisotropy_order = 0;
+        let p1_result = solve_sn_problem(
+            &case,
+            &transport_z,
+            &p1_only,
+            &case_material,
+            &quadrature,
+            &boundary_empty(),
+            &fixed,
+            None,
+            refs.0.clone(),
+            refs.1.clone(),
+        )
+        .unwrap();
+        for (a, b) in zero.flux.iter().zip(&p1_result.flux) {
+            for (x, y) in a.iter().zip(b) {
+                assert!(
+                    (x - y).abs() <= 1e-14 * x.abs().max(1e-30),
+                    "zero l=2 moments must equal the P1-only solve"
+                );
+            }
+        }
+
+        // Nonzero l=2 moments change the solution.
+        data.materials[0].scatter_legendre_moments_per_cm = Some(vec![vec![0.01, 0.02, 0.0, 0.01]]);
+        let transport2 = data.as_transport_data();
+        let with = solve_sn_problem(
+            &case,
+            &transport2,
+            &options,
+            &case_material,
+            &quadrature,
+            &boundary_empty(),
+            &fixed,
+            None,
+            refs.0,
+            refs.1,
+        )
+        .unwrap();
+        let differs = zero
+            .flux
+            .iter()
+            .zip(&with.flux)
+            .flat_map(|(a, b)| a.iter().zip(b))
+            .any(|(x, y)| (x - y).abs() > 1e-12 * x.abs().max(1e-30));
+        assert!(differs, "nonzero l=2 moments must move the flux");
     }
 }

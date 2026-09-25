@@ -109,6 +109,14 @@ own versions independent of the crate version.
   collimated rerun of the BeNEdiCTE-style fixture
   (`validation/pg-benedicte-geometry/collimated/`) localizes emission
   to the imaged volume where the uncollimated chain could not.
+- Photon anisotropy beyond P1: `PhotonMaterial` gains
+  `scatter_legendre_moments_per_cm` (l = 2..=5, same invariant as the
+  neutron tables) and the Klein–Nishina collapse now emits per-bin
+  ⟨P_l⟩-weighted transfers, so `photon solve --p1 --anisotropy 2..5`
+  exercises the shared eigenbasis kernel with real photon data.
+  The collapse also corrects the P1 entries — each (g→g′) pair now
+  carries *its own* KN mean cosine (E′(μ) ties each bin to a
+  distinct angular slice) instead of one row-aggregate value.
 
 ## [0.2.2] — 2026-09-23
 

@@ -159,14 +159,39 @@ fn kn_kernel(e: f64, mu: f64) -> f64 {
     r * r * (1.0 / r + r - (1.0 - mu * mu))
 }
 
+/// Legendre `P_l(x)` by the three-term recurrence — the collapse
+/// kernel needs l ≤ 5 per μ-bin.
+fn legendre_p(l: u32, x: f64) -> f64 {
+    match l {
+        0 => 1.0,
+        1 => x,
+        _ => {
+            let (mut p0, mut p1) = (1.0, x);
+            for k in 1..l {
+                let pn = ((2 * k + 1) as f64 * x * p1 - k as f64 * p0) / (k as f64 + 1.0);
+                p0 = p1;
+                p1 = pn;
+            }
+            p1
+        }
+    }
+}
+
 /// Collapse the Klein–Nishina transfer at representative incident
-/// energy `e_rep` into outgoing-group fractions and the mean cosine.
-/// `boundaries` descend; group `gg` spans `(b[gg+1], b[gg]]`.
-fn kn_transfer(e_rep: f64, boundaries: &[f64]) -> (Vec<f64>, f64) {
+/// energy `e_rep` into outgoing-group fractions and per-bin Legendre
+/// moment means. `boundaries` descend; group `gg` spans
+/// `(b[gg+1], b[gg]]`. Returns `(frac[gg], moment[l][gg])` for
+/// l = 1..=5 — `moment[l][gg]` is the bin's KN-weighted `⟨P_l(μ)⟩`,
+/// which is *per outgoing group*: the KN map E′(μ) ties each bin to a
+/// distinct angular slice, so a row-aggregate mean cosine would
+/// misassign forward scatterers to deep-downscatter rows.
+fn kn_transfer(e_rep: f64, boundaries: &[f64]) -> (Vec<f64>, Vec<Vec<f64>>) {
     let groups = boundaries.len() - 1;
     const N_MU: usize = 96;
+    const L_MAX: usize = 5;
     let mut frac = vec![0.0; groups];
-    let mut mu_w = 0.0;
+    let mut bin_w = vec![0.0; groups];
+    let mut mom_w = vec![vec![0.0; groups]; L_MAX];
     let mut w_sum = 0.0;
     for i in 0..N_MU {
         let mu = -1.0 + 2.0 * (i as f64 + 0.5) / N_MU as f64;
@@ -176,7 +201,10 @@ fn kn_transfer(e_rep: f64, boundaries: &[f64]) -> (Vec<f64>, f64) {
             .find(|&g| ep <= boundaries[g] && ep > boundaries[g + 1])
             .unwrap_or(groups - 1);
         frac[gg] += w;
-        mu_w += w * mu;
+        bin_w[gg] += w;
+        for (l, row) in mom_w.iter_mut().enumerate() {
+            row[gg] += w * legendre_p(l as u32 + 1, mu);
+        }
         w_sum += w;
     }
     if w_sum > 0.0 {
@@ -184,7 +212,12 @@ fn kn_transfer(e_rep: f64, boundaries: &[f64]) -> (Vec<f64>, f64) {
             *f /= w_sum;
         }
     }
-    (frac, if w_sum > 0.0 { mu_w / w_sum } else { 0.0 })
+    for row in mom_w.iter_mut() {
+        for (m, bw) in row.iter_mut().zip(bin_w.iter()) {
+            *m = if *bw > 0.0 { *m / *bw } else { 0.0 };
+        }
+    }
+    (frac, mom_w)
 }
 
 /// Weight-integrated average of a pointwise table over `[lo, hi]`.
@@ -452,6 +485,8 @@ pub fn collapse_photon(
         let mut sigma_t = vec![0.0; g_gamma];
         let mut scatter = vec![0.0; g_gamma * g_gamma];
         let mut scatter_p1 = vec![0.0; g_gamma * g_gamma];
+        // Legendre moments l = 2..=5, layout moments[l − 2][g × G + g′].
+        let mut scatter_legendre = vec![vec![0.0; g_gamma * g_gamma]; 4];
         let mut pair_production = vec![0.0; g_gamma * g_gamma];
         let mut production = vec![0.0; g_n * g_gamma];
         let mut dose = vec![0.0; g_gamma];
@@ -480,15 +515,25 @@ pub fn collapse_photon(
                     + group_average(&pe.energy, &pe.pair_electron, lo, hi, &opts.weighting);
                 sigma_t[gg] += dens * (s_pe + s_inc + s_coh + s_pair);
                 // Incoherent KN transfer at the group's log-mean energy.
+                // `moments[l][gp]` is the bin's KN-weighted ⟨P_l⟩ — a
+                // per-outgoing-group cosine set, not one row average.
                 let e_rep = (lo * hi).sqrt();
-                let (frac, mu_kn) = kn_transfer(e_rep, pb);
+                let (frac, moments) = kn_transfer(e_rep, pb);
                 for (gp, f) in frac.iter().enumerate() {
                     scatter[gg * g_gamma + gp] += dens * s_inc * f;
-                    scatter_p1[gg * g_gamma + gp] += dens * s_inc * f * mu_kn;
+                    scatter_p1[gg * g_gamma + gp] += dens * s_inc * f * moments[0][gp];
+                    for l in 2..=5_usize {
+                        scatter_legendre[l - 2][gg * g_gamma + gp] +=
+                            dens * s_inc * f * moments[l - 1][gp];
+                    }
                 }
-                // Coherent: elastic → diagonal, maximally forward.
+                // Coherent: elastic → diagonal, maximally forward
+                // (P_l(1) = 1 — all moments carry the full entry).
                 scatter[gg * g_gamma + gg] += dens * s_coh;
                 scatter_p1[gg * g_gamma + gg] += dens * s_coh;
+                for row in scatter_legendre.iter_mut() {
+                    row[gg * g_gamma + gg] += dens * s_coh;
+                }
                 // Pair production → 2 annihilation photons at 511 keV —
                 // a photon-created source, not scatter (photon number
                 // is not conserved); carried on the dedicated
@@ -620,6 +665,7 @@ pub fn collapse_photon(
             sigma_total_per_cm: sigma_t,
             scatter_matrix_per_cm: scatter,
             scatter_p1_matrix_per_cm: Some(scatter_p1),
+            scatter_legendre_moments_per_cm: Some(scatter_legendre),
             transport_mu_bar: mu_bar,
             production_matrix_per_cm: production,
             pair_production_matrix_per_cm: pair_production,
@@ -654,4 +700,55 @@ pub fn collapse_photon(
     data.validate()
         .map_err(|e| invalid(format!("collapsed photon data invalid: {e}")))?;
     Ok(data)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn legendre_recurrence_matches_closed_forms() {
+        assert!((legendre_p(0, 0.7) - 1.0).abs() < 1e-15);
+        assert!((legendre_p(1, 0.7) - 0.7).abs() < 1e-15);
+        // P2 = (3x²−1)/2, P3 = (5x³−3x)/2; parity at ±1.
+        assert!((legendre_p(2, 0.5) - (-0.125)).abs() < 1e-15);
+        assert!((legendre_p(3, 0.5) - (-0.4375)).abs() < 1e-15);
+        for l in 0..=5 {
+            assert!((legendre_p(l, 1.0) - 1.0).abs() < 1e-15);
+            assert!((legendre_p(l, -1.0) - if l % 2 == 0 { 1.0 } else { -1.0 }).abs() < 1e-15);
+        }
+    }
+
+    #[test]
+    fn kn_moments_are_per_outgoing_bin_not_row_average() {
+        // 600 keV incident: E′(μ) ranges 178–600 keV, so with
+        // boundaries [1 MeV, 400, 100, 10] keV the in-group bin
+        // receives only μ > ~0.57 forward scatters while the next bin
+        // collects the backward hemisphere.
+        let boundaries = [1.0e6, 4.0e5, 1.0e5, 1.0e4];
+        let (frac, mom) = kn_transfer(6.0e5, &boundaries);
+        assert!((frac.iter().sum::<f64>() - 1.0).abs() < 1e-9);
+        assert!(frac[2] == 0.0 && frac.iter().all(|f| *f >= 0.0));
+        // Per-bin ⟨P1⟩: forward bin strongly positive, downscatter bin
+        // markedly less — a single row average could not express this.
+        assert!(mom[0][0] > 0.6, "in-group ⟨μ⟩ {}", mom[0][0]);
+        assert!(mom[0][1] < mom[0][0] - 0.3, "downscatter ⟨μ⟩ {}", mom[0][1]);
+        for row in &mom {
+            assert!(row.iter().all(|m| m.abs() <= 1.0));
+        }
+        // Higher moments are informative: ⟨P2⟩ in-group is near 1
+        // (μ ≈ 1 → P2 ≈ 1), unlike the P1-of-a-mean approximation.
+        assert!(mom[1][0] > 0.5, "in-group ⟨P2⟩ {}", mom[1][0]);
+    }
+
+    #[test]
+    fn kn_thomson_limit_is_angularly_symmetric() {
+        // At 10 keV the KN kernel → Thomson (1 + μ²): symmetric, so the
+        // transfer-weighted ⟨P1⟩ over all bins vanishes and ⟨P2⟩ sits
+        // near the Thomson value (kernel-averaged P2 → small positive).
+        let boundaries = [1.2e4, 9.5e3, 9.0e3, 8.0e3];
+        let (frac, mom) = kn_transfer(1.0e4, &boundaries);
+        let mean_p1: f64 = frac.iter().zip(&mom[0]).map(|(f, m)| f * m).sum::<f64>();
+        assert!(mean_p1.abs() < 0.02, "Thomson-limit ⟨P1⟩ {mean_p1}");
+    }
 }
