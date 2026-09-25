@@ -246,13 +246,15 @@ fn objective_kind(objective: &crate::optimize::DoseObjective) -> &'static str {
         crate::optimize::DoseObjective::MaxMean { .. } => "max_mean",
         crate::optimize::DoseObjective::MinDoseAtVolume { .. } => "min_dose_at_volume",
         crate::optimize::DoseObjective::MaxDoseAtVolume { .. } => "max_dose_at_volume",
+        crate::optimize::DoseObjective::Maximin { .. } => "maximin",
     }
 }
 
 fn objective_bound(objective: &crate::optimize::DoseObjective) -> f64 {
     match objective {
         crate::optimize::DoseObjective::MinEud { target, .. }
-        | crate::optimize::DoseObjective::MinDoseAtVolume { target, .. } => *target,
+        | crate::optimize::DoseObjective::MinDoseAtVolume { target, .. }
+        | crate::optimize::DoseObjective::Maximin { target, .. } => *target,
         crate::optimize::DoseObjective::MaxMean { limit, .. }
         | crate::optimize::DoseObjective::MaxDoseAtVolume { limit, .. } => *limit,
     }
@@ -540,7 +542,8 @@ pub fn evaluate_scenarios(
             let bound = objective_bound(objective);
             let satisfied = match objective {
                 crate::optimize::DoseObjective::MinEud { .. }
-                | crate::optimize::DoseObjective::MinDoseAtVolume { .. } => achieved >= bound,
+                | crate::optimize::DoseObjective::MinDoseAtVolume { .. }
+                | crate::optimize::DoseObjective::Maximin { .. } => achieved >= bound,
                 crate::optimize::DoseObjective::MaxMean { .. }
                 | crate::optimize::DoseObjective::MaxDoseAtVolume { .. } => achieved <= bound,
             };

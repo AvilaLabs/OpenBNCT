@@ -138,9 +138,9 @@ fn objective_bound(objective: &DoseObjective) -> (f64, f64) {
     // Returns (bound, sense) where sense = +1 penalizes metric > bound
     // (max_* limits) and −1 penalizes metric < bound (min_* targets).
     match objective {
-        DoseObjective::MinEud { target, .. } | DoseObjective::MinDoseAtVolume { target, .. } => {
-            (*target, -1.0)
-        }
+        DoseObjective::MinEud { target, .. }
+        | DoseObjective::MinDoseAtVolume { target, .. }
+        | DoseObjective::Maximin { target, .. } => (*target, -1.0),
         DoseObjective::MaxMean { limit, .. } | DoseObjective::MaxDoseAtVolume { limit, .. } => {
             (*limit, 1.0)
         }
@@ -153,6 +153,7 @@ fn objective_kind(objective: &DoseObjective) -> &'static str {
         DoseObjective::MaxMean { .. } => "max_mean",
         DoseObjective::MinDoseAtVolume { .. } => "min_dose_at_volume",
         DoseObjective::MaxDoseAtVolume { .. } => "max_dose_at_volume",
+        DoseObjective::Maximin { .. } => "maximin",
     }
 }
 

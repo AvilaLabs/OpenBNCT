@@ -101,6 +101,18 @@ pub enum DoseObjective {
         limit: f64,
         weight: f64,
     },
+    /// Maximize `min_v dose` over `mask` — the tumor-floor objective.
+    /// `target` is the aspiration bound the achieved floor is reported
+    /// against (`0` = pure maximization); `weight` scales the floor
+    /// pull in the objective — the certified solvers carry a scalar
+    /// floor variable τ with `τ ≤ d_v` rows and cost `−weight·τ`, so
+    /// the delivered minimum is maximized exactly. Requires
+    /// `weight_bound`: without a delivery cap the floor is unbounded.
+    Maximin {
+        mask: String,
+        target: f64,
+        weight: f64,
+    },
 }
 
 /// A versioned inverse-planning objective document.
@@ -306,6 +318,18 @@ impl InversePlanObjective {
                 "weight_regularization must be finite and non-negative".into(),
             ));
         }
+        if self
+            .objectives
+            .iter()
+            .any(|o| matches!(o, DoseObjective::Maximin { .. }))
+            && self.weight_bound.is_none()
+        {
+            return Err(OptimizeError::InvalidObjective(
+                "maximin objectives require weight_bound — the floor is \
+                 unbounded without a delivery cap"
+                    .into(),
+            ));
+        }
         match (self.dose_quantity, &self.bio_model) {
             (DoseQuantity::Isoeffective, None) => {
                 return Err(OptimizeError::InvalidObjective(
@@ -359,6 +383,11 @@ impl InversePlanObjective {
                     weight,
                     ..
                 } => (mask, limit, weight),
+                DoseObjective::Maximin {
+                    mask,
+                    target,
+                    weight,
+                } => (mask, target, weight),
             };
             if mask.trim().is_empty() {
                 return Err(OptimizeError::InvalidObjective(
@@ -398,7 +427,7 @@ impl InversePlanObjective {
                         ));
                     }
                 }
-                DoseObjective::MaxMean { .. } => {}
+                DoseObjective::MaxMean { .. } | DoseObjective::Maximin { .. } => {}
             }
         }
         Ok(())
@@ -455,6 +484,18 @@ pub(crate) fn objective_metric(
             gradient[voxel] = 1.0;
             (sorted[idx].0, gradient)
         }
+        DoseObjective::Maximin { .. } => {
+            // The floor is the minimum over the mask — piecewise
+            // linear in w with the subgradient at the (first) argmin
+            // voxel.
+            let (metric, argmin) = mask_voxels
+                .iter()
+                .map(|&v| (dose[v], v))
+                .min_by(|a, b| a.0.total_cmp(&b.0))
+                .unwrap_or((0.0, 0));
+            gradient[argmin] = 1.0;
+            (metric, gradient)
+        }
     }
 }
 
@@ -483,7 +524,8 @@ pub(crate) fn objective_mask(objective: &DoseObjective) -> &str {
         DoseObjective::MinEud { mask, .. }
         | DoseObjective::MaxMean { mask, .. }
         | DoseObjective::MinDoseAtVolume { mask, .. }
-        | DoseObjective::MaxDoseAtVolume { mask, .. } => mask,
+        | DoseObjective::MaxDoseAtVolume { mask, .. }
+        | DoseObjective::Maximin { mask, .. } => mask,
     }
 }
 
@@ -576,13 +618,35 @@ pub(crate) fn penalty_and_gradient(
                 penalty += weight * v * v * s * s;
                 (v, 1.0_f64, s)
             }
+            DoseObjective::Maximin { target, weight, .. } => {
+                // Shortfall below `target` penalizes like any bound;
+                // the unconditional −weight·floor pull below pushes
+                // past the target toward the achievable maximum.
+                let v = (target - metric).max(0.0);
+                let s = if *target > 0.0 { 1.0 / *target } else { 1.0 };
+                penalty += weight * v * v * s * s;
+                (v, -1.0_f64, s)
+            }
         };
         let weight = match objective {
             DoseObjective::MinEud { weight, .. }
             | DoseObjective::MaxMean { weight, .. }
             | DoseObjective::MinDoseAtVolume { weight, .. }
-            | DoseObjective::MaxDoseAtVolume { weight, .. } => *weight,
+            | DoseObjective::MaxDoseAtVolume { weight, .. }
+            | DoseObjective::Maximin { weight, .. } => *weight,
         };
+        if let DoseObjective::Maximin {
+            weight: w_floor, ..
+        } = objective
+        {
+            // Linear floor reward −w·min_v d_v — subgradient at the
+            // argmin voxel, applied regardless of bound satisfaction.
+            penalty += -w_floor * metric;
+            for (i, field) in ofields.iter().enumerate() {
+                let dm_dwi: f64 = voxels.iter().map(|&v| dmetric_dd[v] * field[v]).sum();
+                grad[i] += -w_floor * dm_dwi;
+            }
+        }
         if violation > 0.0 {
             // d(penalty)/dw_i = 2·weight·violation·scale²·sense·
             // Σ_v dm/dd_v·D_i(v) — under isoeffective, D_i(v) is beam
@@ -689,7 +753,8 @@ pub(crate) fn resolve_inputs(
                 DoseObjective::MinEud { mask, .. }
                 | DoseObjective::MaxMean { mask, .. }
                 | DoseObjective::MinDoseAtVolume { mask, .. }
-                | DoseObjective::MaxDoseAtVolume { mask, .. } => mask.as_str(),
+                | DoseObjective::MaxDoseAtVolume { mask, .. }
+                | DoseObjective::Maximin { mask, .. } => mask.as_str(),
             };
             let mask = masks
                 .iter()
@@ -874,12 +939,24 @@ pub(crate) fn final_outcomes(
                     (metric - limit).max(0.0),
                     *weight,
                 ),
+                DoseObjective::Maximin {
+                    mask: _,
+                    target,
+                    weight,
+                } => (
+                    "maximin",
+                    *target,
+                    metric >= *target,
+                    (target - metric).max(0.0),
+                    *weight,
+                ),
             };
             let mask = match objective {
                 DoseObjective::MinEud { mask, .. }
                 | DoseObjective::MaxMean { mask, .. }
                 | DoseObjective::MinDoseAtVolume { mask, .. }
-                | DoseObjective::MaxDoseAtVolume { mask, .. } => mask.clone(),
+                | DoseObjective::MaxDoseAtVolume { mask, .. }
+                | DoseObjective::Maximin { mask, .. } => mask.clone(),
             };
             ObjectiveOutcome {
                 kind: kind.to_owned(),

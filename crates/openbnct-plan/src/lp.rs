@@ -189,10 +189,11 @@ impl Assembly {
 }
 
 /// Emit one objective's constraint rows for one scenario field set and
-/// return the row index whose dual is the bound's shadow price
-/// (`None` when the objective contributes only aux rows — currently
-/// unreachable since every objective has a bound row). `col_v` is the
-/// violation slack's column or `usize::MAX` in strict mode.
+/// return the row indices whose duals are the bound's shadow prices.
+/// `col_v` is the violation slack's column or `usize::MAX` in strict
+/// mode; `col_tau` is the maximin floor variable's column
+/// (`usize::MAX` for non-maximin objectives).
+#[allow(clippy::too_many_arguments)]
 fn emit_objective_rows(
     asm: &mut Assembly,
     spec: &InversePlanObjective,
@@ -200,6 +201,7 @@ fn emit_objective_rows(
     mask_voxels: &[usize],
     fields: &[BeamDoseField],
     col_v: usize,
+    col_tau: usize,
     strict: bool,
 ) -> Result<Vec<usize>, OptimizeError> {
     let n_mask = mask_voxels.len() as f64;
@@ -319,6 +321,30 @@ fn emit_objective_rows(
             asm.at(row, col_v, -v_coeff);
             bound_rows.push(row);
         }
+        DoseObjective::Maximin { target, .. } => {
+            // τ ≤ d_v for every mask voxel — the definitional floor
+            // rows, always hard and never slacked. τ is shared across
+            // scenarios → the maximized floor is the worst-case floor.
+            for &vox in mask_voxels {
+                let row = asm.row();
+                for (i, e) in eff.iter().enumerate() {
+                    asm.at(row, i, -e[vox]);
+                }
+                asm.at(row, col_tau, 1.0);
+            }
+            // The aspiration bound itself is a bound row, identical to
+            // min_dose_at_volume f = 1: slacked + penalized in qp mode,
+            // a hard feasibility row in strict mode.
+            for &vox in mask_voxels {
+                let row = asm.row();
+                asm.b[row] = -target;
+                for (i, e) in eff.iter().enumerate() {
+                    asm.at(row, i, -e[vox]);
+                }
+                asm.at(row, col_v, -v_coeff);
+                bound_rows.push(row);
+            }
+        }
     }
     Ok(bound_rows)
 }
@@ -335,14 +361,31 @@ pub(crate) fn solve_qp(
     let n_beams = field_sets[0].len();
     let strict = mode == LpMode::Strict;
     let n_obj = spec.objectives.len();
+    // Columns: B weights, J violation slacks (penalty mode only), one
+    // maximin floor variable τ per maximin objective, then CVaR aux
+    // blocks allocated per (objective, scenario).
+    let n_tau = spec
+        .objectives
+        .iter()
+        .filter(|o| matches!(o, DoseObjective::Maximin { .. }))
+        .count();
+    let tau_base = n_beams + if strict { 0 } else { n_obj };
     let mut asm = Assembly {
         triplets: Vec::new(),
         b: Vec::new(),
-        // Columns: B weights, J violation slacks (penalty mode only),
-        // then CVaR aux blocks allocated per (objective, scenario).
-        n_vars: n_beams + if strict { 0 } else { n_obj },
+        n_vars: tau_base + n_tau,
     };
     let col_v = |j: usize| n_beams + j;
+    let mut tau_col = vec![usize::MAX; n_obj];
+    {
+        let mut c = tau_base;
+        for (j, o) in spec.objectives.iter().enumerate() {
+            if matches!(o, DoseObjective::Maximin { .. }) {
+                tau_col[j] = c;
+                c += 1;
+            }
+        }
+    }
 
     // Bound-row index per objective across scenarios — the multiplier
     // reported is the max over the block.
@@ -367,6 +410,7 @@ pub(crate) fn solve_qp(
                 &mask_voxels[j],
                 fields,
                 if strict { usize::MAX } else { col_v(j) },
+                tau_col[j],
                 strict,
             )?;
             bound_rows[j].extend(rows);
@@ -389,6 +433,14 @@ pub(crate) fn solve_qp(
             asm.at(row, col_v(j), -1.0);
         }
     }
+    // τ ≥ 0 — doses are non-negative, so a negative floor is never
+    // optimal; the nonnegativity bound just keeps the solver honest.
+    for &col in &tau_col {
+        if col != usize::MAX {
+            let row = asm.row();
+            asm.at(row, col, -1.0);
+        }
+    }
 
     // Cost: ½xᵀPx + qᵀx — diagonal P on the violation slacks
     // (2·weight·scale²), λ on the weights.
@@ -401,12 +453,19 @@ pub(crate) fn solve_qp(
         for (j, objective) in spec.objectives.iter().enumerate() {
             let (weight, bound) = match objective {
                 DoseObjective::MinEud { weight, target, .. }
-                | DoseObjective::MinDoseAtVolume { weight, target, .. } => (*weight, *target),
+                | DoseObjective::MinDoseAtVolume { weight, target, .. }
+                | DoseObjective::Maximin { weight, target, .. } => (*weight, *target),
                 DoseObjective::MaxMean { weight, limit, .. }
                 | DoseObjective::MaxDoseAtVolume { weight, limit, .. } => (*weight, *limit),
             };
             let scale = if bound > 0.0 { 1.0 / bound } else { 1.0 };
             p_triplets.push((col_v(j), col_v(j), 2.0 * weight * scale * scale));
+        }
+    }
+    // Maximin floor pull: cost −weight·τ (maximize the floor).
+    for (j, objective) in spec.objectives.iter().enumerate() {
+        if let (DoseObjective::Maximin { weight, .. }, &col) = (objective, &tau_col[j]) {
+            q[col] = -*weight;
         }
     }
     let n_vars = asm.n_vars;
@@ -856,5 +915,117 @@ mod tests {
         let error =
             optimize_weights_lp(&fields, &masks, &spec, LpMode::Penalty, provenance()).unwrap_err();
         assert!(error.to_string().contains("eud_a"));
+    }
+
+    /// Symmetric two-beam tumor pool for maximin known-answer tests:
+    /// min(10w_A + 5w_B, 5w_A + 10w_B) is maximized at w_A = w_B = cap.
+    fn symmetric_pair() -> (Vec<BeamDoseField>, Vec<RegionMask>) {
+        let fields = vec![
+            BeamDoseField {
+                name: "A".into(),
+                values: vec![10.0, 5.0],
+                components: None,
+            },
+            BeamDoseField {
+                name: "B".into(),
+                values: vec![5.0, 10.0],
+                components: None,
+            },
+        ];
+        (fields, vec![mask("tumor", &[true, true])])
+    }
+
+    #[test]
+    fn maximin_finds_the_exact_floor_under_cap() {
+        let (fields, masks) = symmetric_pair();
+        let mut spec = objective(vec![DoseObjective::Maximin {
+            mask: "tumor".into(),
+            target: 20.0,
+            weight: 1.0,
+        }]);
+        spec.weight_bound = Some(3.0);
+        spec.weight_regularization = 0.0;
+        for mode in [LpMode::Penalty, LpMode::Strict] {
+            let result = optimize_weights_lp(&fields, &masks, &spec, mode, provenance()).unwrap();
+            // τ* = 45 at w_A = w_B = 3 — symmetric cap-bound optimum.
+            assert!((result.weights[0].weight - 3.0).abs() < 1e-4);
+            assert!((result.weights[1].weight - 3.0).abs() < 1e-4);
+            let outcome = &result.outcomes[0];
+            assert_eq!(outcome.kind, "maximin");
+            assert!((outcome.achieved - 45.0).abs() < 1e-3);
+            assert!(outcome.satisfied);
+            let cert = result.certificate.unwrap();
+            assert!((cert.primal_objective - cert.dual_objective).abs() < 1e-4);
+        }
+    }
+
+    #[test]
+    fn maximin_requires_delivery_cap() {
+        let (fields, masks) = symmetric_pair();
+        let spec = objective(vec![DoseObjective::Maximin {
+            mask: "tumor".into(),
+            target: 20.0,
+            weight: 1.0,
+        }]);
+        let error =
+            optimize_weights_lp(&fields, &masks, &spec, LpMode::Penalty, provenance()).unwrap_err();
+        assert!(error.to_string().contains("weight_bound"));
+    }
+
+    #[test]
+    fn maximin_strict_reports_aspiration_infeasible() {
+        let (fields, masks) = symmetric_pair();
+        let mut spec = objective(vec![DoseObjective::Maximin {
+            mask: "tumor".into(),
+            target: 60.0, // above the 45 achievable under the cap
+            weight: 1.0,
+        }]);
+        spec.weight_bound = Some(3.0);
+        let error =
+            optimize_weights_lp(&fields, &masks, &spec, LpMode::Strict, provenance()).unwrap_err();
+        assert!(error.to_string().contains("infeasible"));
+    }
+
+    #[test]
+    fn maximin_floor_is_shared_across_scenarios() {
+        // τ is one variable spanning all field sets → the solver
+        // maximizes the *worst-case* floor, not the nominal one.
+        let nominal = vec![
+            BeamDoseField {
+                name: "A".into(),
+                values: vec![10.0, 0.0],
+                components: None,
+            },
+            BeamDoseField {
+                name: "B".into(),
+                values: vec![0.0, 10.0],
+                components: None,
+            },
+        ];
+        // Scenario: beam B delivers half output. Worst-case floor is
+        // min(10w_A, 5w_B); equalizing at the cap gives w_A = 1.5,
+        // w_B = 3, floor 15 — distinct from the nominal-optimal w = 3,3.
+        let perturbed = vec![
+            nominal[0].clone(),
+            BeamDoseField {
+                values: vec![0.0, 5.0],
+                ..nominal[1].clone()
+            },
+        ];
+        let masks = vec![mask("tumor", &[true, true])];
+        let mut spec = objective(vec![DoseObjective::Maximin {
+            mask: "tumor".into(),
+            target: 0.0,
+            weight: 1.0,
+        }]);
+        spec.weight_bound = Some(3.0);
+        // λ > 0 selects the minimum-weight vertex on the optimal face
+        // — without it the LP only pins τ, leaving w_A ∈ [1.5, 3] free.
+        spec.weight_regularization = 1e-3;
+        let mask_voxels = vec![vec![0usize, 1]];
+        let (w, _) = solve_qp(&spec, &mask_voxels, &[nominal, perturbed], LpMode::Penalty).unwrap();
+        assert!((w[0] - 1.5).abs() < 1e-3);
+        assert!((w[1] - 3.0).abs() < 1e-4);
+        let _ = masks;
     }
 }

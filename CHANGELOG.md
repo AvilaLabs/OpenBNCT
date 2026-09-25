@@ -59,6 +59,16 @@ own versions independent of the crate version.
   ±20%, skin 1.5×blood; Kotiluoto 8% computational excluding boron) as a
   12-scenario set evaluated against the committed S_N transported
   field.
+- `maximin` dose objective (`kind: maximin`): maximizes the minimum
+  voxel dose over a mask — the tumor-floor formulation penalty
+  composites cannot express. The conic solvers carry a scalar floor
+  variable τ with `τ ≤ d_v` rows and cost `−weight·τ`; τ is shared
+  across scenario field sets, so under `--scenario-set` the maximized
+  floor is the *worst-case* floor. `target` is the aspiration bound
+  reported for satisfaction/violation bookkeeping; `weight_bound`
+  (delivery cap) is required to keep the floor finite. The PGD solver
+  applies the equivalent linear floor pull with an argmin-voxel
+  subgradient.
 - `plan select` (`openbnct.beam-selection/0.1.0`): joint beam-subset
   × weight optimization over a candidate dose-field pool. Every
   subset of size ≤ `--beams` is re-solved by the certified inner
