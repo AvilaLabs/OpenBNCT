@@ -1296,4 +1296,142 @@ mod tests {
         // Sanity anchor: ~1.0e-9 Gy·cm² for pure hydrogen near 1 MeV.
         assert!((0.9e-9..1.1e-9).contains(&got), "got {got:e}");
     }
+
+    /// Bondarenko heterogeneous-dilution self-shielding: a narrow
+    /// resonance spike in the resonant nuclide's σ_t must collapse
+    /// *down* when the dilution weight σ₀/(σ_t+σ₀) is applied —
+    /// the spike's local flux depression suppresses its contribution.
+    /// B10 carries flat 1 b capture plus a 10⁴ b spike over
+    /// [9.9e4, 1.01e5] eV (~10% of the group's lethargy); O16 is a
+    /// flat 5 b elastic diluent. Unshielded σ̄_t ≈ 10³ b for the
+    /// resonant component; shielded ≈ its ~1.5 b off-resonance value —
+    /// a ~700× separation the material σ_t must show.
+    #[test]
+    fn bondarenko_shielding_suppresses_narrow_resonance() {
+        let dir = tempfile::tempdir().unwrap();
+        let mat = 125;
+        // Shared base grid, plus spike-boundary points for B10's
+        // capture section so the resonance edges are explicit.
+        let grid: Vec<f64> = (0..)
+            .map(|i| 1.0e-5 * 1.005_f64.powi(i))
+            .take_while(|e| *e <= 2.0e7)
+            .collect();
+        let write_tape = |name: &str, sections: &[(u32, &[(f64, f64)])]| {
+            let mut lines = Vec::new();
+            for (sidx, (mt, points)) in sections.iter().enumerate() {
+                let np = points.len();
+                lines.push(endf_line(
+                    ["1.00100E+3", "9.99167E-1", "0", "0", "0", "0"],
+                    mat,
+                    3,
+                    *mt,
+                    (1 + sidx * 1000) as u32,
+                ));
+                lines.push(endf_line(
+                    ["0.00000E+0", "0.00000E+0", "0", "0", "1", &np.to_string()],
+                    mat,
+                    3,
+                    *mt,
+                    2,
+                ));
+                lines.push(endf_line(
+                    [&np.to_string(), "2", "", "", "", ""],
+                    mat,
+                    3,
+                    *mt,
+                    3,
+                ));
+                for (seq, chunk) in (4 + sidx * 1000..).zip(points.chunks(3)) {
+                    let mut fields: Vec<String> = Vec::new();
+                    for (e, s) in chunk {
+                        fields.push(endf_real(*e));
+                        fields.push(endf_real(*s));
+                    }
+                    fields.resize(6, String::new());
+                    let f: [&str; 6] = std::array::from_fn(|i| fields[i].as_str());
+                    lines.push(endf_line(f, mat, 3, *mt, seq as u32));
+                }
+            }
+            let tape = dir.path().join(format!("{name}.endf"));
+            std::fs::write(&tape, lines.join("\n") + "\n").unwrap();
+            tape
+        };
+        // B10: flat 0.5 b elastic + 1 b capture with a 10⁴ b resonance
+        // spike on [9.9e4, 1.01e5].
+        let b10_elastic: Vec<(f64, f64)> = grid.iter().map(|&e| (e, 0.5)).collect();
+        let mut b10_energies: Vec<f64> = grid.iter().copied().chain([9.9e4, 1.01e5]).collect();
+        b10_energies.sort_by(f64::total_cmp);
+        b10_energies.dedup();
+        let b10_capture: Vec<(f64, f64)> = b10_energies
+            .into_iter()
+            .map(|e| {
+                (
+                    e,
+                    if (9.9e4..=1.01e5).contains(&e) {
+                        1.0e4
+                    } else {
+                        1.0
+                    },
+                )
+            })
+            .collect();
+        // O16: flat 5 b elastic, nothing else.
+        let o16_elastic: Vec<(f64, f64)> = grid.iter().map(|&e| (e, 5.0)).collect();
+        let b10 = write_tape("B10", &[(2, &b10_elastic), (102, &b10_capture)]);
+        let o16 = write_tape("O16", &[(2, &o16_elastic)]);
+        let material = MaterialDefinition {
+            schema_version: "openbnct.material/0.1.0".into(),
+            id: "test.b10-in-o16".into(),
+            density_g_cm3: 1.0,
+            temperature_k: 294.0,
+            nuclides: vec![
+                openbnct_transport::NuclideMassFraction {
+                    name: "B10".into(),
+                    mass_fraction: 0.5,
+                },
+                openbnct_transport::NuclideMassFraction {
+                    name: "O16".into(),
+                    mass_fraction: 0.5,
+                },
+            ],
+            neutron_thermal_treatment: openbnct_transport::NeutronThermalTreatment::FreeGas,
+            boron_microdistribution: None,
+        };
+        let opts = |shield: bool| CollapseOptions {
+            library_dir: dir.path().to_path_buf(),
+            endf_paths: [
+                ("B10".to_string(), b10.clone()),
+                ("O16".to_string(), o16.clone()),
+            ]
+            .into_iter()
+            .collect(),
+            materials: vec![material.clone()],
+            energy_boundaries_ev: vec![1.1e5, 9.0e4],
+            weighting: WeightingSpectrum::FlatLethargy,
+            tsl_paths: BTreeMap::new(),
+            tsl_temperature_k: 294.0,
+            self_shielding: shield,
+            id: "test.shielding".into(),
+            component_profile: None,
+            note: String::new(),
+        };
+        let unshielded = collapse_multigroup(&opts(false)).unwrap();
+        let shielded = collapse_multigroup(&opts(true)).unwrap();
+        let st_un = unshielded.materials[0].sigma_total_per_cm[0];
+        let st_sh = shielded.materials[0].sigma_total_per_cm[0];
+        // Unshielded: n_B·σ̄_B ≈ 0.03·~10³ ≈ 30 /cm (spike dominates);
+        // shielded ≈ 0.03·~1.5 + 0.019·5 ≈ 0.14 /cm — off-resonance.
+        assert!(
+            st_un > 5.0,
+            "unshielded σ_t {st_un} should be resonance-dominated"
+        );
+        assert!(
+            st_sh < st_un / 50.0,
+            "shielded σ_t {st_sh} not suppressed vs unshielded {st_un}"
+        );
+        assert!(
+            (0.02..0.5).contains(&st_sh),
+            "shielded σ_t {st_sh} far from the ~0.14 off-resonance limit"
+        );
+    }
 }

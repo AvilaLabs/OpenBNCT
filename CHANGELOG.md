@@ -157,6 +157,11 @@ own versions independent of the crate version.
   --response` accepts the bank for those bindings — the full
   imaging chain now runs on pixellated crystals. With `--aperture`,
   each pixel's acceptance cone axis runs that voxel→aperture.
+- Self-shielding regression coverage: `sn collapse --self-shielding`'s
+  Bondarenko heterogeneous-dilution weighting now has a synthetic
+  resonance test — a narrow 10⁴ b capture spike on B10 against a flat
+  O16 diluent collapses ~50× lower shielded than unshielded, landing
+  at the off-resonance value.
 - Adjoint anisotropy: `solve_multigroup_adjoint` now transposes the
   P1 and l = 2..=5 moment matrices instead of dropping them, so
   adjoint importance solves carry the same scatter physics as the
