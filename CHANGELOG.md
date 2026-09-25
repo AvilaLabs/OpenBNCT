@@ -59,6 +59,15 @@ own versions independent of the crate version.
   ±20%, skin 1.5×blood; Kotiluoto 8% computational excluding boron) as a
   12-scenario set evaluated against the committed S_N transported
   field.
+- `plan select` (`openbnct.beam-selection/0.1.0`): joint beam-subset
+  × weight optimization over a candidate dose-field pool. Every
+  subset of size ≤ `--beams` is re-solved by the certified inner
+  solver (`exhaustive` — the global subset optimum, refused past
+  50 k solves; `greedy` forward-stepwise for larger pools), ranked by
+  certified objective with strict-mode infeasibility marked
+  definitively, and the winner re-emitted as a full plan result via
+  `--emit-plan`. This is the dosimetric counterpart of the geometric
+  `plan directions` pre-filter, on real dose fields.
 
 ### Added — boron microdistribution
 

@@ -2283,6 +2283,50 @@ enum PlanCommand {
         #[arg(long, default_value = "pgd", value_parser = ["pgd", "qp", "lp"])]
         solver: String,
     },
+    /// Select the best beam subset of size ≤ `--beams` from a
+    /// candidate dose-field pool. Each subset's weights come from a
+    /// certified inner solve (`qp` penalty, or `lp` strict bounds that
+    /// mark infeasible subsets definitively), so the ranking is exact
+    /// — this is the dosimetric counterpart of the geometric direction
+    /// pre-filter in `plan directions`. Emits
+    /// `openbnct.beam-selection/0.1.0`.
+    Select {
+        /// `openbnct.inverse-plan-objective/0.1.0` JSON — the
+        /// objective every subset is scored against.
+        #[arg(long)]
+        objective: PathBuf,
+        /// `openbnct.physical-dose-bundle/0.2.0` JSON per *candidate*
+        /// beam — supply the whole pool, not just expected winners.
+        #[arg(long)]
+        dose: Vec<PathBuf>,
+        /// `openbnct.region-mask/0.1.0` JSON per named mask.
+        #[arg(long)]
+        mask: Vec<PathBuf>,
+        /// Maximum beams per subset; subsets of size 1..=N are ranked.
+        #[arg(long, default_value_t = 2)]
+        beams: u32,
+        /// `exhaustive` (every subset — the global optimum, refused
+        /// past 50 000 solves) or `greedy` (forward stepwise for
+        /// large pools).
+        #[arg(long, default_value = "exhaustive", value_parser = ["exhaustive", "greedy"])]
+        search: String,
+        /// Inner solver: `qp` (certified penalty — continuous ranking)
+        /// or `lp` (hard bounds — feasibility + min Σw).
+        #[arg(long, default_value = "qp", value_parser = ["qp", "lp"])]
+        solver: String,
+        /// Output path for the selection report.
+        #[arg(long)]
+        output: PathBuf,
+        /// Optionally emit the winning subset's
+        /// `openbnct.inverse-plan-result/0.1.0` to this path.
+        #[arg(long)]
+        emit_plan: Option<PathBuf>,
+        /// Report id embedded in the artifact.
+        #[arg(long)]
+        id: String,
+        #[arg(long)]
+        provenance_id: Option<String>,
+    },
     /// Propagate declared systematic σ on each beam's component dose
     /// through the optimized weights: per-objective metric 1σ and the
     /// Gaussian violation probability against its bound. Emits
@@ -10364,6 +10408,170 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                     write_new_json(&plan_path, &plan)?;
                     println!("exposure plan: {}", plan_path.display());
+                }
+            }
+            PlanCommand::Select {
+                objective,
+                dose,
+                mask,
+                beams,
+                search,
+                solver,
+                output,
+                emit_plan,
+                id,
+                provenance_id,
+            } => {
+                use openbnct_plan::optimize::{
+                    BeamDoseField, DoseQuantity, InversePlanObjective, ResultProvenance,
+                };
+                let spec_bytes = fs::read(&objective)?;
+                let spec: InversePlanObjective =
+                    serde_json::from_slice(&spec_bytes).map_err(|error| {
+                        io::Error::other(format!("inverse-plan objective: {error}"))
+                    })?;
+                // Same per-beam bundle loading as `plan optimize`
+                // (no scenario perturbation — selection runs on the
+                // nominal fields; `--scenario-set` stays on optimize).
+                let mut fields = Vec::with_capacity(dose.len());
+                let mut dose_refs = Vec::with_capacity(dose.len());
+                for path in &dose {
+                    let bytes = fs::read(path)?;
+                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&bytes)?;
+                    let all_components = || {
+                        let name = |c: openbnct_core::DoseComponent| match c {
+                            openbnct_core::DoseComponent::Boron => "boron",
+                            openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                            openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                            openbnct_core::DoseComponent::Photon => "photon",
+                        };
+                        bundle
+                            .components
+                            .iter()
+                            .map(|volume| {
+                                (name(volume.component).to_string(), volume.values.clone())
+                            })
+                            .collect()
+                    };
+                    let (values, components) = match spec.dose_quantity {
+                        DoseQuantity::PhysicalTotal => (bundle.physical_total.values.clone(), None),
+                        DoseQuantity::Component(component) => (
+                            bundle
+                                .components
+                                .iter()
+                                .find(|volume| volume.component == component)
+                                .ok_or_else(|| {
+                                    io::Error::other(format!(
+                                        "{}: no {:?} component",
+                                        path.display(),
+                                        component
+                                    ))
+                                })?
+                                .values
+                                .clone(),
+                            None,
+                        ),
+                        DoseQuantity::Isoeffective => {
+                            (bundle.physical_total.values.clone(), Some(all_components()))
+                        }
+                    };
+                    fields.push(BeamDoseField {
+                        name: path
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| path.display().to_string()),
+                        values,
+                        components,
+                    });
+                    dose_refs.push(openbnct_core::ContentReference {
+                        id: path
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_default(),
+                        sha256: format!("sha256:{}", openbnct_evidence::sha256_hex(&bytes)),
+                    });
+                }
+                let masks: Vec<RegionMask> = mask
+                    .iter()
+                    .map(|path| {
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("{}: {error}", path.display())).into()
+                        })
+                    })
+                    .collect::<Result<_, Box<dyn Error>>>()?;
+                let mode = match solver.as_str() {
+                    "qp" => openbnct_plan::lp::LpMode::Penalty,
+                    "lp" => openbnct_plan::lp::LpMode::Strict,
+                    other => {
+                        return Err(io::Error::other(format!(
+                            "--solver must be qp|lp, got {other}"
+                        ))
+                        .into());
+                    }
+                };
+                let search_mode = match search.as_str() {
+                    "exhaustive" => openbnct_plan::selection::SelectionSearch::Exhaustive,
+                    "greedy" => openbnct_plan::selection::SelectionSearch::Greedy,
+                    other => {
+                        return Err(io::Error::other(format!(
+                            "--search must be exhaustive|greedy, got {other}"
+                        ))
+                        .into());
+                    }
+                };
+                let spec_sha = openbnct_evidence::sha256_hex(&spec_bytes);
+                let provenance = ResultProvenance {
+                    id,
+                    provenance_id: provenance_id
+                        .unwrap_or_else(|| format!("beam-selection:{}", &spec_sha[..12])),
+                    objective: openbnct_core::ContentReference {
+                        id: spec.id.clone(),
+                        sha256: format!("sha256:{spec_sha}"),
+                    },
+                };
+                let report = openbnct_plan::selection::select_beams(
+                    &fields,
+                    &masks,
+                    &spec,
+                    beams,
+                    mode,
+                    search_mode,
+                    dose_refs,
+                    provenance,
+                )
+                .map_err(|e| io::Error::other(format!("beam selection: {e}")))?;
+                write_new_json(&output, &report)?;
+                println!("beam selection: {}", output.display());
+                println!(
+                    "selected {:?} ({} evaluated, score {:.4e})",
+                    report.selected.beams, report.evaluated, report.selected.score
+                );
+                if let Some(plan_path) = emit_plan {
+                    // Re-emit the winning subset as a full plan result —
+                    // the report row carries weights but not the
+                    // outcome/iteration bookkeeping.
+                    let idx: Vec<usize> = fields
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, f)| report.selected.beams.contains(&f.name))
+                        .map(|(i, _)| i)
+                        .collect();
+                    let subset: Vec<BeamDoseField> =
+                        idx.iter().map(|&i| fields[i].clone()).collect();
+                    let result = openbnct_plan::lp::optimize_weights_lp(
+                        &subset,
+                        &masks,
+                        &spec,
+                        mode,
+                        ResultProvenance {
+                            id: format!("{}.selected", report.id),
+                            provenance_id: report.provenance_id.clone(),
+                            objective: report.objective.clone(),
+                        },
+                    )
+                    .map_err(|e| io::Error::other(format!("selected plan: {e}")))?;
+                    write_new_json(&plan_path, &result)?;
+                    println!("selected plan: {}", plan_path.display());
                 }
             }
             PlanCommand::Robustness {

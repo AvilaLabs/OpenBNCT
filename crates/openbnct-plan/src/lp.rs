@@ -326,7 +326,7 @@ fn emit_objective_rows(
 /// Assemble and solve the QP for a list of scenario field sets
 /// (`field_sets[0]` is the nominal). Returns
 /// `(weights, certificate)`.
-fn solve_qp(
+pub(crate) fn solve_qp(
     spec: &InversePlanObjective,
     mask_voxels: &[Vec<usize>],
     field_sets: &[Vec<BeamDoseField>],
