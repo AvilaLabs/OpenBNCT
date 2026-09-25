@@ -1467,16 +1467,21 @@ independent engines, ordered by leverage. None implies a clinical claim.
 - **R11-04 — VR chi-square gate seeds (R6-09 remainder).** Two
   ~196M-history OpenMC runs outstanding for the
   variance-reduction acceptance gate (~27h each on this workstation).
-  Pure compute; no code work. **In flight (2026-09-23):** serialized
-  supervisor scope `openbnct-vr-seeds.scope` (6 GB / 200% cgroup) runs
-  seed 20260831, then 314159265, on conda-forge OpenMC 0.16.0 @ 617d35a
-  — the exact commit the reference manifest pins — then evaluates each
-  seed against the contract, validates vs the 600M analog reference,
-  and runs the three-seed chi-square evaluation. Run dirs and script:
-  `../vr-seed-staging/` (sibling of this checkout), log at
-  `vr-seed-staging/supervisor.log`. At 2 threads (quota-matched) expect
-  roughly a week of background compute; killing the scope abandons it
-  cleanly and the supervisor restarts from the latest statepoint.
+  Pure compute; no code work. **Deferred (2026-09-25):** two of three
+  contract seeds are complete (271828182 pre-staged, 314159265's
+  statepoint.140.h5 staged into `run-seed-314159265`); seed
+  20260831 reached batch 100/140 before a system OOM (RAM pressure
+  from RAM-backed `/tmp`) killed it at ~10:50 — no checkpoint then
+  existed, so it restarted, reaching batch 31 before a second crash;
+  `statepoint.020.h5` now allows `--restart` from batch 20. The
+  supervisor scope is stopped and must not be relaunched without the
+  user's approval — multi-hour runs do not fit this machine's crash
+  cadence. Config edits already applied to `../vr-seed-staging/`:
+  `OMP_NUM_THREADS=8` in `supervisor.sh`, `survival_biasing=true`
+  and per-20-batch statepoints in `run-seed-20260831/settings.xml`.
+  To resume: stage the run in a ≤10 GB cgroup, `openmc --restart
+  statepoint.020.h5` in the run dir, or rerun `supervisor.sh` (it
+  skips completed seeds automatically).
 - **R11-05 — licensed-engine execution gates.** The MCNP and PHITS
   emitters produce decks, but end-to-end execution requires licensed
   users. External dependency — track, don't block.
