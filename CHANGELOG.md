@@ -145,6 +145,18 @@ own versions independent of the crate version.
   The collapse also corrects the P1 entries — each (g→g′) pair now
   carries *its own* KN mean cosine (E′(μ) ties each bin to a
   distinct angular slice) instead of one row-aggregate value.
+- Pixellated detector imaging: `pg response --pixellated` solves each
+  `--detector` voxel as its own pixel (one adjoint per voxel —
+  superposition does not hold because the sweep's negative-flux
+  fixup is nonlinear, so columns are independent solves by design)
+  and emits a `openbnct.pg-response-array/0.1.0` bank with a
+  sensitivity column per pixel. `pg counts --response` accepts the
+  bank and emits `openbnct.pg-counts-array/0.1.0` with
+  `per_pixel_tally`; `pg observe` folds it into detector entries
+  bound to `{array.id}#pixel{i}` columns; and `pg reconstruct
+  --response` accepts the bank for those bindings — the full
+  imaging chain now runs on pixellated crystals. With `--aperture`,
+  each pixel's acceptance cone axis runs that voxel→aperture.
 
 ## [0.2.2] — 2026-09-23
 

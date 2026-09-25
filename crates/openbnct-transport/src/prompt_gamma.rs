@@ -202,6 +202,260 @@ pub const PROMPT_GAMMA_OBSERVATION_SCHEMA: &str = "openbnct.pg-observation/0.1.0
 /// Versioned contract id for `PromptGammaReconstruction`.
 pub const PROMPT_GAMMA_RECONSTRUCTION_SCHEMA: &str = "openbnct.pg-reconstruction/0.1.0";
 
+/// Versioned contract id for `PgResponseArray` — a pixellated
+/// detector's response bank.
+pub const PG_RESPONSE_ARRAY_SCHEMA: &str = "openbnct.pg-response-array/0.1.0";
+
+/// Versioned contract id for `PgPixelCounts` — per-pixel tallies.
+pub const PG_COUNTS_ARRAY_SCHEMA: &str = "openbnct.pg-counts-array/0.1.0";
+
+/// One detector pixel's response column: the adjoint sensitivity map
+/// for a tally on `detector_voxel` alone. A pixellated detector is
+/// exactly this per voxel — each pixel is an independent adjoint
+/// solve, so `collimation` (a pinhole cone axis runs pixel→aperture)
+/// and the solver stats are per-pixel quantities.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PgPixelResponse {
+    /// The detector voxel this column tallies into, `i,j,k` on the
+    /// case grid.
+    pub detector_voxel: [u32; 3],
+    /// Adjoint sensitivity at `emission_group` per voxel, grid order.
+    pub sensitivity: Vec<f64>,
+    /// Solver outcome for this pixel's adjoint run.
+    pub converged: bool,
+    pub residual: f64,
+    pub outer_iterations: u32,
+    /// Pinhole collimation this pixel was solved under — the
+    /// acceptance-cone axis is per-pixel.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub collimation: Option<PgCollimation>,
+}
+
+/// A pixellated detector's response bank: one response column per
+/// detector voxel, all solved against the same case, photon data,
+/// emission group, and quadrature. This is the artifact a multi-voxel
+/// crystal array produces — the per-position response files of the
+/// aggregate chain, generated in one solve sweep.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PgResponseArray {
+    pub schema_version: String,
+    pub id: String,
+    pub case_id: String,
+    pub geometry: GridGeometry,
+    /// Photon group carrying the emission line (see
+    /// `PromptGammaResponse::emission_group`).
+    pub emission_group: u32,
+    pub emission_energy_ev: f64,
+    /// S_N quadrature order every pixel was solved at.
+    pub quadrature_order: u32,
+    /// Pixel columns in `--detector` declaration order.
+    pub pixels: Vec<PgPixelResponse>,
+    /// Content bindings to the transport case and photon data.
+    pub case: ContentReference,
+    pub photon_data: ContentReference,
+    pub provenance_id: String,
+    pub qualification: String,
+}
+
+impl PgResponseArray {
+    pub fn validate(&self) -> Result<(), PromptGammaError> {
+        for (label, value) in [
+            ("schema_version", self.schema_version.as_str()),
+            ("id", self.id.as_str()),
+            ("case_id", self.case_id.as_str()),
+            ("provenance_id", self.provenance_id.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(PromptGammaError::EmptyIdentifier(label));
+            }
+        }
+        if self.pixels.is_empty() {
+            return Err(PromptGammaError::EmptyIdentifier("pixels"));
+        }
+        let [nx, ny, nz] = self.geometry.shape;
+        let voxels = self
+            .geometry
+            .voxel_count()
+            .map_err(|_| PromptGammaError::NonFiniteValue)?;
+        let mut seen = std::collections::BTreeSet::new();
+        for pixel in &self.pixels {
+            if pixel.detector_voxel[0] >= nx
+                || pixel.detector_voxel[1] >= ny
+                || pixel.detector_voxel[2] >= nz
+            {
+                return Err(PromptGammaError::DetectorOutsideGeometry);
+            }
+            if !seen.insert(pixel.detector_voxel) {
+                return Err(PromptGammaError::NonFiniteValue);
+            }
+            if pixel.sensitivity.len() != voxels
+                || pixel.sensitivity.iter().any(|v| !v.is_finite() || *v < 0.0)
+                || !pixel.residual.is_finite()
+            {
+                return Err(PromptGammaError::NonFiniteValue);
+            }
+            if let Some(c) = &pixel.collimation {
+                let bad = c.aperture_mm.iter().any(|v| !v.is_finite())
+                    || !(c.aperture_radius_mm > 0.0 && c.aperture_radius_mm.is_finite())
+                    || !(c.accepted_ordinate_fraction > 0.0 && c.accepted_ordinate_fraction <= 1.0);
+                if bad {
+                    return Err(PromptGammaError::NonFiniteValue);
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Borrow pixel `index` as an equivalent single-detector
+    /// `PromptGammaResponse` — `id` becomes `{array.id}#pixel{index}`
+    /// so observation bindings can address one column of the array.
+    pub fn pixel_as_response(&self, index: usize) -> Option<PromptGammaResponse> {
+        self.pixels.get(index).map(|p| PromptGammaResponse {
+            schema_version: PROMPT_GAMMA_RESPONSE_SCHEMA.into(),
+            id: format!("{}#pixel{}", self.id, index),
+            case_id: self.case_id.clone(),
+            geometry: self.geometry.clone(),
+            detector_voxels: vec![p.detector_voxel],
+            emission_group: self.emission_group,
+            emission_energy_ev: self.emission_energy_ev,
+            sensitivity: p.sensitivity.clone(),
+            quadrature_order: self.quadrature_order,
+            converged: p.converged,
+            residual: p.residual,
+            outer_iterations: p.outer_iterations,
+            collimation: p.collimation.clone(),
+            case: self.case.clone(),
+            photon_data: self.photon_data.clone(),
+            provenance_id: self.provenance_id.clone(),
+            qualification: self.qualification.clone(),
+        })
+    }
+}
+
+/// Per-pixel tallies under an emission map — the pixellated
+/// counterpart of `PromptGammaCounts`. `per_pixel_tally[i]` is the
+/// expected tally on pixel `i`, in the response array's declaration
+/// order.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PgPixelCounts {
+    pub schema_version: String,
+    pub id: String,
+    pub case_id: String,
+    /// Expected tally per pixel, aligned to `PgResponseArray::pixels`.
+    pub per_pixel_tally: Vec<f64>,
+    /// Declared efficiency calibration applied to every pixel.
+    pub detector_efficiency: f64,
+    pub voxel_density_kg_per_m3: f64,
+    pub emission: ContentReference,
+    /// Binding to the `PgResponseArray` the tallies were folded with.
+    pub response: ContentReference,
+    pub provenance_id: String,
+    pub qualification: String,
+}
+
+/// Fold an emission map through every pixel column of a response
+/// array — `Σ_v emission(v)·voxel_mass(v)·sensitivity_p(v)` per pixel.
+#[allow(clippy::too_many_arguments)]
+pub fn expected_prompt_gamma_counts_pixels(
+    emission: &PromptGammaSource,
+    array: &PgResponseArray,
+    voxel_density_kg_per_m3: f64,
+    detector_efficiency: f64,
+    id: &str,
+    emission_ref: ContentReference,
+    response_ref: ContentReference,
+    provenance_id: &str,
+) -> Result<PgPixelCounts, PromptGammaError> {
+    emission.validate()?;
+    array.validate()?;
+    if emission.geometry != array.geometry {
+        return Err(PromptGammaError::ShapeMismatch(
+            "emission and response grids differ",
+        ));
+    }
+    if (emission.emission_energy_ev - array.emission_energy_ev).abs() > 1.0 {
+        return Err(PromptGammaError::ShapeMismatch(
+            "emission and response energies differ",
+        ));
+    }
+    if !voxel_density_kg_per_m3.is_finite()
+        || voxel_density_kg_per_m3 <= 0.0
+        || !detector_efficiency.is_finite()
+        || detector_efficiency <= 0.0
+    {
+        return Err(PromptGammaError::NonFiniteValue);
+    }
+    let spacing = &emission.geometry.spacing_mm;
+    let voxel_mass_kg = voxel_density_kg_per_m3 * spacing[0] * spacing[1] * spacing[2] * 1e-9;
+    let per_pixel_tally: Vec<f64> = array
+        .pixels
+        .iter()
+        .map(|pixel| {
+            emission
+                .values
+                .iter()
+                .zip(pixel.sensitivity.iter())
+                .map(|(e, s)| e * voxel_mass_kg * s)
+                .sum::<f64>()
+                * detector_efficiency
+        })
+        .collect();
+    if per_pixel_tally.iter().any(|t| !t.is_finite()) {
+        return Err(PromptGammaError::NonFiniteValue);
+    }
+    Ok(PgPixelCounts {
+        schema_version: PG_COUNTS_ARRAY_SCHEMA.into(),
+        id: id.into(),
+        case_id: emission.case_id.clone(),
+        per_pixel_tally,
+        detector_efficiency,
+        voxel_density_kg_per_m3,
+        emission: emission_ref,
+        response: response_ref,
+        provenance_id: provenance_id.into(),
+        qualification: PROMPT_GAMMA_QUALIFICATION.into(),
+    })
+}
+
+/// Collect a `PgPixelCounts` into an observation: every pixel becomes
+/// a detector entry bound to `{array.id}#pixel{i}` — the id form
+/// `pixel_as_response` gives the column — with the shared array
+/// content hash.
+pub fn collect_prompt_gamma_observation_pixels(
+    counts: &PgPixelCounts,
+    id: &str,
+    provenance_id: &str,
+) -> Result<PromptGammaObservation, PromptGammaError> {
+    if counts.per_pixel_tally.is_empty() {
+        return Err(PromptGammaError::EmptyIdentifier("per_pixel_tally"));
+    }
+    let base_id = counts.response.id.clone();
+    let observation = PromptGammaObservation {
+        schema_version: PROMPT_GAMMA_OBSERVATION_SCHEMA.into(),
+        id: id.into(),
+        case_id: counts.case_id.clone(),
+        detectors: counts
+            .per_pixel_tally
+            .iter()
+            .enumerate()
+            .map(|(i, &tally)| PromptGammaObservationEntry {
+                response: ContentReference {
+                    id: format!("{base_id}#pixel{i}"),
+                    sha256: counts.response.sha256.clone(),
+                },
+                measured_tally: tally,
+            })
+            .collect(),
+        provenance_id: provenance_id.into(),
+        qualification: PROMPT_GAMMA_QUALIFICATION.into(),
+    };
+    observation.validate()?;
+    Ok(observation)
+}
+
 /// Detector-response map for a declared voxel region: the adjoint
 /// solution's value at the 478 keV emission group in every cell —
 /// the importance of a photon born there to a fluence-weighted
@@ -1017,6 +1271,145 @@ mod tests {
                 "p"
             ),
             Err(PromptGammaError::MissingBoronComponent)
+        ));
+    }
+
+    fn pixel_array() -> PgResponseArray {
+        PgResponseArray {
+            schema_version: PG_RESPONSE_ARRAY_SCHEMA.into(),
+            id: "bank".into(),
+            case_id: "case".into(),
+            geometry: GridGeometry {
+                shape: [2, 1, 1],
+                spacing_mm: [1.0; 3],
+                origin_mm: [0.0; 3],
+                direction: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            },
+            emission_group: 7,
+            emission_energy_ev: 478_000.0,
+            quadrature_order: 8,
+            pixels: vec![
+                PgPixelResponse {
+                    detector_voxel: [0, 0, 0],
+                    sensitivity: vec![0.25, 0.5],
+                    converged: true,
+                    residual: 1e-7,
+                    outer_iterations: 3,
+                    collimation: None,
+                },
+                PgPixelResponse {
+                    detector_voxel: [1, 0, 0],
+                    sensitivity: vec![0.4, 0.1],
+                    converged: true,
+                    residual: 2e-7,
+                    outer_iterations: 4,
+                    collimation: None,
+                },
+            ],
+            case: ContentReference {
+                id: "case".into(),
+                sha256: "b".repeat(64),
+            },
+            photon_data: ContentReference {
+                id: "data".into(),
+                sha256: "c".repeat(64),
+            },
+            provenance_id: "bank-prov".into(),
+            qualification: PROMPT_GAMMA_QUALIFICATION.into(),
+        }
+    }
+
+    #[test]
+    fn pixel_counts_match_per_column_folds() {
+        let source = derive_prompt_gamma_source(
+            &bundle(DoseUnit::GrayPerSourceParticle),
+            "pg-1",
+            ContentReference {
+                id: "bundle".into(),
+                sha256: "a".repeat(64),
+            },
+            "pg-prov",
+        )
+        .unwrap();
+        let array = pixel_array();
+        let counts = expected_prompt_gamma_counts_pixels(
+            &source,
+            &array,
+            1000.0,
+            0.02,
+            "pix",
+            ContentReference {
+                id: "pg-1".into(),
+                sha256: "a".repeat(64),
+            },
+            ContentReference {
+                id: "bank".into(),
+                sha256: "b".repeat(64),
+            },
+            "counts-prov",
+        )
+        .unwrap();
+        assert_eq!(counts.per_pixel_tally.len(), 2);
+        // Per-pixel equals folding against the same column extracted
+        // as a single-column response.
+        for (i, &tally) in counts.per_pixel_tally.iter().enumerate() {
+            let single = expected_prompt_gamma_counts(
+                &source,
+                &array.pixel_as_response(i).unwrap(),
+                1000.0,
+                0.02,
+                "one",
+                ContentReference {
+                    id: "pg-1".into(),
+                    sha256: "a".repeat(64),
+                },
+                ContentReference {
+                    id: format!("bank#pixel{i}"),
+                    sha256: "b".repeat(64),
+                },
+                "counts-prov",
+            )
+            .unwrap();
+            assert_eq!(tally, single.expected_tally);
+        }
+    }
+
+    #[test]
+    fn pixel_observation_binds_each_column() {
+        let counts = PgPixelCounts {
+            schema_version: PG_COUNTS_ARRAY_SCHEMA.into(),
+            id: "pix".into(),
+            case_id: "case".into(),
+            per_pixel_tally: vec![1e-3, 2e-3],
+            detector_efficiency: 0.02,
+            voxel_density_kg_per_m3: 1000.0,
+            emission: ContentReference {
+                id: "pg-1".into(),
+                sha256: "a".repeat(64),
+            },
+            response: ContentReference {
+                id: "bank".into(),
+                sha256: "b".repeat(64),
+            },
+            provenance_id: "counts-prov".into(),
+            qualification: PROMPT_GAMMA_QUALIFICATION.into(),
+        };
+        let observation =
+            collect_prompt_gamma_observation_pixels(&counts, "obs", "obs-prov").unwrap();
+        assert_eq!(observation.detectors.len(), 2);
+        assert_eq!(observation.detectors[0].response.id, "bank#pixel0");
+        assert_eq!(observation.detectors[1].response.id, "bank#pixel1");
+        assert_eq!(observation.detectors[0].response.sha256, "b".repeat(64));
+        assert_eq!(observation.detectors[1].measured_tally, 2e-3);
+    }
+
+    #[test]
+    fn array_validation_rejects_duplicate_pixels() {
+        let mut array = pixel_array();
+        array.pixels[1].detector_voxel = [0, 0, 0];
+        assert!(matches!(
+            array.validate(),
+            Err(PromptGammaError::NonFiniteValue)
         ));
     }
 }

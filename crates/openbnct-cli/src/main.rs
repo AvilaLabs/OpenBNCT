@@ -552,6 +552,12 @@ enum PgCommand {
         /// Disable the extended transport correction on the sweep.
         #[arg(long)]
         no_transport_correction: bool,
+        /// Solve each `--detector` voxel as its own pixel — one adjoint
+        /// per voxel, one `openbnct.pg-response-array/0.1.0` bank with a
+        /// response column per pixel. With `--aperture`, each pixel's
+        /// acceptance cone axis runs that voxel→aperture.
+        #[arg(long)]
+        pixellated: bool,
         /// Response document identifier.
         #[arg(long)]
         id: String,
@@ -8673,6 +8679,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 max_outer,
                 periodic,
                 no_transport_correction,
+                pixellated,
                 id,
                 provenance_id,
                 output,
@@ -8705,7 +8712,6 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     .geometry
                     .voxel_count()
                     .map_err(|e| io::Error::other(format!("geometry: {e}")))?;
-                let mut adjoint_source = vec![vec![0.0; groups]; n_cells];
                 let mut detector_voxels = Vec::with_capacity(detector.len());
                 for spec in &detector {
                     let parts: Vec<&str> = spec.split(',').collect();
@@ -8728,17 +8734,21 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         ))
                         .into());
                     }
-                    adjoint_source[i + nx as usize * j + nx as usize * ny as usize * k]
-                        [emission_group] = 1.0;
-                    detector_voxels.push([v[0], v[1], v[2]]);
+                    detector_voxels.push(v);
                 }
-                // Collimation: restrict the adjoint source to ordinates
-                // inside the cone the aperture subtends at the detector
-                // centroid — adjoint directions run detector→aperture,
-                // tracing back the photons a real pinhole accepts.
-                let geometry = &transport_case.geometry;
-                let (source_weights, collimation) = match (&aperture, aperture_radius_mm) {
-                    (None, None) => (None, None),
+                // The regions to solve: pixellated → one region per
+                // declared voxel; aggregate → the whole list is one
+                // detector. Per-region solves share case, quadrature,
+                // and aperture geometry.
+                let regions: Vec<Vec<[u32; 3]>> = if pixellated {
+                    detector_voxels.iter().map(|&v| vec![v]).collect()
+                } else {
+                    vec![detector_voxels.clone()]
+                };
+                // Parse the aperture once; the acceptance cone axis is
+                // recomputed per region from that region's centroid.
+                let aperture_spec: Option<([f64; 3], f64)> = match (&aperture, aperture_radius_mm) {
+                    (None, None) => None,
                     (Some(_), None) => {
                         return Err(io::Error::other(
                             "pg response: --aperture requires --aperture-radius-mm",
@@ -8768,56 +8778,15 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                             )
                             .into());
                         }
-                        // Detector centroid in mm from voxel centers.
-                        let mut centroid = [0.0_f64; 3];
-                        for v in &detector_voxels {
-                            for a in 0..3 {
-                                centroid[a] += geometry.origin_mm[a]
-                                    + (v[a] as f64 + 0.5) * geometry.spacing_mm[a];
-                            }
-                        }
-                        for c in &mut centroid {
-                            *c /= detector_voxels.len() as f64;
-                        }
-                        let axis: Vec<f64> = (0..3).map(|a| aperture_mm[a] - centroid[a]).collect();
-                        let dist = axis.iter().map(|x| x * x).sum::<f64>().sqrt();
-                        if dist <= 0.0 {
-                            return Err(io::Error::other(
-                                "pg response: aperture must not coincide with the detector",
-                            )
-                            .into());
-                        }
-                        let axis: Vec<f64> = axis.iter().map(|x| x / dist).collect();
-                        let cos_min = dist / (dist * dist + radius * radius).sqrt();
-                        let quadrature = openbnct_transport::level_symmetric_quadrature(order)
-                            .map_err(|e| io::Error::other(format!("quadrature: {e}")))?;
-                        let weights: Vec<f64> = quadrature
-                            .iter()
-                            .map(|(u, _)| {
-                                let dot: f64 = (0..3).map(|a| u[a] * axis[a]).sum();
-                                if dot >= cos_min { 1.0 } else { 0.0 }
-                            })
-                            .collect();
-                        let accepted = weights.iter().filter(|w| **w > 0.0).count();
-                        if accepted == 0 {
-                            return Err(io::Error::other(format!(
-                                "pg response: no S{order} ordinate falls inside the \
-                                 {radius} mm aperture cone at {dist:.1} mm — raise --order \
-                                 or the radius"
-                            ))
-                            .into());
-                        }
-                        (
-                            Some(weights),
-                            Some(openbnct_transport::PgCollimation {
-                                aperture_mm,
-                                aperture_radius_mm: radius,
-                                accepted_ordinate_fraction: accepted as f64
-                                    / quadrature.len() as f64,
-                            }),
-                        )
+                        Some((aperture_mm, radius))
                     }
                 };
+                let quadrature = aperture_spec
+                    .map(|_| {
+                        openbnct_transport::level_symmetric_quadrature(order)
+                            .map_err(|e| io::Error::other(format!("quadrature: {e}")))
+                    })
+                    .transpose()?;
                 let mut periodic_axes = [false; 3];
                 for axis in &periodic {
                     let index = match axis.as_str() {
@@ -8856,59 +8825,188 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     id: transport_case.case_id.clone(),
                     sha256: openbnct_evidence::sha256_hex(&case_bytes),
                 };
-                let adjoint = openbnct_transport::solve_photon_adjoint(
-                    &transport_case,
-                    &ph_data,
-                    &options,
-                    &adjoint_source,
-                    source_weights.as_deref(),
-                    data_ref.clone(),
-                    case_ref.clone(),
-                )
-                .map_err(|e| io::Error::other(format!("photon adjoint solve: {e}")))?;
-                if !adjoint.converged {
-                    return Err(io::Error::other(format!(
-                        "photon adjoint did not converge (residual {:.3e} after {} outer iterations)",
-                        adjoint.residual, adjoint.outer_iterations
-                    ))
-                    .into());
+                let geometry = &transport_case.geometry;
+                // One adjoint solve per region: `(sensitivity,
+                // residual, outer_iterations, collimation)` per pixel.
+                let mut columns = Vec::with_capacity(regions.len());
+                for region in &regions {
+                    let mut adjoint_source = vec![vec![0.0; groups]; n_cells];
+                    for v in region {
+                        adjoint_source[v[0] as usize
+                            + nx as usize * v[1] as usize
+                            + nx as usize * ny as usize * v[2] as usize][emission_group] = 1.0;
+                    }
+                    // Collimation: restrict the adjoint source to
+                    // ordinates inside the cone the aperture subtends
+                    // at this region's centroid — adjoint directions
+                    // run detector→aperture, tracing back the photons
+                    // a real pinhole accepts.
+                    let (source_weights, collimation) = match (aperture_spec, &quadrature) {
+                        (None, _) => (None, None),
+                        (Some((aperture_mm, radius)), Some(quadrature)) => {
+                            let mut centroid = [0.0_f64; 3];
+                            for v in region {
+                                for a in 0..3 {
+                                    centroid[a] += geometry.origin_mm[a]
+                                        + (v[a] as f64 + 0.5) * geometry.spacing_mm[a];
+                                }
+                            }
+                            for c in &mut centroid {
+                                *c /= region.len() as f64;
+                            }
+                            let axis: Vec<f64> =
+                                (0..3).map(|a| aperture_mm[a] - centroid[a]).collect();
+                            let dist = axis.iter().map(|x| x * x).sum::<f64>().sqrt();
+                            if dist <= 0.0 {
+                                return Err(io::Error::other(
+                                    "pg response: aperture must not coincide with the detector",
+                                )
+                                .into());
+                            }
+                            let axis: Vec<f64> = axis.iter().map(|x| x / dist).collect();
+                            let cos_min = dist / (dist * dist + radius * radius).sqrt();
+                            let weights: Vec<f64> = quadrature
+                                .iter()
+                                .map(|(u, _)| {
+                                    let dot: f64 = (0..3).map(|a| u[a] * axis[a]).sum();
+                                    if dot >= cos_min { 1.0 } else { 0.0 }
+                                })
+                                .collect();
+                            let accepted = weights.iter().filter(|w| **w > 0.0).count();
+                            if accepted == 0 {
+                                return Err(io::Error::other(format!(
+                                    "pg response: no S{order} ordinate falls inside the \
+                                     {radius} mm aperture cone at {dist:.1} mm — raise --order \
+                                     or the radius"
+                                ))
+                                .into());
+                            }
+                            (
+                                Some(weights),
+                                Some(openbnct_transport::PgCollimation {
+                                    aperture_mm,
+                                    aperture_radius_mm: radius,
+                                    accepted_ordinate_fraction: accepted as f64
+                                        / quadrature.len() as f64,
+                                }),
+                            )
+                        }
+                        (Some(_), None) => unreachable!("quadrature built when aperture set"),
+                    };
+                    let adjoint = openbnct_transport::solve_photon_adjoint(
+                        &transport_case,
+                        &ph_data,
+                        &options,
+                        &adjoint_source,
+                        source_weights.as_deref(),
+                        data_ref.clone(),
+                        case_ref.clone(),
+                    )
+                    .map_err(|e| io::Error::other(format!("photon adjoint solve: {e}")))?;
+                    if !adjoint.converged {
+                        return Err(io::Error::other(format!(
+                            "photon adjoint did not converge (residual {:.3e} after {} outer iterations)",
+                            adjoint.residual, adjoint.outer_iterations
+                        ))
+                        .into());
+                    }
+                    let sensitivity: Vec<f64> =
+                        adjoint.flux.iter().map(|row| row[emission_group]).collect();
+                    columns.push((
+                        sensitivity,
+                        adjoint.residual,
+                        adjoint.outer_iterations,
+                        collimation,
+                    ));
                 }
-                let sensitivity: Vec<f64> =
-                    adjoint.flux.iter().map(|row| row[emission_group]).collect();
-                let response = openbnct_transport::PromptGammaResponse {
-                    schema_version: openbnct_transport::PROMPT_GAMMA_RESPONSE_SCHEMA.into(),
-                    id: id.clone(),
-                    case_id: transport_case.case_id.clone(),
-                    geometry: transport_case.geometry.clone(),
-                    detector_voxels,
-                    emission_group: emission_group as u32,
-                    emission_energy_ev,
-                    sensitivity,
-                    quadrature_order: order,
-                    converged: adjoint.converged,
-                    residual: adjoint.residual,
-                    outer_iterations: adjoint.outer_iterations,
-                    collimation,
-                    case: case_ref,
-                    photon_data: data_ref,
-                    provenance_id: provenance_id
-                        .clone()
-                        .unwrap_or_else(|| format!("pg-response:{id}")),
-                    qualification: openbnct_transport::PROMPT_GAMMA_QUALIFICATION.into(),
-                };
-                response
-                    .validate()
-                    .map_err(|e| io::Error::other(format!("pg response: {e}")))?;
-                write_new_json(&output, &response)?;
-                println!("pg response at {}", output.display());
-                println!(
-                    "emission group {} ({:.0} keV) · {} detector voxels · S{} · residual {:.2e}",
-                    response.emission_group,
-                    response.emission_energy_ev / 1.0e3,
-                    response.detector_voxels.len(),
-                    response.quadrature_order,
-                    response.residual
-                );
+                let provenance = provenance_id.unwrap_or_else(|| format!("pg-response:{id}"));
+                if pixellated {
+                    let array = openbnct_transport::PgResponseArray {
+                        schema_version: openbnct_transport::PG_RESPONSE_ARRAY_SCHEMA.into(),
+                        id: id.clone(),
+                        case_id: transport_case.case_id.clone(),
+                        geometry: geometry.clone(),
+                        emission_group: emission_group as u32,
+                        emission_energy_ev,
+                        quadrature_order: order,
+                        pixels: detector_voxels
+                            .iter()
+                            .zip(columns)
+                            .map(
+                                |(
+                                    &voxel,
+                                    (sensitivity, residual, outer_iterations, collimation),
+                                )| {
+                                    openbnct_transport::PgPixelResponse {
+                                        detector_voxel: voxel,
+                                        sensitivity,
+                                        converged: true,
+                                        residual,
+                                        outer_iterations,
+                                        collimation,
+                                    }
+                                },
+                            )
+                            .collect(),
+                        case: case_ref,
+                        photon_data: data_ref,
+                        provenance_id: provenance,
+                        qualification: openbnct_transport::PROMPT_GAMMA_QUALIFICATION.into(),
+                    };
+                    array
+                        .validate()
+                        .map_err(|e| io::Error::other(format!("pg response: {e}")))?;
+                    let worst = array
+                        .pixels
+                        .iter()
+                        .map(|p| p.residual)
+                        .fold(0.0_f64, f64::max);
+                    write_new_json(&output, &array)?;
+                    println!("pg response array at {}", output.display());
+                    println!(
+                        "emission group {} ({:.0} keV) · {} pixels · S{} · worst residual {:.2e}",
+                        array.emission_group,
+                        array.emission_energy_ev / 1.0e3,
+                        array.pixels.len(),
+                        array.quadrature_order,
+                        worst
+                    );
+                } else {
+                    let (sensitivity, residual, outer_iterations, collimation) =
+                        columns.into_iter().next().expect("one region");
+                    let response = openbnct_transport::PromptGammaResponse {
+                        schema_version: openbnct_transport::PROMPT_GAMMA_RESPONSE_SCHEMA.into(),
+                        id: id.clone(),
+                        case_id: transport_case.case_id.clone(),
+                        geometry: geometry.clone(),
+                        detector_voxels,
+                        emission_group: emission_group as u32,
+                        emission_energy_ev,
+                        sensitivity,
+                        quadrature_order: order,
+                        converged: true,
+                        residual,
+                        outer_iterations,
+                        collimation,
+                        case: case_ref,
+                        photon_data: data_ref,
+                        provenance_id: provenance,
+                        qualification: openbnct_transport::PROMPT_GAMMA_QUALIFICATION.into(),
+                    };
+                    response
+                        .validate()
+                        .map_err(|e| io::Error::other(format!("pg response: {e}")))?;
+                    write_new_json(&output, &response)?;
+                    println!("pg response at {}", output.display());
+                    println!(
+                        "emission group {} ({:.0} keV) · {} detector voxels · S{} · residual {:.2e}",
+                        response.emission_group,
+                        response.emission_energy_ev / 1.0e3,
+                        response.detector_voxels.len(),
+                        response.quadrature_order,
+                        response.residual
+                    );
+                }
             }
             PgCommand::Counts {
                 emission,
@@ -8925,39 +9023,86 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         io::Error::other(format!("emission {}: {e}", emission.display()))
                     })?;
                 let response_bytes = fs::read(&response)?;
-                let response_map: openbnct_transport::PromptGammaResponse =
-                    serde_json::from_slice(&response_bytes).map_err(|e| {
-                        io::Error::other(format!("response {}: {e}", response.display()))
-                    })?;
                 let emission_ref = openbnct_core::ContentReference {
                     id: emission_source.id.clone(),
                     sha256: openbnct_evidence::sha256_hex(&emission_bytes),
                 };
-                let response_ref = openbnct_core::ContentReference {
-                    id: response_map.id.clone(),
-                    sha256: openbnct_evidence::sha256_hex(&response_bytes),
-                };
-                let counts = openbnct_transport::expected_prompt_gamma_counts(
-                    &emission_source,
-                    &response_map,
-                    density_kg_per_m3,
-                    efficiency,
-                    &id,
-                    emission_ref,
-                    response_ref,
-                    provenance_id
-                        .as_deref()
-                        .unwrap_or(&format!("pg-counts:{id}")),
-                )
-                .map_err(|e| io::Error::other(format!("pg counts: {e}")))?;
-                write_new_json(&output, &counts)?;
-                println!("pg counts at {}", output.display());
-                println!(
-                    "expected tally {:.4e} (efficiency {:.3} · density {:.0} kg/m³)",
-                    counts.expected_tally,
-                    counts.detector_efficiency,
-                    counts.voxel_density_kg_per_m3
-                );
+                let provenance = provenance_id.unwrap_or_else(|| format!("pg-counts:{id}"));
+                // The response may be a single-column artifact or a
+                // pixellated bank — dispatch on the declared schema.
+                let schema_probe: serde_json::Value = serde_json::from_slice(&response_bytes)
+                    .map_err(|e| {
+                        io::Error::other(format!("response {}: {e}", response.display()))
+                    })?;
+                if schema_probe["schema_version"].as_str()
+                    == Some(openbnct_transport::PG_RESPONSE_ARRAY_SCHEMA)
+                {
+                    let array: openbnct_transport::PgResponseArray =
+                        serde_json::from_slice(&response_bytes).map_err(|e| {
+                            io::Error::other(format!("response {}: {e}", response.display()))
+                        })?;
+                    let response_ref = openbnct_core::ContentReference {
+                        id: array.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&response_bytes),
+                    };
+                    let counts = openbnct_transport::expected_prompt_gamma_counts_pixels(
+                        &emission_source,
+                        &array,
+                        density_kg_per_m3,
+                        efficiency,
+                        &id,
+                        emission_ref,
+                        response_ref,
+                        &provenance,
+                    )
+                    .map_err(|e| io::Error::other(format!("pg counts: {e}")))?;
+                    write_new_json(&output, &counts)?;
+                    println!("pg counts at {}", output.display());
+                    println!(
+                        "{} pixels · tally range [{:.4e}, {:.4e}] (efficiency {:.3} · density {:.0} kg/m³)",
+                        counts.per_pixel_tally.len(),
+                        counts
+                            .per_pixel_tally
+                            .iter()
+                            .cloned()
+                            .fold(f64::INFINITY, f64::min),
+                        counts
+                            .per_pixel_tally
+                            .iter()
+                            .cloned()
+                            .fold(f64::NEG_INFINITY, f64::max),
+                        counts.detector_efficiency,
+                        counts.voxel_density_kg_per_m3
+                    );
+                } else {
+                    let response_map: openbnct_transport::PromptGammaResponse =
+                        serde_json::from_slice(&response_bytes).map_err(|e| {
+                            io::Error::other(format!("response {}: {e}", response.display()))
+                        })?;
+                    let response_ref = openbnct_core::ContentReference {
+                        id: response_map.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&response_bytes),
+                    };
+                    let counts = openbnct_transport::expected_prompt_gamma_counts(
+                        &emission_source,
+                        &response_map,
+                        density_kg_per_m3,
+                        efficiency,
+                        &id,
+                        emission_ref,
+                        response_ref,
+                        &provenance,
+                    )
+                    .map_err(|e| io::Error::other(format!("pg counts: {e}")))?;
+                    write_new_json(&output, &counts)?;
+                    println!("pg counts at {}", output.display());
+                    println!(
+                        "expected tally {:.4e} (efficiency {:.3} · density {:.0} kg/m³)",
+                        counts.expected_tally,
+                        counts.detector_efficiency,
+                        counts.voxel_density_kg_per_m3
+                    );
+                }
             }
             PgCommand::Observe {
                 counts,
@@ -8969,21 +9114,67 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     return Err(io::Error::other("pg observe: --counts required").into());
                 }
                 let mut collected = Vec::with_capacity(counts.len());
+                let mut observation: Option<openbnct_transport::PromptGammaObservation> = None;
                 for path in &counts {
-                    let model: openbnct_transport::PromptGammaCounts =
-                        serde_json::from_slice(&fs::read(path)?).map_err(|e| {
-                            io::Error::other(format!("counts {}: {e}", path.display()))
-                        })?;
-                    collected.push(model);
+                    let bytes = fs::read(path)?;
+                    let probe: serde_json::Value = serde_json::from_slice(&bytes)
+                        .map_err(|e| io::Error::other(format!("counts {}: {e}", path.display())))?;
+                    if probe["schema_version"].as_str()
+                        == Some(openbnct_transport::PG_COUNTS_ARRAY_SCHEMA)
+                    {
+                        // A pixellated counts file becomes one detector
+                        // entry per pixel, bound to the array's
+                        // `{id}#pixel{i}` columns.
+                        let model: openbnct_transport::PgPixelCounts =
+                            serde_json::from_slice(&bytes).map_err(|e| {
+                                io::Error::other(format!("counts {}: {e}", path.display()))
+                            })?;
+                        let pixel_obs =
+                            openbnct_transport::collect_prompt_gamma_observation_pixels(
+                                &model,
+                                &id,
+                                provenance_id
+                                    .as_deref()
+                                    .unwrap_or(&format!("pg-observation:{id}")),
+                            )
+                            .map_err(|e| io::Error::other(format!("pg observe: {e}")))?;
+                        observation = match observation.take() {
+                            None => Some(pixel_obs),
+                            Some(mut prior) => {
+                                prior.detectors.extend(pixel_obs.detectors);
+                                Some(prior)
+                            }
+                        };
+                    } else {
+                        let model: openbnct_transport::PromptGammaCounts =
+                            serde_json::from_slice(&bytes).map_err(|e| {
+                                io::Error::other(format!("counts {}: {e}", path.display()))
+                            })?;
+                        collected.push(model);
+                    }
                 }
-                let observation = openbnct_transport::collect_prompt_gamma_observation(
-                    &collected,
-                    &id,
-                    provenance_id
-                        .as_deref()
-                        .unwrap_or(&format!("pg-observation:{id}")),
-                )
-                .map_err(|e| io::Error::other(format!("pg observe: {e}")))?;
+                if !collected.is_empty() {
+                    let aggregate = openbnct_transport::collect_prompt_gamma_observation(
+                        &collected,
+                        &id,
+                        provenance_id
+                            .as_deref()
+                            .unwrap_or(&format!("pg-observation:{id}")),
+                    )
+                    .map_err(|e| io::Error::other(format!("pg observe: {e}")))?;
+                    observation = match observation.take() {
+                        None => Some(aggregate),
+                        Some(mut prior) => {
+                            prior.detectors.extend(aggregate.detectors);
+                            Some(prior)
+                        }
+                    };
+                }
+                let observation = observation
+                    .ok_or_else(|| io::Error::other("pg observe: no counts files parsed"))?;
+                observation
+                    .validate()
+                    .map_err(|e| io::Error::other(format!("pg observe: {e}")))?;
                 write_new_json(&output, &observation)?;
                 println!("pg observation at {}", output.display());
                 println!("{} detector readings", observation.detectors.len());
@@ -9018,15 +9209,49 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let mut responses = Vec::with_capacity(response.len());
                 for (path, detector) in response.iter().zip(observation_model.detectors.iter()) {
                     let bytes = fs::read(path)?;
-                    let model: openbnct_transport::PromptGammaResponse =
-                        serde_json::from_slice(&bytes).map_err(|e| {
-                            io::Error::other(format!("response {}: {e}", path.display()))
-                        })?;
                     let sha = openbnct_evidence::sha256_hex(&bytes);
                     let bound = &detector.response;
-                    if model.id != bound.id
-                        || !(bound.sha256 == sha || bound.sha256 == format!("sha256:{sha}"))
+                    let bound_sha_ok =
+                        bound.sha256 == sha || bound.sha256 == format!("sha256:{sha}");
+                    let probe: serde_json::Value = serde_json::from_slice(&bytes).map_err(|e| {
+                        io::Error::other(format!("response {}: {e}", path.display()))
+                    })?;
+                    let model = if probe["schema_version"].as_str()
+                        == Some(openbnct_transport::PG_RESPONSE_ARRAY_SCHEMA)
                     {
+                        // A response bank: the binding `id` names one
+                        // column, `{array.id}#pixel{i}`.
+                        let array: openbnct_transport::PgResponseArray =
+                            serde_json::from_slice(&bytes).map_err(|e| {
+                                io::Error::other(format!("response {}: {e}", path.display()))
+                            })?;
+                        let pixel_index = bound
+                            .id
+                            .strip_prefix(&format!("{}#pixel", array.id))
+                            .and_then(|s| s.parse::<usize>().ok())
+                            .ok_or_else(|| {
+                                io::Error::other(format!(
+                                    "response {} is a pixel array but the binding {:?} \
+                                     does not name a {{id}}#pixel{{i}} column",
+                                    path.display(),
+                                    bound.id
+                                ))
+                            })?;
+                        let Some(model) = array.pixel_as_response(pixel_index) else {
+                            return Err(io::Error::other(format!(
+                                "response {} has no pixel {}",
+                                path.display(),
+                                pixel_index
+                            ))
+                            .into());
+                        };
+                        model
+                    } else {
+                        serde_json::from_slice(&bytes).map_err(|e| {
+                            io::Error::other(format!("response {}: {e}", path.display()))
+                        })?
+                    };
+                    if model.id != bound.id || !bound_sha_ok {
                         return Err(io::Error::other(format!(
                             "response {} does not match the observation binding {}",
                             path.display(),

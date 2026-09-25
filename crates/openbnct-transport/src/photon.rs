@@ -685,6 +685,77 @@ mod tests {
              below-detector {below} vs beside-detector {beside}"
         );
     }
+
+    /// A pixellated bank solves each detector voxel's column
+    /// independently — what the imaging chain needs is per-pixel
+    /// reciprocity: the column folded over a forward source must give
+    /// the tally that voxel sees in the forward run. (Superposition of
+    /// columns does *not* hold — the sweep's negative-flux fixup is
+    /// nonlinear — so each pixel is its own solve by design.)
+    #[test]
+    fn pixel_column_reciprocates_the_forward_tally_on_its_voxel() {
+        let mut case = slab_case();
+        case.geometry.shape = [4, 4, 4];
+        case.geometry.spacing_mm = [10.0; 3];
+        case.geometry.origin_mm = [-20.0, -20.0, -20.0];
+        let data = photon_data();
+        let transport = data.as_transport_data();
+        let (_, case_material) = material_composition_map(&case, &transport, None).unwrap();
+        let quadrature = level_symmetric_quadrature(4).unwrap();
+        let options = options();
+        let [nx, ny, _nz] = case.geometry.shape.map(|d| d as usize);
+        let n_cells = case.geometry.voxel_count().unwrap();
+        let groups = data.photon_group_count();
+        let emission_group = 1;
+        let at = |i: usize, j: usize, k: usize| k * nx * ny + j * nx + i;
+        let refs = || {
+            (
+                ContentReference {
+                    id: "data".into(),
+                    sha256: "0".repeat(64),
+                },
+                ContentReference {
+                    id: "case".into(),
+                    sha256: "1".repeat(64),
+                },
+            )
+        };
+        let source_cell = at(0, 0, 3);
+        let mut fixed = vec![vec![0.0; groups]; n_cells];
+        fixed[source_cell][emission_group] = 1.0;
+        let (d, c) = refs();
+        let forward = solve_sn_problem(
+            &case,
+            &transport,
+            &options,
+            &case_material,
+            &quadrature,
+            &boundary_empty(),
+            &fixed,
+            None,
+            d,
+            c,
+        )
+        .unwrap();
+        assert!(forward.converged);
+        // Two independent detector pixels — each column folded on the
+        // forward source must give that voxel's forward tally.
+        for &pixel in &[at(3, 3, 0), at(2, 3, 0)] {
+            let tally_forward = forward.flux[pixel][emission_group];
+            let mut src = vec![vec![0.0; groups]; n_cells];
+            src[pixel][emission_group] = 1.0;
+            let (d, c) = refs();
+            let adjoint = solve_photon_adjoint(&case, &data, &options, &src, None, d, c).unwrap();
+            assert!(adjoint.converged);
+            let tally_adjoint = adjoint.flux[source_cell][emission_group];
+            let ratio = tally_adjoint / tally_forward;
+            assert!(
+                (ratio - 1.0).abs() < 0.15,
+                "pixel column reciprocity off: forward {tally_forward} vs adjoint-folded {tally_adjoint}"
+            );
+        }
+    }
+
     /// The photon adapter must carry l ≥ 2 moments into the shared
     /// sweep data — the kernel already consumes them; the risk is the
     /// plumbing silently dropping the field.
