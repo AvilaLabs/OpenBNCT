@@ -392,6 +392,7 @@ mod tests {
             iterations: 0,
             converged: true,
             method: None,
+            certificate: None,
             qualification: "test".into(),
             provenance_id: "test".into(),
         }

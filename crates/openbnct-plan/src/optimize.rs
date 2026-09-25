@@ -237,8 +237,16 @@ pub struct InversePlanResult {
     /// weights were optimized against a scenario set's worst-case
     /// fold (the recorded `penalty`/`outcomes` are then nominal-plan
     /// values; per-scenario outcomes live in the scenario report).
+    /// `"qp"`/`"lp_strict"` (and their `_worst_case_scenario`
+    /// variants) mark the certified conic solver; its optimality
+    /// certificate rides in `certificate`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub method: Option<String>,
+    /// Optimality certificate + bound multipliers — present only for
+    /// the exact-solver methods; absent for the projected-gradient
+    /// optimizer.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub certificate: Option<crate::lp::PlanCertificate>,
     pub qualification: String,
     pub provenance_id: String,
 }
@@ -924,6 +932,7 @@ pub fn optimize_weights(
         iterations,
         converged,
         method: None,
+        certificate: None,
         qualification: INVERSE_PLAN_QUALIFICATION.into(),
         provenance_id: provenance.provenance_id,
     })

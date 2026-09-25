@@ -2272,6 +2272,16 @@ enum PlanCommand {
         /// The result records `method: "worst_case_scenario"`.
         #[arg(long)]
         scenario_set: Option<PathBuf>,
+        /// Solver: `pgd` (projected gradient descent, the default),
+        /// `qp` (Clarabel interior point on the identical quadratic
+        /// penalty — certified optimum + dual bound multipliers), or
+        /// `lp` (strict: objective bounds become hard constraints and
+        /// the cost is `weight_regularization·Σw`; primal infeasibility
+        /// is a definitive answer). `qp`/`lp` require every objective
+        /// be linear or CVaR-representable — `min_eud` only at
+        /// `eud_a = 1`.
+        #[arg(long, default_value = "pgd", value_parser = ["pgd", "qp", "lp"])]
+        solver: String,
     },
     /// Propagate declared systematic σ on each beam's component dose
     /// through the optimized weights: per-objective metric 1σ and the
@@ -10138,10 +10148,19 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 output,
                 emit_plan,
                 scenario_set,
+                solver,
             } => {
+                use openbnct_plan::lp::{
+                    LpMode, optimize_weights_lp, optimize_weights_scenarios_lp,
+                };
                 use openbnct_plan::optimize::{
                     BeamDoseField, DoseQuantity, InversePlanObjective, ResultProvenance,
                     optimize_weights,
+                };
+                let lp_mode = match solver.as_str() {
+                    "qp" => Some(LpMode::Penalty),
+                    "lp" => Some(LpMode::Strict),
+                    _ => None,
                 };
                 let spec_bytes = fs::read(&objective)?;
                 let spec: InversePlanObjective =
@@ -10249,8 +10268,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         sha256: format!("sha256:{spec_sha}"),
                     },
                 };
-                let result = match &scenarios_doc {
-                    Some(set) => openbnct_plan::scenarios::optimize_weights_scenarios(
+                let result = match (&scenarios_doc, lp_mode) {
+                    (Some(set), None) => openbnct_plan::scenarios::optimize_weights_scenarios(
                         &fields,
                         &masks,
                         &spec,
@@ -10262,8 +10281,24 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         provenance,
                     )
                     .map_err(|error| io::Error::other(format!("optimize: {error}")))?,
-                    None => optimize_weights(&fields, &masks, &spec, &weights0, provenance)
+                    (Some(set), Some(mode)) => optimize_weights_scenarios_lp(
+                        &fields,
+                        &masks,
+                        &spec,
+                        set,
+                        geometry
+                            .as_ref()
+                            .expect("scenario sets require at least one dose bundle"),
+                        mode,
+                        provenance,
+                    )
+                    .map_err(|error| io::Error::other(format!("optimize: {error}")))?,
+                    (None, None) => optimize_weights(&fields, &masks, &spec, &weights0, provenance)
                         .map_err(|error| io::Error::other(format!("optimize: {error}")))?,
+                    (None, Some(mode)) => {
+                        optimize_weights_lp(&fields, &masks, &spec, mode, provenance)
+                            .map_err(|error| io::Error::other(format!("optimize: {error}")))?
+                    }
                 };
                 fs::write(&output, serde_json::to_vec_pretty(&result)?)?;
                 println!(

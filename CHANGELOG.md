@@ -37,6 +37,19 @@ own versions independent of the crate version.
   penalty across nominal + all scenarios (Danskin subgradient of the
   argmax scenario folded into the coordinate descent); the result
   records `method: "worst_case_scenario"`.
+- `openbnct plan optimize --solver qp|lp` runs the certified conic
+  solver (Clarabel interior point) instead of projected gradient
+  descent. `qp` minimizes the identical bound-normalized quadratic
+  penalty — the certified global optimum — and `lp` makes every
+  objective bound a hard constraint under `λ·Σw`, so primal
+  infeasibility is a definitive answer rather than a stall. Dose-at-
+  volume bounds enforce the conservative CVaR tail-mean surrogate
+  (recorded on the result), `f = 1` degenerates to exact voxelwise
+  minimum rows, `min_eud` is admitted only at `eud_a = 1`, and the
+  scenario path enforces per-objective worst-case rows. Results carry
+  an optional `certificate` — solver status, primal/dual objective
+  bound, and per-objective Lagrange bound multipliers (the marginal
+  penalty cost of tightening each bound).
 - `benchmarks/synthetic/scenario-robust-planning` is a known-answer
   fixture whose worst-case optimum is closed-form
   (`w_h* = 1.498875`, `w_b* = 0`); a committed conformance test asserts

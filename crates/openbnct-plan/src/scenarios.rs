@@ -340,7 +340,7 @@ fn resample_shifted(
 /// the perturbed components — the component sum under the bundle's
 /// physical-total convention, or the single named component when
 /// `values_component` selects one (a `component:*` dose quantity).
-fn perturb_fields(
+pub(crate) fn perturb_fields(
     fields: &[BeamDoseField],
     scenario: &PlanScenario,
     geometry: &GridGeometry,
@@ -475,7 +475,7 @@ fn perturb_fields(
 /// spec's dose quantity — `Some(name)` for `component:*` (the rebuilt
 /// `values` must track that component alone), `None` for physical
 /// total and isoeffective (component-sum rebuild / unused `values`).
-fn values_component_of(spec: &InversePlanObjective) -> Option<&str> {
+pub(crate) fn values_component_of(spec: &InversePlanObjective) -> Option<&str> {
     match &spec.dose_quantity {
         crate::optimize::DoseQuantity::Component(c) => Some(crate::optimize::component_name(*c)),
         _ => None,
@@ -701,6 +701,7 @@ pub fn optimize_weights_scenarios(
         iterations,
         converged,
         method: Some("worst_case_scenario".into()),
+        certificate: None,
         qualification: crate::optimize::INVERSE_PLAN_QUALIFICATION.into(),
         provenance_id: provenance.provenance_id,
     })
@@ -783,6 +784,7 @@ mod tests {
             iterations: 0,
             converged: true,
             method: None,
+            certificate: None,
             qualification: "test".into(),
             provenance_id: "test".into(),
         }
