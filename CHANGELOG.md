@@ -157,6 +157,13 @@ own versions independent of the crate version.
   --response` accepts the bank for those bindings — the full
   imaging chain now runs on pixellated crystals. With `--aperture`,
   each pixel's acceptance cone axis runs that voxel→aperture.
+- Adjoint anisotropy: `solve_multigroup_adjoint` now transposes the
+  P1 and l = 2..=5 moment matrices instead of dropping them, so
+  adjoint importance solves carry the same scatter physics as the
+  forward run (the antipode conjugation cancels inside the P_l
+  kernel — the transpose alone is exact). `pg response --p1
+  --anisotropy N` and `vr cadis --p1 --anisotropy N` expose it;
+  anisotropic reciprocity ⟨q†,φ⟩ = ⟨q,φ†⟩ is regression-covered.
 
 ## [0.2.2] — 2026-09-23
 

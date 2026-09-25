@@ -558,6 +558,14 @@ enum PgCommand {
         /// acceptance cone axis runs that voxel→aperture.
         #[arg(long)]
         pixellated: bool,
+        /// Enable P1 anisotropic scatter in the adjoint solve — requires
+        /// `scatter_p1_matrix_per_cm` on every scattering material.
+        #[arg(long)]
+        p1: bool,
+        /// Highest Legendre order beyond P1 (2..=5) in the adjoint
+        /// scatter — requires `--p1` and `scatter_legendre_moments_per_cm`.
+        #[arg(long, requires = "p1", default_value_t = 0)]
+        anisotropy: u32,
         /// Response document identifier.
         #[arg(long)]
         id: String,
@@ -1148,6 +1156,14 @@ enum VrCommand {
         /// (x, y, z).
         #[arg(long, value_delimiter = ',')]
         periodic: Vec<String>,
+        /// Enable P1 anisotropic scatter in the adjoint solve — requires
+        /// `scatter_p1_matrix_per_cm` on every scattering material.
+        #[arg(long)]
+        p1: bool,
+        /// Highest Legendre order beyond P1 (2..=5) in the adjoint
+        /// scatter — requires `--p1` and `scatter_legendre_moments_per_cm`.
+        #[arg(long, requires = "p1", default_value_t = 0)]
+        anisotropy: u32,
         /// Resolved artifact id, e.g. `openbnct.nf-bnct-003.ww.cadis.v1`.
         #[arg(long)]
         id: String,
@@ -8680,6 +8696,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 periodic,
                 no_transport_correction,
                 pixellated,
+                p1,
+                anisotropy,
                 id,
                 provenance_id,
                 output,
@@ -8811,8 +8829,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic: periodic_axes,
                     beam_uncollided_split: false,
                     transport_correction: !no_transport_correction,
-                    p1_anisotropic: false,
-                    anisotropy_order: 0,
+                    p1_anisotropic: p1,
+                    anisotropy_order: anisotropy,
                     anderson_depth: 0,
                     coarse_rebalance: true,
                     inner_convergence: None,
@@ -13539,6 +13557,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 max_inner,
                 max_outer,
                 periodic,
+                p1,
+                anisotropy,
                 id,
                 output,
                 adjoint_flux,
@@ -13586,8 +13606,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic: periodic_axes,
                     beam_uncollided_split: true,
                     transport_correction: true,
-                    p1_anisotropic: false,
-                    anisotropy_order: 0,
+                    p1_anisotropic: p1,
+                    anisotropy_order: anisotropy,
                     anderson_depth: 0,
                     coarse_rebalance: true,
                     inner_convergence: None,

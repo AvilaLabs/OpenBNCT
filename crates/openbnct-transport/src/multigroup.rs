@@ -1739,23 +1739,37 @@ pub fn solve_multigroup_adjoint(
     let mut adjoint_data = data.clone();
     adjoint_data.id = format!("{}.adjoint", data.id);
     for material in &mut adjoint_data.materials {
-        let mut transposed = vec![0.0; groups * groups];
-        for g in 0..groups {
-            for gp in 0..groups {
-                transposed[g * groups + gp] = material.scatter_matrix_per_cm[gp * groups + g];
+        // Each l-moment's group matrix transposes for the adjoint.
+        // The forward machinery returns the direction-conjugated
+        // adjoint χ(Ω) = ψ†(−Ω); the adjoint source for χ needs the
+        // kernel evaluated at antipodes twice — P_l(−Ω_d·−Ω_b) =
+        // P_l(Ω_d·Ω_b) — so the two parity factors cancel and the
+        // transpose alone is exact.
+        let transpose = |mat: &[f64]| -> Vec<f64> {
+            let mut out = vec![0.0; groups * groups];
+            for g in 0..groups {
+                for gp in 0..groups {
+                    out[g * groups + gp] = mat[gp * groups + g];
+                }
             }
+            out
+        };
+        material.scatter_matrix_per_cm = transpose(&material.scatter_matrix_per_cm);
+        if let Some(p1) = material.scatter_p1_matrix_per_cm.clone() {
+            material.scatter_p1_matrix_per_cm = Some(transpose(&p1));
         }
-        material.scatter_matrix_per_cm = transposed;
-        // The P1 adjoint couples adjoint harmonic moments differently —
-        // not a matrix transpose. The adjoint solve stays P0; importance
-        // functions for weight windows do not need the P1 fidelity.
-        material.scatter_p1_matrix_per_cm = None;
+        if let Some(moments) = material.scatter_legendre_moments_per_cm.clone() {
+            material.scatter_legendre_moments_per_cm =
+                Some(moments.iter().map(|m| transpose(m)).collect());
+        }
     }
     let (adjoint_data, case_material) =
         material_composition_map(case, &adjoint_data, options.assignment.as_ref())?;
     let quadrature = level_symmetric_quadrature(options.quadrature_order)?;
-    let mut adjoint_options = options.clone();
-    adjoint_options.p1_anisotropic = false;
+    // P1/P_N carry through when the caller requests them: the signed
+    // transpose above puts the adjoint moment coupling in the form the
+    // forward machinery consumes.
+    let adjoint_options = options.clone();
     let mut result = solve_sn_problem(
         case,
         &adjoint_data,
@@ -4111,6 +4125,103 @@ mod artifact_tests {
         assert!(
             max_dev < 1e-4 * scale.max(1e-30),
             "split inner tolerance moved the fixed point: dev {max_dev} vs scale {scale}"
+        );
+    }
+
+    /// Adjoint P_N: the machinery returns the direction-conjugated
+    /// adjoint χ(Ω) = ψ†(−Ω), and the antipode conjugation applies
+    /// twice in the kernel — P_l(−Ω_d·−Ω_b) = P_l(Ω_d·Ω_b) — so the
+    /// adjoint tables are the plain group transpose per moment, no
+    /// parity factor. Reciprocity ⟨q†,φ⟩ = ⟨q,φ†⟩ with anisotropic
+    /// scatter fails if the transpose is skipped.
+    #[test]
+    fn anisotropic_adjoint_reciprocity_holds() {
+        let case = crate::multigroup::tests::slab_case();
+        let scatter = vec![0.10, 0.80, 0.02, 0.30];
+        let mut mg = crate::multigroup::tests::data(&[1.0, 0.6], scatter.clone());
+        // Forward-peaked P1 plus an l = 2 moment.
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(scatter.iter().map(|s| s * 0.7).collect());
+        mg.materials[0].scatter_legendre_moments_per_cm =
+            Some(vec![scatter.iter().map(|s| s * 0.3).collect()]);
+        mg.validate().unwrap();
+        let mut opts = crate::multigroup::tests::options();
+        opts.p1_anisotropic = true;
+        opts.anisotropy_order = 2;
+        let n_cells = 4 * 4 * 20;
+        let groups = 2;
+        let mut q_fwd = vec![vec![0.0; groups]; n_cells];
+        q_fwd[86][0] = 1.0; // voxel (2,1,5), group 0
+        let mut q_adj = vec![vec![0.0; groups]; n_cells];
+        q_adj[297][1] = 1.0; // voxel (1,2,18), group 1
+        let quadrature = level_symmetric_quadrature(opts.quadrature_order).unwrap();
+        let (_, case_material) = material_composition_map(&case, &mg, None).unwrap();
+        let forward = solve_sn_problem(
+            &case,
+            &mg,
+            &opts,
+            &case_material,
+            &quadrature,
+            &BoundarySource::new(),
+            &q_fwd,
+            None,
+            crate::multigroup::tests::cref("d"),
+            crate::multigroup::tests::cref("c"),
+        )
+        .unwrap();
+        let adjoint = solve_multigroup_adjoint(
+            &case,
+            &mg,
+            &opts,
+            &q_adj,
+            None,
+            crate::multigroup::tests::cref("d"),
+            crate::multigroup::tests::cref("c"),
+        )
+        .unwrap();
+        assert!(forward.converged && adjoint.converged);
+        let r_fwd: f64 = q_adj
+            .iter()
+            .zip(forward.flux.iter())
+            .flat_map(|(qa, fa)| qa.iter().zip(fa.iter()).map(|(a, b)| a * b))
+            .sum();
+        let r_adj: f64 = q_fwd
+            .iter()
+            .zip(adjoint.flux.iter())
+            .flat_map(|(qa, fa)| qa.iter().zip(fa.iter()).map(|(a, b)| a * b))
+            .sum();
+        assert!(r_fwd > 0.0 && r_adj > 0.0);
+        let rel = (r_fwd - r_adj).abs() / r_fwd;
+        assert!(
+            rel < 0.08,
+            "anisotropic adjoint reciprocity violated: ⟨q†,φ⟩={r_fwd} vs ⟨q,φ†⟩={r_adj} ({:.1}%)",
+            rel * 100.0
+        );
+        // And the anisotropy must actually engage: a P0 adjoint on the
+        // same case gives a different importance map.
+        let mut p0_opts = crate::multigroup::tests::options();
+        p0_opts.transport_correction = false;
+        let mut p0_data = mg.clone();
+        p0_data.materials[0].scatter_p1_matrix_per_cm = None;
+        p0_data.materials[0].scatter_legendre_moments_per_cm = None;
+        let p0_adjoint = solve_multigroup_adjoint(
+            &case,
+            &p0_data,
+            &p0_opts,
+            &q_adj,
+            None,
+            crate::multigroup::tests::cref("d"),
+            crate::multigroup::tests::cref("c"),
+        )
+        .unwrap();
+        let moved: f64 = adjoint
+            .flux
+            .iter()
+            .zip(p0_adjoint.flux.iter())
+            .flat_map(|(a, b)| a.iter().zip(b.iter()).map(|(x, y)| (x - y).abs()))
+            .fold(0.0, f64::max);
+        assert!(
+            moved > 1e-12,
+            "anisotropic adjoint identical to P0 — moments did not engage"
         );
     }
 }
