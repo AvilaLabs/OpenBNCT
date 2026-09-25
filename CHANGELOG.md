@@ -59,6 +59,15 @@ own versions independent of the crate version.
   ±20%, skin 1.5×blood; Kotiluoto 8% computational excluding boron) as a
   12-scenario set evaluated against the committed S_N transported
   field.
+- `openbnct.fraction-scales/0.1.0` + `plan optimize|select
+  --fraction-scales`: multi-fraction planning. Each fraction's dose
+  component scales (e.g. boron uptake decay across the washout
+  window) expand the beam pool into per-(beam, fraction) delivery
+  variables `beam@fraction`; because component scaling commutes
+  through the linear isoeffective fold, the certified solvers — and
+  beam selection, which then answers "which beams in which
+  fractions" — apply unchanged. Requires isoeffective objectives and
+  component-resolved bundles.
 - `maximin` dose objective (`kind: maximin`): maximizes the minimum
   voxel dose over a mask — the tumor-floor formulation penalty
   composites cannot express. The conic solvers carry a scalar floor

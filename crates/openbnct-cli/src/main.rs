@@ -2272,6 +2272,13 @@ enum PlanCommand {
         /// The result records `method: "worst_case_scenario"`.
         #[arg(long)]
         scenario_set: Option<PathBuf>,
+        /// `openbnct.fraction-scales/0.1.0` JSON — per-fraction dose
+        /// component scales (e.g. boron washout). Expands the pool to
+        /// `(beam, fraction)` variables named `beam@fraction` and
+        /// optimizes the delivery-time allocation across the schedule.
+        /// Requires isoeffective objectives + component-resolved bundles.
+        #[arg(long)]
+        fraction_scales: Option<PathBuf>,
         /// Solver: `pgd` (projected gradient descent, the default),
         /// `qp` (Clarabel interior point on the identical quadratic
         /// penalty — certified optimum + dual bound multipliers), or
@@ -2310,6 +2317,12 @@ enum PlanCommand {
         /// large pools).
         #[arg(long, default_value = "exhaustive", value_parser = ["exhaustive", "greedy"])]
         search: String,
+        /// `openbnct.fraction-scales/0.1.0` JSON — expands each
+        /// candidate to per-fraction variables (`beam@fraction`), so
+        /// selection answers "which beams in which fractions".
+        /// Requires isoeffective objectives + component-resolved bundles.
+        #[arg(long)]
+        fraction_scales: Option<PathBuf>,
         /// Inner solver: `qp` (certified penalty — continuous ranking)
         /// or `lp` (hard bounds — feasibility + min Σw).
         #[arg(long, default_value = "qp", value_parser = ["qp", "lp"])]
@@ -10192,6 +10205,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 output,
                 emit_plan,
                 scenario_set,
+                fraction_scales,
                 solver,
             } => {
                 use openbnct_plan::lp::{
@@ -10220,6 +10234,19 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                                 .map_err(|error| io::Error::other(format!("scenario set: {error}")))
                         })
                         .transpose()?;
+                let fractions_doc: Option<openbnct_plan::fractions::FractionScales> =
+                    fraction_scales
+                        .as_ref()
+                        .map(|p| {
+                            serde_json::from_slice(&fs::read(p)?).map_err(|error| {
+                                io::Error::other(format!("fraction scales: {error}"))
+                            })
+                        })
+                        .transpose()?;
+                // Scenario perturbation and per-fraction component
+                // scaling both need the full component map whatever
+                // the dose quantity.
+                let need_components = scenarios_doc.is_some() || fractions_doc.is_some();
                 let mut fields = Vec::with_capacity(dose.len());
                 let mut geometry: Option<openbnct_core::GridGeometry> = None;
                 for path in &dose {
@@ -10258,7 +10285,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     let (values, components) = match spec.dose_quantity {
                         DoseQuantity::PhysicalTotal => (
                             bundle.physical_total.values.clone(),
-                            scenarios_doc.as_ref().map(|_| all_components()),
+                            need_components.then(&all_components),
                         ),
                         DoseQuantity::Component(component) => (
                             bundle
@@ -10274,7 +10301,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                                 })?
                                 .values
                                 .clone(),
-                            scenarios_doc.as_ref().map(|_| all_components()),
+                            need_components.then(&all_components),
                         ),
                         DoseQuantity::Isoeffective => {
                             (bundle.physical_total.values.clone(), Some(all_components()))
@@ -10297,8 +10324,20 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         })
                     })
                     .collect::<Result<_, Box<dyn Error>>>()?;
+                let n_beams = fields.len();
+                if let Some(doc) = &fractions_doc {
+                    fields = openbnct_plan::fractions::expand_fractions(&fields, &spec, doc)
+                        .map_err(|e| io::Error::other(format!("fraction scales: {e}")))?;
+                }
                 let weights0 = if initial.is_empty() {
                     vec![1.0; fields.len()]
+                } else if fractions_doc.is_some() && initial.len() == n_beams {
+                    // Per-beam initials replicate across fractions.
+                    let f = fields.len() / n_beams.max(1);
+                    initial
+                        .iter()
+                        .flat_map(|&w| std::iter::repeat_n(w, f))
+                        .collect()
                 } else {
                     initial
                 };
@@ -10416,6 +10455,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 mask,
                 beams,
                 search,
+                fraction_scales,
                 solver,
                 output,
                 emit_plan,
@@ -10499,6 +10539,14 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         })
                     })
                     .collect::<Result<_, Box<dyn Error>>>()?;
+                if let Some(path) = &fraction_scales {
+                    let doc: openbnct_plan::fractions::FractionScales =
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("{}: {error}", path.display()))
+                        })?;
+                    fields = openbnct_plan::fractions::expand_fractions(&fields, &spec, &doc)
+                        .map_err(|e| io::Error::other(format!("fraction scales: {e}")))?;
+                }
                 let mode = match solver.as_str() {
                     "qp" => openbnct_plan::lp::LpMode::Penalty,
                     "lp" => openbnct_plan::lp::LpMode::Strict,
