@@ -539,6 +539,7 @@ mod tests {
             anderson_depth: 0,
             coarse_rebalance: true,
             inner_convergence: None,
+            theta_repair: true,
         }
     }
 

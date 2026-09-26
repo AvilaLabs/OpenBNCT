@@ -8834,6 +8834,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anderson_depth: 0,
                     coarse_rebalance: true,
                     inner_convergence: None,
+                    theta_repair: true,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: ph_data.id.clone(),
@@ -10025,6 +10026,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anderson_depth: anderson,
                     coarse_rebalance: true,
                     inner_convergence,
+                    theta_repair: true,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: mg_data.id.clone(),
@@ -10331,6 +10333,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anderson_depth: 0,
                     coarse_rebalance: true,
                     inner_convergence: None,
+                    theta_repair: true,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: ph_data.id.clone(),
@@ -11597,6 +11600,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anderson_depth: anderson,
                     coarse_rebalance: true,
                     inner_convergence: None,
+                    theta_repair: true,
                 };
                 let profile = mg_data.component_profile.clone().ok_or_else(|| {
                     io::Error::other(
@@ -13016,6 +13020,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anderson_depth: 0,
                     coarse_rebalance: true,
                     inner_convergence: None,
+                    theta_repair: true,
                 };
                 let nominal_flux =
                     match &forward_flux {
@@ -13158,6 +13163,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anderson_depth: 0,
                     coarse_rebalance: true,
                     inner_convergence: None,
+                    theta_repair: true,
                 };
                 let report = openbnct_transport::run_screening(
                     &transport_case,
@@ -13611,6 +13617,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anderson_depth: 0,
                     coarse_rebalance: true,
                     inner_convergence: None,
+                    theta_repair: true,
                 };
                 let forward = forward_flux
                     .as_ref()

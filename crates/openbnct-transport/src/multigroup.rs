@@ -419,6 +419,14 @@ pub struct SnOptions {
     /// accuracy floor, so a deep outer target needs a tighter inner
     /// one; `None` keeps them equal (historic behavior).
     pub inner_convergence: Option<f64>,
+    /// Positive-preserving θ repair: when an axis outflow edge would
+    /// go negative, bump that axis's weight to the step closure (θ=1,
+    /// ψ_out = ψ̄ ≥ 0 identically) rather than clamping the computed
+    /// value — a different weight solving the same balance, so no
+    /// particles are fabricated. Engages only where the sweep source
+    /// is nonnegative (pure-P0 cells). `OPENBNCT_NO_THETA_REPAIR`
+    /// disables it (A/B diagnostics vs the legacy clamp).
+    pub theta_repair: bool,
 }
 
 impl Default for SnOptions {
@@ -437,6 +445,7 @@ impl Default for SnOptions {
             anderson_depth: 0,
             coarse_rebalance: true,
             inner_convergence: None,
+            theta_repair: true,
         }
     }
 }
@@ -1476,6 +1485,7 @@ fn sweep_group(
     periodic: [bool; 3],
     eigen: &[Vec<(f64, Vec<f64>)>],
     face_current: Option<&mut Vec<[f64; 13]>>,
+    theta_repair: bool,
 ) {
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
     let groups = data.group_count();
@@ -1609,8 +1619,7 @@ fn sweep_group(
                     // adjoint sweeps — so the discrete maps stay dual.
                     let area = [ax, ay, az];
                     let mut theta = [0.5_f64; 3];
-                    let mut denom_w = st * volume;
-                    let mut numer_w = q * volume;
+                    let mut w_a = [0.0_f64; 3];
                     for a in 0..3 {
                         let mu = dir[a].abs().max(1e-30);
                         let tau = st * dx[a] / mu;
@@ -1620,10 +1629,64 @@ fn sweep_group(
                         } else {
                             0.5
                         };
-                        let w = area[a] / theta[a];
-                        denom_w += w;
-                        numer_w += w * psi_in[a];
+                        w_a[a] = area[a] / theta[a];
                     }
+                    // Positive-preserving θ repair: an axis whose
+                    // outflow edge would go negative gets bumped toward
+                    // the step closure θ=1, where ψ_out = ψ̄ ≥ 0
+                    // identically. The repair still solves the same
+                    // cell balance — a different weight, not a clamp —
+                    // so no particles are fabricated. (ψ̄ itself cannot
+                    // go negative: its numerator and denominator are
+                    // sums of nonnegative terms.)
+                    // Three axes can each need one bump; the fourth pass
+                    // re-verifies with all-repaired weights (θ=1 on
+                    // every axis is unconditionally positive). Repair
+                    // makes θ solution-dependent — where it engages,
+                    // forward/adjoint duality is traded for positivity,
+                    // which is the worse defect to keep.
+                    // Only nonnegative-source cells engage: under a
+                    // nonzero P1 or l≥2 term the per-direction source is
+                    // signed and a negative angular flux is legitimate
+                    // physics, not a defect. A zero P1 vector or a zero
+                    // kernel entry for this direction reduces locally
+                    // to P0 — same nonnegative physics, same repair, so
+                    // the modes stay bit-identical.
+                    let signed_source = p1_source.is_some_and(|s| s[cell] != [0.0; 3])
+                        || kernel_source.is_some_and(|s| s[cell][d] != 0.0);
+                    for _ in 0..4 {
+                        if !theta_repair || signed_source {
+                            break;
+                        }
+                        let denom_w = st * volume + w_a.iter().sum::<f64>();
+                        let numer_w = q * volume
+                            + w_a
+                                .iter()
+                                .zip(psi_in.iter())
+                                .map(|(w, pin)| w * pin)
+                                .sum::<f64>();
+                        let psi_avg_ideal = numer_w / denom_w.max(1e-30);
+                        let mut repaired = false;
+                        for a in 0..3 {
+                            let out_ideal =
+                                (psi_avg_ideal - (1.0 - theta[a]) * psi_in[a]) / theta[a];
+                            if out_ideal < 0.0 && theta[a] < 1.0 - f64::EPSILON {
+                                theta[a] = 1.0;
+                                w_a[a] = area[a];
+                                repaired = true;
+                            }
+                        }
+                        if !repaired {
+                            break;
+                        }
+                    }
+                    let denom_w = st * volume + w_a.iter().sum::<f64>();
+                    let numer_w = q * volume
+                        + w_a
+                            .iter()
+                            .zip(psi_in.iter())
+                            .map(|(w, pin)| w * pin)
+                            .sum::<f64>();
                     let psi_avg_ideal = numer_w / denom_w.max(1e-30);
                     let psi_avg = psi_avg_ideal.max(0.0);
                     psi_d[cell] = psi_avg;
@@ -1884,6 +1947,34 @@ pub(crate) fn solve_multigroup_unchecked(
     } else {
         result.beam_model = "boundary_flux".into();
     }
+
+    // Post-solve balance audit on the *total* flux: net absorption per
+    // unit source rate. Convergence alone is not evidence of a physical
+    // iterate — a self-consistent fixed point of a defect-creating map
+    // (positivity clamps on ψ̄/ψ_out in thick-cell groups) still
+    // fabricates particles. The audit makes that visible in the
+    // artifact: a value above ~1.0 means the solution cannot be
+    // produced by conserving transport of the declared source.
+    let cell_volume = geometry.spacing_mm.iter().product::<f64>() / 1000.0;
+    let absorbed = result
+        .flux
+        .iter()
+        .zip(case_material.iter())
+        .map(|(row, &mi)| {
+            let m = &data.materials[mi];
+            row.iter()
+                .enumerate()
+                .map(|(g, &phi)| {
+                    let outscatter: f64 = (0..groups)
+                        .map(|gt| m.scatter_matrix_per_cm[g * groups + gt])
+                        .sum();
+                    phi * (m.sigma_total_per_cm[g] - outscatter).max(0.0)
+                })
+                .sum::<f64>()
+        })
+        .sum::<f64>()
+        * cell_volume;
+    result.balance_absorbed_fraction = Some(absorbed);
 
     Ok(result)
 }
@@ -2527,6 +2618,8 @@ pub(crate) fn solve_sn_problem(
     // residual stops improving, the composed map is in its limit cycle —
     // disable CMR permanently and let bare sweeps finish.
     let mut cmr_enabled = options.coarse_rebalance && std::env::var_os("OPENBNCT_NO_CMR").is_none();
+    let theta_repair =
+        options.theta_repair && std::env::var_os("OPENBNCT_NO_THETA_REPAIR").is_none();
     let mut cmr_best = f64::MAX;
     let mut cmr_stall = 0usize;
     // The outer residual cannot descend far below the inner sweep's
@@ -2661,6 +2754,7 @@ pub(crate) fn solve_sn_problem(
                     options.periodic,
                     &eigen,
                     faces,
+                    theta_repair,
                 );
                 // The sweep accumulated the unnormalized angular sums;
                 // apply the scalings (÷4π scalar/current, ×λ_k moments)
@@ -3035,30 +3129,8 @@ pub(crate) fn solve_sn_problem(
         )));
     }
 
-    // Post-solve balance audit: net absorption per unit source rate.
-    // Convergence alone is not evidence of a physical iterate — a
-    // self-consistent fixed point of a defect-creating map (positivity
-    // clamps on ψ̄/ψ_out in thick-cell groups) still fabricates
-    // particles. The audit makes that visible in the artifact.
-    let cell_volume = geometry.spacing_mm.iter().product::<f64>() / 1000.0;
-    let absorbed = flux
-        .iter()
-        .zip(case_material.iter())
-        .map(|(row, &mi)| {
-            let m = &data.materials[mi];
-            row.iter()
-                .enumerate()
-                .map(|(g, &phi)| {
-                    let outscatter: f64 = (0..groups)
-                        .map(|gt| m.scatter_matrix_per_cm[g * groups + gt])
-                        .sum();
-                    phi * (m.sigma_total_per_cm[g] - outscatter).max(0.0)
-                })
-                .sum::<f64>()
-        })
-        .sum::<f64>()
-        * cell_volume;
-
+    // The balance audit is computed by the caller after the uncollided
+    // component merges — here `flux` is the collided part only.
     Ok(MultigroupFlux {
         schema_version: MULTIGROUP_FLUX_SCHEMA.into(),
         case_id: case.case_id.clone(),
@@ -3083,7 +3155,7 @@ pub(crate) fn solve_sn_problem(
         outer_iterations: outer_done,
         residual,
         converged,
-        balance_absorbed_fraction: Some(absorbed),
+        balance_absorbed_fraction: None,
         qualification: "research-only: deterministic multigroup flux, not a clinical quantity"
             .into(),
         provenance_id: format!("sn-s{}-{}", options.quadrature_order, case.case_id),
@@ -3329,6 +3401,7 @@ pub(crate) mod tests {
             anderson_depth: 0,
             coarse_rebalance: true,
             inner_convergence: None,
+            theta_repair: true,
         }
     }
 
@@ -3519,6 +3592,58 @@ pub(crate) mod tests {
             (slope - sigma).abs() / sigma < 1e-9,
             "slope {slope} vs analytic {sigma}"
         );
+
+        // Balance audit present and bounded by the source rate.
+        let absorbed = flux.balance_absorbed_fraction.unwrap();
+        assert!(absorbed > 0.0 && absorbed <= 1.0);
+    }
+
+    /// Narrow beam on a vacuum-bounded grid: cells off the beam axis
+    /// see a hot neighbour's inflow against a thin local source — the
+    /// regime where the legacy `.max(0.0)` outflow clamp fabricated
+    /// particles. The θ repair bumps the offending axis to the step
+    /// closure (ψ_out = ψ̄ ≥ 0 identically) and stays conserving:
+    /// its absorbed fraction must sit at or below the legacy path's.
+    #[test]
+    fn theta_repair_never_fabricates_particles() {
+        let mut case = slab_case();
+        // The disk covers only the central columns; transverse faces
+        // are vacuum, so off-beam cells are inflow-dominated.
+        case.source.space = SourceSpatialDistribution::UniformDisk {
+            axis: PlaneAxis::Z,
+            offset_cm: -1.0,
+            center_uv_cm: [0.0, 0.0],
+            radius_cm: 0.15,
+        };
+        let mg = data(&[3.0], vec![0.5]); // σ_t = 3/cm, σ_s = 0.5
+        mg.validate().unwrap();
+        let mut opts = options();
+        opts.periodic = [false; 3];
+        let repaired = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap();
+        assert!(repaired.converged);
+        let mut legacy = options();
+        legacy.periodic = [false; 3];
+        legacy.theta_repair = false;
+        let clamped = solve_multigroup(&case, &mg, &legacy, cref("mg"), cref("case")).unwrap();
+        assert!(clamped.converged);
+        let ra = repaired.balance_absorbed_fraction.unwrap();
+        let la = clamped.balance_absorbed_fraction.unwrap();
+        assert!(
+            ra <= la + 1e-9,
+            "repair must not fabricate: {ra} vs legacy {la}"
+        );
+        assert!(
+            ra <= 1.0 + 1e-9,
+            "absorbed fraction exceeds the source: {ra}"
+        );
+        // Both iterates remain nonnegative and finite.
+        assert!(
+            repaired
+                .flux
+                .iter()
+                .flatten()
+                .all(|v| v.is_finite() && *v >= 0.0)
+        );
     }
 
     /// Volumetric sources deposit an isotropic emission density into
@@ -3565,6 +3690,12 @@ pub(crate) mod tests {
         assert!(
             (absorbed - 1.0).abs() < 1e-6,
             "balance: absorbed {absorbed} vs emission 1"
+        );
+        // The artifact's own audit reports the same closure.
+        let audited = flux.balance_absorbed_fraction.unwrap();
+        assert!(
+            (audited - 1.0).abs() < 1e-6,
+            "balance audit {audited} vs emission 1"
         );
     }
 
@@ -4020,6 +4151,7 @@ pub(crate) mod tests {
             &SnOptions {
                 coarse_rebalance: false,
                 inner_convergence: None,
+                theta_repair: true,
                 ..opts
             },
             cref("mg"),
