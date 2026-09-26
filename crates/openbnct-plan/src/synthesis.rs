@@ -89,6 +89,10 @@ pub struct IterationReport {
     pub rounds: Vec<IterationRound>,
     /// Content binding to the final inverse-plan result.
     pub result: openbnct_core::ContentReference,
+    /// Spectrum variant files the fan scored — present when `plan
+    /// iterate --spectrum` expanded the candidate pool.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spectra: Option<Vec<openbnct_core::ContentReference>>,
     pub provenance_id: String,
     pub qualification: String,
 }

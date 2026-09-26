@@ -149,13 +149,20 @@ own versions independent of the crate version.
   carry `spectrum`/`aperture_radius_cm` and the emitted
   `openbnct.direction-candidates` document content-binds every
   spectrum file; off-face apertures skip with the positioning error.
+  `plan iterate` accepts the same expansion — admitted beams carry
+  the winning spectrum and radius into their forward solves, and the
+  iteration report binds the spectrum inputs.
 - `openbnct plan shape` — adjoint beamlet aperture shaping. The aimed
   disk for `--direction` is tiled `--beamlets`² deep into sub-disks,
   each scored against the objective composite adjoint via the
   uncollided ray-trace (no transport per beamlet); beamlets below
   `--keep-fraction` of the peak utility density close. Supports
   marginal mode (`--dose`/`--weights`) to shape against a current
-  plan's residual. Emits `openbnct.aperture-shape/0.1.0`; beamlets
+  plan's residual. `--emit-fields DIR` forward-solves every kept
+  beamlet into a `physical-dose-bundle` (256 cap), and running
+  `plan optimize --dose DIR/*.json` then produces the beamlet
+  intensity map — a delivered intensity-modulated field, not just a
+  stencil. Emits `openbnct.aperture-shape/0.1.0`; beamlets
   under-resolving the voxel grid are recorded `resolved: false`.
 - `openbnct.fraction-scales/0.1.0` + `plan optimize|select
   --fraction-scales`: multi-fraction planning. Each fraction's dose

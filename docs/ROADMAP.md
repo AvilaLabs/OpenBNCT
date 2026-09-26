@@ -1347,13 +1347,21 @@ Each item is evidence-gated; none implies a clinical claim.
   candidates all ranked by the same adjoint field at the cost of one
   uncollided ray-trace per combo. Candidate rows carry `spectrum` and
   `aperture_radius_cm`; off-face apertures are skipped with the same
-  positioning error path.
-- **R10-11 — beamlet aperture shaping. (landed)** `plan shape`
-  subdivides an aimed disk into `--beamlets`² sub-disk beamlets, scores
-  each against the objective composite adjoint via the uncollided
-  ray-trace (no transport per beamlet), and marks closed every
-  beamlet below `--keep-fraction` of the peak utility density — the
-  kept set is the shaped aperture. Emits
+  positioning error path. `plan iterate` accepts the same
+  `--spectrum`/`--radii` expansion — admitted beams carry the winning
+  variant's energy block and radius into their forward solves, so the
+  loop selects beam *types*, not just directions.
+- **R10-11 — beamlet aperture shaping and intensity maps. (landed)**
+  `plan shape` subdivides an aimed disk into `--beamlets`² sub-disk
+  beamlets, scores each against the objective composite adjoint via
+  the uncollided ray-trace (no transport per beamlet), and marks
+  closed every beamlet below `--keep-fraction` of the peak utility
+  density — the kept set is the shaped aperture. `--emit-fields`
+  forward-solves each kept beamlet into a
+  `openbnct.physical-dose-bundle` (capped at 256), so
+  `plan optimize --dose` on the bundle directory produces a beamlet
+  intensity map — verified on the synthetic case: the OAR-transiting
+  beamlet was driven to ~0 while clear beamlets ramped. Emits
   `openbnct.aperture-shape/0.1.0`; sub-voxel beamlets are recorded
   `resolved: false` rather than scored zero.
 - **R10-05 — S_N plan-iteration quality.** Grow the deterministic solver
