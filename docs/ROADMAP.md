@@ -1749,6 +1749,54 @@ uptake error, per-structure T/N, whole-field offsets).
   and the ~2–3% model/calibration/distance terms do not move either
   bound at ±1σ.
 
+## R17 — Canonical transport validation and productized intercomparison (draft)
+
+Credibility against published anchors — the trust gap that separates a
+research solver from a verification-grade one. All cases are scripted
+end-to-end with declared tolerances so any third party can rerun and
+re-grade them; measured-data comparisons keep the FiR1 σ-scoring
+convention.
+
+- **R17-01 — volumetric fixed sources. (landed)**
+  `SourceSpatialDistribution::UniformBox` deposits an isotropic
+  per-cm³ emission density directly into the sweep's fixed source,
+  with cell coverage proportional to box∩cell overlap. This is the
+  shape canonical fixed-source benchmarks (Reed, Azmy, Kobayashi)
+  require. Invariants locked by conformance tests: infinite-medium
+  φ = S/σ_t to 1e-6, global absorption/emission balance closure, and
+  exact reflection equivariance (mirror-box solve reverses the column
+  to machine precision — stronger than approximate symmetry at the
+  source discontinuity, where diamond differencing carries an O(1%)
+  parity artifact).
+- **R17-02 — canonical benchmark battery. (in progress)**
+  `validation/canonical-reed-problem/` (landed, verdict pass):
+  mirror-domain Reed problem (two disjoint source slabs superposed by
+  linearity) scored against the Warsa 2002 eigenfunction reference —
+  flat regions ≤1%, scattering peak ~2% (angular truncation, halving
+  S4→S8); error budget attributed in the case README. Next: Azmy's
+  weighted-DD problem (published quadrant means 1.676 / 4.159e-2 /
+  1.992e-3) and a Kobayashi duct case. Each case ships generator +
+  run script + comparison artifact + README with citations.
+- **R17-03 — MC↔S_N intercomparison harness.** Productized
+  OpenMC-vs-deterministic comparison on a declared phantom: shared
+  case/assignment/data inputs, `evidence` bundle comparison, per-cell
+  and component-wise deltas with combined-uncertainty z-scores. This
+  is the absolute-dose arbiter the group-refinement study left open
+  (28→56 g thermal-tail pile-up).
+- **R17-04 — spectrum-adaptive group boundaries.** Place group edges
+  by response-weighted lethargy density instead of uniform
+  refinement; emits a `multigroup-data` artifact plus a declared
+  boundary rationale. Turns grid convergence from a manual ladder
+  into tooling.
+- **R17-05 — plan metrics layer.** DVH-derived D95/V20/EUD (and
+  TCP–NTCP under the declared bio model) summarized into
+  `InversePlanResult` and the GUI table — plans should read like
+  plans.
+- **R17-06 — monitor-unit normalization.** Plan weights → beam-on
+  seconds under a declared monitor-unit convention
+  (`core::exposure`), exported on the result so plans are
+  deliverable-shaped.
+
 ## R12 — Optional Avify Dose integration (planned; IP review required)
 
 **Adopted:** 2026-09-22, at the project owner's direction.

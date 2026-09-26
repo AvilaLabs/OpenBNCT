@@ -1,0 +1,82 @@
+{
+  "schema_version": "openbnct.transport-case/0.1.0",
+  "case_id": "reed-problem-mirror",
+  "geometry": {
+    "shape": [
+      160,
+      4,
+      4
+    ],
+    "spacing_mm": [
+      1.0,
+      1.0,
+      1.0
+    ],
+    "origin_mm": [
+      -79.5,
+      -1.5,
+      -1.5
+    ],
+    "direction": [
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  },
+  "material": {
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "reed.refl",
+    "density_g_cm3": 1.0,
+    "temperature_k": 294.0,
+    "nuclides": [
+      {
+        "name": "X1",
+        "mass_fraction": 1.0
+      }
+    ],
+    "neutron_thermal_treatment": "free_gas"
+  },
+  "source": {
+    "schema_version": "openbnct.fixed-source-definition/0.1.0",
+    "id": "reed-volume-source",
+    "particle": "neutron",
+    "source_sites_per_history": 1,
+    "statistical_weight_per_site": 0.16000000000000003,
+    "space": {
+      "kind": "uniform_box",
+      "x_range_cm": [
+        5.0,
+        6.0
+      ],
+      "y_range_cm": [
+        -0.2,
+        0.2
+      ],
+      "z_range_cm": [
+        -0.2,
+        0.2
+      ],
+      "interval_convention": "half_open"
+    },
+    "angle": {
+      "kind": "isotropic_cone",
+      "axis_unit_vector": [
+        1.0,
+        0.0,
+        0.0
+      ],
+      "half_angle_rad": 3.141592653589793
+    },
+    "energy": {
+      "kind": "monoenergetic",
+      "energy_ev": 0.5
+    }
+  },
+  "requested_histories": 1
+}

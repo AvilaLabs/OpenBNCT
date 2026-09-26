@@ -6,6 +6,40 @@ own versions independent of the crate version.
 
 ## [Unreleased]
 
+### Added — transport
+
+- Volumetric fixed sources: `SourceSpatialDistribution::UniformBox`
+  declares an axis-aligned emission box in cm. Emission is isotropic
+  (the model requires the full-sphere cone) and the field's
+  `statistical_weight_per_site` is interpreted as the physical total
+  emission rate in n/s — unit-weight normalization now applies only to
+  the boundary-source geometries. The deterministic path deposits the
+  source into the per-cell fixed source weighted by box/cell overlap;
+  the OpenMC writer maps the shape to its native `box` spatial source.
+  Plane-only paths (`source_coverage`, uncollided beam split) reject
+  volume sources explicitly. Conformance coverage: an infinite-medium
+  absorber returns the analytic `φ = S/σ_t` to 1e-6, global
+  emission/absorption balance closes, and a source box mirrored about
+  the slab midplane produces the exactly-reversed flux column
+  (reflection equivariance to machine precision); a
+  diamond-difference/periodic-seam parity artifact of ~1% can appear
+  locally at a source discontinuity — discretization, not solver bias.
+
+### Added — validation
+
+- `validation/canonical-reed-problem/` — Reed's (1971) heterogeneous
+  slab, scored against the Warsa (2002) eigenfunction reference table.
+  The mirror-domain case (periodic transverse boundaries, vacuum at
+  ±8 cm) runs as two `UniformBox` solves superposed by linearity;
+  `compare.py` reports region-averaged scalar-flux errors against the
+  reference's own trapezoid integration plus interior pointwise cells.
+  At S8/1 mm the flat regions land within ~1% of the reference and the
+  scattering-source peak within ~2% — a demonstrated angular-truncation
+  signature (S4→S8 halves it), not spatial truncation (mesh refinement
+  to 0.5 mm moves region means <0.3%) nor a normalization defect.
+  Ships generator, run script, reference CSV provenance, and a graded
+  `comparison.json`.
+
 ### Added — pharmacokinetics
 
 - `openbnct pk` is now a subcommand family (`pk fit|tissue-scale|

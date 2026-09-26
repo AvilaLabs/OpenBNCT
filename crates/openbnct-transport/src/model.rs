@@ -195,7 +195,21 @@ impl FixedSourceDefinition {
                 self.source_sites_per_history,
             ));
         }
-        if self.statistical_weight_per_site != 1.0 {
+        // Boundary sources are normalized documents: the weight is the
+        // dimensionless source strength and must be unit. A `UniformBox`
+        // volumetric source instead declares its total emission rate
+        // [n/s] directly in `statistical_weight_per_site` — any finite
+        // positive value is meaningful there.
+        let volumetric = matches!(self.space, SourceSpatialDistribution::UniformBox { .. });
+        if volumetric {
+            if !(self.statistical_weight_per_site.is_finite()
+                && self.statistical_weight_per_site > 0.0)
+            {
+                return Err(TransportModelError::UnsupportedSourceWeight(
+                    self.statistical_weight_per_site,
+                ));
+            }
+        } else if self.statistical_weight_per_site != 1.0 {
             return Err(TransportModelError::UnsupportedSourceWeight(
                 self.statistical_weight_per_site,
             ));
@@ -226,6 +240,26 @@ impl FixedSourceDefinition {
                     || *radius_cm <= 0.0
                 {
                     return Err(TransportModelError::InvalidSourceSpace);
+                }
+            }
+            SourceSpatialDistribution::UniformBox {
+                x_range_cm,
+                y_range_cm,
+                z_range_cm,
+                ..
+            } => {
+                if [x_range_cm, y_range_cm, z_range_cm]
+                    .iter()
+                    .any(|r| !valid_interval(**r))
+                {
+                    return Err(TransportModelError::InvalidSourceSpace);
+                }
+                // A volumetric source is only meaningful isotropic —
+                // require the full-sphere cone form.
+                match &self.angle {
+                    AngularDistribution::IsotropicCone { half_angle_rad, .. }
+                        if (*half_angle_rad - std::f64::consts::PI).abs() < 1e-9 => {}
+                    _ => return Err(TransportModelError::InvalidSourceDirection),
                 }
             }
         }
@@ -319,6 +353,17 @@ pub enum SourceSpatialDistribution {
         center_uv_cm: [f64; 2],
         radius_cm: f64,
     },
+    /// Uniform sampling over a bounded axis-aligned box — the
+    /// volumetric source of the canonical fixed-source benchmarks
+    /// (interior emission, activation regions). Cells are covered in
+    /// proportion to their box∩cell overlap volume; the deterministic
+    /// path deposits it as an isotropic per-cm³ emission density.
+    UniformBox {
+        x_range_cm: [f64; 2],
+        y_range_cm: [f64; 2],
+        z_range_cm: [f64; 2],
+        interval_convention: IntervalConvention,
+    },
 }
 
 /// World axis a `UniformAxisPlane` is perpendicular to.
@@ -373,27 +418,32 @@ impl SourceSpatialDistribution {
                 offset_cm,
                 ..
             } => Some((axis, offset_cm, u_range_cm, v_range_cm)),
-            SourceSpatialDistribution::UniformDisk { .. } => None,
+            SourceSpatialDistribution::UniformDisk { .. }
+            | SourceSpatialDistribution::UniformBox { .. } => None,
         }
     }
 
-    /// The world axis the distribution's plane/disk is perpendicular to.
+    /// The world axis the distribution's plane/disk is perpendicular
+    /// to. `None` for `UniformBox` — a volume has no perpendicular.
     #[must_use]
-    pub fn axis(&self) -> PlaneAxis {
+    pub fn axis(&self) -> Option<PlaneAxis> {
         match self {
-            SourceSpatialDistribution::UniformCartesianPlane { .. } => PlaneAxis::Z,
+            SourceSpatialDistribution::UniformCartesianPlane { .. } => Some(PlaneAxis::Z),
             SourceSpatialDistribution::UniformAxisPlane { axis, .. }
-            | SourceSpatialDistribution::UniformDisk { axis, .. } => *axis,
+            | SourceSpatialDistribution::UniformDisk { axis, .. } => Some(*axis),
+            SourceSpatialDistribution::UniformBox { .. } => None,
         }
     }
 
     /// World coordinate of the plane/disk along its perpendicular axis.
+    /// `None` for `UniformBox`.
     #[must_use]
-    pub fn offset_cm(&self) -> f64 {
+    pub fn offset_cm(&self) -> Option<f64> {
         match self {
-            SourceSpatialDistribution::UniformCartesianPlane { z_cm, .. } => *z_cm,
+            SourceSpatialDistribution::UniformCartesianPlane { z_cm, .. } => Some(*z_cm),
             SourceSpatialDistribution::UniformAxisPlane { offset_cm, .. }
-            | SourceSpatialDistribution::UniformDisk { offset_cm, .. } => *offset_cm,
+            | SourceSpatialDistribution::UniformDisk { offset_cm, .. } => Some(*offset_cm),
+            SourceSpatialDistribution::UniformBox { .. } => None,
         }
     }
 }

@@ -1586,6 +1586,32 @@ fn settings_xml(
                 univariate_element(writer, "z", "discrete", &[0.0, 1.0])?;
                 writer.write_event(Event::End(BytesEnd::new("space")))?;
             }
+            SourceSpatialDistribution::UniformBox {
+                x_range_cm,
+                y_range_cm,
+                z_range_cm,
+                ..
+            } => {
+                // OpenMC's box source is exactly a uniform axis-aligned
+                // volume — the same shape the deterministic path
+                // deposits by overlap fraction.
+                let mut space = BytesStart::new("space");
+                space.push_attribute(("type", "box"));
+                writer.write_event(Event::Start(space))?;
+                text_element(
+                    writer,
+                    "parameters",
+                    &format_numbers(&[
+                        x_range_cm[0],
+                        y_range_cm[0],
+                        z_range_cm[0],
+                        x_range_cm[1],
+                        y_range_cm[1],
+                        z_range_cm[1],
+                    ]),
+                )?;
+                writer.write_event(Event::End(BytesEnd::new("space")))?;
+            }
         }
 
         match &source.angle {

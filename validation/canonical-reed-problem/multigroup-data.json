@@ -1,0 +1,77 @@
+{
+  "schema_version": "openbnct.multigroup-data/0.1.0",
+  "id": "reed-problem-1g",
+  "energy_boundaries_ev": [
+    1.0,
+    0.001
+  ],
+  "collapse_declaration": "Canonical one-group benchmark data (Reed 1971 NSE 46:309-314; Warsa 2002 ANE 29:851-874): declared macroscopic sigma_t / sigma_s0, isotropic scatter.",
+  "component_profile": null,
+  "materials": [
+    {
+      "material_id": "reed.src1",
+      "sigma_total_per_cm": [
+        50.0
+      ],
+      "scatter_matrix_per_cm": [
+        0.0
+      ],
+      "dose_response_gy_cm2": {},
+      "transport_mu_bar": [
+        0.0
+      ]
+    },
+    {
+      "material_id": "reed.abs1",
+      "sigma_total_per_cm": [
+        5.0
+      ],
+      "scatter_matrix_per_cm": [
+        0.0
+      ],
+      "dose_response_gy_cm2": {},
+      "transport_mu_bar": [
+        0.0
+      ]
+    },
+    {
+      "material_id": "reed.void",
+      "sigma_total_per_cm": [
+        1e-08
+      ],
+      "scatter_matrix_per_cm": [
+        0.0
+      ],
+      "dose_response_gy_cm2": {},
+      "transport_mu_bar": [
+        0.0
+      ]
+    },
+    {
+      "material_id": "reed.src2",
+      "sigma_total_per_cm": [
+        1.0
+      ],
+      "scatter_matrix_per_cm": [
+        0.9
+      ],
+      "dose_response_gy_cm2": {},
+      "transport_mu_bar": [
+        0.0
+      ]
+    },
+    {
+      "material_id": "reed.refl",
+      "sigma_total_per_cm": [
+        1.0
+      ],
+      "scatter_matrix_per_cm": [
+        0.9
+      ],
+      "dose_response_gy_cm2": {},
+      "transport_mu_bar": [
+        0.0
+      ]
+    }
+  ]
+}

@@ -1,0 +1,223 @@
+{
+  "schema_version": "openbnct.material-assignment/0.2.0",
+  "case_id": "reed-problem-mirror",
+  "base_material": {
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "reed.refl",
+    "density_g_cm3": 1.0,
+    "temperature_k": 294.0,
+    "nuclides": [
+      {
+        "name": "X1",
+        "mass_fraction": 1.0
+      }
+    ],
+    "neutron_thermal_treatment": "free_gas"
+  },
+  "regions": [
+    {
+      "name": "reed.src1.left",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "reed.src1",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          60,
+          0,
+          0
+        ],
+        "upper": [
+          99,
+          3,
+          3
+        ]
+      }
+    },
+    {
+      "name": "reed.abs1.left",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "reed.abs1",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          50,
+          0,
+          0
+        ],
+        "upper": [
+          59,
+          3,
+          3
+        ]
+      }
+    },
+    {
+      "name": "reed.abs1.right",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "reed.abs1",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          100,
+          0,
+          0
+        ],
+        "upper": [
+          109,
+          3,
+          3
+        ]
+      }
+    },
+    {
+      "name": "reed.void.left",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "reed.void",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          30,
+          0,
+          0
+        ],
+        "upper": [
+          49,
+          3,
+          3
+        ]
+      }
+    },
+    {
+      "name": "reed.void.right",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "reed.void",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          110,
+          0,
+          0
+        ],
+        "upper": [
+          129,
+          3,
+          3
+        ]
+      }
+    },
+    {
+      "name": "reed.src2.left",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "reed.src2",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          20,
+          0,
+          0
+        ],
+        "upper": [
+          29,
+          3,
+          3
+        ]
+      }
+    },
+    {
+      "name": "reed.src2.right",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "reed.src2",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          130,
+          0,
+          0
+        ],
+        "upper": [
+          139,
+          3,
+          3
+        ]
+      }
+    }
+  ],
+  "provenance_id": "reed-1971-mirror-domain"
+}

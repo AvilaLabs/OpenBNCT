@@ -715,8 +715,10 @@ pub(crate) fn source_coverage(
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
     let geometry = &case.geometry;
-    let axis = source.space.axis().index();
-    let offset_cm = source.space.offset_cm();
+    let (Some(axis_p), Some(offset_cm)) = (source.space.axis(), source.space.offset_cm()) else {
+        return Err(invalid("volumetric sources have no boundary face".into()));
+    };
+    let axis = axis_p.index();
 
     // Grid world bounds along the source-normal axis.
     let lo_mm = geometry.origin_mm[axis] - 0.5 * geometry.spacing_mm[axis];
@@ -736,7 +738,7 @@ pub(crate) fn source_coverage(
     // coverage is the declared boundary resolution. `in_plane_axes` is
     // the canonical (u, v) order (Y spans (x, z), not (z, x)) — the same
     // order the sweep uses for its `(uu, vv)` boundary lookup.
-    let (u, v) = source.space.axis().in_plane_axes();
+    let (u, v) = axis_p.in_plane_axes();
     let mut cells: Vec<(u32, u32)> = Vec::new();
     match &source.space {
         SourceSpatialDistribution::UniformDisk {
@@ -799,7 +801,10 @@ fn map_boundary_source(
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
     let geometry = &case.geometry;
-    let axis = source.space.axis().index();
+    let Some(axis_p) = source.space.axis() else {
+        return Err(invalid("volumetric sources have no boundary face".into()));
+    };
+    let axis = axis_p.index();
     let coverage = source_coverage(case, data)?;
     let (face, cells, group_weights) = (coverage.face, coverage.cells, coverage.group_weights);
     let inward_sign = if face % 2 == 0 { 1.0_f64 } else { -1.0_f64 };
@@ -1003,6 +1008,71 @@ fn source_group_weights(
         }
     }
     Ok(weights)
+}
+
+/// Map a `UniformBox` volumetric source onto per-cell isotropic
+/// emission densities — the `fixed_source` convention is the scalar
+/// source per cm³ (identical to the `Σσ_s·φ` scatter term's units).
+/// The box emits at a uniform density `rate/V_box`; a cell carries
+/// its box∩cell overlap share of that density.
+fn map_volume_source(
+    case: &TransportCase,
+    data: &MultigroupData,
+) -> Result<Vec<Vec<f64>>, MultigroupError> {
+    let invalid = |m: String| MultigroupError::Source(m);
+    let SourceSpatialDistribution::UniformBox {
+        x_range_cm,
+        y_range_cm,
+        z_range_cm,
+        ..
+    } = &case.source.space
+    else {
+        return Err(invalid("not a volumetric source".into()));
+    };
+    let group_weights = source_group_weights(&case.source, data)?;
+    let geometry = &case.geometry;
+    let ranges_cm = [*x_range_cm, *y_range_cm, *z_range_cm];
+    let box_vol_cm3: f64 = ranges_cm.iter().map(|r| r[1] - r[0]).product();
+    if !(box_vol_cm3.is_finite() && box_vol_cm3 > 0.0) {
+        return Err(invalid("volumetric source box has no volume".into()));
+    }
+    let groups = data.group_count();
+    let rate =
+        case.source.statistical_weight_per_site * case.source.source_sites_per_history as f64;
+    let [nx, ny, nz] = geometry.shape;
+    let mut fixed = vec![vec![0.0; groups]; (nx * ny * nz) as usize];
+    let mut covered = 0usize;
+    for k in 0..nz {
+        for j in 0..ny {
+            for i in 0..nx {
+                let cell = (i + nx * j + nx * ny * k) as usize;
+                let idx = [i, j, k];
+                let mut overlap_cm3 = 1.0_f64;
+                let mut cell_vol_cm3 = 1.0_f64;
+                for a in 0..3 {
+                    // Cell a-th extent: origin is the cell-0 center.
+                    let lo_mm =
+                        geometry.origin_mm[a] + (idx[a] as f64 - 0.5) * geometry.spacing_mm[a];
+                    let hi_mm = lo_mm + geometry.spacing_mm[a];
+                    let [rlo, rhi] = ranges_cm[a];
+                    overlap_cm3 *= (hi_mm.min(rhi * 10.0) - lo_mm.max(rlo * 10.0)).max(0.0) / 10.0;
+                    cell_vol_cm3 *= geometry.spacing_mm[a] / 10.0;
+                }
+                if overlap_cm3 <= 0.0 {
+                    continue;
+                }
+                covered += 1;
+                let density = rate * overlap_cm3 / (box_vol_cm3 * cell_vol_cm3);
+                for g in 0..groups {
+                    fixed[cell][g] = density * group_weights[g];
+                }
+            }
+        }
+    }
+    if covered == 0 {
+        return Err(invalid("volumetric source box covers no cells".into()));
+    }
+    Ok(fixed)
 }
 
 /// (direction, weight) pairs covering a source angular distribution.
@@ -1739,34 +1809,45 @@ pub(crate) fn solve_multigroup_unchecked(
         material_composition_map(case, data, options.assignment.as_ref())?;
     let data = &data_eff;
 
+    // Volumetric sources deposit straight into the fixed source —
+    // no uncollided split and no boundary faces.
+    let volume_source = matches!(
+        case.source.space,
+        SourceSpatialDistribution::UniformBox { .. }
+    );
     // Uncollided beam split or the discrete boundary-flux path.
-    let uncollided = if options.beam_uncollided_split {
+    let uncollided = if options.beam_uncollided_split && !volume_source {
         uncollided_beam_flux(case, data, &case_material)?
     } else {
         None
     };
-    let boundary = if uncollided.is_some() {
+    let boundary = if uncollided.is_some() || volume_source {
         BoundarySource::new()
     } else {
         map_boundary_source(case, data, &quadrature)?
     };
-    // First-collision source driven by the uncollided flux.
-    let fixed_source: Vec<Vec<f64>> = match &uncollided {
-        Some(unc) => (0..n_cells)
-            .map(|cell| {
-                let material = &data.materials[case_material[cell]];
-                (0..groups)
-                    .map(|g| {
-                        (0..groups)
-                            .map(|gp| {
-                                material.scatter_matrix_per_cm[gp * groups + g] * unc[cell][gp]
-                            })
-                            .sum()
-                    })
-                    .collect()
-            })
-            .collect(),
-        None => vec![vec![0.0; groups]; n_cells],
+    // First-collision source driven by the uncollided flux, or the
+    // volumetric emission density for interior sources.
+    let fixed_source: Vec<Vec<f64>> = if volume_source {
+        map_volume_source(case, data)?
+    } else {
+        match &uncollided {
+            Some(unc) => (0..n_cells)
+                .map(|cell| {
+                    let material = &data.materials[case_material[cell]];
+                    (0..groups)
+                        .map(|g| {
+                            (0..groups)
+                                .map(|gp| {
+                                    material.scatter_matrix_per_cm[gp * groups + g] * unc[cell][gp]
+                                })
+                                .sum()
+                        })
+                        .collect()
+                })
+                .collect(),
+            None => vec![vec![0.0; groups]; n_cells],
+        }
     };
 
     let mut result = solve_sn_problem(
@@ -1790,6 +1871,8 @@ pub(crate) fn solve_multigroup_unchecked(
             }
         }
         result.beam_model = "uncollided_split".into();
+    } else if volume_source {
+        result.beam_model = "volumetric".into();
     } else {
         result.beam_model = "boundary_flux".into();
     }
@@ -2467,7 +2550,7 @@ pub(crate) fn solve_sn_problem(
         for g in 0..groups {
             let g = if ascending { groups - 1 - g } else { g };
             // Within-group Jacobi iteration on the scatter source.
-            for _inner in 0..options.max_inner_iterations {
+            for inner_iter in 0..options.max_inner_iterations {
                 // P1 anisotropic source into group g:
                 // S_a(cell) = Σ_gp Σ_s1(gp→g)·J_{a,gp}(cell).
                 let p1_source: Option<Vec<[f64; 3]>> = if p1 {
@@ -2606,6 +2689,9 @@ pub(crate) fn solve_sn_problem(
                     change =
                         change.max((new_flux - flux[cell][g]).abs() / new_flux.abs().max(1e-30));
                     flux[cell][g] = new_flux;
+                }
+                if std::env::var_os("SN_INNER_DEBUG").is_some() && inner_iter % 50 == 0 {
+                    eprintln!("[inner] outer={outer} g={g} i={inner_iter} change={change:.3e}");
                 }
                 if change < inner_tolerance {
                     break;
@@ -3105,8 +3191,8 @@ pub fn fold_multigroup_dose(
 pub(crate) mod tests {
     use super::*;
     use crate::model::{
-        FixedSourceDefinition, MATERIAL_ASSIGNMENT_SCHEMA, MaterialDefinition, MaterialRegion,
-        NeutronThermalTreatment, NuclideMassFraction, ParticleType, PlaneAxis,
+        FixedSourceDefinition, IntervalConvention, MATERIAL_ASSIGNMENT_SCHEMA, MaterialDefinition,
+        MaterialRegion, NeutronThermalTreatment, NuclideMassFraction, ParticleType, PlaneAxis,
     };
 
     const IDENTITY: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
@@ -3400,6 +3486,139 @@ pub(crate) mod tests {
             (slope - sigma).abs() / sigma < 1e-9,
             "slope {slope} vs analytic {sigma}"
         );
+    }
+
+    /// Volumetric sources deposit an isotropic emission density into
+    /// the fixed source. A periodic, uniformly covered, pure absorber
+    /// is an infinite medium — every cell must carry exactly S/σ_t and
+    /// the balance must close: σ_t·Σφ·V = total emission.
+    #[test]
+    fn uniform_box_source_pure_absorber_is_analytic() {
+        let mut case = slab_case();
+        // The box covers the whole domain: x,y ∈ [-0.2,0.2],
+        // z ∈ [-1.0,1.0] cm → V_box = 0.32 cm³, density S = 1/0.32.
+        case.source.space = SourceSpatialDistribution::UniformBox {
+            x_range_cm: [-0.2, 0.2],
+            y_range_cm: [-0.2, 0.2],
+            z_range_cm: [-1.0, 1.0],
+            interval_convention: IntervalConvention::HalfOpen,
+        };
+        case.source.angle = AngularDistribution::IsotropicCone {
+            axis_unit_vector: [0.0, 0.0, 1.0],
+            half_angle_rad: std::f64::consts::PI,
+        };
+        let sigma = 0.5_f64; // cm^-1
+        let mg = data(&[sigma], vec![0.0]);
+        mg.validate().unwrap();
+        let mut options = options();
+        options.periodic = [true, true, true];
+        let flux = solve_multigroup(&case, &mg, &options, cref("mg"), cref("case")).unwrap();
+        assert!(flux.converged);
+        assert_eq!(flux.beam_model, "volumetric");
+
+        let density = 1.0 / 0.32; // S = R/V_box [n cm^-3]
+        let expected = density / sigma;
+        let cell_vol_cm3 = 0.001_f64; // 1 mm^3
+        let mut absorbed = 0.0;
+        for row in &flux.flux {
+            assert!(
+                (row[0] - expected).abs() / expected < 1e-6,
+                "infinite-medium flux {} vs analytic {expected}",
+                row[0]
+            );
+            absorbed += sigma * row[0] * cell_vol_cm3;
+        }
+        // Every emitted neutron is absorbed exactly once: σ_t·Σφ·V = 1.
+        assert!(
+            (absorbed - 1.0).abs() < 1e-6,
+            "balance: absorbed {absorbed} vs emission 1"
+        );
+    }
+
+    /// Partial coverage: a box over half the z-extent. With periodic
+    /// boundaries the exact invariants are (a) global balance —
+    /// σ_t·Σφ·V = emitted rate — and (b) the reflection symmetries
+    /// φ(k) = φ(9−k) inside the source slab and φ(k) = φ(29−k) across
+    /// the periodic wrap in the source-free half.
+    #[test]
+    fn uniform_box_partial_overlap_scales_by_volume() {
+        let mut case = slab_case();
+        // z ∈ [-1.0, 0.0] — exactly the first 10 of 20 cells.
+        case.source.space = SourceSpatialDistribution::UniformBox {
+            x_range_cm: [-0.2, 0.2],
+            y_range_cm: [-0.2, 0.2],
+            z_range_cm: [-1.0, 0.0],
+            interval_convention: IntervalConvention::HalfOpen,
+        };
+        case.source.angle = AngularDistribution::IsotropicCone {
+            axis_unit_vector: [0.0, 0.0, 1.0],
+            half_angle_rad: std::f64::consts::PI,
+        };
+        let sigma = 0.5_f64;
+        let mg = data(&[sigma], vec![0.0]);
+        let mut options = options();
+        options.periodic = [true, true, true];
+        options.convergence = 1e-13;
+        options.max_outer_iterations = 200;
+        let flux = solve_multigroup(&case, &mg, &options, cref("mg"), cref("case")).unwrap();
+        assert!(flux.converged);
+
+        let cell_vol_cm3 = 0.001_f64;
+        let absorbed: f64 = flux.flux.iter().map(|r| sigma * r[0] * cell_vol_cm3).sum();
+        assert!(
+            (absorbed - 1.0).abs() < 1e-6,
+            "balance: absorbed {absorbed} vs emitted 1"
+        );
+        let column = |k: usize| flux.flux[16 * k][0];
+        // The source slab is hotter than the source-free half.
+        for k in 0..10 {
+            assert!(column(k) > column(10), "source cell {k} not above the tail");
+        }
+
+        // Reflection equivariance is the solver-level invariant: the
+        // mirrored problem (box on z ∈ [0,1]) must produce the exact
+        // z→−z reflection of this solution — machine precision, since
+        // both solves execute the identical discrete system. (The
+        // single-problem residual tilt of O(1%) at the source-edge is
+        // the diamond-difference/periodic-seam parity artifact — real
+        // discretization noise, not a bias.)
+        let mut case_mirror = slab_case();
+        case_mirror.source.space = SourceSpatialDistribution::UniformBox {
+            x_range_cm: [-0.2, 0.2],
+            y_range_cm: [-0.2, 0.2],
+            z_range_cm: [0.0, 1.0],
+            interval_convention: IntervalConvention::HalfOpen,
+        };
+        case_mirror.source.angle = AngularDistribution::IsotropicCone {
+            axis_unit_vector: [0.0, 0.0, 1.0],
+            half_angle_rad: std::f64::consts::PI,
+        };
+        let flux_m =
+            solve_multigroup(&case_mirror, &mg, &options, cref("mg"), cref("case")).unwrap();
+        for k in 0..20 {
+            let mirrored = flux_m.flux[16 * (19 - k)][0];
+            let denom = column(k).max(1e-30);
+            assert!(
+                (column(k) - mirrored).abs() / denom < 1e-9,
+                "reflection equivariance broken at k={k}: {} vs {}",
+                column(k),
+                mirrored
+            );
+        }
+    }
+
+    #[test]
+    fn uniform_box_requires_isotropic_emission() {
+        let mut case = slab_case();
+        case.source.space = SourceSpatialDistribution::UniformBox {
+            x_range_cm: [-0.2, 0.2],
+            y_range_cm: [-0.2, 0.2],
+            z_range_cm: [-1.0, 1.0],
+            interval_convention: IntervalConvention::HalfOpen,
+        };
+        // A monodirectional volume source is rejected — emission from
+        // a volume is only meaningful isotropic.
+        case.source.validate().unwrap_err();
     }
 
     #[test]

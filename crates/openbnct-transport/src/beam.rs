@@ -145,10 +145,10 @@ impl BeamDescription {
     /// The port shape and the source's spatial distribution must
     /// describe the same opening: identical axis, offset, and extents.
     fn validate_port_consistency(&self) -> Result<(), BeamError> {
-        if self.port.axis != self.source.space.axis() {
+        if Some(self.port.axis) != self.source.space.axis() {
             return Err(BeamError::PortSourceMismatch("axis differs"));
         }
-        if self.port.offset_cm != self.source.space.offset_cm() {
+        if Some(self.port.offset_cm) != self.source.space.offset_cm() {
             return Err(BeamError::PortSourceMismatch("offset differs"));
         }
         match (&self.port.shape, &self.source.space) {
