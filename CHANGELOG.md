@@ -125,6 +125,13 @@ own versions independent of the crate version.
   sources disable the θ-positivity repair automatically. Emits
   `openbnct.direction-candidates/0.1.0` scored
   `adjoint_marginal_utility`, content-binding the objective document.
+- `openbnct plan iterate` — closed-loop adjoint inverse planning.
+  Each round re-synthesizes the direction fan against the current
+  plan's marginal-utility field, forward-solves the top `--add`
+  candidates, and re-optimizes weights over the grown pool. Emits
+  per-beam dose bundles, the final `openbnct.inverse-plan-result`,
+  and an `openbnct.iteration-report/0.1.0` recording admissions,
+  scores, and the penalty trajectory per round.
 - `openbnct.fraction-scales/0.1.0` + `plan optimize|select
   --fraction-scales`: multi-fraction planning. Each fraction's dose
   component scales (e.g. boron uptake decay across the washout

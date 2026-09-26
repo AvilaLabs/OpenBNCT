@@ -45,11 +45,53 @@
 use std::collections::BTreeMap;
 
 use openbnct_core::{DoseComponent, RegionMask};
+use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 use crate::optimize::{
     DoseObjective, DoseQuantity, InversePlanObjective, component_name, objective_metric,
 };
+
+/// Current schema token for iteration reports.
+pub const ITERATION_REPORT_SCHEMA: &str = "openbnct.iteration-report/0.1.0";
+/// Qualification carried by every iteration report.
+pub const ITERATION_REPORT_QUALIFICATION: &str = "inverse_planning_research_only_not_clinical";
+
+/// One synthesis→solve→optimize round of `plan iterate`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IterationRound {
+    pub round: u32,
+    /// Candidates added to the beam pool this round, best-first.
+    pub added: Vec<String>,
+    /// Marginal-utility score of each added candidate, same order.
+    pub scores: Vec<f64>,
+    /// Composite penalty at the re-optimized weights.
+    pub penalty: f64,
+    pub converged: bool,
+}
+
+/// Versioned record of an iterate run: which beams each round added
+/// and how the penalty evolved — the loop's own audit trail.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct IterationReport {
+    #[serde(deserialize_with = "openbnct_core::deserialize_contract_id")]
+    pub schema_version: String,
+    pub id: String,
+    pub case_id: String,
+    /// Content bindings to the inputs the loop consumed.
+    pub case: openbnct_core::ContentReference,
+    pub multigroup_data: openbnct_core::ContentReference,
+    pub objective: openbnct_core::ContentReference,
+    /// Beam directions the loop selected, in admission order.
+    pub beams: Vec<crate::directions::DirectionCandidate>,
+    pub rounds: Vec<IterationRound>,
+    /// Content binding to the final inverse-plan result.
+    pub result: openbnct_core::ContentReference,
+    pub provenance_id: String,
+    pub qualification: String,
+}
 
 /// Errors from composite-source construction.
 #[derive(Debug, Error)]

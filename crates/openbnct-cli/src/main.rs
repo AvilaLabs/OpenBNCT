@@ -2551,6 +2551,72 @@ enum PlanCommand {
         #[arg(long)]
         provenance_id: Option<String>,
     },
+    /// Closed-loop adjoint inverse planning: per round, synthesize
+    /// ranks the direction fan by marginal utility at the *current*
+    /// plan, the top `--add` unscored beams get real forward solves,
+    /// and `plan optimize`'s solver re-assigns weights — the iterate
+    /// loop the adjoint gradient was built for. Emits per-beam dose
+    /// bundles, the final `openbnct.inverse-plan-result`, and an
+    /// `openbnct.iteration-report` documenting the round trajectory.
+    Iterate {
+        /// `openbnct.transport-case` JSON (geometry + source template).
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-data` JSON; must declare
+        /// `component_profile` for dose folding.
+        #[arg(long)]
+        data: PathBuf,
+        /// `openbnct.material-assignment` JSON.
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// `openbnct.inverse-plan-objective` JSON.
+        #[arg(long)]
+        objective: PathBuf,
+        /// `RegionMask` JSON; repeatable — every mask the objectives
+        /// name must be supplied.
+        #[arg(long, required = true)]
+        mask: Vec<PathBuf>,
+        /// `RegionMask` JSON every candidate beam converges on.
+        #[arg(long)]
+        aim_mask: PathBuf,
+        /// Azimuth divisions over 0–360°.
+        #[arg(long, default_value = "12")]
+        azimuth_steps: u32,
+        /// Elevation divisions over −60..+60°.
+        #[arg(long, default_value = "3")]
+        elevation_steps: u32,
+        /// Aperture radius in cm for the aimed-disk solves.
+        #[arg(long, default_value = "4.0")]
+        radius_cm: f64,
+        /// Synthesis–solve rounds; each adds up to `--add` beams.
+        #[arg(long, default_value = "3")]
+        rounds: u32,
+        /// Beams added per round (top ranked, not already in the pool).
+        #[arg(long, default_value = "2")]
+        add: usize,
+        /// Quadrature order for forward and adjoint solves.
+        #[arg(long, default_value = "8")]
+        order: u32,
+        /// Relative convergence target for forward solves.
+        #[arg(long, default_value = "1e-6")]
+        convergence: f64,
+        /// Inner iterations per group solve.
+        #[arg(long, default_value = "40")]
+        max_inner: u32,
+        /// Outer sweeps per forward solve.
+        #[arg(long, default_value = "30")]
+        max_outer: u32,
+        /// Empty output directory — receives per-beam dose bundles,
+        /// the iteration report, and the final result.
+        #[arg(long)]
+        output_dir: PathBuf,
+        /// Report identifier; defaults to `{case_id}.iterate`.
+        #[arg(long)]
+        id: Option<String>,
+        /// Provenance identifier; defaults to `iterate:` + the id.
+        #[arg(long)]
+        provenance_id: Option<String>,
+    },
     /// Aim and solve a beam per direction through a target mask —
     /// emits a unit-weight dose bundle per beam plus a
     /// `openbnct.beam-field-set/0.1.0` manifest. The deterministic
@@ -11857,6 +11923,404 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     } else {
                         ""
                     }
+                );
+            }
+            PlanCommand::Iterate {
+                case,
+                data,
+                assignment,
+                objective,
+                mask,
+                aim_mask,
+                azimuth_steps,
+                elevation_steps,
+                radius_cm,
+                rounds,
+                add,
+                order,
+                convergence,
+                max_inner,
+                max_outer,
+                output_dir,
+                id,
+                provenance_id,
+            } => {
+                use openbnct_plan::optimize::{
+                    BeamDoseField, InversePlanObjective, ResultProvenance, optimize_weights,
+                };
+                use openbnct_plan::synthesis;
+                let case_bytes = fs::read(&case)?;
+                let case_document: TransportCase =
+                    serde_json::from_slice(&case_bytes).map_err(|error| {
+                        io::Error::other(format!("case {}: {error}", case.display()))
+                    })?;
+                let data_bytes = fs::read(&data)?;
+                let mg_data: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&data_bytes).map_err(|error| {
+                        io::Error::other(format!("data {}: {error}", data.display()))
+                    })?;
+                let objective_bytes = fs::read(&objective)?;
+                let spec: InversePlanObjective =
+                    serde_json::from_slice(&objective_bytes).map_err(|error| {
+                        io::Error::other(format!("objective {}: {error}", objective.display()))
+                    })?;
+                spec.validate()
+                    .map_err(|error| io::Error::other(format!("objective: {error}")))?;
+                let profile = mg_data.component_profile.clone().ok_or_else(|| {
+                    io::Error::other(
+                        "plan iterate requires the multigroup data to declare component_profile",
+                    )
+                })?;
+                let mut masks = Vec::new();
+                for path in &mask {
+                    let m: RegionMask =
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("mask {}: {error}", path.display()))
+                        })?;
+                    masks.push(m);
+                }
+                let aim_bytes = fs::read(&aim_mask)?;
+                let aim: RegionMask = serde_json::from_slice(&aim_bytes).map_err(|error| {
+                    io::Error::other(format!("mask {}: {error}", aim_mask.display()))
+                })?;
+                let assignment_doc: Option<MaterialAssignment> = assignment
+                    .as_ref()
+                    .map(|path| {
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("assignment {}: {error}", path.display()))
+                        })
+                    })
+                    .transpose()?;
+                let geometry = case_document.geometry.clone();
+                let n_cells = geometry
+                    .voxel_count()
+                    .map_err(|error| io::Error::other(format!("geometry: {error}")))?;
+                let groups = mg_data.group_count();
+                let cell_mat = openbnct_transport::cell_materials(
+                    &case_document,
+                    &mg_data,
+                    assignment_doc.as_ref(),
+                )
+                .map_err(|error| io::Error::other(format!("materials: {error}")))?;
+                let response_at = |cell: usize| {
+                    mg_data.materials[cell_mat[cell]]
+                        .dose_response_gy_cm2
+                        .clone()
+                };
+                let effective_responses: Vec<Vec<Vec<f64>>> = spec
+                    .objectives
+                    .iter()
+                    .map(|o| {
+                        (0..n_cells)
+                            .map(|cell| {
+                                synthesis::effective_response(&spec, o, cell, &response_at, groups)
+                            })
+                            .collect()
+                    })
+                    .collect();
+                let mask_voxels = synthesis::synthesis_masks(&spec, &masks, n_cells)
+                    .map_err(|error| io::Error::other(format!("masks: {error}")))?;
+                let candidates = openbnct_plan::directions::enumerate_directions(
+                    &geometry,
+                    &aim,
+                    None,
+                    azimuth_steps,
+                    elevation_steps,
+                )
+                .map_err(|error| io::Error::other(format!("directions: {error}")))?;
+                if !radius_cm.is_finite() || radius_cm <= 0.0 {
+                    return Err(io::Error::other("--radius-cm must be positive").into());
+                }
+                if add == 0 || rounds == 0 {
+                    return Err(io::Error::other("--add and --rounds must be positive").into());
+                }
+                if output_dir.exists() && fs::read_dir(&output_dir)?.next().is_some() {
+                    return Err(io::Error::other(format!(
+                        "{}: output directory is not empty",
+                        output_dir.display()
+                    ))
+                    .into());
+                }
+                fs::create_dir_all(&output_dir)?;
+                let data_ref = openbnct_core::ContentReference {
+                    id: mg_data.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                };
+                let case_ref = openbnct_core::ContentReference {
+                    id: case_document.case_id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                };
+                let adjoint_options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    assignment: assignment_doc.clone(),
+                    ..Default::default()
+                };
+                let forward_options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    convergence,
+                    max_inner_iterations: max_inner,
+                    max_outer_iterations: max_outer,
+                    assignment: assignment_doc.clone(),
+                    ..Default::default()
+                };
+                let mut pool: Vec<openbnct_plan::directions::DirectionCandidate> = Vec::new();
+                let mut fields: Vec<BeamDoseField> = Vec::new();
+                let mut weights: Vec<f64> = Vec::new();
+                let mut round_records: Vec<synthesis::IterationRound> = Vec::new();
+                for round in 0..rounds {
+                    // Marginal-utility source: at the current plan's
+                    // dose when a pool exists, uniform-mask otherwise.
+                    let doses: Option<Vec<Vec<f64>>> = if fields.is_empty() {
+                        None
+                    } else {
+                        Some(
+                            spec.objectives
+                                .iter()
+                                .map(|o| {
+                                    synthesis::objective_dose_view(&spec, o, &fields, &weights)
+                                })
+                                .collect::<Result<Vec<_>, _>>()
+                                .map_err(|error| {
+                                    io::Error::other(format!("dose views: {error}"))
+                                })?,
+                        )
+                    };
+                    let source = synthesis::composite_adjoint_source(
+                        &spec,
+                        &mask_voxels,
+                        &effective_responses,
+                        doses.as_deref(),
+                    )
+                    .map_err(|error| io::Error::other(format!("adjoint source: {error}")))?;
+                    let mut options = adjoint_options.clone();
+                    options.theta_repair = !synthesis::source_is_signed(&source);
+                    let adjoint = openbnct_transport::solve_multigroup_adjoint(
+                        &case_document,
+                        &mg_data,
+                        &options,
+                        &source,
+                        None,
+                        data_ref.clone(),
+                        case_ref.clone(),
+                    )
+                    .map_err(|error| io::Error::other(format!("adjoint solve: {error}")))?;
+                    if !adjoint.converged {
+                        eprintln!("round {round}: warning — adjoint solve did not converge");
+                    }
+                    let taken: std::collections::BTreeSet<String> =
+                        pool.iter().map(|c| c.name.clone()).collect();
+                    let mut scored: Vec<(f64, usize)> = Vec::new();
+                    for (index, candidate) in candidates.iter().enumerate() {
+                        if taken.contains(&candidate.name) {
+                            continue;
+                        }
+                        match openbnct_transport::adjoint_direction_score(
+                            &case_document,
+                            &mg_data,
+                            &options,
+                            &adjoint,
+                            &aim,
+                            candidate.direction_lps,
+                            radius_cm,
+                        ) {
+                            Ok(score) => scored.push((score, index)),
+                            Err(openbnct_transport::MultigroupError::ApertureOutsideFace(_)) => {
+                                continue;
+                            }
+                            Err(error) => {
+                                return Err(io::Error::other(format!(
+                                    "score {}: {error}",
+                                    candidate.name
+                                ))
+                                .into());
+                            }
+                        }
+                    }
+                    scored
+                        .sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                    if scored.is_empty() {
+                        eprintln!("round {round}: candidate pool exhausted — stopping early");
+                        break;
+                    }
+                    let chosen: Vec<(f64, usize)> = scored.iter().take(add).copied().collect();
+                    eprintln!(
+                        "round {round}: adding {}",
+                        chosen
+                            .iter()
+                            .map(|(_, i)| candidates[*i].name.clone())
+                            .collect::<Vec<_>>()
+                            .join(", ")
+                    );
+                    // Forward-solve each admitted beam.
+                    for (score, index) in &chosen {
+                        let candidate = &candidates[*index];
+                        let (positioned, _report) =
+                            openbnct_transport::aim_disk_source_at_centroid(
+                                &case_document.source,
+                                &case_document.geometry,
+                                &aim,
+                                candidate.direction_lps,
+                                radius_cm,
+                            )
+                            .map_err(|error| {
+                                io::Error::other(format!("aim {}: {error}", candidate.name))
+                            })?;
+                        let mut aimed = case_document.clone();
+                        aimed.case_id = format!("{}-{}", case_document.case_id, candidate.name);
+                        aimed.source = positioned;
+                        let aimed_ref = openbnct_core::ContentReference {
+                            id: aimed.case_id.clone(),
+                            sha256: openbnct_evidence::sha256_hex(&serde_json::to_vec(&aimed)?),
+                        };
+                        let flux = openbnct_transport::solve_multigroup(
+                            &aimed,
+                            &mg_data,
+                            &forward_options,
+                            data_ref.clone(),
+                            aimed_ref,
+                        )
+                        .map_err(|error| {
+                            io::Error::other(format!("{}: {error}", candidate.name))
+                        })?;
+                        if !flux.converged {
+                            return Err(io::Error::other(format!(
+                                "{}: solve did not converge (residual {:.3e})",
+                                candidate.name, flux.residual
+                            ))
+                            .into());
+                        }
+                        let bundle = openbnct_transport::fold_multigroup_dose(
+                            &aimed,
+                            &mg_data,
+                            &flux,
+                            assignment_doc.as_ref(),
+                            profile.clone(),
+                            data_ref.clone(),
+                        )
+                        .map_err(|error| {
+                            io::Error::other(format!("{}: dose fold: {error}", candidate.name))
+                        })?;
+                        let dose_path = output_dir.join(format!("{}.dose.json", candidate.name));
+                        write_new_json(&dose_path, &bundle)?;
+                        let name = |c: openbnct_core::DoseComponent| match c {
+                            openbnct_core::DoseComponent::Boron => "boron",
+                            openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                            openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                            openbnct_core::DoseComponent::Photon => "photon",
+                        };
+                        let components: std::collections::BTreeMap<String, Vec<f64>> = bundle
+                            .components
+                            .iter()
+                            .map(|v| (name(v.component).to_string(), v.values.clone()))
+                            .collect();
+                        let values = match spec.dose_quantity {
+                            openbnct_plan::optimize::DoseQuantity::PhysicalTotal => {
+                                bundle.physical_total.values.clone()
+                            }
+                            openbnct_plan::optimize::DoseQuantity::Component(c) => {
+                                components.get(name(c)).cloned().unwrap_or_default()
+                            }
+                            openbnct_plan::optimize::DoseQuantity::Isoeffective => Vec::new(),
+                        };
+                        fields.push(BeamDoseField {
+                            name: candidate.name.clone(),
+                            values,
+                            components: Some(components),
+                        });
+                        let mut recorded = candidate.clone();
+                        recorded.adjoint_score = Some(*score);
+                        pool.push(recorded);
+                    }
+                    // Re-optimize over the grown pool.
+                    let result = optimize_weights(
+                        &fields,
+                        &masks,
+                        &spec,
+                        &vec![0.0; fields.len()],
+                        ResultProvenance {
+                            id: format!("iterate-r{round}"),
+                            provenance_id: provenance_id.clone().unwrap_or_default(),
+                            objective: openbnct_core::ContentReference {
+                                id: spec.id.clone(),
+                                sha256: openbnct_evidence::sha256_hex(&objective_bytes),
+                            },
+                        },
+                    )
+                    .map_err(|error| io::Error::other(format!("optimize: {error}")))?;
+                    weights = result.weights.iter().map(|w| w.weight).collect();
+                    round_records.push(synthesis::IterationRound {
+                        round,
+                        added: chosen
+                            .iter()
+                            .map(|(_, i)| candidates[*i].name.clone())
+                            .collect(),
+                        scores: chosen.iter().map(|(s, _)| *s).collect(),
+                        penalty: result.penalty,
+                        converged: result.converged,
+                    });
+                    eprintln!(
+                        "round {round}: penalty {:.4e} over {} beams",
+                        result.penalty,
+                        fields.len()
+                    );
+                }
+                if fields.is_empty() {
+                    return Err(io::Error::other(
+                        "iteration produced no beams — check aperture/fan geometry",
+                    )
+                    .into());
+                }
+                // Final result document + iteration report.
+                let id = id
+                    .clone()
+                    .unwrap_or_else(|| format!("{}.iterate", case_document.case_id));
+                let result = optimize_weights(
+                    &fields,
+                    &masks,
+                    &spec,
+                    &weights,
+                    ResultProvenance {
+                        id: format!("{id}.result"),
+                        provenance_id: provenance_id
+                            .clone()
+                            .unwrap_or_else(|| format!("iterate:{id}")),
+                        objective: openbnct_core::ContentReference {
+                            id: spec.id.clone(),
+                            sha256: openbnct_evidence::sha256_hex(&objective_bytes),
+                        },
+                    },
+                )
+                .map_err(|error| io::Error::other(format!("optimize: {error}")))?;
+                let result_path = output_dir.join("result.json");
+                write_new_json(&result_path, &result)?;
+                let report = synthesis::IterationReport {
+                    schema_version: synthesis::ITERATION_REPORT_SCHEMA.into(),
+                    id: id.clone(),
+                    case_id: case_document.case_id.clone(),
+                    case: case_ref,
+                    multigroup_data: data_ref,
+                    objective: openbnct_core::ContentReference {
+                        id: spec.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&objective_bytes),
+                    },
+                    beams: pool,
+                    rounds: round_records,
+                    result: openbnct_core::ContentReference {
+                        id: format!("{id}.result"),
+                        sha256: openbnct_evidence::sha256_hex(&fs::read(&result_path)?),
+                    },
+                    provenance_id: provenance_id.unwrap_or_else(|| format!("iterate:{id}")),
+                    qualification: synthesis::ITERATION_REPORT_QUALIFICATION.into(),
+                };
+                let report_path = output_dir.join("iteration-report.json");
+                write_new_json(&report_path, &report)?;
+                println!("result: {}", result_path.display());
+                println!("report: {}", report_path.display());
+                eprintln!(
+                    "{} beams, penalty {:.4e}, converged={}",
+                    result.weights.len(),
+                    result.penalty,
+                    result.converged
                 );
             }
             PlanCommand::Fields {

@@ -1322,6 +1322,16 @@ Each item is evidence-gated; none implies a clinical claim.
   `openbnct.direction-candidates/0.1.0` scored
   `adjoint_marginal_utility` with the objective document
   content-bound. Same research-only boundary posture as R9-07.
+- **R10-08 — closed-loop iterate. (landed)** `plan iterate` runs the
+  full loop in one command: synthesize ranks the fan by marginal
+  utility *at the current plan's dose* (round 0 is the fresh-mode
+  composite), the top `--add` unscored candidates get real aimed-disk
+  forward solves, and the weight optimizer re-folds over the grown
+  pool — repeated for `--rounds`. Per-beam dose bundles, the final
+  `openbnct.inverse-plan-result`, and an
+  `openbnct.iteration-report/0.1.0` (round-by-round admissions,
+  scores, penalty trajectory) land in an empty `--output-dir`; the
+  loop stops early when the candidate pool exhausts.
 - **R10-05 — S_N plan-iteration quality.** Grow the deterministic solver
   from verification scope toward iteration scope: more groups, wider
   anisotropy support, performance pass. Each increment lands with its
