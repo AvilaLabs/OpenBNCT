@@ -628,6 +628,14 @@ pub struct MultigroupFlux {
     /// Final relative scalar-flux change.
     pub residual: f64,
     pub converged: bool,
+    /// Σ_cells Σ_g σ_a,g·φ_g·V — net absorption per unit source rate.
+    /// A converged solve on conserving data can exceed 1.0 only through
+    /// fabricated particles (positivity clamps, rebalance positivity
+    /// limits): values above ~1.0 flag the flux field as defective
+    /// regardless of the reported residual. Absent on artifacts
+    /// produced before the audit existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub balance_absorbed_fraction: Option<f64>,
     pub qualification: String,
     pub provenance_id: String,
 }
@@ -3027,6 +3035,30 @@ pub(crate) fn solve_sn_problem(
         )));
     }
 
+    // Post-solve balance audit: net absorption per unit source rate.
+    // Convergence alone is not evidence of a physical iterate — a
+    // self-consistent fixed point of a defect-creating map (positivity
+    // clamps on ψ̄/ψ_out in thick-cell groups) still fabricates
+    // particles. The audit makes that visible in the artifact.
+    let cell_volume = geometry.spacing_mm.iter().product::<f64>() / 1000.0;
+    let absorbed = flux
+        .iter()
+        .zip(case_material.iter())
+        .map(|(row, &mi)| {
+            let m = &data.materials[mi];
+            row.iter()
+                .enumerate()
+                .map(|(g, &phi)| {
+                    let outscatter: f64 = (0..groups)
+                        .map(|gt| m.scatter_matrix_per_cm[g * groups + gt])
+                        .sum();
+                    phi * (m.sigma_total_per_cm[g] - outscatter).max(0.0)
+                })
+                .sum::<f64>()
+        })
+        .sum::<f64>()
+        * cell_volume;
+
     Ok(MultigroupFlux {
         schema_version: MULTIGROUP_FLUX_SCHEMA.into(),
         case_id: case.case_id.clone(),
@@ -3051,6 +3083,7 @@ pub(crate) fn solve_sn_problem(
         outer_iterations: outer_done,
         residual,
         converged,
+        balance_absorbed_fraction: Some(absorbed),
         qualification: "research-only: deterministic multigroup flux, not a clinical quantity"
             .into(),
         provenance_id: format!("sn-s{}-{}", options.quadrature_order, case.case_id),
