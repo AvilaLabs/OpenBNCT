@@ -1368,6 +1368,234 @@ impl PlanPanel {
     }
 }
 
+/// Inverse-planning state for the plan workspace's in-workbench
+/// certified solve. Inputs are raw artifact bytes/paths — the optimizer
+/// holds loaded documents, not files, so the same state serves native
+/// paths and web drops. Solves run `openbnct_plan`'s certified conic
+/// solver in-process; nothing here reimplements the math.
+struct OptimizerPanel {
+    /// Beam unit-weight dose bundles, `(label, bundle)` — the label is
+    /// the beam name in the emitted result (file stem or drop name).
+    fields: Vec<(String, openbnct_core::PhysicalDoseBundle)>,
+    /// Loaded region masks.
+    masks: Vec<openbnct_core::RegionMask>,
+    /// The objective document plus the exact bytes it parsed from —
+    /// the result binds the bytes' SHA-256, not the deserialized value.
+    spec: Option<openbnct_plan::optimize::InversePlanObjective>,
+    spec_sha256: Option<String>,
+    spec_label: String,
+    /// Certified solver mode: `false` = QP penalty ranking,
+    /// `true` = strict-LP feasibility.
+    strict_lp: bool,
+    result: Option<openbnct_plan::optimize::InversePlanResult>,
+    error: Option<String>,
+    /// Native path entry — adds one artifact per edit+Add.
+    #[cfg(not(target_arch = "wasm32"))]
+    input_path: String,
+    out_path: String,
+    out_status: Option<String>,
+    /// Painted rectangle of the drop zone — position-routed drops land
+    /// here on both targets (zone painted only while the Plan
+    /// workspace is shown).
+    zone: egui::Rect,
+}
+
+impl Default for OptimizerPanel {
+    fn default() -> Self {
+        Self {
+            fields: Vec::new(),
+            masks: Vec::new(),
+            spec: None,
+            spec_sha256: None,
+            spec_label: String::new(),
+            strict_lp: false,
+            result: None,
+            error: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            input_path: String::new(),
+            out_path: String::new(),
+            out_status: None,
+            zone: egui::Rect::NOTHING,
+        }
+    }
+}
+
+impl OptimizerPanel {
+    /// Schema-dispatched ingest: an `inverse-plan-objective` becomes the
+    /// spec, a `physical-dose-bundle` a beam field, a bare
+    /// `{name, voxels}` region mask a mask. Anything else is rejected
+    /// with the schema that was seen.
+    fn add_bytes(&mut self, name: &str, bytes: &[u8]) {
+        self.error = None;
+        self.out_status = None;
+        let schema = serde_json::from_slice::<serde_json::Value>(bytes)
+            .ok()
+            .and_then(|value| {
+                value
+                    .get("schema_version")
+                    .and_then(|s| s.as_str())
+                    .map(openbnct_core::normalize_contract_id)
+            })
+            .unwrap_or_default();
+        if schema.starts_with("openbnct.inverse-plan-objective/") {
+            match serde_json::from_slice::<openbnct_plan::optimize::InversePlanObjective>(bytes) {
+                Ok(spec) => {
+                    self.spec_sha256 = Some(openbnct_evidence::sha256_hex(bytes));
+                    self.spec_label = format!("{} · {name}", spec.id);
+                    self.spec = Some(spec);
+                }
+                Err(error) => self.error = Some(format!("objective spec: {error}")),
+            }
+        } else if schema.contains("physical-dose-bundle/") {
+            match serde_json::from_slice::<openbnct_core::PhysicalDoseBundle>(bytes) {
+                Ok(bundle) => {
+                    let base = name.rsplit('/').next().unwrap_or(name);
+                    let label = base.strip_suffix(".json").unwrap_or(base).to_owned();
+                    self.fields.retain(|(l, _)| l != &label);
+                    self.fields.push((label, bundle));
+                }
+                Err(error) => self.error = Some(format!("dose bundle: {error}")),
+            }
+        } else if serde_json::from_slice::<openbnct_core::RegionMask>(bytes)
+            .map(|m| !m.name.is_empty() && !m.voxels.is_empty())
+            .unwrap_or(false)
+        {
+            match serde_json::from_slice::<openbnct_core::RegionMask>(bytes) {
+                Ok(mask) => {
+                    self.masks.retain(|m| m.name != mask.name);
+                    self.masks.push(mask);
+                }
+                Err(error) => self.error = Some(format!("region mask: {error}")),
+            }
+        } else {
+            self.error = Some(format!(
+                "unrecognized artifact {name} (schema {schema:?}) — expected \
+                 an inverse-plan-objective, physical-dose-bundle, or region mask"
+            ));
+        }
+    }
+
+    /// Load one artifact by path (native file entry).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn add_path(&mut self, path: &Path) {
+        match io::read_bytes(path) {
+            Ok(bytes) => self.add_bytes(&path.display().to_string(), &bytes),
+            Err(error) => self.error = Some(error),
+        }
+    }
+
+    /// Certified solve — assembles `BeamDoseField`s per the spec's dose
+    /// quantity exactly as `openbnct plan optimize` does, then runs the
+    /// same `optimize_weights_lp` entry point.
+    fn solve(&mut self) {
+        self.error = None;
+        self.result = None;
+        self.out_status = None;
+        use openbnct_plan::optimize::{BeamDoseField, DoseQuantity, ResultProvenance};
+        let Some(spec) = &self.spec else {
+            self.error = Some("drop or load an inverse-plan-objective first".into());
+            return;
+        };
+        if let Err(error) = spec.validate() {
+            self.error = Some(format!("objective spec: {error}"));
+            return;
+        }
+        if self.fields.is_empty() {
+            self.error = Some("no beam dose fields loaded".into());
+            return;
+        }
+        let need_components = matches!(spec.dose_quantity, DoseQuantity::Isoeffective);
+        let mut fields = Vec::with_capacity(self.fields.len());
+        for (label, bundle) in &self.fields {
+            let all_components = || {
+                bundle
+                    .components
+                    .iter()
+                    .map(|volume| {
+                        let name = match volume.component {
+                            openbnct_core::DoseComponent::Boron => "boron",
+                            openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                            openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                            openbnct_core::DoseComponent::Photon => "photon",
+                        };
+                        (name.to_string(), volume.values.clone())
+                    })
+                    .collect::<std::collections::BTreeMap<_, _>>()
+            };
+            let (values, components) = match spec.dose_quantity {
+                DoseQuantity::PhysicalTotal => (
+                    bundle.physical_total.values.clone(),
+                    need_components.then(&all_components),
+                ),
+                DoseQuantity::Component(component) => {
+                    match bundle
+                        .components
+                        .iter()
+                        .find(|volume| volume.component == component)
+                    {
+                        Some(volume) => {
+                            (volume.values.clone(), need_components.then(&all_components))
+                        }
+                        None => {
+                            self.error = Some(format!(
+                                "{label}: no {component:?} component in dose bundle"
+                            ));
+                            return;
+                        }
+                    }
+                }
+                DoseQuantity::Isoeffective => {
+                    (bundle.physical_total.values.clone(), Some(all_components()))
+                }
+            };
+            fields.push(BeamDoseField {
+                name: label.clone(),
+                values,
+                components,
+            });
+        }
+        let spec_sha = self.spec_sha256.clone().unwrap_or_else(|| "0".repeat(64));
+        let provenance = ResultProvenance {
+            id: format!("{}.workbench", spec.id),
+            provenance_id: format!("workbench-optimize:{}", &spec_sha[..12.min(spec_sha.len())]),
+            objective: openbnct_core::ContentReference {
+                id: spec.id.clone(),
+                sha256: format!("sha256:{spec_sha}"),
+            },
+        };
+        let mode = if self.strict_lp {
+            openbnct_plan::lp::LpMode::Strict
+        } else {
+            openbnct_plan::lp::LpMode::Penalty
+        };
+        match openbnct_plan::lp::optimize_weights_lp(&fields, &self.masks, spec, mode, provenance) {
+            Ok(result) => self.result = Some(result),
+            Err(error) => self.error = Some(format!("solve failed: {error}")),
+        }
+    }
+
+    /// Serialize the result to the chosen output path.
+    fn export_result(&mut self) {
+        self.out_status = None;
+        let Some(result) = &self.result else {
+            self.error = Some("solve first — no result to write".into());
+            return;
+        };
+        let path = self.out_path.trim().to_owned();
+        if path.is_empty() {
+            self.error = Some("choose an output path first".into());
+            return;
+        }
+        match serde_json::to_string_pretty(result) {
+            Ok(json) => match io::write_bytes(Path::new(&path), (json + "\n").as_bytes()) {
+                Ok(()) => self.out_status = Some(format!("wrote {path}")),
+                Err(error) => self.error = Some(error),
+            },
+            Err(error) => self.error = Some(format!("serialize result: {error}")),
+        }
+    }
+}
+
 /// Run-panel state: the command line, the live job, and the output tail.
 /// Execution itself is native-only — `run::Job::spawn` is an honest error
 /// on wasm.
@@ -1933,6 +2161,7 @@ struct WorkbenchPanels {
     dose: DosePanel,
     evidence: EvidencePanel,
     nifti: NiftiPanel,
+    optimizer: OptimizerPanel,
     plan: PlanPanel,
     position: PositionPanel,
     spectrum: SpectrumView,
@@ -2629,6 +2858,22 @@ impl OpenBnctApp {
                 .unwrap_or(DropTarget::DoseBundle),
             other => other,
         };
+        // Drops inside the optimizer's painted zone feed the inverse
+        // planner — its inputs share the generic .json extension, so
+        // position alone disambiguates them from the dose-bundle route.
+        if self.workspace == WorkspaceTab::Plan
+            && matches!(
+                target,
+                DropTarget::DoseBundle | DropTarget::Plan | DropTarget::Inspector
+            )
+            && position.is_some_and(|p| self.panels.optimizer.zone.contains(p))
+        {
+            match bytes {
+                Ok(b) => self.panels.optimizer.add_bytes(name, &b),
+                Err(error) => self.panels.optimizer.error = Some(error),
+            }
+            return;
+        }
         match target {
             DropTarget::Case => {
                 if let Some(path) = path {
@@ -3698,6 +3943,7 @@ fn show_workbench(
                     WorkspaceTab::Plan => show_plan_workspace(
                         ui,
                         &mut panels.plan,
+                        &mut panels.optimizer,
                         drop_sender,
                         language,
                         tour_targets,
@@ -6678,6 +6924,7 @@ fn capability_label(ui: &mut egui::Ui, name: &str, enabled: bool) {
 fn show_plan_workspace(
     ui: &mut egui::Ui,
     panel: &mut PlanPanel,
+    optimizer: &mut OptimizerPanel,
     drop_sender: Option<&DropSender>,
     language: Language,
     tour_targets: &mut TourTargets,
@@ -6862,6 +7109,195 @@ fn show_plan_workspace(
             ui.label(status);
         }
     });
+
+    ui.add_space(14.0);
+    ui.heading(t!(
+        language,
+        en = "Inverse planning",
+        ja = "逆問題計画",
+        it = "Pianificazione inversa",
+        zh = "逆向计划",
+        es = "Planificación inversa"
+    ));
+    ui.label(
+        "Certified conic solve in the workbench — the same `openbnct plan optimize` \
+         code path as the CLI. Load one dose bundle per beam, the region masks the \
+         objectives name, and an inverse-plan-objective document.",
+    );
+    egui::Frame::group(ui.style()).show(ui, |ui| {
+        let zone_frame = egui::Frame::new()
+            .fill(theme.card_fill)
+            .corner_radius(8)
+            .inner_margin(egui::Margin::same(12));
+        let zone = zone_frame
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(egui::RichText::new("⇩").size(18.0));
+                    ui.vertical(|ui| {
+                        ui.label(t!(
+                            language,
+                            en = "Drop optimizer inputs here — dose bundles, region masks, objective spec",
+                            ja = "ここに最適化の入力をドロップ — 線量束・領域マスク・目的仕様",
+                            it = "Trascina qui gli input dell'ottimizzatore — fasci di dose, maschere, specifica",
+                            zh = "将优化输入拖到此处 — 剂量束、区域掩码、目标规范",
+                            es = "Suelta aquí las entradas del optimizador — haces de dosis, máscaras, especificación"
+                        ));
+                        ui.monospace(format!(
+                            "{} field(s) · {} mask(s) · spec {}",
+                            optimizer.fields.len(),
+                            optimizer.masks.len(),
+                            if optimizer.spec.is_some() {
+                                optimizer.spec_label.as_str()
+                            } else {
+                                "—"
+                            }
+                        ));
+                    });
+                });
+            })
+            .response
+            .rect;
+        optimizer.zone = zone;
+
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("ADD").small().strong());
+                ui.add(
+                    egui::TextEdit::singleline(&mut optimizer.input_path)
+                        .desired_width(360.0)
+                        .hint_text("/path/to/bundle, mask, or objective .json"),
+                );
+                if ui.button("Add").clicked() {
+                    let path = optimizer.input_path.trim().to_owned();
+                    optimizer.input_path.clear();
+                    if !path.is_empty() {
+                        optimizer.add_path(Path::new(&path));
+                    }
+                }
+            });
+        }
+
+        if let Some(error) = &optimizer.error {
+            ui.colored_label(theme.error, format!("optimizer: {error}"));
+        }
+        if !optimizer.fields.is_empty() {
+            egui::Grid::new("optimizer-fields").show(ui, |ui| {
+                for (label, bundle) in &optimizer.fields {
+                    ui.monospace(label);
+                    ui.monospace(format!(
+                        "{} voxels · {} components",
+                        bundle.physical_total.values.len(),
+                        bundle.components.len()
+                    ));
+                    ui.end_row();
+                }
+            });
+        }
+        ui.horizontal(|ui| {
+            ui.label("solver:");
+            ui.radio_value(&mut optimizer.strict_lp, false, "QP penalty");
+            ui.radio_value(&mut optimizer.strict_lp, true, "strict LP");
+            if ui
+                .button(t!(
+                    language,
+                    en = "Solve",
+                    ja = "求解",
+                    it = "Risolvi",
+                    zh = "求解",
+                    es = "Resolver"
+                ))
+                .clicked()
+            {
+                optimizer.solve();
+            }
+        });
+    });
+
+    if let Some(result) = &optimizer.result {
+        ui.add_space(8.0);
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.vertical(|ui| {
+                    ui.heading(&result.id);
+                    ui.monospace(format!(
+                        "method {} · penalty {:.4e} · {} iterations",
+                        result.method.as_deref().unwrap_or("penalty"),
+                        result.penalty,
+                        result.iterations
+                    ));
+                });
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    let certified = result
+                        .certificate
+                        .as_ref()
+                        .is_some_and(|c| c.status.contains("optimal"));
+                    if certified && result.converged {
+                        status_badge(ui, GateState::Verified, "CERTIFIED");
+                    } else if result.converged {
+                        status_badge(ui, GateState::Pending, "CONVERGED");
+                    } else {
+                        status_badge(ui, GateState::Blocked, "NOT CONVERGED");
+                    }
+                });
+            });
+            ui.add_space(6.0);
+            egui::Grid::new("optimizer-weights")
+                .striped(true)
+                .show(ui, |ui| {
+                    ui.strong("beam");
+                    ui.strong("weight");
+                    ui.end_row();
+                    for w in &result.weights {
+                        ui.monospace(&w.name);
+                        ui.monospace(format!("{:.6e}", w.weight));
+                        ui.end_row();
+                    }
+                });
+            ui.add_space(6.0);
+            egui::Grid::new("optimizer-outcomes")
+                .striped(true)
+                .show(ui, |ui| {
+                    for header in ["objective", "mask", "achieved", "bound", "satisfied"] {
+                        ui.strong(header);
+                    }
+                    ui.end_row();
+                    for outcome in &result.outcomes {
+                        ui.monospace(&outcome.kind);
+                        ui.monospace(&outcome.mask);
+                        ui.monospace(format!("{:.4e}", outcome.achieved));
+                        ui.monospace(format!("{:.4e}", outcome.bound));
+                        if outcome.satisfied {
+                            ui.colored_label(egui::Color32::from_rgb(80, 220, 140), "yes");
+                        } else {
+                            ui.colored_label(
+                                theme.error,
+                                format!("no (+{:.2e})", outcome.violation),
+                            );
+                        }
+                        ui.end_row();
+                    }
+                });
+        });
+
+        ui.add_space(6.0);
+        egui::Frame::group(ui.style()).show(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.label(egui::RichText::new("RESULT").small().strong());
+                ui.add(
+                    egui::TextEdit::singleline(&mut optimizer.out_path)
+                        .desired_width(420.0)
+                        .hint_text("/path/to/inverse-plan-result.json"),
+                );
+                if ui.button("Write result").clicked() {
+                    optimizer.export_result();
+                }
+            });
+            if let Some(status) = &optimizer.out_status {
+                ui.label(status);
+            }
+        });
+    }
 
     ui.add_space(14.0);
     tour_targets.set(

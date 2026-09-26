@@ -196,6 +196,15 @@ own versions independent of the crate version.
   channels rise ~60–80× in the brain (hydrogen ~30%). Twenty-eight
   groups are not converged for BNCT capture dose; the 56g artifact is
   the benchmark's reference going forward.
+- Workbench inverse planning: the Plan workspace's new Inverse
+  planning section runs the certified conic solver in-process — drop
+  or add dose bundles (one per beam), region masks, and an
+  `inverse-plan-objective` document, pick QP-penalty or strict-LP
+  mode, and the result's weights, per-objective outcomes and
+  optimality certificate render in place, exportable as an
+  `openbnct.inverse-plan-result`. Inputs enter by painted drop zone
+  (web/native) or path add (native); the spec's SHA-256 binds the
+  emitted result exactly as the CLI's does.
 - First real MF33 covariance through the UQ chain: B10's MT107
   block from ENDF/B-VIII.1 collapsed onto the v3-shielded 28-group
   grid (`openmc cov-endf --parameter dose_response --component
