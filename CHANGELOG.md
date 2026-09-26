@@ -27,6 +27,11 @@ own versions independent of the crate version.
 
 ### Added — validation
 
+- `validation/intercomparison-kobayashi-p1/` — first MC↔S_N
+  cross-code harness case: Kobayashi P1-ii through OpenMC
+  multi-group on the identical 2 cm cell lattice (20M histories),
+  compared against both our S8 result and the published GMVP table
+  with per-probe z-scores and cross-code deltas.
 - `validation/canonical-kobayashi-p1/` — Kobayashi problem 1 (nested
   cubes with a void shell), both published cases. Case i (pure
   absorber) is scored against a cell-averaged analytic ray integral

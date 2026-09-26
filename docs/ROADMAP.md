@@ -1788,12 +1788,15 @@ convention.
   control: it certifies where the S_N method itself is known to fail.
   Each case ships generator + run script + comparison artifact +
   README with citations.
-- **R17-03 — MC↔S_N intercomparison harness.** Productized
-  OpenMC-vs-deterministic comparison on a declared phantom: shared
-  case/assignment/data inputs, `evidence` bundle comparison, per-cell
-  and component-wise deltas with combined-uncertainty z-scores. This
-  is the absolute-dose arbiter the group-refinement study left open
-  (28→56 g thermal-tail pile-up).
+- **R17-03 — MC↔S_N intercomparison harness. (started)**
+  `validation/intercomparison-kobayashi-p1/` (landed): Kobayashi
+  P1-ii through OpenMC multi-group on the identical 2 cm lattice —
+  MC tracks GMVP within ~1σ, and the S_N-vs-MC deltas map the
+  ray-effect field cell-for-cell (−40% off-lobe, +110–218% diagonal
+  lobes). Next: productize the same shared-input compare onto a
+  dosimetric phantom (the absolute-dose arbiter for the 28→56 g
+  thermal-tail question), with per-cell z-scores and component-wise
+  dose deltas rather than flux probes.
 - **R17-04 — spectrum-adaptive group boundaries.** Place group edges
   by response-weighted lethargy density instead of uniform
   refinement; emits a `multigroup-data` artifact plus a declared

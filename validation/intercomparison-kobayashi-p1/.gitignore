@@ -1,0 +1,4 @@
+# OpenMC working dir (model.xml, statepoint h5, xsdata) — regenerable
+# via openmc_run.py; the frozen evidence is comparison-mc.json +
+# openmc-flux.json (probe table only).
+openmc_run/

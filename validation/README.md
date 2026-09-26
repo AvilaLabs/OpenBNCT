@@ -28,6 +28,7 @@ angular/spatial truncation.
 | `canonical-reed-problem/` | Reed (1971) heterogeneous 1-D slab — strong absorber/source, void gap, c=0.9 scattering regions | Warsa (2002) eigenfunction expansion, 81 pointwise fluxes | **PASS** — region means ≤1% flat / ~2% scattering peak (angular truncation, halving S4→S8); interior pointwise RMS 0.9% |
 | `canonical-azmy-problem/` | Azmy (1988) weighted-DD quadrant problem — central source in absorber, full-domain mirror realization | published quadrant means 1.676 / 4.159e-2 / 1.992e-3 | **PASS** — 0.17% / 0.67% / 3.9%, machine-precision quadrant symmetry |
 | `canonical-kobayashi-p1/` | Kobayashi (2001) nested-cubes void problem, both cases: pure absorber + 50% scattering | cell-averaged analytic ray integral (verified <0.14% vs COG LLNL-TR-648225) + GMVP MC table | **PASS** near field ≤5% both cases; deep-field probes document the ray effect — the benchmark's purpose — with the S16 sharpening signature |
+| `intercomparison-kobayashi-p1/` | Kobayashi P1-ii through OpenMC multi-group (same 2 cm lattice, 20M histories) vs our S8 | MC vs GMVP ~1σ at all probes; S_N vs MC field-resolved deltas | MC confirms the geometry/material realization and measures the ray-effect field: −40% off-lobe underfill / +110–218% diagonal overshoot |
 
 Each case directory declares its tolerances in `compare.py` — set
 against what a converged discrete-ordinates solve can meaningfully
