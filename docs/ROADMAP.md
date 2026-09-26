@@ -1332,6 +1332,30 @@ Each item is evidence-gated; none implies a clinical claim.
   `openbnct.iteration-report/0.1.0` (round-by-round admissions,
   scores, penalty trajectory) land in an empty `--output-dir`; the
   loop stops early when the candidate pool exhausts.
+- **R10-09 — curvature solver. (landed)** `plan optimize --solver
+  newton` runs projected Gauss-Newton on the bound-normalized penalty:
+  the metric-linear objective set makes the active-violation Hessian
+  an exact outer-product form, so iterations close in single digits
+  where coordinate descent takes hundreds of passes. Projection keeps
+  `w ≥ 0` and `weight_bound`; Armijo backtracking on the full Newton
+  step polices the model. Records `method: "gauss_newton"` in the
+  result; `pgd`/`qp`/`lp` unchanged.
+- **R10-10 — spectrum × aperture sweep. (landed)** `plan synthesize`
+  now expands the direction fan over `--spectrum name=path` variants
+  (each an `EnergyDistribution` JSON, content-bound in the emitted
+  document) and `--radii` lists — direction × spectrum × radius
+  candidates all ranked by the same adjoint field at the cost of one
+  uncollided ray-trace per combo. Candidate rows carry `spectrum` and
+  `aperture_radius_cm`; off-face apertures are skipped with the same
+  positioning error path.
+- **R10-11 — beamlet aperture shaping. (landed)** `plan shape`
+  subdivides an aimed disk into `--beamlets`² sub-disk beamlets, scores
+  each against the objective composite adjoint via the uncollided
+  ray-trace (no transport per beamlet), and marks closed every
+  beamlet below `--keep-fraction` of the peak utility density — the
+  kept set is the shaped aperture. Emits
+  `openbnct.aperture-shape/0.1.0`; sub-voxel beamlets are recorded
+  `resolved: false` rather than scored zero.
 - **R10-05 — S_N plan-iteration quality.** Grow the deterministic solver
   from verification scope toward iteration scope: more groups, wider
   anisotropy support, performance pass. Each increment lands with its

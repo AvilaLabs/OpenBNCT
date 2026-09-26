@@ -1182,7 +1182,11 @@ fn cone_directions(
 ///
 /// Returns `None` for source shapes/angles that stay on the
 /// boundary-flux path (wide cones, isotropic, off-face sources).
-fn uncollided_beam_flux(
+///
+/// Exported for beamlet-level aperture shaping: each sub-disk's
+/// uncollided field scores against an adjoint importance solve
+/// without a transport pass per beamlet.
+pub fn uncollided_beam_flux(
     case: &TransportCase,
     data: &MultigroupData,
     case_material: &[usize],

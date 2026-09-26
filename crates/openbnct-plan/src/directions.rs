@@ -45,6 +45,14 @@ pub struct DirectionCandidate {
     /// `None` unless the sweep ran with a multigroup-data solve.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub adjoint_score: Option<f64>,
+    /// Spectrum variant name — present when the sweep scored
+    /// direction×spectrum combinations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spectrum: Option<String>,
+    /// Aperture radius in cm — present when the sweep scored
+    /// direction×radius combinations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub aperture_radius_cm: Option<f64>,
 }
 
 /// The angular grid the sweep enumerated, recorded verbatim.
@@ -84,6 +92,10 @@ pub struct DirectionCandidatesDocument {
     pub objective: Option<ContentReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multigroup_data: Option<ContentReference>,
+    /// Content bindings to each spectrum variant file — present when
+    /// the sweep scored direction×spectrum combinations.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub spectra: Option<Vec<ContentReference>>,
     pub provenance_id: String,
     pub qualification: String,
 }
@@ -120,6 +132,7 @@ pub fn build_direction_candidates_document(
         body_mask,
         objective: None,
         multigroup_data,
+        spectra: None,
         provenance_id: provenance_id.into(),
         qualification: DIRECTION_CANDIDATES_QUALIFICATION.into(),
     }
@@ -293,6 +306,8 @@ pub fn enumerate_directions(
                 elevation_deg,
                 tissue_path_mm: tissue_path,
                 adjoint_score: None,
+                spectrum: None,
+                aperture_radius_cm: None,
             });
         }
     }

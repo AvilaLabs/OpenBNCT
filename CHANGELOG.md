@@ -132,6 +132,31 @@ own versions independent of the crate version.
   per-beam dose bundles, the final `openbnct.inverse-plan-result`,
   and an `openbnct.iteration-report/0.1.0` recording admissions,
   scores, and the penalty trajectory per round.
+- `openbnct plan optimize --solver newton` — projected Gauss-Newton
+  on the bound-normalized penalty. The dose map is exactly linear in
+  beam weights, so the active-violation Hessian is the exact
+  outer-product form `Σ 2·w·s²·a aᵀ`; each iteration Cholesky-solves
+  `H·δ = −∇` with diagonal damping and a projected Armijo line.
+  Converges in single-digit iterations where coordinate descent takes
+  hundreds; bounds (`w ≥ 0`, `weight_bound`) are enforced by
+  projection. Result records `method: "gauss_newton"`. Incompatible
+  with `--scenario-set` (use `pgd`/`qp`/`lp` there).
+- `openbnct plan synthesize --spectrum name=path … --radii r1,r2,…` —
+  direction × spectrum × aperture-radius sweeps. Each `--spectrum` is
+  an `EnergyDistribution` JSON scored through the shared adjoint
+  solve (one uncollided ray-trace per combination), each `--radii`
+  entry scores the same direction at a different aperture. Candidates
+  carry `spectrum`/`aperture_radius_cm` and the emitted
+  `openbnct.direction-candidates` document content-binds every
+  spectrum file; off-face apertures skip with the positioning error.
+- `openbnct plan shape` — adjoint beamlet aperture shaping. The aimed
+  disk for `--direction` is tiled `--beamlets`² deep into sub-disks,
+  each scored against the objective composite adjoint via the
+  uncollided ray-trace (no transport per beamlet); beamlets below
+  `--keep-fraction` of the peak utility density close. Supports
+  marginal mode (`--dose`/`--weights`) to shape against a current
+  plan's residual. Emits `openbnct.aperture-shape/0.1.0`; beamlets
+  under-resolving the voxel grid are recorded `resolved: false`.
 - `openbnct.fraction-scales/0.1.0` + `plan optimize|select
   --fraction-scales`: multi-fraction planning. Each fraction's dose
   component scales (e.g. boron uptake decay across the washout

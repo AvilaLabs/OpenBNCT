@@ -588,12 +588,33 @@ pub(crate) fn penalty_and_gradient(
     mask_voxels: &[Vec<usize>],
     dose: &mut [f64],
 ) -> (f64, Vec<f64>) {
+    let (penalty, grad, _) = penalty_gradient_curvature(fields, weights, spec, mask_voxels, dose);
+    (penalty, grad)
+}
+
+/// `penalty_and_gradient` plus the Gauss-Newton curvature rows: per
+/// violated objective, `(2·weight·scale², ∇_w metric)` — the bound-
+/// normalized quadratic's exact Hessian is `Σ 2·weight·scale²·a aᵀ`
+/// whenever the metric is linear in `w` (mean/quantile/floor metrics;
+/// EUD contributes the same outer-product form with the metric's own
+/// Hessian omitted — the residual-curvature term, which vanishes at
+/// satisfaction). Linear terms (maximin floor pull, weight
+/// regularization) carry no curvature.
+#[allow(clippy::type_complexity)]
+pub(crate) fn penalty_gradient_curvature(
+    fields: &[BeamDoseField],
+    weights: &[f64],
+    spec: &InversePlanObjective,
+    mask_voxels: &[Vec<usize>],
+    dose: &mut [f64],
+) -> (f64, Vec<f64>, Vec<(f64, Vec<f64>)>) {
     dose.fill(0.0);
     if spec.dose_quantity != DoseQuantity::Isoeffective {
         accumulate(fields, weights, dose);
     }
     let mut penalty = 0.0;
     let mut grad = vec![0.0; fields.len()];
+    let mut curvature: Vec<(f64, Vec<f64>)> = Vec::new();
     for (objective, voxels) in spec.objectives.iter().zip(mask_voxels) {
         let (odose, ofields) = objective_view(fields, weights, dose, spec, objective);
         let (metric, dmetric_dd) = objective_metric(objective, &odose, voxels);
@@ -652,10 +673,15 @@ pub(crate) fn penalty_and_gradient(
             // Σ_v dm/dd_v·D_i(v) — under isoeffective, D_i(v) is beam
             // i's effective field Σ_c w_c(mask)·d_ic(v) for this
             // objective.
-            for (i, field) in ofields.iter().enumerate() {
-                let dm_dwi: f64 = voxels.iter().map(|&v| dmetric_dd[v] * field[v]).sum();
-                grad[i] += 2.0 * weight * violation * scale * scale * sense * dm_dwi;
+            let a: Vec<f64> = ofields
+                .iter()
+                .map(|field| voxels.iter().map(|&v| dmetric_dd[v] * field[v]).sum())
+                .collect();
+            for (i, &ai) in a.iter().enumerate() {
+                grad[i] += 2.0 * weight * violation * scale * scale * sense * ai;
             }
+            // sense² = 1 — the curvature row keeps only a's magnitude.
+            curvature.push((2.0 * weight * scale * scale, a));
         }
     }
     if spec.weight_regularization > 0.0 {
@@ -664,7 +690,167 @@ pub(crate) fn penalty_and_gradient(
             grad[i] += spec.weight_regularization;
         }
     }
-    (penalty, grad)
+    (penalty, grad, curvature)
+}
+
+/// Dense Cholesky solve of `h·x = −g` — `h` must be positive-definite
+/// (callers add diagonal damping). Returns `None` when a pivot goes
+/// nonpositive.
+pub(crate) fn cholesky_solve(h: &[Vec<f64>], g: &[f64]) -> Option<Vec<f64>> {
+    let n = g.len();
+    let mut l = vec![vec![0.0; n]; n];
+    for i in 0..n {
+        for j in 0..=i {
+            let s = h[i][j]
+                - l[i][..j]
+                    .iter()
+                    .zip(&l[j][..j])
+                    .map(|(a, b)| a * b)
+                    .sum::<f64>();
+            if i == j {
+                if s <= 0.0 || !s.is_finite() {
+                    return None;
+                }
+                l[i][i] = s.sqrt();
+            } else {
+                l[i][j] = s / l[j][j];
+            }
+        }
+    }
+    // Forward substitution L·y = −g, then Lᵀ·x = y.
+    let mut y = vec![0.0; n];
+    for i in 0..n {
+        let mut s = -g[i];
+        for (k, lik) in l[i].iter().enumerate().take(i) {
+            s -= lik * y[k];
+        }
+        y[i] = s / l[i][i];
+    }
+    let mut x = vec![0.0; n];
+    for i in (0..n).rev() {
+        let mut s = y[i];
+        for j in (i + 1)..n {
+            s -= l[j][i] * x[j];
+        }
+        x[i] = s / l[i][i];
+    }
+    Some(x)
+}
+
+/// Damped projected Gauss-Newton over the same bound-normalized
+/// penalty: each iteration assembles the exact quadratic-form
+/// Hessian of the active violations, solves `H·δ = −∇` for the full
+/// step, and backtracks a projected Armijo line. When the active set
+/// is linear (no EUD curvature residual) one Newton step is exact up
+/// to the projection — problems that take coordinate descent hundreds
+/// of passes close in a handful of iterations.
+pub(crate) fn newton_projected(
+    fields: &[BeamDoseField],
+    spec: &InversePlanObjective,
+    mask_voxels: &[Vec<usize>],
+    initial: &[f64],
+) -> (Vec<f64>, f64, u32, bool) {
+    let upper = spec.weight_bound.unwrap_or(f64::INFINITY);
+    let project = |w: &mut [f64]| {
+        for wi in w.iter_mut() {
+            *wi = wi.clamp(0.0, upper);
+        }
+    };
+    let n = fields.len();
+    let mut w: Vec<f64> = initial.to_vec();
+    project(&mut w);
+    let n_voxels = fields.first().map(|f| f.values.len()).unwrap_or(0);
+    let mut dose = vec![0.0; n_voxels];
+    let (mut penalty, mut grad, _) =
+        penalty_gradient_curvature(fields, &w, spec, mask_voxels, &mut dose);
+
+    let mut iterations = 0_u32;
+    let mut converged = false;
+    for _ in 0..spec.max_iterations {
+        let pg_norm: f64 = w
+            .iter()
+            .zip(&grad)
+            .map(|(&wi, &gi)| {
+                if wi > 0.0 && wi < upper {
+                    gi.abs()
+                } else if wi <= 0.0 {
+                    gi.min(0.0).abs()
+                } else {
+                    gi.max(0.0).abs()
+                }
+            })
+            .fold(0.0, f64::max);
+        if pg_norm < spec.gradient_tolerance {
+            converged = true;
+            break;
+        }
+        // Assemble the Gauss-Newton Hessian and damp it until a
+        // descent direction exists — the Armijo line then polices the
+        // quadratic model locally, so a bad step costs backtracks,
+        // not a divergence.
+        let (_, _, curvature) =
+            penalty_gradient_curvature(fields, &w, spec, mask_voxels, &mut dose);
+        let mut h = vec![vec![0.0; n]; n];
+        for (coeff, a) in &curvature {
+            for i in 0..n {
+                for j in 0..n {
+                    h[i][j] += coeff * a[i] * a[j];
+                }
+            }
+        }
+        let diag_mean = h.iter().enumerate().map(|(i, r)| r[i]).sum::<f64>() / n.max(1) as f64;
+        let mut damping = diag_mean.max(1e-12) * 1e-8;
+        let mut step = None;
+        for _ in 0..8 {
+            for (i, row) in h.iter_mut().enumerate() {
+                row[i] += damping;
+            }
+            step = cholesky_solve(&h, &grad);
+            if step.is_some() {
+                break;
+            }
+            for (i, row) in h.iter_mut().enumerate() {
+                row[i] -= damping;
+            }
+            damping *= 100.0;
+        }
+        let Some(delta) = step else {
+            // No descent direction — at the GN stationary point.
+            converged = true;
+            break;
+        };
+        if delta.iter().all(|d| d.abs() < 1e-15) {
+            converged = true;
+            break;
+        }
+        // Projected Armijo backtracking on the full step.
+        let g_dot_d: f64 = grad.iter().zip(&delta).map(|(g, d)| g * d).sum();
+        let mut t = 1.0_f64;
+        let mut improved = false;
+        for _ in 0..MAX_BACKTRACKS {
+            let mut trial = w.clone();
+            for (i, ti) in trial.iter_mut().enumerate() {
+                *ti = w[i] + t * delta[i];
+            }
+            project(&mut trial);
+            let (p2, g2, _) =
+                penalty_gradient_curvature(fields, &trial, spec, mask_voxels, &mut dose);
+            if p2 <= penalty + 1e-4 * t * g_dot_d {
+                w = trial;
+                penalty = p2;
+                grad = g2;
+                improved = true;
+                break;
+            }
+            t *= BACKTRACK_FACTOR;
+        }
+        if !improved {
+            converged = true;
+            break;
+        }
+        iterations += 1;
+    }
+    (w, penalty, iterations, converged)
 }
 
 /// Shared input validation and mask resolution for both the nominal
@@ -1015,6 +1201,46 @@ pub fn optimize_weights(
     })
 }
 
+/// `optimize_weights` with the projected Gauss-Newton solver —
+/// exact quadratic curvature of the active violations replaces
+/// cyclic coordinate descent. Same inputs, same result schema; the
+/// result records `method: "gauss_newton"`. The solver converges in
+/// very few iterations on smooth problems but makes no global claim —
+/// `lp`/`qp` remain the certified paths.
+pub fn optimize_weights_newton(
+    fields: &[BeamDoseField],
+    masks: &[RegionMask],
+    spec: &InversePlanObjective,
+    initial: &[f64],
+    provenance: ResultProvenance,
+) -> Result<InversePlanResult, OptimizeError> {
+    let (_n_voxels, mask_voxels) = resolve_inputs(fields, masks, spec, initial)?;
+    let (w, penalty, iterations, converged) = newton_projected(fields, spec, &mask_voxels, initial);
+    Ok(InversePlanResult {
+        schema_version: INVERSE_PLAN_RESULT_SCHEMA.into(),
+        id: provenance.id,
+        case_id: spec.case_id.clone(),
+        objective: provenance.objective,
+        dose_quantity: spec.dose_quantity,
+        weights: fields
+            .iter()
+            .zip(&w)
+            .map(|(f, &wi)| BeamWeight {
+                name: f.name.clone(),
+                weight: wi,
+            })
+            .collect(),
+        outcomes: final_outcomes(fields, &w, spec, &mask_voxels),
+        penalty,
+        iterations,
+        converged,
+        method: Some("gauss_newton".into()),
+        certificate: None,
+        qualification: INVERSE_PLAN_QUALIFICATION.into(),
+        provenance_id: provenance.provenance_id,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1101,6 +1327,49 @@ mod tests {
         assert!((result.weights[0].weight - 8.0 / 3.0).abs() < 1e-2);
         assert!(result.weights[1].weight < 1e-2);
         assert!(result.outcomes.iter().all(|o| o.violation < 1e-3));
+    }
+
+    #[test]
+    fn newton_reaches_the_analytic_optimum_in_few_iterations() {
+        let (fields, masks) = two_beam();
+        // The EUD(a=1)+MaxMean problem has a unique optimum —
+        // w_A = 8/3 satisfies the tumor mean exactly while w_B is
+        // regularized off. Metrics here are linear in w (mean metrics)
+        // so the Gauss-Newton Hessian is exact over the active set.
+        let spec = objective(vec![
+            DoseObjective::MinEud {
+                mask: "tumor".into(),
+                target: 20.0,
+                eud_a: 1.0,
+                weight: 1.0,
+            },
+            DoseObjective::MaxMean {
+                mask: "oar".into(),
+                limit: 5.0,
+                weight: 1.0,
+            },
+        ]);
+        let result =
+            optimize_weights_newton(&fields, &masks, &spec, &[1.0, 1.0], provenance()).unwrap();
+
+        assert!(
+            (result.weights[0].weight - 8.0 / 3.0).abs() < 1e-2,
+            "w_A = {}",
+            result.weights[0].weight
+        );
+        assert!(result.weights[1].weight < 1e-2);
+        assert!(result.iterations <= 8, "iterations {}", result.iterations);
+        assert_eq!(result.method.as_deref(), Some("gauss_newton"));
+
+        // Parity with the coordinate-descent optimum on the unique-
+        // optimum problem.
+        let cd = optimize_weights(&fields, &masks, &spec, &[1.0, 1.0], provenance()).unwrap();
+        assert!(
+            (result.weights[0].weight - cd.weights[0].weight).abs() < 1e-2,
+            "newton {} vs cd {}",
+            result.weights[0].weight,
+            cd.weights[0].weight
+        );
     }
 
     #[test]

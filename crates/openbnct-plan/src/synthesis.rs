@@ -93,6 +93,90 @@ pub struct IterationReport {
     pub qualification: String,
 }
 
+/// Current schema token for aperture-shape documents.
+pub const APERTURE_SHAPE_SCHEMA: &str = "openbnct.aperture-shape/0.1.0";
+/// Qualification carried by aperture-shape documents.
+pub const APERTURE_SHAPE_QUALIFICATION: &str = "beam_aperture_shaping_research_only_not_clinical";
+
+/// One aperture beamlet's marginal-utility score. `utility` integrates
+/// the beamlet's uncollided flux against the composite adjoint;
+/// `utility_density` divides by area so the keep/drop decision ranks
+/// importance per unit aperture, not beamlet size.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeamletScore {
+    /// Beamlet center in the aimed disk's (u, v) plane, cm relative to
+    /// the disk center.
+    pub center_uv_cm: [f64; 2],
+    pub radius_cm: f64,
+    /// `<φ_uncollided, φ*>` for this beamlet at unit source rate.
+    pub utility: f64,
+    /// `utility / πr²` — importance per unit aperture area.
+    pub utility_density: f64,
+    /// Above the keep threshold (`utility_density ≥ keep_fraction·max`).
+    /// `false` also when `resolved` is false.
+    pub kept: bool,
+    /// Whether the beamlet's uncollided field resolved any voxel on
+    /// this grid — `false` when the sub-disk is smaller than the cell
+    /// pitch can see; its utility fields are then 0, not measured.
+    pub resolved: bool,
+}
+
+/// `openbnct.aperture-shape/0.1.0` — an aimed disk subdivided into
+/// beamlets, each scored against the objective-gradient adjoint; the
+/// `kept` mask is the shaped aperture.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ApertureShapeDocument {
+    #[serde(deserialize_with = "openbnct_core::deserialize_contract_id")]
+    pub schema_version: String,
+    pub id: String,
+    pub case_id: String,
+    /// Beam propagation direction (unit LPS vector).
+    pub direction_lps: [f64; 3],
+    /// Full aimed-disk radius the beamlets subdivide, cm.
+    pub disk_radius_cm: f64,
+    /// Beamlets per axis across the disk's bounding square.
+    pub beamlet_grid: u32,
+    /// Utility-density threshold as a fraction of the maximum.
+    pub keep_fraction: f64,
+    pub beamlets: Vec<BeamletScore>,
+    pub case: openbnct_core::ContentReference,
+    pub aim_mask: openbnct_core::ContentReference,
+    pub multigroup_data: openbnct_core::ContentReference,
+    /// The inverse-plan objective whose composite source generated
+    /// the adjoint — present for marginal-utility shaping.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub objective: Option<openbnct_core::ContentReference>,
+    pub provenance_id: String,
+    pub qualification: String,
+}
+
+/// Tile an aimed disk of `radius_cm` with `grid`² beamlets — centers
+/// on a square lattice over the disk bounding box, culled to the disk
+/// interior. Returns `(center_uv, radius)` pairs; empty when the grid
+/// cannot cover the disk.
+pub fn beamlet_tiling(radius_cm: f64, grid: u32) -> Vec<([f64; 2], f64)> {
+    if grid == 0 || !radius_cm.is_finite() || radius_cm <= 0.0 {
+        return Vec::new();
+    }
+    // Sub-disk radius = half the lattice pitch so beamlets tile without
+    // overlap; √2 slack would over-cover corners.
+    let pitch = 2.0 * radius_cm / grid as f64;
+    let sub = pitch / 2.0;
+    let mut tiles = Vec::new();
+    for iu in 0..grid {
+        for iv in 0..grid {
+            let u = -radius_cm + pitch * (iu as f64 + 0.5);
+            let v = -radius_cm + pitch * (iv as f64 + 0.5);
+            if (u * u + v * v).sqrt() + sub <= radius_cm * (1.0 + 1e-9) {
+                tiles.push(([u, v], sub));
+            }
+        }
+    }
+    tiles
+}
+
 /// Errors from composite-source construction.
 #[derive(Debug, Error)]
 pub enum SynthesisError {

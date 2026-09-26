@@ -2302,6 +2302,8 @@ enum PlanCommand {
         #[arg(long)]
         fraction_scales: Option<PathBuf>,
         /// Solver: `pgd` (projected gradient descent, the default),
+        /// `newton` (projected Gauss-Newton — exact quadratic curvature
+        /// of active violations, converges in a handful of iterations),
         /// `qp` (Clarabel interior point on the identical quadratic
         /// penalty — certified optimum + dual bound multipliers), or
         /// `lp` (strict: objective bounds become hard constraints and
@@ -2309,7 +2311,7 @@ enum PlanCommand {
         /// is a definitive answer). `qp`/`lp` require every objective
         /// be linear or CVaR-representable — `min_eud` only at
         /// `eud_a = 1`.
-        #[arg(long, default_value = "pgd", value_parser = ["pgd", "qp", "lp"])]
+        #[arg(long, default_value = "pgd", value_parser = ["pgd", "newton", "qp", "lp"])]
         solver: String,
     },
     /// Select the best beam subset of size ≤ `--beams` from a
@@ -2543,6 +2545,17 @@ enum PlanCommand {
         /// Emit an `openbnct.direction-candidates/0.1.0` document.
         #[arg(long)]
         output: Option<PathBuf>,
+        /// Spectrum variant `name=path` — each path is an
+        /// `EnergyDistribution` JSON; repeatable. Scores every
+        /// direction against every spectrum (the adjoint solve is
+        /// shared — variants cost only an uncollided ray-trace each).
+        #[arg(long, value_name = "NAME=PATH")]
+        spectrum: Vec<String>,
+        /// Comma-separated aperture radii in cm — scores
+        /// direction×radius combinations when supplied; overrides
+        /// `--radius-cm`.
+        #[arg(long)]
+        radii: Option<String>,
         /// Sweep document identifier; defaults to
         /// `{case_id}.direction-synthesis`.
         #[arg(long)]
@@ -2614,6 +2627,65 @@ enum PlanCommand {
         #[arg(long)]
         id: Option<String>,
         /// Provenance identifier; defaults to `iterate:` + the id.
+        #[arg(long)]
+        provenance_id: Option<String>,
+    },
+    /// Shape a beam aperture by adjoint beamlet importance: the aimed
+    /// disk for `--direction` is subdivided into `--beamlets`² sub-disk
+    /// beamlets, each scored against the objective composite adjoint
+    /// (uncollided flux × φ*, no transport per beamlet). Beamlets whose
+    /// utility density falls below `--keep-fraction` of the maximum are
+    /// marked closed — the kept set is the shaped aperture. Emits
+    /// `openbnct.aperture-shape/0.1.0`.
+    Shape {
+        /// `openbnct.transport-case` JSON (geometry + source template).
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-data` JSON.
+        #[arg(long)]
+        data: PathBuf,
+        /// `openbnct.material-assignment` JSON.
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// `openbnct.inverse-plan-objective` JSON.
+        #[arg(long)]
+        objective: PathBuf,
+        /// `RegionMask` JSON; repeatable — every objective mask.
+        #[arg(long, required = true)]
+        mask: Vec<PathBuf>,
+        /// `RegionMask` JSON the aperture disk converges on.
+        #[arg(long)]
+        aim_mask: PathBuf,
+        /// `openbnct.physical-dose-bundle` JSON per beam of a current
+        /// plan — shapes against the marginal-utility field at that
+        /// plan. Repeatable; pair with `--weights`.
+        #[arg(long)]
+        dose: Vec<PathBuf>,
+        /// Comma-separated weights parallel to `--dose`.
+        #[arg(long)]
+        weights: Option<String>,
+        /// Beam direction `dx,dy,dz` (LPS unit vector).
+        #[arg(long, allow_hyphen_values = true)]
+        direction: String,
+        /// Full aperture radius in cm the beamlets subdivide.
+        #[arg(long, default_value = "4.0")]
+        radius_cm: f64,
+        /// Beamlets per axis across the disk bounding square.
+        #[arg(long, default_value = "8")]
+        beamlets: u32,
+        /// Keep beamlets with utility density ≥ this fraction of max.
+        #[arg(long, default_value = "0.5")]
+        keep_fraction: f64,
+        /// Quadrature order for the adjoint solve.
+        #[arg(long, default_value = "8")]
+        order: u32,
+        /// Output path for the `openbnct.aperture-shape` document.
+        #[arg(long)]
+        output: PathBuf,
+        /// Document identifier; defaults to `{case_id}.aperture-shape`.
+        #[arg(long)]
+        id: Option<String>,
+        /// Provenance identifier; defaults to `shape:` + the id.
         #[arg(long)]
         provenance_id: Option<String>,
     },
@@ -10591,10 +10663,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     BeamDoseField, DoseQuantity, InversePlanObjective, ResultProvenance,
                     optimize_weights,
                 };
-                let lp_mode = match solver.as_str() {
-                    "qp" => Some(LpMode::Penalty),
-                    "lp" => Some(LpMode::Strict),
-                    _ => None,
+                let (lp_mode, newton) = match solver.as_str() {
+                    "qp" => (Some(LpMode::Penalty), false),
+                    "lp" => (Some(LpMode::Strict), false),
+                    "newton" => (None, true),
+                    _ => (None, false),
                 };
                 let spec_bytes = fs::read(&objective)?;
                 let spec: InversePlanObjective =
@@ -10727,36 +10800,51 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         sha256: format!("sha256:{spec_sha}"),
                     },
                 };
-                let result = match (&scenarios_doc, lp_mode) {
-                    (Some(set), None) => openbnct_plan::scenarios::optimize_weights_scenarios(
-                        &fields,
-                        &masks,
-                        &spec,
-                        set,
-                        geometry
-                            .as_ref()
-                            .expect("scenario sets require at least one dose bundle"),
-                        &weights0,
-                        provenance,
+                if newton && scenarios_doc.is_some() {
+                    return Err(io::Error::other(
+                        "--solver newton is incompatible with --scenario-set (use pgd/lp/qp)",
                     )
-                    .map_err(|error| io::Error::other(format!("optimize: {error}")))?,
-                    (Some(set), Some(mode)) => optimize_weights_scenarios_lp(
-                        &fields,
-                        &masks,
-                        &spec,
-                        set,
-                        geometry
-                            .as_ref()
-                            .expect("scenario sets require at least one dose bundle"),
-                        mode,
-                        provenance,
+                    .into());
+                }
+                let result = if newton {
+                    openbnct_plan::optimize::optimize_weights_newton(
+                        &fields, &masks, &spec, &weights0, provenance,
                     )
-                    .map_err(|error| io::Error::other(format!("optimize: {error}")))?,
-                    (None, None) => optimize_weights(&fields, &masks, &spec, &weights0, provenance)
+                    .map_err(|error| io::Error::other(format!("optimize: {error}")))?
+                } else {
+                    match (&scenarios_doc, lp_mode) {
+                        (Some(set), None) => openbnct_plan::scenarios::optimize_weights_scenarios(
+                            &fields,
+                            &masks,
+                            &spec,
+                            set,
+                            geometry
+                                .as_ref()
+                                .expect("scenario sets require at least one dose bundle"),
+                            &weights0,
+                            provenance,
+                        )
                         .map_err(|error| io::Error::other(format!("optimize: {error}")))?,
-                    (None, Some(mode)) => {
-                        optimize_weights_lp(&fields, &masks, &spec, mode, provenance)
-                            .map_err(|error| io::Error::other(format!("optimize: {error}")))?
+                        (Some(set), Some(mode)) => optimize_weights_scenarios_lp(
+                            &fields,
+                            &masks,
+                            &spec,
+                            set,
+                            geometry
+                                .as_ref()
+                                .expect("scenario sets require at least one dose bundle"),
+                            mode,
+                            provenance,
+                        )
+                        .map_err(|error| io::Error::other(format!("optimize: {error}")))?,
+                        (None, None) => {
+                            optimize_weights(&fields, &masks, &spec, &weights0, provenance)
+                                .map_err(|error| io::Error::other(format!("optimize: {error}")))?
+                        }
+                        (None, Some(mode)) => {
+                            optimize_weights_lp(&fields, &masks, &spec, mode, provenance)
+                                .map_err(|error| io::Error::other(format!("optimize: {error}")))?
+                        }
                     }
                 };
                 fs::write(&output, serde_json::to_vec_pretty(&result)?)?;
@@ -11652,6 +11740,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 radius_cm,
                 order,
                 output,
+                spectrum,
+                radii,
                 id,
                 provenance_id,
             } => {
@@ -11834,45 +11924,113 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     elevation_steps,
                 )
                 .map_err(|error| io::Error::other(format!("directions: {error}")))?;
-                let mut scored: Vec<(f64, usize)> = Vec::with_capacity(candidates.len());
-                for (index, candidate) in candidates.iter().enumerate() {
-                    let score = match openbnct_transport::adjoint_direction_score(
-                        &case_document,
-                        &mg_data,
-                        &options,
-                        &adjoint,
-                        &aim,
-                        candidate.direction_lps,
-                        radius_cm,
-                    ) {
-                        Ok(score) => score,
-                        Err(openbnct_transport::MultigroupError::ApertureOutsideFace(reason)) => {
-                            eprintln!("skip {}: {reason}", candidate.name);
-                            continue;
-                        }
-                        Err(error) => {
-                            return Err(io::Error::other(format!(
-                                "score {}: {error}",
-                                candidate.name
+                // Spectrum variants swap the template's energy block;
+                // the adjoint solve is shared across all of them.
+                // Each spectrum keeps its bytes for the content binding.
+                let spectra: Vec<(String, openbnct_transport::EnergyDistribution, String)> =
+                    spectrum
+                        .iter()
+                        .map(|entry| {
+                            let (name, path) = entry.split_once('=').ok_or_else(|| {
+                                io::Error::other(format!("--spectrum {entry:?} must be NAME=PATH"))
+                            })?;
+                            let bytes = fs::read(path)?;
+                            let energy: openbnct_transport::EnergyDistribution =
+                                serde_json::from_slice(&bytes).map_err(|error| {
+                                    io::Error::other(format!("spectrum {}: {error}", path))
+                                })?;
+                            Ok((
+                                name.to_string(),
+                                energy,
+                                openbnct_evidence::sha256_hex(&bytes),
                             ))
-                            .into());
-                        }
+                        })
+                        .collect::<Result<_, Box<dyn Error>>>()?;
+                let radius_list: Vec<f64> = match &radii {
+                    Some(text) => text
+                        .split(',')
+                        .map(|part| {
+                            part.trim().parse::<f64>().map_err(|_| {
+                                io::Error::other(format!("--radii entry {part:?} is not a number"))
+                            })
+                        })
+                        .collect::<Result<_, io::Error>>()?,
+                    None => vec![radius_cm],
+                };
+                for r in &radius_list {
+                    if !r.is_finite() || *r <= 0.0 {
+                        return Err(io::Error::other("--radii entries must be positive").into());
+                    }
+                }
+                let scored_variants: Vec<(Option<String>, openbnct_transport::EnergyDistribution)> =
+                    if spectra.is_empty() {
+                        vec![(None, case_document.source.energy.clone())]
+                    } else {
+                        spectra
+                            .iter()
+                            .map(|(n, e, _)| (Some(n.clone()), e.clone()))
+                            .collect()
                     };
-                    scored.push((score, index));
+                // Expand the fan over (spectrum × radius): each combo
+                // scores independently through the same adjoint field.
+                let mut expanded: Vec<openbnct_plan::directions::DirectionCandidate> = Vec::new();
+                let mut scored: Vec<(f64, usize)> = Vec::new();
+                for (spec_name, energy) in &scored_variants {
+                    let mut case_variant = case_document.clone();
+                    case_variant.source.energy = energy.clone();
+                    for r in &radius_list {
+                        for candidate in &candidates {
+                            let mut row = candidate.clone();
+                            row.spectrum = spec_name.clone();
+                            row.aperture_radius_cm = Some(*r);
+                            row.name = match spec_name {
+                                Some(s) => format!("{}/{s}/r{r}", candidate.name),
+                                None if radius_list.len() > 1 => {
+                                    format!("{}/r{r}", candidate.name)
+                                }
+                                _ => candidate.name.clone(),
+                            };
+                            let index = expanded.len();
+                            let score = match openbnct_transport::adjoint_direction_score(
+                                &case_variant,
+                                &mg_data,
+                                &options,
+                                &adjoint,
+                                &aim,
+                                candidate.direction_lps,
+                                *r,
+                            ) {
+                                Ok(score) => score,
+                                Err(openbnct_transport::MultigroupError::ApertureOutsideFace(
+                                    reason,
+                                )) => {
+                                    eprintln!("skip {}: {reason}", row.name);
+                                    continue;
+                                }
+                                Err(error) => {
+                                    return Err(io::Error::other(format!(
+                                        "score {}: {error}",
+                                        row.name
+                                    ))
+                                    .into());
+                                }
+                            };
+                            row.adjoint_score = Some(score);
+                            expanded.push(row);
+                            scored.push((score, index));
+                        }
+                    }
                 }
                 if scored.is_empty() {
                     return Err(io::Error::other(
-                        "no candidate direction admits an aperture that fits its entry face",
+                        "no candidate admits an aperture that fits its entry face",
                     )
                     .into());
-                }
-                for (score, index) in &scored {
-                    candidates[*index].adjoint_score = Some(*score);
                 }
                 scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
                 candidates = scored
                     .iter()
-                    .map(|(_, index)| candidates[*index].clone())
+                    .map(|(_, index)| expanded[*index].clone())
                     .collect();
                 let take = if top == 0 { candidates.len() } else { top };
                 for line in openbnct_plan::directions::beam_spec_lines(&candidates, take) {
@@ -11912,6 +12070,17 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         id: spec.id.clone(),
                         sha256: openbnct_evidence::sha256_hex(&objective_bytes),
                     });
+                    if !spectra.is_empty() {
+                        document.spectra = Some(
+                            spectra
+                                .iter()
+                                .map(|(name, _, sha)| openbnct_core::ContentReference {
+                                    id: name.clone(),
+                                    sha256: sha.clone(),
+                                })
+                                .collect(),
+                        );
+                    }
                     write_new_json(&path, &document)?;
                     println!("synthesis candidates at {}", path.display());
                 }
@@ -12321,6 +12490,333 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     result.weights.len(),
                     result.penalty,
                     result.converged
+                );
+            }
+            PlanCommand::Shape {
+                case,
+                data,
+                assignment,
+                objective,
+                mask,
+                aim_mask,
+                dose,
+                weights,
+                direction,
+                radius_cm,
+                beamlets,
+                keep_fraction,
+                order,
+                output,
+                id,
+                provenance_id,
+            } => {
+                use openbnct_plan::optimize::{BeamDoseField, DoseQuantity, InversePlanObjective};
+                use openbnct_plan::synthesis;
+                let case_bytes = fs::read(&case)?;
+                let case_document: TransportCase =
+                    serde_json::from_slice(&case_bytes).map_err(|error| {
+                        io::Error::other(format!("case {}: {error}", case.display()))
+                    })?;
+                let data_bytes = fs::read(&data)?;
+                let mg_data: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&data_bytes).map_err(|error| {
+                        io::Error::other(format!("data {}: {error}", data.display()))
+                    })?;
+                let objective_bytes = fs::read(&objective)?;
+                let spec: InversePlanObjective =
+                    serde_json::from_slice(&objective_bytes).map_err(|error| {
+                        io::Error::other(format!("objective {}: {error}", objective.display()))
+                    })?;
+                spec.validate()
+                    .map_err(|error| io::Error::other(format!("objective: {error}")))?;
+                let mut masks = Vec::new();
+                for path in &mask {
+                    masks.push(
+                        serde_json::from_slice::<RegionMask>(&fs::read(path)?).map_err(
+                            |error| io::Error::other(format!("mask {}: {error}", path.display())),
+                        )?,
+                    );
+                }
+                let aim_bytes = fs::read(&aim_mask)?;
+                let aim: RegionMask = serde_json::from_slice(&aim_bytes).map_err(|error| {
+                    io::Error::other(format!("mask {}: {error}", aim_mask.display()))
+                })?;
+                let assignment_doc: Option<MaterialAssignment> = assignment
+                    .as_ref()
+                    .map(|path| {
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("assignment {}: {error}", path.display()))
+                        })
+                    })
+                    .transpose()?;
+                let direction_lps: Vec<f64> = direction
+                    .split(',')
+                    .map(|part| {
+                        part.trim().parse::<f64>().map_err(|_| {
+                            io::Error::other(format!(
+                                "--direction component {part:?} is not a number"
+                            ))
+                        })
+                    })
+                    .collect::<Result<_, io::Error>>()?;
+                if direction_lps.len() != 3 {
+                    return Err(io::Error::other("--direction must be dx,dy,dz").into());
+                }
+                let direction_lps = [direction_lps[0], direction_lps[1], direction_lps[2]];
+                if !(0.0..=1.0).contains(&keep_fraction) {
+                    return Err(io::Error::other("--keep-fraction must be in [0,1]").into());
+                }
+                let geometry = case_document.geometry.clone();
+                let n_cells = geometry
+                    .voxel_count()
+                    .map_err(|error| io::Error::other(format!("geometry: {error}")))?;
+                let groups = mg_data.group_count();
+                let cell_mat = openbnct_transport::cell_materials(
+                    &case_document,
+                    &mg_data,
+                    assignment_doc.as_ref(),
+                )
+                .map_err(|error| io::Error::other(format!("materials: {error}")))?;
+                let response_at = |cell: usize| {
+                    mg_data.materials[cell_mat[cell]]
+                        .dose_response_gy_cm2
+                        .clone()
+                };
+                let effective_responses: Vec<Vec<Vec<f64>>> = spec
+                    .objectives
+                    .iter()
+                    .map(|o| {
+                        (0..n_cells)
+                            .map(|cell| {
+                                synthesis::effective_response(&spec, o, cell, &response_at, groups)
+                            })
+                            .collect()
+                    })
+                    .collect();
+                let mask_voxels = synthesis::synthesis_masks(&spec, &masks, n_cells)
+                    .map_err(|error| io::Error::other(format!("masks: {error}")))?;
+                // Optional marginal mode — current plan's dose fields.
+                let doses: Option<Vec<Vec<f64>>> = if dose.is_empty() {
+                    None
+                } else {
+                    let weight_list: Vec<f64> = weights
+                        .as_deref()
+                        .unwrap_or("")
+                        .split(',')
+                        .filter(|part| !part.trim().is_empty())
+                        .map(|part| {
+                            part.trim().parse().map_err(|_| {
+                                io::Error::other(format!(
+                                    "--weights entry {part:?} is not a number"
+                                ))
+                            })
+                        })
+                        .collect::<Result<_, io::Error>>()?;
+                    if weight_list.len() != dose.len() {
+                        return Err(io::Error::other(format!(
+                            "--weights has {} entries, expected {}",
+                            weight_list.len(),
+                            dose.len()
+                        ))
+                        .into());
+                    }
+                    let mut fields = Vec::new();
+                    for path in &dose {
+                        let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)
+                            .map_err(|error| {
+                            io::Error::other(format!("{}: {error}", path.display()))
+                        })?;
+                        let name = |c: openbnct_core::DoseComponent| match c {
+                            openbnct_core::DoseComponent::Boron => "boron",
+                            openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                            openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                            openbnct_core::DoseComponent::Photon => "photon",
+                        };
+                        let components: std::collections::BTreeMap<String, Vec<f64>> = bundle
+                            .components
+                            .iter()
+                            .map(|v| (name(v.component).to_string(), v.values.clone()))
+                            .collect();
+                        let values = match spec.dose_quantity {
+                            DoseQuantity::PhysicalTotal => bundle.physical_total.values.clone(),
+                            DoseQuantity::Component(c) => {
+                                components.get(name(c)).cloned().unwrap_or_default()
+                            }
+                            DoseQuantity::Isoeffective => Vec::new(),
+                        };
+                        fields.push(BeamDoseField {
+                            name: path.display().to_string(),
+                            values,
+                            components: Some(components),
+                        });
+                    }
+                    Some(
+                        spec.objectives
+                            .iter()
+                            .map(|o| {
+                                synthesis::objective_dose_view(&spec, o, &fields, &weight_list)
+                            })
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|error| io::Error::other(format!("dose views: {error}")))?,
+                    )
+                };
+                let source = synthesis::composite_adjoint_source(
+                    &spec,
+                    &mask_voxels,
+                    &effective_responses,
+                    doses.as_deref(),
+                )
+                .map_err(|error| io::Error::other(format!("adjoint source: {error}")))?;
+                let signed = synthesis::source_is_signed(&source);
+                let options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    assignment: assignment_doc.clone(),
+                    theta_repair: !signed,
+                    ..Default::default()
+                };
+                let data_ref = openbnct_core::ContentReference {
+                    id: mg_data.id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                };
+                let case_ref = openbnct_core::ContentReference {
+                    id: case_document.case_id.clone(),
+                    sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                };
+                let adjoint = openbnct_transport::solve_multigroup_adjoint(
+                    &case_document,
+                    &mg_data,
+                    &options,
+                    &source,
+                    None,
+                    data_ref.clone(),
+                    case_ref.clone(),
+                )
+                .map_err(|error| io::Error::other(format!("adjoint solve: {error}")))?;
+                if !adjoint.converged {
+                    eprintln!("warning: adjoint solve did not converge — scores approximate");
+                }
+                // Aim the full disk, then subdivide into beamlets.
+                let (aimed_source, _report) = openbnct_transport::aim_disk_source_at_centroid(
+                    &case_document.source,
+                    &case_document.geometry,
+                    &aim,
+                    direction_lps,
+                    radius_cm,
+                )
+                .map_err(|error| io::Error::other(format!("aim: {error}")))?;
+                let openbnct_transport::SourceSpatialDistribution::UniformDisk {
+                    axis: disk_axis,
+                    offset_cm: disk_offset,
+                    center_uv_cm: disk_center,
+                    ..
+                } = aimed_source.space.clone()
+                else {
+                    return Err(io::Error::other("aimed source is not a disk").into());
+                };
+                let tiles = synthesis::beamlet_tiling(radius_cm, beamlets);
+                if tiles.is_empty() {
+                    return Err(
+                        io::Error::other("beamlet grid cannot tile the aperture disk").into(),
+                    );
+                }
+                let mut beamlet_scores = Vec::with_capacity(tiles.len());
+                for (offset, sub_radius) in &tiles {
+                    let mut beamlet_case = case_document.clone();
+                    beamlet_case.source = aimed_source.clone();
+                    beamlet_case.source.space =
+                        openbnct_transport::SourceSpatialDistribution::UniformDisk {
+                            axis: disk_axis,
+                            offset_cm: disk_offset,
+                            center_uv_cm: [disk_center[0] + offset[0], disk_center[1] + offset[1]],
+                            radius_cm: *sub_radius,
+                        };
+                    let uncollided = match openbnct_transport::uncollided_beam_flux(
+                        &beamlet_case,
+                        &mg_data,
+                        &cell_mat,
+                    ) {
+                        Ok(Some(unc)) => Some(unc),
+                        Ok(None) => {
+                            return Err(
+                                io::Error::other("beamlet uncollided path unavailable").into()
+                            );
+                        }
+                        // A sub-voxel beamlet illuminates no cell
+                        // centers — under-resolved, not zero-utility.
+                        Err(openbnct_transport::MultigroupError::Source(m))
+                            if m.contains("illuminates no cell centers") =>
+                        {
+                            None
+                        }
+                        Err(error) => return Err(io::Error::other(error.to_string()).into()),
+                    };
+                    let mut utility = 0.0;
+                    if let Some(unc) = &uncollided {
+                        for (b, a) in unc.iter().zip(adjoint.flux.iter()).take(n_cells) {
+                            for (bv, av) in b.iter().zip(a.iter()) {
+                                utility += bv * av;
+                            }
+                        }
+                    }
+                    let area = std::f64::consts::PI * sub_radius * sub_radius;
+                    beamlet_scores.push(synthesis::BeamletScore {
+                        center_uv_cm: *offset,
+                        radius_cm: *sub_radius,
+                        utility,
+                        utility_density: if uncollided.is_some() {
+                            utility / area
+                        } else {
+                            0.0
+                        },
+                        kept: false,
+                        resolved: uncollided.is_some(),
+                    });
+                }
+                let max_density = beamlet_scores
+                    .iter()
+                    .map(|b| b.utility_density)
+                    .fold(f64::NEG_INFINITY, f64::max);
+                for b in &mut beamlet_scores {
+                    b.kept = b.resolved && b.utility_density >= keep_fraction * max_density;
+                }
+                let unresolved = beamlet_scores.iter().filter(|b| !b.resolved).count();
+                if unresolved > 0 {
+                    eprintln!(
+                        "warning: {unresolved} beamlets under-resolve the voxel grid — refine the mesh or coarsen --beamlets"
+                    );
+                }
+                let kept_count = beamlet_scores.iter().filter(|b| b.kept).count();
+                let id = id
+                    .clone()
+                    .unwrap_or_else(|| format!("{}.aperture-shape", case_document.case_id));
+                let document = synthesis::ApertureShapeDocument {
+                    schema_version: synthesis::APERTURE_SHAPE_SCHEMA.into(),
+                    id: id.clone(),
+                    case_id: case_document.case_id.clone(),
+                    direction_lps,
+                    disk_radius_cm: radius_cm,
+                    beamlet_grid: beamlets,
+                    keep_fraction,
+                    beamlets: beamlet_scores,
+                    case: case_ref,
+                    aim_mask: openbnct_core::ContentReference {
+                        id: aim.name.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&aim_bytes),
+                    },
+                    multigroup_data: data_ref,
+                    objective: Some(openbnct_core::ContentReference {
+                        id: spec.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&objective_bytes),
+                    }),
+                    provenance_id: provenance_id.unwrap_or_else(|| format!("shape:{id}")),
+                    qualification: synthesis::APERTURE_SHAPE_QUALIFICATION.into(),
+                };
+                write_new_json(&output, &document)?;
+                println!(
+                    "aperture: {}/{} beamlets kept → {}",
+                    kept_count,
+                    document.beamlets.len(),
+                    output.display()
                 );
             }
             PlanCommand::Fields {
