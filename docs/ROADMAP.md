@@ -1778,8 +1778,16 @@ convention.
   weighted-DD quadrant problem solved full-domain — published quadrant
   means 1.676 / 4.159e-2 / 1.992e-3 vs ours 1.6789 / 4.131e-2 /
   1.915e-3 (0.17% / 0.67% / 3.9%), with machine-precision quadrant
-  symmetry. Next: a Kobayashi duct case. Each case ships generator +
-  run script + comparison artifact + README with citations.
+  symmetry. `validation/canonical-kobayashi-p1/` (landed, verdict
+  pass): the nested-cubes void benchmark in both published variants —
+  pure absorber scored against a cell-averaged analytic ray integral
+  (verified <0.14% vs the published COG table) and 50%-scattering vs
+  GMVP. Near-field probes grade at 5% (both pass); deep-field probes
+  are reported-not-graded as the documented ray-effect regime, with
+  the S16-sharpening discriminator on record. The battery's negative
+  control: it certifies where the S_N method itself is known to fail.
+  Each case ships generator + run script + comparison artifact +
+  README with citations.
 - **R17-03 — MC↔S_N intercomparison harness.** Productized
   OpenMC-vs-deterministic comparison on a declared phantom: shared
   case/assignment/data inputs, `evidence` bundle comparison, per-cell

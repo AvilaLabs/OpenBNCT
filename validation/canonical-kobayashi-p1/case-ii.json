@@ -1,0 +1,82 @@
+{
+  "schema_version": "openbnct.transport-case/0.1.0",
+  "case_id": "kobayashi-p1-mirror",
+  "geometry": {
+    "shape": [
+      100,
+      100,
+      100
+    ],
+    "spacing_mm": [
+      20.0,
+      20.0,
+      20.0
+    ],
+    "origin_mm": [
+      -990.0,
+      -990.0,
+      -990.0
+    ],
+    "direction": [
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0,
+      0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  },
+  "material": {
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "koba.shield",
+    "density_g_cm3": 1.0,
+    "temperature_k": 294.0,
+    "nuclides": [
+      {
+        "name": "X1",
+        "mass_fraction": 1.0
+      }
+    ],
+    "neutron_thermal_treatment": "free_gas"
+  },
+  "source": {
+    "schema_version": "openbnct.fixed-source-definition/0.1.0",
+    "id": "kobayashi-p1-source",
+    "particle": "neutron",
+    "source_sites_per_history": 1,
+    "statistical_weight_per_site": 8000.0,
+    "space": {
+      "kind": "uniform_box",
+      "x_range_cm": [
+        -10.0,
+        10.0
+      ],
+      "y_range_cm": [
+        -10.0,
+        10.0
+      ],
+      "z_range_cm": [
+        -10.0,
+        10.0
+      ],
+      "interval_convention": "half_open"
+    },
+    "angle": {
+      "kind": "isotropic_cone",
+      "axis_unit_vector": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "half_angle_rad": 3.141592653589793
+    },
+    "energy": {
+      "kind": "monoenergetic",
+      "energy_ev": 0.5
+    }
+  },
+  "requested_histories": 1
+}

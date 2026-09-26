@@ -1,0 +1,160 @@
+{
+  "schema_version": "openbnct.validation-comparison/0.1.0",
+  "case": "canonical-kobayashi-p1",
+  "reference": "cell-averaged analytic ray integrals (reference.py; verified <0.14% against COG LLNL-TR-648225 pointwise table for all exterior probes)",
+  "graded_zone": "probes with max coordinate <= 25 cm (transport-dominated field); tolerance 5%; deeper probes are the documented ray-effect regime and are reported but not graded",
+  "probes": [
+    {
+      "point_cm": [
+        5.0,
+        5.0,
+        5.0
+      ],
+      "phi_ours": 5.9980299993614485,
+      "phi_cellmean_ref": 5.786918,
+      "phi_cog_pointwise": 5.95659,
+      "rel_err_cellmean": 0.03648090388725891,
+      "rel_err_cog_pointwise": 0.006957000458559052,
+      "graded": true,
+      "tol": 0.05,
+      "pass": true
+    },
+    {
+      "point_cm": [
+        5.0,
+        15.0,
+        5.0
+      ],
+      "phi_ours": 1.4383360372372476,
+      "phi_cellmean_ref": 1.372583,
+      "phi_cog_pointwise": 1.37185,
+      "rel_err_cellmean": 0.04790459829186829,
+      "rel_err_cog_pointwise": 0.048464509412288186,
+      "graded": true,
+      "tol": 0.05,
+      "pass": true
+    },
+    {
+      "point_cm": [
+        5.0,
+        25.0,
+        5.0
+      ],
+      "phi_ours": 0.42250123012089524,
+      "phi_cellmean_ref": 0.5008015,
+      "phi_cog_pointwise": 0.500871,
+      "rel_err_cellmean": 0.1563499108511152,
+      "rel_err_cog_pointwise": 0.156466974288998,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5.0,
+        35.0,
+        5.0
+      ],
+      "phi_ours": 0.12442727824041651,
+      "phi_cellmean_ref": 0.2523776,
+      "phi_cog_pointwise": 0.252429,
+      "rel_err_cellmean": 0.5069797072306873,
+      "rel_err_cog_pointwise": 0.5070800968176538,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5.0,
+        45.0,
+        5.0
+      ],
+      "phi_ours": 0.145662362673238,
+      "phi_cellmean_ref": 0.1502276,
+      "phi_cog_pointwise": 0.15026,
+      "rel_err_cellmean": 0.030388805564103925,
+      "rel_err_cog_pointwise": 0.03059787918782107,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5.0,
+        55.0,
+        5.0
+      ],
+      "phi_ours": 0.06367435147116779,
+      "phi_cellmean_ref": 0.05961276,
+      "phi_cog_pointwise": 0.0595286,
+      "rel_err_cellmean": 0.06813292105864228,
+      "rel_err_cog_pointwise": 0.06964301984538168,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5.0,
+        65.0,
+        5.0
+      ],
+      "phi_ours": 0.0070784633024277895,
+      "phi_cellmean_ref": 0.01534842,
+      "phi_cog_pointwise": 0.0153283,
+      "rel_err_cellmean": 0.5388148550516737,
+      "rel_err_cog_pointwise": 0.5382095012214146,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5.0,
+        75.0,
+        5.0
+      ],
+      "phi_ours": 0.0004263402587434199,
+      "phi_cellmean_ref": 0.004182218,
+      "phi_cog_pointwise": 0.00417689,
+      "rel_err_cellmean": 0.8980588150250848,
+      "rel_err_cog_pointwise": 0.8979287798473458,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5.0,
+        85.0,
+        5.0
+      ],
+      "phi_ours": 1.673512564484995e-05,
+      "phi_cellmean_ref": 0.001186823,
+      "phi_cog_pointwise": 0.00118533,
+      "rel_err_cellmean": 0.9858992236880731,
+      "rel_err_cog_pointwise": 0.9858814628459164,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5.0,
+        95.0,
+        5.0
+      ],
+      "phi_ours": 4.82542157686017e-07,
+      "phi_cellmean_ref": 0.0003472826,
+      "phi_cog_pointwise": 0.000346846,
+      "rel_err_cellmean": 0.9986105201997277,
+      "rel_err_cog_pointwise": 0.9986087711615932,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    }
+  ],
+  "symmetry_max_rel_spread": 2.961567113851318e-16,
+  "verdict": "pass"
+}

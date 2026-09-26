@@ -1,0 +1,4 @@
+# Raw flux dumps are ~39 MB each (1M cells) — regenerable via run.sh;
+# the frozen graded evidence is comparison.json / comparison-ii.json.
+flux.json
+flux-ii.json

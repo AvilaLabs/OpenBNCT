@@ -1,0 +1,223 @@
+{
+  "schema_version": "openbnct.material-assignment/0.2.0",
+  "case_id": "kobayashi-p1-mirror",
+  "base_material": {
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "koba.shield",
+    "density_g_cm3": 1.0,
+    "temperature_k": 294.0,
+    "nuclides": [
+      {
+        "name": "X1",
+        "mass_fraction": 1.0
+      }
+    ],
+    "neutron_thermal_treatment": "free_gas"
+  },
+  "regions": [
+    {
+      "name": "koba.void.xm",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "koba.void",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          25,
+          25,
+          25
+        ],
+        "upper": [
+          44,
+          74,
+          74
+        ]
+      }
+    },
+    {
+      "name": "koba.void.xp",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "koba.void",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          55,
+          25,
+          25
+        ],
+        "upper": [
+          74,
+          74,
+          74
+        ]
+      }
+    },
+    {
+      "name": "koba.void.ym",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "koba.void",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          45,
+          25,
+          25
+        ],
+        "upper": [
+          54,
+          44,
+          74
+        ]
+      }
+    },
+    {
+      "name": "koba.void.yp",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "koba.void",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          45,
+          55,
+          25
+        ],
+        "upper": [
+          54,
+          74,
+          74
+        ]
+      }
+    },
+    {
+      "name": "koba.void.zm",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "koba.void",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          45,
+          45,
+          25
+        ],
+        "upper": [
+          54,
+          54,
+          44
+        ]
+      }
+    },
+    {
+      "name": "koba.void.zp",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "koba.void",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          45,
+          45,
+          55
+        ],
+        "upper": [
+          54,
+          54,
+          74
+        ]
+      }
+    },
+    {
+      "name": "koba.src",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "koba.src",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          45,
+          45,
+          45
+        ],
+        "upper": [
+          54,
+          54,
+          54
+        ]
+      }
+    }
+  ],
+  "provenance_id": "kobayashi-2001-p1-mirror-domain"
+}

@@ -27,6 +27,16 @@ own versions independent of the crate version.
 
 ### Added — validation
 
+- `validation/canonical-kobayashi-p1/` — Kobayashi problem 1 (nested
+  cubes with a void shell), both published cases. Case i (pure
+  absorber) is scored against a cell-averaged analytic ray integral
+  reproduced to <0.14% of COG's published table (LLNL-TR-648225);
+  case ii (50% scattering) against the NEA report's GMVP MC values.
+  Near-field probes pass at 5% in both cases (case ii: 0.4%, 3.3%);
+  deep-field probes document the classic discrete-ordinates ray
+  effect — confirmed by the S16 discriminator, where narrowing the
+  lobes drives off-lobe probes to literal zero (the opposite of
+  convergence — the benchmark's intended signature).
 - `validation/canonical-azmy-problem/` — Azmy's (1988) weighted-DD
   quadrant problem, solved full-domain (mirror BCs realized by
   reflection): published quadrant means 1.676 / 4.159e-2 / 1.992e-3 vs

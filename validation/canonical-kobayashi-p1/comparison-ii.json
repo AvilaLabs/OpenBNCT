@@ -1,0 +1,206 @@
+{
+  "schema_version": "openbnct.validation-comparison/0.1.0",
+  "case": "canonical-kobayashi-p1-case-ii",
+  "reference": "GMVP Monte Carlo, NEA/NSC Kobayashi benchmark report (PNE 39:119-144 2001); MCNP5 confirms within 1sigma",
+  "graded_zone": "source-interior and just-outside probes [(5, 5, 5), (5, 15, 5)] at 5%; all other probes are the documented ray-effect regime \u2014 reported, not graded",
+  "median_rel_err_all_probes": 0.3853441925790315,
+  "max_rel_err_all_probes": 1.9330396330488657,
+  "probes": [
+    {
+      "point_cm": [
+        5,
+        5,
+        5
+      ],
+      "phi_ours": 8.324457781783941,
+      "phi_gmvp": 8.2926,
+      "rel_err": 0.0038417121028315802,
+      "graded": true,
+      "tol": 0.05,
+      "pass": true
+    },
+    {
+      "point_cm": [
+        5,
+        15,
+        5
+      ],
+      "phi_ours": 1.9314678949726298,
+      "phi_gmvp": 1.87028,
+      "rel_err": 0.03271590081304932,
+      "graded": true,
+      "tol": 0.05,
+      "pass": true
+    },
+    {
+      "point_cm": [
+        5,
+        25,
+        5
+      ],
+      "phi_ours": 0.59974858331397,
+      "phi_gmvp": 0.713986,
+      "rel_err": 0.15999951915868105,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5,
+        35,
+        5
+      ],
+      "phi_ours": 0.22392003706985752,
+      "phi_gmvp": 0.384685,
+      "rel_err": 0.4179132613180719,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5,
+        45,
+        5
+      ],
+      "phi_ours": 0.24592586997389734,
+      "phi_gmvp": 0.253984,
+      "rel_err": 0.03172691990874482,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5,
+        55,
+        5
+      ],
+      "phi_ours": 0.1316967828160728,
+      "phi_gmvp": 0.13722,
+      "rel_err": 0.04025081754793181,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5,
+        65,
+        5
+      ],
+      "phi_ours": 0.02863761312029257,
+      "phi_gmvp": 0.0465913,
+      "rel_err": 0.3853441925790315,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5,
+        75,
+        5
+      ],
+      "phi_ours": 0.007712876538725308,
+      "phi_gmvp": 0.0158766,
+      "rel_err": 0.5141984720453178,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5,
+        85,
+        5
+      ],
+      "phi_ours": 0.0027108257774553215,
+      "phi_gmvp": 0.00547036,
+      "rel_err": 0.5044520328725492,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        5,
+        95,
+        5
+      ],
+      "phi_ours": 0.0009647047893410172,
+      "phi_gmvp": 0.00185082,
+      "rel_err": 0.4787689838336428,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        15,
+        15,
+        15
+      ],
+      "phi_ours": 0.8656004272167334,
+      "phi_gmvp": 0.663233,
+      "rel_err": 0.30512267516352987,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        25,
+        25,
+        25
+      ],
+      "phi_ours": 0.2099542221594482,
+      "phi_gmvp": 0.268828,
+      "rel_err": 0.21900165846024897,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        35,
+        35,
+        35
+      ],
+      "phi_ours": 0.21900615643236146,
+      "phi_gmvp": 0.156683,
+      "rel_err": 0.397765912271028,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        45,
+        45,
+        45
+      ],
+      "phi_ours": 0.21792136584344662,
+      "phi_gmvp": 0.104405,
+      "rel_err": 1.0872694396192388,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    },
+    {
+      "point_cm": [
+        55,
+        55,
+        55
+      ],
+      "phi_ours": 0.08862032599275495,
+      "phi_gmvp": 0.0302145,
+      "rel_err": 1.9330396330488657,
+      "graded": false,
+      "tol": null,
+      "pass": null
+    }
+  ],
+  "verdict": "pass"
+}

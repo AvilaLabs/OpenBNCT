@@ -1,0 +1,51 @@
+{
+  "schema_version": "openbnct.multigroup-data/0.1.0",
+  "id": "kobayashi-p1-ii-1g",
+  "energy_boundaries_ev": [
+    1.0,
+    0.001
+  ],
+  "collapse_declaration": "Canonical one-group benchmark data (Kobayashi et al. 2001 PNE 39:119-144, problem 1 case ii): declared macroscopic sigma_t / sigma_s0.",
+  "component_profile": null,
+  "materials": [
+    {
+      "material_id": "koba.src",
+      "sigma_total_per_cm": [
+        0.1
+      ],
+      "scatter_matrix_per_cm": [
+        0.05
+      ],
+      "dose_response_gy_cm2": {},
+      "transport_mu_bar": [
+        0.0
+      ]
+    },
+    {
+      "material_id": "koba.void",
+      "sigma_total_per_cm": [
+        0.0001
+      ],
+      "scatter_matrix_per_cm": [
+        5e-05
+      ],
+      "dose_response_gy_cm2": {},
+      "transport_mu_bar": [
+        0.0
+      ]
+    },
+    {
+      "material_id": "koba.shield",
+      "sigma_total_per_cm": [
+        0.1
+      ],
+      "scatter_matrix_per_cm": [
+        0.05
+      ],
+      "dose_response_gy_cm2": {},
+      "transport_mu_bar": [
+        0.0
+      ]
+    }
+  ]
+}
