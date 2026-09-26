@@ -29,10 +29,18 @@ real physics or residual multigroup condensation error.
   a ~25 min bounded production run.
 - **Finding:** the S8/28-group solve tracks the CE reference within
   ~±30% total flux at every axial depth; the S8/56-group solve
-  overproduces deep flux by ~40–100×. The 28g→56g flux growth is a
-  condensation artifact (overproduction), not convergent
-  refinement — the mechanism now lives in the collapse weighting,
-  not the solver.
+  overproduces deep flux by ~40–100× and violates global balance:
+  42.6 n/s absorbed against a 1.0 n/s source (28g: 0.58 n/s),
+  total dose inflated 28.7×, photon (capture) channel +32×.
+- **Mechanism:** the collapsed data is per-group conservative
+  (σa ≥ 0, σtr > 0, row-sum outscatter ≤ σt); the violation is
+  solver-side. The 56g structure resolves groups with
+  σt·Δx/μ ~ tens of mfp per cell, where the θ-WDD positivity clamps
+  (ψ̄.max(0), ψ_out.max(0)) fabricate particles each sweep — a
+  converged iterate of a defect-laden map is still defective.
+  The per-cell clamp defect is already accumulated at solve time
+  (`acc[cell][12]`); landing it in the artifact would have made
+  this self-diagnosing.
 - Caveat noted in code: `openmc.stats.Tabular(interpolation=
   "histogram")` takes pdf *heights* — passing declared bin
   probabilities emits a ~98%-fast spectrum.
