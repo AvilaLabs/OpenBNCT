@@ -87,3 +87,37 @@ ratios 0.98–1.04); its hydrogen component is ~10⁻⁶ of the old one. The
 "Try it" command in the top-level README and the workbench's bundled
 example now use these files. `dose-28g.json`, `dose-28g-1e.json` and the
 planning studies under `planning/` predate the fix.
+
+## v3 shielded library and the 56-group refinement
+
+Two further data generations exist, each a new artifact (v2 stays frozen):
+
+- `multigroup-data-28g-v3-shielded.json` (`collapse-v3-shielded.sh`) — same
+  28-group grid, plus `--self-shielding` (Bondarenko heterogeneous dilution
+  from each material's own composition) and the current cusp-aware elastic
+  transfer collapse. Against v2, self-shielding moves σ_t by up to 4.5%
+  (skull, 300–500 keV resonance window) and the capture-photon kerma
+  response by up to 16.7%; the S₈ dose comparison (`dose-28g-v3-shielded.json`,
+  converged in 4 outer iterations) shifts the physical total −1.6% median /
+  ±3.9% max voxelwise — a bounded, honest correction.
+- `multigroup-data-56g-shielded.json` (`collapse-v4-56g-shielded.sh`) —
+  geometric refinement of every 28g group (56 groups), shielded.
+  `dose-56g-shielded.json` (S₈, same options, 2 outer iterations) is the
+  group's sobering result: epithermal channels move ~30% (hydrogen median
+  1.30) but the 1/v-dominated capture channels — boron, nitrogen, photon —
+  rise ~60–80× median in the brain, and total thermal flux ~20×.
+
+That thermal pile-up is real condensation physics, not a solve artifact:
+the emitted 56g flux satisfies group balance (in-scatter ≈ removal in the
+bottom groups), the scatter matrix remains strictly downscattering, and σ_t
+values match 28g on overlapping structure. The 28g bottom group
+[0.01 eV, 1e-5 eV] lumps the whole subthermal population into one effective
+absorber; at 56g the marginally-absorbing 0.01–0.3 meV window resolves and
+thermalized neutrons accumulate there before capture. For BNCT dose —
+which is carried almost entirely by sub-eV 1/v capture — **28 groups are
+not converged for the boron, nitrogen or photon components**; the 56g
+numbers are the more trustworthy absolute values, and the v3 28g dose
+should be read as epithermal-faithful but thermal-underresolved. Whether
+56g itself is converged against continuous-energy reference remains an
+open cross-verification question — the thermal tail is where the next
+refinement or an MC comparison earns its keep.

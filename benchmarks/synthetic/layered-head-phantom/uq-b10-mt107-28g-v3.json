@@ -1,0 +1,32 @@
+{
+  "schema_version": "openbnct.dose-uncertainty-budget/0.1.0",
+  "id": "openbnct.layered-head-phantom.uq-b10-mt107.v1",
+  "case_id": "openbnct.layered-head-phantom.v1",
+  "component": "boron",
+  "response_integral": 5.881944970529012e-14,
+  "entries": [
+    {
+      "source": "response_data",
+      "parameter": "openbnct.layered-head.brain.v1.DoseResponse[boron]",
+      "sensitivity": null,
+      "std_dev": null,
+      "variance_contribution": 4.020411932779467e-32,
+      "relative_contribution": 1.0
+    }
+  ],
+  "total_relative_std_dev": 0.00340890045671893,
+  "covariance": {
+    "id": "openbnct.covariance.openbnct.layered-head.brain.v1.mt107",
+    "sha256": "42123cb5562f45c639c09001fc9238a25c80bcde49ebc654978cf03d6ef4579d"
+  },
+  "multigroup_data": {
+    "id": "openbnct.layered-head-phantom.multigroup-28g.v3-shielded",
+    "sha256": "40d7081ca0b0832b18e7dec1b5dcdce662a249e96d4d9393205e92de8dd9c7cb"
+  },
+  "case": {
+    "id": "openbnct.layered-head-phantom.v1",
+    "sha256": "25cf2057a0a3abe402bbc3910956dcec163fb7c99747c211e3f6d16fb5367f3b"
+  },
+  "method_note": "central-difference sensitivities (δ_rel=0.001) on the deterministic solve times the declared covariance; diagonal entries independent, blocks dense group-correlated; scatter entries uncorrelated (declared-data limitation); 0 perturbed solves",
+  "qualification": "research-verification uncertainty accounting — declared covariances, first-order sensitivities, integrated response; not a clinical tolerance evaluation"
+}

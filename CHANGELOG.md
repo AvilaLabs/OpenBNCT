@@ -178,6 +178,30 @@ own versions independent of the crate version.
   kernel — the transpose alone is exact). `pg response --p1
   --anisotropy N` and `vr cadis --p1 --anisotropy N` expose it;
   anisotropic reciprocity ⟨q†,φ⟩ = ⟨q,φ†⟩ is regression-covered.
+- Shielded/refined layered-head libraries: `sn collapse` now
+  integrates each elastic transfer row on the kernel's own cusp
+  abscissae (x = hi, x = lo/α, x = hi/α) — the bare tape-node
+  trapezoid smoothed through the cusps and misintegrated the P0/P1
+  rows by up to ~4% in resonance-structure groups, and a 56-group
+  shielded collapse tripped the emitted-data validator until the fix
+  (σ_t keeps the full collapsed elastic — below-floor downscatter is
+  real removal — with residual row-sum excess absorbed into removal,
+  so `row_sum ≤ σ_t` holds by construction). New benchmark artifacts:
+  `multigroup-data-28g-v3-shielded.json` (Bondarenko dilution on the
+  28g grid; dose shifts −1.6% median/±4% max vs v2) and
+  `multigroup-data-56g-shielded.json` — which exposed a real
+  condensation finding: the 28g bottom group smears the whole
+  subthermal population into one effective absorber, so at 56g the
+  marginally-absorbing sub-meV window resolves and the 1/v dose
+  channels rise ~60–80× in the brain (hydrogen ~30%). Twenty-eight
+  groups are not converged for BNCT capture dose; the 56g artifact is
+  the benchmark's reference going forward.
+- First real MF33 covariance through the UQ chain: B10's MT107
+  block from ENDF/B-VIII.1 collapsed onto the v3-shielded 28-group
+  grid (`openmc cov-endf --parameter dose_response --component
+  boron`) and propagated with `uq propagate` — the ¹⁰B(n,α)
+  nuclear-data contribution to the folded boron dose is a 0.34%
+  relative 1σ, computed analytically (zero perturbed solves).
 
 ## [0.2.2] — 2026-09-23
 
