@@ -113,6 +113,18 @@ own versions independent of the crate version.
   ±20%, skin 1.5×blood; Kotiluoto 8% computational excluding boron) as a
   12-scenario set evaluated against the committed S_N transported
   field.
+- `openbnct plan synthesize` — adjoint marginal-utility beam
+  synthesis. One adjoint solve whose source is the signed composite
+  `Σ_o sign·w_o·(d metric/d dose)·R_g` over every objective (coverage
+  positive, sparing negative, dose-response weighted) ranks a full
+  azimuth×elevation fan by marginal objective utility — beams that
+  transit a sparing mask score against its negative source and are
+  demoted, something fluence-only importance cannot express. With
+  `--dose`/`--weights` the source is the true objective gradient at
+  the current plan for iterate-and-resynthesize refinement; signed
+  sources disable the θ-positivity repair automatically. Emits
+  `openbnct.direction-candidates/0.1.0` scored
+  `adjoint_marginal_utility`, content-binding the objective document.
 - `openbnct.fraction-scales/0.1.0` + `plan optimize|select
   --fraction-scales`: multi-fraction planning. Each fraction's dose
   component scales (e.g. boron uptake decay across the washout

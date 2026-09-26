@@ -46,6 +46,7 @@ pub mod optimize;
 pub mod robustness;
 pub mod scenarios;
 pub mod selection;
+pub mod synthesis;
 
 /// Format token written into exported tables and required on import when
 /// metadata is present.

@@ -2487,6 +2487,70 @@ enum PlanCommand {
         #[arg(long)]
         provenance_id: Option<String>,
     },
+    /// Synthesize beam directions from a signed composite adjoint
+    /// solve: every objective contributes its marginal-utility field —
+    /// coverage masks positive, sparing masks negative, all
+    /// response-weighted — so a candidate's score is the marginal
+    /// dose-utility of delivering that beam, not just aim fluence.
+    /// One adjoint solve ranks the whole direction fan; with `--dose`/
+    /// `--weights` the source is the true objective gradient at the
+    /// current plan (the iterate-and-resynthesize loop). Emits
+    /// `plan fields --beam` lines and an optional candidates document
+    /// scored `adjoint_marginal_utility`.
+    Synthesize {
+        /// `openbnct.transport-case` JSON (geometry + source template).
+        #[arg(long)]
+        case: PathBuf,
+        /// `openbnct.multigroup-data` JSON — drives the adjoint solve.
+        #[arg(long)]
+        data: PathBuf,
+        /// `openbnct.material-assignment` JSON.
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// `openbnct.inverse-plan-objective` JSON — the objective set
+        /// whose masks, weights, and dose quantity build the source.
+        #[arg(long)]
+        objective: PathBuf,
+        /// `RegionMask` JSON; repeatable — every mask the objectives
+        /// name must be supplied.
+        #[arg(long, required = true)]
+        mask: Vec<PathBuf>,
+        /// `RegionMask` JSON every candidate beam converges on.
+        #[arg(long)]
+        aim_mask: PathBuf,
+        /// Per-beam `openbnct.physical-dose-bundle` JSON of the current
+        /// plan; repeatable — enables marginal-utility gradients.
+        #[arg(long)]
+        dose: Vec<PathBuf>,
+        /// Comma-separated current weights parallel to `--dose`.
+        #[arg(long)]
+        weights: Option<String>,
+        /// Azimuth divisions over 0–360°.
+        #[arg(long, default_value = "12")]
+        azimuth_steps: u32,
+        /// Elevation divisions over −60..+60°.
+        #[arg(long, default_value = "3")]
+        elevation_steps: u32,
+        /// Emit only the top N ranked candidates (0 = all).
+        #[arg(long, default_value = "0")]
+        top: usize,
+        /// Aperture radius in cm for the aimed-disk scoring.
+        #[arg(long, default_value = "4.0")]
+        radius_cm: f64,
+        /// Quadrature order for the adjoint solve.
+        #[arg(long, default_value = "8")]
+        order: u32,
+        /// Emit an `openbnct.direction-candidates/0.1.0` document.
+        #[arg(long)]
+        output: Option<PathBuf>,
+        /// Sweep document identifier; defaults to
+        /// `{case_id}.direction-synthesis`.
+        #[arg(long)]
+        id: Option<String>,
+        /// Provenance identifier; defaults to `synthesize:` + the id.
+        #[arg(long)]
+        provenance_id: Option<String>,
+    },
     /// Aim and solve a beam per direction through a target mask —
     /// emits a unit-weight dose bundle per beam plus a
     /// `openbnct.beam-field-set/0.1.0` manifest. The deterministic
@@ -11505,6 +11569,294 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 eprintln!(
                     "{} candidates enumerated, top {take} emitted",
                     candidates.len()
+                );
+            }
+            PlanCommand::Synthesize {
+                case,
+                data,
+                assignment,
+                objective,
+                mask,
+                aim_mask,
+                dose,
+                weights,
+                azimuth_steps,
+                elevation_steps,
+                top,
+                radius_cm,
+                order,
+                output,
+                id,
+                provenance_id,
+            } => {
+                use openbnct_plan::optimize::{BeamDoseField, DoseQuantity, InversePlanObjective};
+                use openbnct_plan::synthesis;
+                let case_bytes = fs::read(&case)?;
+                let case_document: TransportCase =
+                    serde_json::from_slice(&case_bytes).map_err(|error| {
+                        io::Error::other(format!("case {}: {error}", case.display()))
+                    })?;
+                let data_bytes = fs::read(&data)?;
+                let mg_data: openbnct_transport::MultigroupData =
+                    serde_json::from_slice(&data_bytes).map_err(|error| {
+                        io::Error::other(format!("data {}: {error}", data.display()))
+                    })?;
+                let objective_bytes = fs::read(&objective)?;
+                let spec: InversePlanObjective =
+                    serde_json::from_slice(&objective_bytes).map_err(|error| {
+                        io::Error::other(format!("objective {}: {error}", objective.display()))
+                    })?;
+                spec.validate()
+                    .map_err(|error| io::Error::other(format!("objective: {error}")))?;
+                let mut masks = Vec::new();
+                for path in &mask {
+                    let m: RegionMask =
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("mask {}: {error}", path.display()))
+                        })?;
+                    masks.push(m);
+                }
+                let aim_bytes = fs::read(&aim_mask)?;
+                let aim: RegionMask = serde_json::from_slice(&aim_bytes).map_err(|error| {
+                    io::Error::other(format!("mask {}: {error}", aim_mask.display()))
+                })?;
+                let assignment_doc: Option<MaterialAssignment> = assignment
+                    .as_ref()
+                    .map(|path| {
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("assignment {}: {error}", path.display()))
+                        })
+                    })
+                    .transpose()?;
+                let geometry = case_document.geometry.clone();
+                let n_cells = geometry
+                    .voxel_count()
+                    .map_err(|error| io::Error::other(format!("geometry: {error}")))?;
+                let groups = mg_data.group_count();
+                let cell_mat = openbnct_transport::cell_materials(
+                    &case_document,
+                    &mg_data,
+                    assignment_doc.as_ref(),
+                )
+                .map_err(|error| io::Error::other(format!("materials: {error}")))?;
+                // Per-objective effective responses: the fold each
+                // objective's dose quantity applies at every cell.
+                let response_at = |cell: usize| {
+                    mg_data.materials[cell_mat[cell]]
+                        .dose_response_gy_cm2
+                        .clone()
+                };
+                let effective_responses: Vec<Vec<Vec<f64>>> = spec
+                    .objectives
+                    .iter()
+                    .map(|o| {
+                        (0..n_cells)
+                            .map(|cell| {
+                                synthesis::effective_response(&spec, o, cell, &response_at, groups)
+                            })
+                            .collect()
+                    })
+                    .collect();
+                let mask_voxels = synthesis::synthesis_masks(&spec, &masks, n_cells)
+                    .map_err(|error| io::Error::other(format!("masks: {error}")))?;
+                // Marginal mode: current dose per objective view.
+                let doses: Option<Vec<Vec<f64>>> = if dose.is_empty() {
+                    None
+                } else {
+                    let weights: Vec<f64> = weights
+                        .as_deref()
+                        .ok_or_else(|| io::Error::other("--dose requires --weights w1,w2,…"))?
+                        .split(',')
+                        .map(|t| {
+                            t.trim()
+                                .parse::<f64>()
+                                .map_err(|error| io::Error::other(format!("--weights: {error}")))
+                        })
+                        .collect::<Result<_, _>>()?;
+                    if weights.len() != dose.len() {
+                        return Err(io::Error::other(format!(
+                            "--weights has {} entries for {} dose fields",
+                            weights.len(),
+                            dose.len()
+                        ))
+                        .into());
+                    }
+                    let mut fields = Vec::with_capacity(dose.len());
+                    for path in &dose {
+                        let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)
+                            .map_err(|error| {
+                            io::Error::other(format!("dose {}: {error}", path.display()))
+                        })?;
+                        let name = |c: openbnct_core::DoseComponent| match c {
+                            openbnct_core::DoseComponent::Boron => "boron",
+                            openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                            openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                            openbnct_core::DoseComponent::Photon => "photon",
+                        };
+                        let components: std::collections::BTreeMap<String, Vec<f64>> = bundle
+                            .components
+                            .iter()
+                            .map(|v| (name(v.component).to_string(), v.values.clone()))
+                            .collect();
+                        let values = match spec.dose_quantity {
+                            DoseQuantity::PhysicalTotal => bundle.physical_total.values.clone(),
+                            DoseQuantity::Component(component) => {
+                                components.get(name(component)).cloned().ok_or_else(|| {
+                                    io::Error::other(format!(
+                                        "{}: no {:?} component",
+                                        path.display(),
+                                        component
+                                    ))
+                                })?
+                            }
+                            DoseQuantity::Isoeffective => Vec::new(),
+                        };
+                        fields.push(BeamDoseField {
+                            name: path.display().to_string(),
+                            values,
+                            components: Some(components),
+                        });
+                    }
+                    Some(
+                        spec.objectives
+                            .iter()
+                            .map(|o| synthesis::objective_dose_view(&spec, o, &fields, &weights))
+                            .collect::<Result<Vec<_>, _>>()
+                            .map_err(|error| io::Error::other(format!("dose views: {error}")))?,
+                    )
+                };
+                let source = synthesis::composite_adjoint_source(
+                    &spec,
+                    &mask_voxels,
+                    &effective_responses,
+                    doses.as_deref(),
+                )
+                .map_err(|error| io::Error::other(format!("adjoint source: {error}")))?;
+                let signed = synthesis::source_is_signed(&source);
+                // A signed source (sparing objectives) makes negative
+                // adjoint flux legitimate — θ repair must not clamp it.
+                let options = openbnct_transport::SnOptions {
+                    quadrature_order: order,
+                    assignment: assignment_doc.clone(),
+                    theta_repair: !signed,
+                    ..Default::default()
+                };
+                let adjoint = openbnct_transport::solve_multigroup_adjoint(
+                    &case_document,
+                    &mg_data,
+                    &options,
+                    &source,
+                    None,
+                    openbnct_core::ContentReference {
+                        id: mg_data.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                    },
+                    openbnct_core::ContentReference {
+                        id: case_document.case_id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                    },
+                )
+                .map_err(|error| io::Error::other(format!("adjoint solve: {error}")))?;
+                if !adjoint.converged {
+                    eprintln!("warning: adjoint solve did not converge — scores are approximate");
+                }
+                let mut candidates = openbnct_plan::directions::enumerate_directions(
+                    &geometry,
+                    &aim,
+                    None,
+                    azimuth_steps,
+                    elevation_steps,
+                )
+                .map_err(|error| io::Error::other(format!("directions: {error}")))?;
+                let mut scored: Vec<(f64, usize)> = Vec::with_capacity(candidates.len());
+                for (index, candidate) in candidates.iter().enumerate() {
+                    let score = match openbnct_transport::adjoint_direction_score(
+                        &case_document,
+                        &mg_data,
+                        &options,
+                        &adjoint,
+                        &aim,
+                        candidate.direction_lps,
+                        radius_cm,
+                    ) {
+                        Ok(score) => score,
+                        Err(openbnct_transport::MultigroupError::ApertureOutsideFace(reason)) => {
+                            eprintln!("skip {}: {reason}", candidate.name);
+                            continue;
+                        }
+                        Err(error) => {
+                            return Err(io::Error::other(format!(
+                                "score {}: {error}",
+                                candidate.name
+                            ))
+                            .into());
+                        }
+                    };
+                    scored.push((score, index));
+                }
+                if scored.is_empty() {
+                    return Err(io::Error::other(
+                        "no candidate direction admits an aperture that fits its entry face",
+                    )
+                    .into());
+                }
+                for (score, index) in &scored {
+                    candidates[*index].adjoint_score = Some(*score);
+                }
+                scored.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(std::cmp::Ordering::Equal));
+                candidates = scored
+                    .iter()
+                    .map(|(_, index)| candidates[*index].clone())
+                    .collect();
+                let take = if top == 0 { candidates.len() } else { top };
+                for line in openbnct_plan::directions::beam_spec_lines(&candidates, take) {
+                    println!("{line}");
+                }
+                if let Some(path) = output {
+                    let id = id.clone().unwrap_or_else(|| {
+                        format!("{}.direction-synthesis", case_document.case_id)
+                    });
+                    let mut document =
+                        openbnct_plan::directions::build_direction_candidates_document(
+                            &id,
+                            &case_document.case_id,
+                            candidates.clone(),
+                            "adjoint_marginal_utility",
+                            azimuth_steps,
+                            elevation_steps,
+                            Some(radius_cm),
+                            openbnct_core::ContentReference {
+                                id: case_document.case_id.clone(),
+                                sha256: openbnct_evidence::sha256_hex(&case_bytes),
+                            },
+                            openbnct_core::ContentReference {
+                                id: aim.name.clone(),
+                                sha256: openbnct_evidence::sha256_hex(&aim_bytes),
+                            },
+                            None,
+                            Some(openbnct_core::ContentReference {
+                                id: mg_data.id.clone(),
+                                sha256: openbnct_evidence::sha256_hex(&data_bytes),
+                            }),
+                            provenance_id
+                                .as_deref()
+                                .unwrap_or(&format!("synthesize:{id}")),
+                        );
+                    document.objective = Some(openbnct_core::ContentReference {
+                        id: spec.id.clone(),
+                        sha256: openbnct_evidence::sha256_hex(&objective_bytes),
+                    });
+                    write_new_json(&path, &document)?;
+                    println!("synthesis candidates at {}", path.display());
+                }
+                eprintln!(
+                    "{} candidates scored by marginal utility{}",
+                    candidates.len(),
+                    if doses.is_some() {
+                        " at the current plan"
+                    } else {
+                        ""
+                    }
                 );
             }
             PlanCommand::Fields {

@@ -77,6 +77,11 @@ pub struct DirectionCandidatesDocument {
     pub aim_mask: ContentReference,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub body_mask: Option<ContentReference>,
+    /// The inverse-plan objective whose masks/weights built the
+    /// adjoint source — present when `scoring` is
+    /// `adjoint_marginal_utility` (a `plan synthesize` sweep).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub objective: Option<ContentReference>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub multigroup_data: Option<ContentReference>,
     pub provenance_id: String,
@@ -113,6 +118,7 @@ pub fn build_direction_candidates_document(
         case,
         aim_mask,
         body_mask,
+        objective: None,
         multigroup_data,
         provenance_id: provenance_id.into(),
         qualification: DIRECTION_CANDIDATES_QUALIFICATION.into(),

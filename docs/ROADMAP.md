@@ -1303,6 +1303,25 @@ Each item is evidence-gated; none implies a clinical claim.
   data. Spec lines feed `plan fields --beam` directly; the synthetic
   known-optimum test (`sweep_recovers_known_optimum`) plus the PMMA
   e2e (directions → fields → optimize) satisfy the acceptance.
+- **R10-07 — adjoint marginal-utility synthesis. (landed)** `plan
+  synthesize` replaces the uniform aim-region adjoint source with a
+  signed composite: every inverse-plan objective contributes
+  `sign·weight·(d metric/d dose)·R_g` — coverage masks pull positive,
+  sparing masks push negative, all weighted by the actual dose
+  response fold. One adjoint solve then ranks the direction fan by
+  *marginal objective utility*: a beam that must transit an organ
+  mask to reach the aim scores against the negative source there and
+  is demoted, where fluence-only importance could not tell it apart.
+  Signed sources disable the θ-positivity repair automatically.
+  Passing `--dose`/`--weights` (the current plan's per-beam bundles)
+  makes the source the true objective gradient at that plan —
+  iterate-and-resynthesize refinement. On a symmetric 3-group cube
+  (aim centered, OAR on the −x axis) the OAR-transiting az180 beam
+  drops 13% relative to the clean az000 while aim-only ranking sees
+  them ~35% apart only by attenuation. Emits
+  `openbnct.direction-candidates/0.1.0` scored
+  `adjoint_marginal_utility` with the objective document
+  content-bound. Same research-only boundary posture as R9-07.
 - **R10-05 — S_N plan-iteration quality.** Grow the deterministic solver
   from verification scope toward iteration scope: more groups, wider
   anisotropy support, performance pass. Each increment lands with its
