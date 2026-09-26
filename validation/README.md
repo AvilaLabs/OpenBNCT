@@ -14,3 +14,24 @@ clinical validation.
 Free-beam measured-data comparison lives under `measurements/`
 (`fir1-k63-vs-beam-quality.json`). See each directory's README for
 reproduction commands and provenance notes.
+
+## Canonical transport cases
+
+Scripted, self-contained benchmarks against published reference
+solutions — the kind anyone can rerun (`run.sh` regenerates inputs,
+solves, and grades). These verify the deterministic S_N path itself:
+source deposition, material heterogeneity, boundary conditions, and
+angular/spatial truncation.
+
+| directory | case | reference | verdict |
+|---|---|---|---|
+| `canonical-reed-problem/` | Reed (1971) heterogeneous 1-D slab — strong absorber/source, void gap, c=0.9 scattering regions | Warsa (2002) eigenfunction expansion, 81 pointwise fluxes | **PASS** — region means ≤1% flat / ~2% scattering peak (angular truncation, halving S4→S8); interior pointwise RMS 0.9% |
+| `canonical-azmy-problem/` | Azmy (1988) weighted-DD quadrant problem — central source in absorber, full-domain mirror realization | published quadrant means 1.676 / 4.159e-2 / 1.992e-3 | **PASS** — 0.17% / 0.67% / 3.9%, machine-precision quadrant symmetry |
+
+Each case directory declares its tolerances in `compare.py` — set
+against what a converged discrete-ordinates solve can meaningfully
+resolve at the stated mesh/order and reference-table resolution, with
+the rationale documented in the case README — and freezes its output
+in `comparison.json`: frozen evidence, regenerated only by a
+deliberate new run.
+
