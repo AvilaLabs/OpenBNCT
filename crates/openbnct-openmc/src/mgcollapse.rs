@@ -381,6 +381,54 @@ fn elastic_transfer_p(e: f64, alpha: f64, lo: f64, hi: f64) -> f64 {
     overlap / ((1.0 - alpha) * e)
 }
 
+/// Source-energy abscissae where the elastic transfer kernel into
+/// destination group `[dlo, dhi]` changes regime: `x = dhi` (the
+/// outgoing cap takes over), `x = dlo/α` and `x = dhi/α` (the αx floor
+/// enters and the window opens). Trapezoiding `σ·w·P` on the bare tape
+/// grid smooths through these cusps — the row then misintegrates the
+/// kernel by up to percent-scale in resonance-structure groups.
+fn elastic_transfer_kinks(alpha: f64, dlo: f64, dhi: f64) -> Vec<f64> {
+    let mut xs = vec![dhi];
+    if alpha > 0.0 {
+        xs.push(dlo / alpha);
+        xs.push(dhi / alpha);
+    }
+    xs
+}
+
+/// Trapezoid of `xs_weighted(x)·k(x)` over `[lo, hi]` on the nuclide's
+/// own grid plus `extras` — the kernel is evaluated exactly at every
+/// partition node (cusps included) while the cross section
+/// log-interpolates.
+fn integrate_kernel(
+    energy: &[f64],
+    xs_weighted: &[f64],
+    lo: f64,
+    hi: f64,
+    extras: &[f64],
+    k: &dyn Fn(f64) -> f64,
+) -> f64 {
+    let mut pts: Vec<f64> = Vec::new();
+    pts.push(lo);
+    pts.extend(energy.iter().copied().filter(|&e| e > lo && e < hi));
+    pts.extend(
+        extras
+            .iter()
+            .copied()
+            .filter(|&x| x > lo && x < hi && x.is_finite()),
+    );
+    pts.push(hi);
+    pts.sort_by(f64::total_cmp);
+    pts.dedup();
+    pts.windows(2)
+        .map(|w| {
+            let f0 = log_interp(energy, xs_weighted, w[0]) * k(w[0]);
+            let f1 = log_interp(energy, xs_weighted, w[1]) * k(w[1]);
+            0.5 * (f0 + f1) * (w[1] - w[0])
+        })
+        .sum()
+}
+
 /// P1 iso-CM elastic transfer moment: the outgoing lab-frame mean
 /// cosine folded into the transfer probability — the `l = 1` Legendre
 /// moment of the elastic kernel restricted to `[lo, hi]`.
@@ -844,22 +892,17 @@ fn collapse_material(
                 sigma_s = collapse(&sw(&table.elastic));
                 let elastic_weighted = sw(&table.elastic);
                 for gp in 0..groups {
-                    let integrand: Vec<f64> = e
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &x)| {
-                            elastic_weighted[i] * elastic_transfer_p(x, alpha, b[gp + 1], b[gp])
-                        })
-                        .collect();
-                    row[gp] = collapse(&integrand);
-                    let integrand_p1: Vec<f64> = e
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &x)| {
-                            elastic_weighted[i] * elastic_transfer_p1(x, alpha, a, b[gp + 1], b[gp])
-                        })
-                        .collect();
-                    row_p1[gp] = collapse(&integrand_p1);
+                    // The kernel's regime changes land between tape
+                    // nodes — integrate on the kink-aware partition or
+                    // the row drifts off σ_s by up to percent-scale in
+                    // resonance-structure groups.
+                    let kinks = elastic_transfer_kinks(alpha, b[gp + 1], b[gp]);
+                    row[gp] = integrate_kernel(e, &elastic_weighted, lo, hi, &kinks, &|x| {
+                        elastic_transfer_p(x, alpha, b[gp + 1], b[gp])
+                    }) / w_norm;
+                    row_p1[gp] = integrate_kernel(e, &elastic_weighted, lo, hi, &kinks, &|x| {
+                        elastic_transfer_p1(x, alpha, a, b[gp + 1], b[gp])
+                    }) / w_norm;
                 }
                 // Iso-CM elastic mean recoil: Ē·(1−α)/2.
                 // Ē comes from the eV grid; the kerma conversion is per MeV.
@@ -886,17 +929,13 @@ fn collapse_material(
             };
             let elastic_weighted_pl = sw(&table.elastic);
             for gp in 0..groups {
+                let kinks = elastic_transfer_kinks(alpha, b[gp + 1], b[gp]);
                 for (li, row_l) in row_pl.iter_mut().enumerate() {
                     let l = li as u32 + 2;
-                    let integrand: Vec<f64> = e
-                        .iter()
-                        .enumerate()
-                        .map(|(i, &x)| {
-                            elastic_weighted_pl[i]
-                                * elastic_transfer_pl(x, alpha, a, l, b[gp + 1], b[gp])
-                        })
-                        .collect();
-                    row_l[gp] = collapse(&integrand) * scale_pl;
+                    row_l[gp] = integrate_kernel(e, &elastic_weighted_pl, lo, hi, &kinks, &|x| {
+                        elastic_transfer_pl(x, alpha, a, l, b[gp + 1], b[gp])
+                    }) / w_norm
+                        * scale_pl;
                 }
             }
             for (gp, val) in row.iter().enumerate() {
@@ -915,7 +954,12 @@ fn collapse_material(
                     mat[g * groups + gp] += n_density * val.clamp(-bound, bound);
                 }
             }
-            sigma_t[g] += n_density * (sigma_s + sigma_a);
+            // σ_t keeps the full collapsed elastic (downscatter below
+            // the group-structure floor leaves the domain — that loss
+            // is real removal). Residual quadrature excess of the row
+            // sum over σ_s is absorbed into removal so the solver's
+            // row_sum ≤ σ_t invariant holds by construction.
+            sigma_t[g] += n_density * (sigma_a + row.iter().sum::<f64>().max(sigma_s));
             // Scatter-weighted mean lab cosine: analytic 2/(3A) for
             // free-gas, the TSL P1/P0 ratio when bound-atom applies.
             if tsl.is_some() {
@@ -1092,6 +1136,65 @@ mod tests {
         );
         let den = integrate_grid(&e, &w, lo, hi);
         assert!((num / den - 3.7).abs() < 1e-9);
+    }
+
+    #[test]
+    fn kernel_integrand_integrates_the_transfer_cusps() {
+        // The elastic transfer kernel P(E→g') cusps at x = hi and
+        // x = lo/α (and turns on at x = hi/α). A cross section sampled
+        // only on sparse tape nodes smooths those cusps under plain
+        // trapezoid — on the shipped PENDF tapes the resulting row
+        // overshoot reached percent-scale in resonance-structure
+        // groups. `integrate_kernel` inserts the cusp abscissae and
+        // must recover the dense-grid reference.
+        let alpha = ((12.0_f64 - 1.0) / 13.0).powi(2); // C12-like
+        // Sparse σ grid with a strong ramp across the cusp region.
+        let e = vec![1.0e4, 2.0e4, 5.0e4, 1.0e5, 2.0e5];
+        let xs = vec![1.0, 4.0, 16.0, 64.0, 4.0];
+        // Source group [3e4, 9e4]; destination [2.4e4, 3e4] — its
+        // cusps x = 3e4 (edge), x = 2.4e4/α ≈ 3.35e4 and
+        // x = 3e4/α ≈ 4.19e4 lie inside the source group, so the bare
+        // product visibly misintegrates (P ≈ 0.7 at 3e4, dead by
+        // 4.19e4 — a span the sparse σ grid never samples).
+        let (lo, hi) = (3.0e4_f64, 9.0e4_f64);
+        let (dlo, dhi) = (2.4e4_f64, 3.0e4_f64);
+        let k = |x: f64| elastic_transfer_p(x, alpha, dlo, dhi);
+        // Dense reference: σ interpolated log-log exactly as the
+        // integrator does, P exact at every node.
+        let dense: Vec<f64> = {
+            let mut v = vec![lo];
+            for i in 1..4000 {
+                v.push(lo * (hi / lo).powf(i as f64 / 4000.0));
+            }
+            v.push(hi);
+            v
+        };
+        let reference = dense
+            .windows(2)
+            .map(|w| {
+                let f0 = log_interp(&e, &xs, w[0]) * k(w[0]);
+                let f1 = log_interp(&e, &xs, w[1]) * k(w[1]);
+                0.5 * (f0 + f1) * (w[1] - w[0])
+            })
+            .sum::<f64>();
+        let bare = {
+            let integrand: Vec<f64> = e.iter().enumerate().map(|(i, &x)| xs[i] * k(x)).collect();
+            integrate_grid(&e, &integrand, lo, hi)
+        };
+        let kinks = elastic_transfer_kinks(alpha, dlo, dhi);
+        let fixed = integrate_kernel(&e, &xs, lo, hi, &kinks, &k);
+        let err = |x: f64| (x - reference).abs() / reference;
+        // Residual after the cusp fix is the σ ramp's own trapezoid
+        // curvature — an honest interpolation error shared by every
+        // collapse integral — not kernel smoothing.
+        assert!(
+            err(fixed) < 0.05,
+            "kink-aware integral {fixed} vs reference {reference}"
+        );
+        assert!(
+            err(bare) > 0.10,
+            "bare trapezoid {bare} should visibly miss reference {reference}"
+        );
     }
 
     /// A constant-S toy law: S(α,β) = 1 on α ∈ [0.01, 8], β ∈ {0, 8}

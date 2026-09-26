@@ -173,8 +173,9 @@ impl MultigroupData {
                     .sum();
                 if row_sum > material.sigma_total_per_cm[g] + 1e-12 {
                     return Err(invalid(format!(
-                        "material {:?} group {g} scatters more than its total",
-                        material.material_id
+                        "material {:?} group {g} scatters more than its total: \
+                         row sum {row_sum:.17e} vs sigma_t {:.17e}",
+                        material.material_id, material.sigma_total_per_cm[g]
                     )));
                 }
             }
