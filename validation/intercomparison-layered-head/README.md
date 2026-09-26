@@ -30,17 +30,41 @@ real physics or residual multigroup condensation error.
 - **Finding:** the S8/28-group solve tracks the CE reference within
   ~±30% total flux at every axial depth; the S8/56-group solve
   overproduces deep flux by ~40–100× and violates global balance:
-  42.6 n/s absorbed against a 1.0 n/s source (28g: 0.58 n/s),
+  42.6 n/s absorbed against a 1.0 n/s source (28g: 0.96 n/s),
   total dose inflated 28.7×, photon (capture) channel +32×.
-- **Mechanism:** the collapsed data is per-group conservative
-  (σa ≥ 0, σtr > 0, row-sum outscatter ≤ σt); the violation is
-  solver-side. The 56g structure resolves groups with
-  σt·Δx/μ ~ tens of mfp per cell, where the θ-WDD positivity clamps
-  (ψ̄.max(0), ψ_out.max(0)) fabricate particles each sweep — a
-  converged iterate of a defect-laden map is still defective.
-  The per-cell clamp defect is already accumulated at solve time
-  (`acc[cell][12]`); landing it in the artifact would have made
-  this self-diagnosing.
+- **Mechanism (resolved):** the violation was solver-side, in the
+  transport correction, not in the collapse and not in the sweep
+  closure. The corrected operator subtracted `μ̄·Σ_s` from σ_t but
+  removed at most the *diagonal* from the scatter row — so
+  σ_a,eff = σ_t,tr − Σ_s,eff drifted below the declared σ_a and went
+  negative in 54/56 groups (e.g. −0.117/cm where σ_a = +0.0002/cm).
+  A negative effective absorption is a distributed particle source
+  proportional to flux; the cascade amplifies it group over group
+  into the thermal tail (96% of the 42.6 sat in the two deepest
+  groups). The 28g condensation hid the bug because broad-group
+  diagonals can absorb `μ̄·Σ_s` (that artifact still audits at 0.96,
+  mostly in its deepest group).
+- **Fix:** the forward lobe now leaves the row elementwise through
+  the collapsed P1 moment (`σ_s1(g→g')` — its row sum is exactly
+  `μ̄·Σ_s` by construction, elementwise ≤ σ_s0 in this data), with a
+  diagonal-capped fallback for data lacking P1 moments. σ_a,eff
+  ≡ σ_a identically. A `balance_absorbed_fraction` audit rides on
+  every flux artifact — values > ~1 flag fabrication regardless of
+  what `converged`/`residual` claim.
+- **Verified:** the same 6³ mini-case that fabricated 2.33× at S8
+  conserves at 0.086 after the fix; the full phantom re-solve
+  (`multigroup-flux-56g-tcfix3.json`) audits at 0.080 — against
+  ~0.04 absorbed in B10+N14 channels alone on the CE reference
+  (H capture untallied). The θ-WDD positivity clamps were *not* the
+  mechanism — the θ repair landed independently (negligible change
+  to this field) and stays as hardening.
+- **Open:** the conserving 56g solve now *under*produces deep flux
+  (~0.03–0.4× CE on axis, ~0.15× whole-domain) — an honest
+  discretization/condensation question (fine-group σ_t
+  condensation, group-boundary placement), not a balance violation.
+  That is the R17-04 study. The uncollided-split and boundary-flux
+  models show the same deficit sign (source-path exonerated:
+  boundary-mode audit was 12.0 pre-fix).
 - Caveat noted in code: `openmc.stats.Tabular(interpolation=
   "histogram")` takes pdf *heights* — passing declared bin
   probabilities emits a ~98%-fast spectrum.

@@ -2524,9 +2524,24 @@ pub(crate) fn solve_sn_problem(
                             let ss: f64 = (0..groups)
                                 .map(|gp| m.scatter_matrix_per_cm[g * groups + gp])
                                 .sum();
-                            // Floor at the absorption part so the
-                            // operator stays positive.
-                            (st - mu[g] * ss).max(st - ss).max(1e-12)
+                            // The same total forward-lobe content
+                            // scatter_eff removes from the row —
+                            // elementwise sigma_s1 where declared, the
+                            // diagonal-capped fallback otherwise — so
+                            // sigma_a,eff stays exactly sigma_a.
+                            let rem = match &m.scatter_p1_matrix_per_cm {
+                                Some(p1m) => (0..groups)
+                                    .map(|gp| {
+                                        p1m[g * groups + gp]
+                                            .max(0.0)
+                                            .min(m.scatter_matrix_per_cm[g * groups + gp])
+                                    })
+                                    .sum::<f64>(),
+                                None => (mu[g] * ss)
+                                    .min(m.scatter_matrix_per_cm[g * groups + g])
+                                    .max(0.0),
+                            };
+                            (st - rem).max(st - ss).max(1e-12)
                         }
                         _ => st,
                     }
@@ -2540,10 +2555,29 @@ pub(crate) fn solve_sn_problem(
         .map(|m| {
             let mut row = m.scatter_matrix_per_cm.clone();
             if let (true, Some(mu)) = (corrected, &m.transport_mu_bar) {
-                for g in 0..groups {
-                    let ss: f64 = (0..groups).map(|gp| row[g * groups + gp]).sum();
-                    let diag = &mut row[g * groups + g];
-                    *diag = (*diag - mu[g] * ss).max(0.0);
+                // The forward lobe removed from sigma_t must leave the
+                // scatter row by the same amount, or sigma_a,eff =
+                // sigma_t,tr − sum sigma_s,eff drifts below the
+                // declared absorption and every cell quietly
+                // fabricates particles (the 56-group phantom absorbed
+                // ~42x its source that way). The lobe's true shape is
+                // the collapsed P1 moment: subtracting sigma_s1(g->g')
+                // elementwise removes exactly the forward-weighted
+                // content and keeps sigma_a,eff == sigma_a. Data
+                // without a P1 matrix falls back to the in-group
+                // diagonal — the only place a direction-conserving
+                // lobe can live in P0 data — capped so it can never
+                // exceed the available element.
+                if let Some(p1m) = &m.scatter_p1_matrix_per_cm {
+                    for i in 0..groups * groups {
+                        row[i] = (row[i] - p1m[i].max(0.0)).max(0.0);
+                    }
+                } else {
+                    for g in 0..groups {
+                        let ss: f64 = (0..groups).map(|gp| row[g * groups + gp]).sum();
+                        let rem = (mu[g] * ss).min(row[g * groups + g]).max(0.0);
+                        row[g * groups + g] -= rem;
+                    }
                 }
             }
             row
@@ -3598,6 +3632,45 @@ pub(crate) mod tests {
         assert!(absorbed > 0.0 && absorbed <= 1.0);
     }
 
+    /// The transport correction must remove the forward-scatter
+    /// fraction from σ_t and from the scatter row by the SAME amount —
+    /// or σ_t,tr − Σ_s,eff drifts below the declared σ_a and every cell
+    /// quietly becomes a distributed particle source. In the 56-group
+    /// phantom the row's in-group element was smaller than μ̄·Σ_s in
+    /// 54/56 groups, the residual drove σ_a,eff negative, and the
+    /// solve absorbed ~42× the source. Fixture: group 0 has
+    /// μ̄·Σ_s = 0.9×0.6 = 0.54 against a diagonal of 0.1 — the deficit
+    /// regime. The balance audit is the tripwire: it must never
+    /// exceed the source rate.
+    #[test]
+    fn transport_correction_preserves_absorption() {
+        let case = slab_case();
+        let mut mg = data(&[2.0, 1.0], vec![0.1, 0.5, 0.0, 0.3]);
+        mg.materials[0].transport_mu_bar = Some(vec![0.9, 0.0]);
+        mg.validate().unwrap();
+        let flux = solve_multigroup(&case, &mg, &options(), cref("mg"), cref("case")).unwrap();
+        assert!(flux.converged);
+        let absorbed = flux.balance_absorbed_fraction.unwrap();
+        assert!(
+            absorbed > 0.0 && absorbed <= 1.0,
+            "absorbed fraction exceeds the source: {absorbed}"
+        );
+        // And the correction itself must still engage — this fixture
+        // has no P1 matrix, so the diagonal-capped fallback path is
+        // what runs here.
+        let mut mg_off = data(&[2.0, 1.0], vec![0.1, 0.5, 0.0, 0.3]);
+        mg_off.materials[0].transport_mu_bar = Some(vec![0.9, 0.0]);
+        let mut off = options();
+        off.transport_correction = false;
+        let flux_off = solve_multigroup(&case, &mg_off, &off, cref("mg"), cref("case")).unwrap();
+        let center = |f: &MultigroupFlux, g: usize| f.flux[5][g];
+        assert!(
+            (center(&flux, 0) - center(&flux_off, 0)).abs() > 1e-12
+                || (center(&flux, 1) - center(&flux_off, 1)).abs() > 1e-12,
+            "correction had no effect — the test is blind"
+        );
+    }
+
     /// Narrow beam on a vacuum-bounded grid: cells off the beam axis
     /// see a hot neighbour's inflow against a thin local source — the
     /// regime where the legacy `.max(0.0)` outflow clamp fabricated
@@ -3887,9 +3960,12 @@ pub(crate) mod tests {
     fn transport_correction_deepens_scattered_flux() {
         // Two-group cascade with a forward-peaked upper group:
         // σ_t0 = 1.0, σ_s(0→0) = 0.10, σ_s(0→1) = 0.80, μ̄₀ = 0.7
-        // → σ_t0,tr = 0.37, σ_s,tr(0→0) = 0 — corrected epithermal flux
-        // penetrates farther and feeds the downscatter source deeper,
-        // so the deep group-1 flux must exceed the uncorrected solve.
+        // → σ_t0,tr = 0.37 vs σ_t0 = 1.0 — the corrected epithermal
+        // flux penetrates farther into the slab than the uncorrected
+        // one, which is the correction's physical content. (The
+        // removed forward fraction also leaves the scatter row — the
+        // correction must not simultaneously inflate the downscatter
+        // feed, which is the fabrication this fixture used to hide.)
         let case = slab_case();
         // Scatter layout is [src * G + dst].
         let mut mg = data(&[1.0, 0.5], vec![0.10, 0.80, 0.0, 0.30]);
@@ -3906,17 +3982,22 @@ pub(crate) mod tests {
         assert!(corrected.converged && raw.converged);
         assert!(corrected.transport_correction);
         assert!(!raw.transport_correction);
-        // Deep cell group-1 flux: the cascade is driven deeper by the
-        // corrected epithermal penetration.
+        // Deep cell group-0 flux: corrected penetration reaches
+        // farther; the group-1 feed still exists but is no longer
+        // padded by the inconsistent removal.
         let deep = 5 + 16 * 17;
         let near = 5 + 16;
         assert!(
-            corrected.flux[deep][1] > raw.flux[deep][1],
-            "corrected deep thermal {} !> raw {}",
-            corrected.flux[deep][1],
-            raw.flux[deep][1]
+            corrected.flux[deep][0] > raw.flux[deep][0],
+            "corrected deep epithermal {} !> raw {}",
+            corrected.flux[deep][0],
+            raw.flux[deep][0]
         );
         assert!(corrected.flux[near][0] > 0.0 && raw.flux[near][0] > 0.0);
+        // Conservation: the corrected solve must not absorb more than
+        // it was given.
+        let absorbed = corrected.balance_absorbed_fraction.unwrap();
+        assert!(absorbed <= 1.0, "absorbed {absorbed} exceeds source");
     }
 
     #[test]
