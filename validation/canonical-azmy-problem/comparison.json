@@ -1,0 +1,45 @@
+{
+  "schema_version": "openbnct.validation-comparison/0.1.0",
+  "case": "canonical-azmy-problem",
+  "reference": "Azmy 1988 NSE 98:29-40 quadrant means (source 1.676, edge 4.159e-2, corner 1.992e-3); same anchors as FeenoX azmy-structured.fee",
+  "tolerances": {
+    "source": 0.02,
+    "edge": 0.05,
+    "corner": 0.1
+  },
+  "quadrant_means": [
+    {
+      "quadrant": "source",
+      "n_cells": 1600,
+      "phi_mean": 1.6788742154002463,
+      "reference": 1.676,
+      "rel_err": 0.001714925656471569,
+      "tol": 0.02,
+      "pass": true
+    },
+    {
+      "quadrant": "edge",
+      "n_cells": 3200,
+      "phi_mean": 0.04131112277785557,
+      "reference": 0.04159,
+      "rel_err": 0.006705391251368877,
+      "tol": 0.05,
+      "pass": true
+    },
+    {
+      "quadrant": "corner",
+      "n_cells": 1600,
+      "phi_mean": 0.0019150964486761878,
+      "reference": 0.001992,
+      "rel_err": 0.038606200463761065,
+      "tol": 0.1,
+      "pass": true
+    }
+  ],
+  "symmetry": {
+    "source_family_rel_spread": 0.0,
+    "edge_family_rel_spread": 1.6796672269645395e-16,
+    "corner_family_rel_spread": 0.0
+  },
+  "verdict": "pass"
+}

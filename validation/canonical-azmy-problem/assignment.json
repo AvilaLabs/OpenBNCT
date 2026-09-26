@@ -1,0 +1,49 @@
+{
+  "schema_version": "openbnct.material-assignment/0.2.0",
+  "case_id": "azmy-problem-full",
+  "base_material": {
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "azmy.abs",
+    "density_g_cm3": 1.0,
+    "temperature_k": 294.0,
+    "nuclides": [
+      {
+        "name": "X1",
+        "mass_fraction": 1.0
+      }
+    ],
+    "neutron_thermal_treatment": "free_gas"
+  },
+  "regions": [
+    {
+      "name": "azmy.src",
+      "material": {
+        "schema_version": "openbnct.material-definition/0.1.0",
+        "id": "azmy.src",
+        "density_g_cm3": 1.0,
+        "temperature_k": 294.0,
+        "nuclides": [
+          {
+            "name": "X1",
+            "mass_fraction": 1.0
+          }
+        ],
+        "neutron_thermal_treatment": "free_gas"
+      },
+      "shape": {
+        "kind": "voxel_box",
+        "lower": [
+          20,
+          20,
+          0
+        ],
+        "upper": [
+          59,
+          59,
+          1
+        ]
+      }
+    }
+  ],
+  "provenance_id": "azmy-1988-full-domain"
+}

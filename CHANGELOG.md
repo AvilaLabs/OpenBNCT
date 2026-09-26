@@ -27,6 +27,11 @@ own versions independent of the crate version.
 
 ### Added — validation
 
+- `validation/canonical-azmy-problem/` — Azmy's (1988) weighted-DD
+  quadrant problem, solved full-domain (mirror BCs realized by
+  reflection): published quadrant means 1.676 / 4.159e-2 / 1.992e-3 vs
+  S8 1.6789 / 4.131e-2 / 1.915e-3 — 0.17% / 0.67% / 3.9% — with
+  machine-precision quadrant symmetry diagnostics.
 - `validation/canonical-reed-problem/` — Reed's (1971) heterogeneous
   slab, scored against the Warsa (2002) eigenfunction reference table.
   The mirror-domain case (periodic transverse boundaries, vacuum at

@@ -1773,9 +1773,12 @@ convention.
   mirror-domain Reed problem (two disjoint source slabs superposed by
   linearity) scored against the Warsa 2002 eigenfunction reference —
   flat regions ≤1%, scattering peak ~2% (angular truncation, halving
-  S4→S8); error budget attributed in the case README. Next: Azmy's
-  weighted-DD problem (published quadrant means 1.676 / 4.159e-2 /
-  1.992e-3) and a Kobayashi duct case. Each case ships generator +
+  S4→S8); error budget attributed in the case README.
+  `validation/canonical-azmy-problem/` (landed, verdict pass): the
+  weighted-DD quadrant problem solved full-domain — published quadrant
+  means 1.676 / 4.159e-2 / 1.992e-3 vs ours 1.6789 / 4.131e-2 /
+  1.915e-3 (0.17% / 0.67% / 3.9%), with machine-precision quadrant
+  symmetry. Next: a Kobayashi duct case. Each case ships generator +
   run script + comparison artifact + README with citations.
 - **R17-03 — MC↔S_N intercomparison harness.** Productized
   OpenMC-vs-deterministic comparison on a declared phantom: shared
