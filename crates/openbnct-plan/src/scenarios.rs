@@ -23,7 +23,7 @@
 //! trilinear-resampling approximation of a whole-field displacement —
 //! honest for millimetre-scale offsets, recorded as such.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use openbnct_core::{ContentReference, GridGeometry};
 use serde::{Deserialize, Serialize};
@@ -615,6 +615,105 @@ pub fn evaluate_scenarios(
     Ok((evaluations, bands))
 }
 
+/// Held-out comparison report contract.
+pub const HELDOUT_COMPARISON_SCHEMA: &str = "openbnct.heldout-comparison/0.1.0";
+
+/// One plan's evaluation across the held-out scenario set.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PlanComparison {
+    /// Plan result id.
+    pub plan: String,
+    /// Optimization method tag (`worst_case_scenario`, `qp`, …) — a
+    /// robust method is *not* evidence of held-out robustness.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub method: Option<String>,
+    /// Whether the optimizer reported convergence for this result.
+    /// Nonconverged plans stay comparable but the flag is part of the
+    /// comparison — a solver failure is not hidden.
+    pub converged: bool,
+    /// Per-scenario objective outcomes on the held-out set.
+    pub evaluations: Vec<ScenarioEvaluation>,
+    /// Per-objective bands across the held-out set.
+    pub bands: Vec<ObjectiveBand>,
+}
+
+/// Nominal-vs-robust (or any plan-vs-plan) comparison evaluated on a
+/// scenario set *disjoint from the set the weights were optimized
+/// against*. Performance on the optimization set is not independent
+/// robustness validation; the report carries the declared training set
+/// identity and refuses overlap.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct HeldOutComparisonReport {
+    #[serde(deserialize_with = "openbnct_core::deserialize_contract_id")]
+    pub schema_version: String,
+    pub id: String,
+    /// Content reference of the held-out scenario set.
+    pub scenario_set: openbnct_core::ContentReference,
+    /// Scenario names declared as the optimization (training) set.
+    /// Any overlap with the held-out set is an error — the comparison
+    /// would not be independent.
+    pub optimization_scenarios: Vec<String>,
+    pub plans: Vec<PlanComparison>,
+    pub qualification: String,
+    pub provenance_id: String,
+}
+
+/// Compare plan results on a held-out scenario set. Every result is
+/// evaluated by [`evaluate_scenarios`]; `optimization_scenarios` is the
+/// declared name set the compared weights were trained on — overlap
+/// with the held-out names is rejected, since the same-scenario fold
+/// is not an independent check.
+///
+/// For each plan the comparison preserves the per-objective bands —
+/// including the nominal-scenario achieved value, so the
+/// nominal-quality cost of robust weights stays visible next to the
+/// worst-case improvement.
+#[allow(clippy::too_many_arguments)]
+pub fn compare_plans_heldout(
+    results: &[crate::optimize::InversePlanResult],
+    spec: &crate::optimize::InversePlanObjective,
+    fields: &[crate::optimize::BeamDoseField],
+    geometry: &GridGeometry,
+    heldout: &PlanScenarioSet,
+    optimization_scenarios: &[String],
+    mask_voxels: &BTreeMap<String, Vec<usize>>,
+) -> Result<Vec<PlanComparison>, ScenarioError> {
+    heldout.validate()?;
+    let heldout_names: BTreeSet<&str> = heldout.scenarios.iter().map(|s| s.name.as_str()).collect();
+    let overlap: Vec<&str> = optimization_scenarios
+        .iter()
+        .map(String::as_str)
+        .filter(|n| heldout_names.contains(n))
+        .collect();
+    if !overlap.is_empty() {
+        return Err(ScenarioError::Invalid(format!(
+            "held-out set overlaps the optimization set: {} — evaluation on training scenarios is not independent validation",
+            overlap.join(", ")
+        )));
+    }
+    if results.is_empty() {
+        return Err(ScenarioError::Invalid(
+            "at least one plan result is required".into(),
+        ));
+    }
+    results
+        .iter()
+        .map(|result| {
+            let (evaluations, bands) =
+                evaluate_scenarios(result, spec, fields, geometry, heldout, mask_voxels)?;
+            Ok(PlanComparison {
+                plan: result.id.clone(),
+                method: result.method.clone(),
+                converged: result.converged,
+                evaluations,
+                bands,
+            })
+        })
+        .collect()
+}
+
 /// Optimize non-negative beam weights against the **worst case** of a
 /// declared scenario set — the robust-planning half of R16.
 ///
@@ -1123,6 +1222,108 @@ mod tests {
                 &[bare],
                 &geometry(),
                 &set(vec![s]),
+                &masks(),
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn heldout_robustness_improves_worst_case_with_visible_tradeoff() {
+        // Case A — robustness helps: nominal w=1.0 violates MaxMean on
+        // a held-out +40% output scale; robust w=0.5 meets it. The
+        // MinEud tumor objective shows the nominal-quality cost.
+        let mut robust = result();
+        robust.id = "robust".into();
+        robust.method = Some("worst_case_scenario".into());
+        robust.weights[0].weight = 0.5;
+
+        let mut up = scenario("heldout-scale-up");
+        up.dose_scale = Some(1.4);
+        let heldout = set(vec![up]);
+
+        let plans = compare_plans_heldout(
+            &[result(), robust],
+            &spec(),
+            &[field()],
+            &geometry(),
+            &heldout,
+            &["trained-scale-down".into()],
+            &masks(),
+        )
+        .unwrap();
+        let nominal_maxmean = &plans[0].bands[0];
+        let robust_maxmean = &plans[1].bands[0];
+        assert_eq!(
+            nominal_maxmean.violated_scenarios,
+            vec!["heldout-scale-up".to_string()]
+        );
+        assert!((nominal_maxmean.max_achieved - 4.2).abs() < 1e-12);
+        // Robust: 0.5·4.2 = 2.1 ≤ 2.5 — worst-case improves.
+        assert!(robust_maxmean.violated_scenarios.is_empty());
+        assert!((robust_maxmean.max_achieved - 2.1).abs() < 1e-12);
+        // Nominal-quality tradeoff: tumor EUD drops to 1.5 < target 2.0
+        // — the improvement cost is reported, not hidden.
+        let robust_eud = &plans[1].bands[1];
+        assert!((robust_eud.nominal_achieved - 1.5).abs() < 1e-12);
+        assert_eq!(robust_eud.worst_scenario, "nominal");
+    }
+
+    #[test]
+    fn heldout_omitted_uncertainty_invalidates_apparent_improvement() {
+        // Case B — the same robust plan's MaxMean headroom is
+        // invalidated by an uncertainty direction the optimization set
+        // never declared: boron uptake collapse held-out. The robust
+        // plan now fails MinEud on the held-out scenario — an omitted
+        // uncertainty, reported as a failed held-out scenario, not an
+        // apparent robustness.
+        let mut robust = result();
+        robust.id = "robust".into();
+        robust.method = Some("worst_case_scenario".into());
+        robust.weights[0].weight = 0.5;
+
+        let mut collapse = scenario("heldout-boron-collapse");
+        collapse.component_scales.insert("boron".into(), 0.0);
+        let heldout = set(vec![collapse]);
+
+        let plans = compare_plans_heldout(
+            &[result(), robust],
+            &spec(),
+            &[field()],
+            &geometry(),
+            &heldout,
+            &["trained-scale-up".into()],
+            &masks(),
+        )
+        .unwrap();
+        let robust_eud = &plans[1].bands[1];
+        // Collapsed boron → tumor voxel dose 0.5·2.0 = 1.0 < target 2.0.
+        assert_eq!(
+            robust_eud.violated_scenarios,
+            vec!["heldout-boron-collapse".to_string()]
+        );
+        assert!((robust_eud.min_achieved - 1.0).abs() < 1e-12);
+        // The nominal plan sits exactly at its bound (2.0) under the
+        // same scenario — the robust plan's apparent MaxMean headroom
+        // is bought by pushing MinEud below target, so the "improvement"
+        // from case A does not survive an omitted uncertainty direction.
+        let nominal_eud = &plans[0].bands[1];
+        assert!((nominal_eud.min_achieved - 2.0).abs() < 1e-12);
+        assert!(nominal_eud.violated_scenarios.is_empty());
+    }
+
+    #[test]
+    fn heldout_rejects_optimization_set_overlap() {
+        let mut up = scenario("heldout-scale-up");
+        up.dose_scale = Some(1.4);
+        assert!(
+            compare_plans_heldout(
+                &[result()],
+                &spec(),
+                &[field()],
+                &geometry(),
+                &set(vec![up]),
+                &["heldout-scale-up".into()],
                 &masks(),
             )
             .is_err()

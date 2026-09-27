@@ -2279,6 +2279,101 @@ fn make_biological_model(document: Bound<'_, PyAny>) -> PyResult<PyBiologicalMod
     })
 }
 
+/// A validated biological-parameter evidence library
+/// (`openbnct.bio-evidence-library/0.1.0`): records keep their context,
+/// uncertainty semantics, and extraction provenance — nothing is
+/// averaged into a single default.
+#[pyclass(frozen, name = "BioEvidenceLibrary")]
+struct PyBioEvidenceLibrary {
+    inner: openbnct_bio::BioEvidenceLibrary,
+}
+
+#[pymethods]
+impl PyBioEvidenceLibrary {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    /// `(record_id, parameter, value, unit)` tuples in library order.
+    fn record_ids(&self) -> Vec<(String, String, f64, String)> {
+        self.inner
+            .records
+            .iter()
+            .map(|r| {
+                (
+                    r.id.clone(),
+                    r.parameter.clone(),
+                    r.estimate.value,
+                    r.estimate.unit.clone(),
+                )
+            })
+            .collect()
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+}
+
+/// Load and validate a `openbnct.bio-evidence-library/0.1.0` document.
+#[pyfunction]
+fn load_bio_evidence_library(path: PathBuf) -> PyResult<PyBioEvidenceLibrary> {
+    let bytes = fs::read(&path).map_err(reject)?;
+    let library: openbnct_bio::BioEvidenceLibrary =
+        serde_json::from_slice(&bytes).map_err(reject)?;
+    library.validate().map_err(reject)?;
+    Ok(PyBioEvidenceLibrary { inner: library })
+}
+
+/// Search a bio-evidence library against a declared context. Returns a
+/// JSON array of `{id, parameter, value, unit, applicability, reasons}`
+/// objects — exact first, unsupported last. Partial applicability
+/// always carries the mismatch reasons that a declared transfer
+/// assumption must cover.
+#[pyfunction]
+#[pyo3(signature = (library, compound=None, species=None, tissue=None, endpoint=None, model_family=None))]
+fn search_bio_evidence(
+    library: &PyBioEvidenceLibrary,
+    compound: Option<String>,
+    species: Option<String>,
+    tissue: Option<String>,
+    endpoint: Option<String>,
+    model_family: Option<String>,
+) -> PyResult<String> {
+    let query = openbnct_bio::ContextQuery {
+        compound,
+        species,
+        tissue,
+        endpoint,
+        model_family,
+    };
+    let hits: Vec<serde_json::Value> = openbnct_bio::search(&library.inner, &query)
+        .into_iter()
+        .map(|(record, applicability)| {
+            let (label, reasons) = match applicability {
+                openbnct_bio::Applicability::Exact => ("exact", Vec::new()),
+                openbnct_bio::Applicability::Partial(r) => ("partial", r),
+                openbnct_bio::Applicability::Unsupported(r) => ("unsupported", r),
+            };
+            serde_json::json!({
+                "id": record.id,
+                "parameter": record.parameter,
+                "value": record.estimate.value,
+                "unit": record.estimate.unit,
+                "applicability": label,
+                "reasons": reasons,
+            })
+        })
+        .collect();
+    serde_json::to_string_pretty(&hits).map_err(reject)
+}
+
 /// A validated cross-model biological comparison artifact.
 #[pyclass(frozen, name = "BioModelComparison")]
 struct PyBioModelComparison {
@@ -4087,8 +4182,7 @@ fn avify_status(receipt: PathBuf) -> PyResult<String> {
 #[pyfunction]
 #[pyo3(signature = (outdir, reviewer, note=""))]
 fn avify_review(outdir: PathBuf, reviewer: &str, note: &str) -> PyResult<String> {
-    let review =
-        openbnct_avify::write_review(&outdir, reviewer, note).map_err(reject)?;
+    let review = openbnct_avify::write_review(&outdir, reviewer, note).map_err(reject)?;
     serde_json::to_string_pretty(&review).map_err(reject)
 }
 
@@ -4133,6 +4227,7 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyBiologicalModel>()?;
     m.add_class::<PyBiologicalDoseBundle>()?;
     m.add_class::<PyBioModelComparison>()?;
+    m.add_class::<PyBioEvidenceLibrary>()?;
     m.add_class::<PyAppliedFractionation>()?;
     m.add_class::<PyDoseVolumeHistogram>()?;
     m.add_class::<PyRegionDoseMetrics>()?;
@@ -4190,6 +4285,8 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(collect_run, m)?)?;
     m.add_function(wrap_pyfunction!(load_biological_model, m)?)?;
     m.add_function(wrap_pyfunction!(load_bio_model_comparison, m)?)?;
+    m.add_function(wrap_pyfunction!(load_bio_evidence_library, m)?)?;
+    m.add_function(wrap_pyfunction!(search_bio_evidence, m)?)?;
     m.add_function(wrap_pyfunction!(make_biological_model, m)?)?;
     m.add_function(wrap_pyfunction!(apply_model, m)?)?;
     m.add_function(wrap_pyfunction!(compute_dvh, m)?)?;

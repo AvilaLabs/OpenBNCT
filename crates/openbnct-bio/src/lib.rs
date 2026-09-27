@@ -21,6 +21,7 @@ mod bed;
 mod cell_microdosimetry;
 mod compare;
 mod endpoint;
+mod evidence;
 mod isoeffective;
 mod lineal_tally;
 mod mkm;
@@ -50,6 +51,12 @@ pub use endpoint::{
     AppliedDoseStatistic, DoseStatistic, ENDPOINT_EVALUATION_SCHEMA, ENDPOINT_MODEL_SCHEMA,
     EndpointEvaluation, EndpointFunction, EndpointKind, EndpointModel, EvaluatedEndpoint,
     UtcpCombination, UtcpComponents, combine_utcp, combine_utcp_multi, evaluate_endpoint,
+};
+pub use evidence::{
+    Applicability, BIO_EVIDENCE_LIBRARY_SCHEMA, BioEvidenceLibrary, ContextQuery,
+    EstimateUncertainty, EvidenceError, ExperimentalContext, ExtractionRecord, JointUncertainty,
+    ParameterEstimate, ParameterRecord, ValueKind, applicability, search, to_biological_model,
+    to_joint_source,
 };
 pub use isoeffective::{
     ISOEFFECTIVE_MODEL_SCHEMA, Irradiation, IsoeApplied, IsoeComponent, IsoeffectiveModel,

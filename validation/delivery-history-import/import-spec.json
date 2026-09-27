@@ -1,0 +1,82 @@
+{
+  "schema_version": "openbnct.delivery-csv-import/0.1.0",
+  "history_id": "openbnct.delivery-history.synthetic-fixture.v1",
+  "session_id": "synthetic-session-0001",
+  "coordinate_frame": "iec61217_table_top",
+  "qualification": "synthetic_research_only",
+  "provenance_id": "delivery-import:synthetic-fixture",
+  "delimiter": ",",
+  "comment": "#",
+  "beams": [
+    {
+      "id": "epithermal-1",
+      "beam": {
+        "id": "synthetic-beam-description",
+        "sha256": "5d2fb88f1e51617f4d9f383b9cbb4f89c78b042cfb43f1b0f00f625cbba96bd8"
+      },
+      "calibration": {
+        "id": "synthetic-calibration-2026w01",
+        "sha256": "1e9c7f04f6d0b65f49e8a2d6b2d3d9c04f8c1a2b3e4d5f60718293a4b5c6d7e8"
+      },
+      "calibration_valid": [
+        0.0,
+        7200.0
+      ]
+    }
+  ],
+  "streams": [
+    {
+      "stream_id": "monitor-counts",
+      "kind": "cumulative_counter",
+      "unit": "counts",
+      "beam": "epithermal-1",
+      "counter_bits": 16,
+      "clock": {
+        "name": "accelerator_monotonic",
+        "offset_seconds": 0.0,
+        "timing_uncertainty_seconds": 0.05,
+        "epoch": "2026-01-01T09:00:00Z"
+      },
+      "csv": "monitor.csv",
+      "columns": {
+        "time": "t_s",
+        "value": "cum_counts",
+        "quality": "quality",
+        "reset": "reset_marker"
+      }
+    },
+    {
+      "stream_id": "beam-state",
+      "kind": "beam_state",
+      "unit": "1",
+      "beam": "epithermal-1",
+      "clock": {
+        "name": "accelerator_monotonic",
+        "offset_seconds": 0.0,
+        "timing_uncertainty_seconds": 0.05,
+        "epoch": "2026-01-01T09:00:00Z"
+      },
+      "csv": "beam-state.csv",
+      "columns": {
+        "time": "t_s",
+        "value": "state"
+      }
+    },
+    {
+      "stream_id": "blood-assay",
+      "kind": "instantaneous",
+      "unit": "ug/g",
+      "available_at_seconds": 7200.0,
+      "clock": {
+        "name": "lab_ntp",
+        "offset_seconds": 0.0,
+        "timing_uncertainty_seconds": 30.0
+      },
+      "csv": "assay.csv",
+      "columns": {
+        "time": "t_s",
+        "value": "conc_ug_g"
+      }
+    }
+  ]
+}

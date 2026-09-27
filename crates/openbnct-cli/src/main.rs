@@ -331,6 +331,25 @@ enum Command {
     /// positioning, component-relative) into per-voxel and region-mean
     /// dose uncertainty (`openbnct.systematic-uncertainty/0.1.0`).
     Uq(UqArgs),
+    /// Inspect and verify the benchmark/validation evidence catalogue
+    /// (`openbnct.benchmark-catalogue/0.1.0`). Read-only — never
+    /// modifies the referenced evidence files.
+    Bench(BenchArgs),
+    /// Import and inspect normalized delivery histories
+    /// (`openbnct.delivery-history/0.1.0`). Read-only import — no beam
+    /// control, record modification, or upload.
+    Delivery(DeliveryArgs),
+    /// Reconstruct accumulated physical dose from a recorded delivery
+    /// history (`openbnct.dose-replay/0.1.0` spec → reconstructed bundle
+    /// + `openbnct.dose-replay-report/0.1.0`).
+    Replay(ReplayArgs),
+    /// Validate and whitelist-filter dose-to-outcome study exports
+    /// (`openbnct.outcomes-export/0.1.0`).
+    Outcomes(OutcomesArgs),
+    /// Inspect and verify a qualification-readiness record
+    /// (`openbnct.qualification-record/0.1.0`) against the benchmark
+    /// catalogue.
+    Qual(QualArgs),
     /// Variance reduction: resolve a `openbnct.variance-reduction/0.1.0`
     /// spec into a `openbnct.weight-windows/0.1.0` artifact and validate a
     /// variance-reduced run against an analog reference.
@@ -891,6 +910,18 @@ enum BoronCommand {
         #[command(subcommand)]
         command: BoronMicrodistributionCommand,
     },
+    /// Sequential measurement-informed boron estimation over a declared
+    /// low-dimensional state (`openbnct.boron-inference/0.1.0` spec →
+    /// `openbnct.boron-inference-report/0.1.0`). Reports unresolved
+    /// state directions explicitly rather than a falsely precise map.
+    Infer {
+        /// `openbnct.boron-inference/0.1.0` spec JSON.
+        #[arg(long)]
+        spec: PathBuf,
+        /// New output path for the report JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
 }
 
 #[derive(Debug, Subcommand)]
@@ -975,6 +1006,55 @@ enum UqCommand {
         /// `openbnct.systematic-uncertainty/0.1.0` JSON document.
         #[arg(long)]
         report: PathBuf,
+    },
+    /// Evaluate a `openbnct.joint-dose-ensemble-spec/0.1.0` request over a
+    /// `openbnct.joint-uncertainty-input/0.1.0` declaration, emitting a
+    /// `openbnct.joint-uncertainty-report/0.1.0`. Correlated/shared
+    /// sources are drawn once per realization; per-target sources draw
+    /// independently.
+    Joint {
+        /// Physical dose bundle JSON — `gray_per_source_particle` rate
+        /// units when the spec requests PK integration.
+        #[arg(long)]
+        dose: PathBuf,
+        /// `openbnct.joint-uncertainty-input/0.1.0` JSON.
+        #[arg(long)]
+        joint: PathBuf,
+        /// `openbnct.joint-dose-ensemble-spec/0.1.0` JSON.
+        #[arg(long)]
+        spec: PathBuf,
+        /// `openbnct.pk-model/0.1.0` JSON — required when the spec's
+        /// `pk` block is set.
+        #[arg(long)]
+        pk_model: Option<PathBuf>,
+        /// Region masks as `NAME=path`; repeatable.
+        #[arg(long = "mask")]
+        masks: Vec<String>,
+        /// Report id.
+        #[arg(long)]
+        id: String,
+        /// New output path for the report JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Validate and print a joint-uncertainty report.
+    JointInfo {
+        /// `openbnct.joint-uncertainty-report/0.1.0` JSON document.
+        #[arg(long)]
+        report: PathBuf,
+    },
+    /// Expected value of information: rank proposed measurements by
+    /// their exact expected reduction in metric variance under the
+    /// declared linear-Gaussian model (`openbnct.voi-evaluation/0.1.0`
+    /// spec → `openbnct.voi-report/0.1.0`). Compares research designs;
+    /// it does not schedule care or control equipment.
+    Voi {
+        /// `openbnct.voi-evaluation/0.1.0` spec JSON.
+        #[arg(long)]
+        spec: PathBuf,
+        /// New output path for the report JSON.
+        #[arg(long)]
+        output: PathBuf,
     },
     /// Propagate a `openbnct.multigroup-covariance/0.1.0` artifact
     /// through the deterministic S_N solve (central-difference
@@ -1090,6 +1170,184 @@ enum UqCommand {
         /// `openbnct.sensitivity-screening/0.1.0` JSON document.
         #[arg(long)]
         report: PathBuf,
+    },
+}
+
+#[derive(Debug, Args)]
+struct BenchArgs {
+    #[command(subcommand)]
+    command: BenchCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum BenchCommand {
+    /// Validate a `openbnct.benchmark-catalogue/0.1.0` document and
+    /// print its entries with status and evidence counts.
+    Info {
+        /// Catalogue JSON document.
+        #[arg(long)]
+        catalogue: PathBuf,
+    },
+    /// Print one catalogue entry's full record — evidence items,
+    /// tolerances, limitations.
+    Report {
+        /// Catalogue JSON document.
+        #[arg(long)]
+        catalogue: PathBuf,
+        /// Catalogue entry id.
+        #[arg(long)]
+        entry: String,
+    },
+    /// Read-only verification: resolve every referenced file under
+    /// `--root`, re-hash declared artifacts, and report broken
+    /// references plus absent license/uncertainty metadata. Exits
+    /// nonzero when error-severity findings exist. Optionally writes a
+    /// `openbnct.benchmark-report/0.1.0` JSON.
+    Verify {
+        /// Catalogue JSON document.
+        #[arg(long)]
+        catalogue: PathBuf,
+        /// Repository/catalogue root the entry paths resolve under.
+        #[arg(long, default_value = ".")]
+        root: PathBuf,
+        /// Report id (required with `--output`).
+        #[arg(long, requires = "output")]
+        id: Option<String>,
+        /// New output path for the verification report JSON.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, Args)]
+struct DeliveryArgs {
+    #[command(subcommand)]
+    command: DeliveryCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum DeliveryCommand {
+    /// Import one or more CSV streams into a normalized
+    /// `openbnct.delivery-history/0.1.0` document under a declared
+    /// `openbnct.delivery-csv-import/0.1.0` mapping spec. Diagnostics
+    /// (rejected rows, reordered samples, dropped duplicates, resolved
+    /// rollovers) are printed per stream and stay inspectable.
+    Import {
+        /// Import-mapping spec JSON.
+        #[arg(long)]
+        spec: PathBuf,
+        /// New output path for the delivery-history JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Validate a `openbnct.delivery-history/0.1.0` document and print
+    /// its streams, coverage, gaps, and calibration-window status.
+    Info {
+        /// Delivery-history JSON document.
+        #[arg(long)]
+        history: PathBuf,
+        /// Optional `[t_start, t_end]` session window for gap analysis
+        /// (comma-separated seconds).
+        #[arg(long, value_delimiter = ',')]
+        window: Option<Vec<f64>>,
+    },
+}
+
+#[derive(Debug, Args)]
+struct ReplayArgs {
+    #[command(subcommand)]
+    command: ReplayCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum ReplayCommand {
+    /// Run a dose replay: integrate recorded output (× concentration for
+    /// boron) over delivered beam-on intervals, emit the reconstructed
+    /// physical dose bundle and a reconstruction report. Physical dose
+    /// only — biological equivalence is marked unavailable on
+    /// interrupted histories.
+    Run {
+        /// `openbnct.dose-replay/0.1.0` spec JSON.
+        #[arg(long)]
+        spec: PathBuf,
+        /// `openbnct.delivery-history/0.1.0` document.
+        #[arg(long)]
+        history: PathBuf,
+        /// Per-beam rate bundle, `BEAM_ID=path`, once per spec beam.
+        /// Bundles carry `gray_per_source_particle` rate maps.
+        #[arg(long, required = true)]
+        bundle: Vec<String>,
+        /// Optional planned dose bundle for reconstructed-vs-planned deltas.
+        #[arg(long)]
+        planned: Option<PathBuf>,
+        /// New output path for the reconstructed bundle JSON.
+        #[arg(long)]
+        bundle_output: PathBuf,
+        /// New output path for the replay report JSON.
+        #[arg(long)]
+        report_output: PathBuf,
+    },
+}
+
+#[derive(Debug, Args)]
+struct OutcomesArgs {
+    #[command(subcommand)]
+    command: OutcomesCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum OutcomesCommand {
+    /// Validate an `openbnct.outcomes-export/0.1.0` document: linkage,
+    /// chronology, endpoint-system consistency, missingness semantics.
+    Validate {
+        /// Export JSON document.
+        #[arg(long)]
+        export: PathBuf,
+    },
+    /// Apply a field whitelist and emit the filtered export plus the
+    /// list of excluded paths — a software check, not a certification
+    /// of anonymization.
+    Export {
+        /// Export JSON document.
+        #[arg(long)]
+        export: PathBuf,
+        /// Whitelist JSON: `{ "section": ["field", ...] }` — a section
+        /// maps to an empty array to keep it wholesale; an absent
+        /// section is excluded and reported.
+        #[arg(long)]
+        whitelist: PathBuf,
+        /// New output path for the filtered export JSON.
+        #[arg(long)]
+        output: PathBuf,
+        /// New output path for the exclusion list JSON.
+        #[arg(long)]
+        excluded_output: Option<PathBuf>,
+    },
+}
+
+#[derive(Debug, Args)]
+struct QualArgs {
+    #[command(subcommand)]
+    command: QualCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum QualCommand {
+    /// Validate and print a qualification-readiness record.
+    Info {
+        /// `openbnct.qualification-record/0.1.0` JSON.
+        #[arg(long)]
+        record: PathBuf,
+    },
+    /// Verify every claim's evidence against the benchmark catalogue's
+    /// entry ids and content bindings.
+    Verify {
+        /// `openbnct.qualification-record/0.1.0` JSON.
+        #[arg(long)]
+        record: PathBuf,
+        /// `openbnct.benchmark-catalogue/0.1.0` JSON.
+        #[arg(long)]
+        catalogue: PathBuf,
     },
 }
 
@@ -2436,6 +2694,42 @@ enum PlanCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Compare plan results (nominal vs robust weights) on a held-out
+    /// scenario set — the set must be disjoint from the scenarios the
+    /// weights were optimized against, declared via `--trained-on`.
+    /// Emits `openbnct.heldout-comparison/0.1.0`.
+    Compare {
+        /// `openbnct.inverse-plan-result` JSON per compared plan;
+        /// repeatable.
+        #[arg(long, required = true)]
+        result: Vec<PathBuf>,
+        /// The `openbnct.inverse-plan-objective` JSON all results were
+        /// optimized under (hash-verified per result).
+        #[arg(long)]
+        objective: PathBuf,
+        /// Held-out `openbnct.scenario-set/0.1.0` JSON.
+        #[arg(long)]
+        scenario_set: PathBuf,
+        /// `openbnct.scenario-set/0.1.0` JSON of the scenarios the
+        /// robust weights were optimized against. Overlap with the
+        /// held-out set fails — same-scenario performance is not
+        /// independent robustness validation.
+        #[arg(long)]
+        trained_on: PathBuf,
+        /// Per-beam `openbnct.physical-dose-bundle` JSON in the same
+        /// order `plan optimize` consumed them; repeatable.
+        #[arg(long, required = true)]
+        dose: Vec<PathBuf>,
+        /// `RegionMask` JSON; repeatable.
+        #[arg(long, required = true)]
+        mask: Vec<PathBuf>,
+        /// Report identifier.
+        #[arg(long, default_value = "openbnct.heldout-comparison")]
+        id: String,
+        /// Output path for the comparison report JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Enumerate beam-direction candidates over an azimuth×elevation
     /// grid and rank them by tissue path length to the aim-mask
     /// centroid — the zero-transport pre-filter that selects which
@@ -3575,6 +3869,86 @@ enum BioCommand {
         #[arg(long)]
         provenance_id: Option<String>,
         /// New output path for the SMK evaluation JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Biological-parameter evidence library: search records against a
+    /// declared context, inspect one record, or convert selected
+    /// records into a biological-model document.
+    Evidence(BioEvidenceArgs),
+}
+
+#[derive(Debug, Args)]
+struct BioEvidenceArgs {
+    #[command(subcommand)]
+    command: BioEvidenceCommand,
+}
+
+#[derive(Debug, Subcommand)]
+enum BioEvidenceCommand {
+    /// Search a `openbnct.bio-evidence-library/0.1.0` library against an
+    /// optional context; every record prints with its applicability
+    /// (exact / partial / unsupported) and reasons.
+    Search {
+        /// Library JSON document.
+        #[arg(long)]
+        library: PathBuf,
+        #[arg(long)]
+        compound: Option<String>,
+        #[arg(long)]
+        species: Option<String>,
+        #[arg(long)]
+        tissue: Option<String>,
+        #[arg(long)]
+        endpoint: Option<String>,
+        #[arg(long)]
+        model_family: Option<String>,
+    },
+    /// Print one record's full record.
+    Info {
+        /// Library JSON document.
+        #[arg(long)]
+        library: PathBuf,
+        /// Record id.
+        #[arg(long)]
+        record: String,
+    },
+    /// Convert `component=record-id` bindings into a
+    /// `openbnct.biological-model/0.2.0` document. A binding whose
+    /// record only partially matches the declared context requires a
+    /// `--assumption`; unsupported bindings fail outright.
+    ToModel {
+        /// Library JSON document.
+        #[arg(long)]
+        library: PathBuf,
+        /// `COMPONENT=RECORD_ID`; all four components must be bound.
+        /// repeatable.
+        #[arg(long = "weight", required = true)]
+        weights: Vec<String>,
+        /// `REGION:COMPONENT=RECORD_ID` region override; repeatable.
+        /// Each named region starts from the global weights, so the
+        /// emitted region map stays a complete four-component table.
+        #[arg(long = "region-weight")]
+        region_weights: Vec<String>,
+        /// `fixed_per_component` or `photon_isoeffective`.
+        #[arg(long, default_value = "photon_isoeffective")]
+        semantics: String,
+        #[arg(long)]
+        compound: Option<String>,
+        #[arg(long)]
+        species: Option<String>,
+        #[arg(long)]
+        tissue: Option<String>,
+        #[arg(long)]
+        endpoint: Option<String>,
+        /// Declared transfer assumption for partial-context bindings;
+        /// repeatable.
+        #[arg(long = "assumption")]
+        assumptions: Vec<String>,
+        /// Emitted model id.
+        #[arg(long)]
+        id: String,
+        /// New output path for the biological-model JSON.
         #[arg(long)]
         output: PathBuf,
     },
@@ -8674,6 +9048,173 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     );
                 }
             }
+            BioCommand::Evidence(args) => match args.command {
+                BioEvidenceCommand::Search {
+                    library,
+                    compound,
+                    species,
+                    tissue,
+                    endpoint,
+                    model_family,
+                } => {
+                    let lib: openbnct_bio::BioEvidenceLibrary =
+                        serde_json::from_slice(&fs::read(&library)?)?;
+                    lib.validate()
+                        .map_err(|error| io::Error::other(error.to_string()))?;
+                    let query = openbnct_bio::ContextQuery {
+                        compound,
+                        species,
+                        tissue,
+                        endpoint,
+                        model_family,
+                    };
+                    for (record, applicability) in openbnct_bio::search(&lib, &query) {
+                        let label = match &applicability {
+                            openbnct_bio::Applicability::Exact => "exact".to_string(),
+                            openbnct_bio::Applicability::Partial(r) => {
+                                format!("partial ({})", r.join("; "))
+                            }
+                            openbnct_bio::Applicability::Unsupported(r) => {
+                                format!("unsupported ({})", r.join("; "))
+                            }
+                        };
+                        println!(
+                            "  {:36} {:14} {} {} — {}",
+                            record.id,
+                            record.parameter,
+                            record.estimate.value,
+                            record.estimate.unit,
+                            label
+                        );
+                    }
+                }
+                BioEvidenceCommand::Info { library, record } => {
+                    let lib: openbnct_bio::BioEvidenceLibrary =
+                        serde_json::from_slice(&fs::read(&library)?)?;
+                    lib.validate()
+                        .map_err(|error| io::Error::other(error.to_string()))?;
+                    let found = lib
+                        .record(&record)
+                        .ok_or_else(|| io::Error::other(format!("unknown record {record:?}")))?;
+                    println!(
+                        "{}: {} = {} {}",
+                        found.id, found.parameter, found.estimate.value, found.estimate.unit
+                    );
+                    println!("  uncertainty: {:?}", found.estimate.uncertainty);
+                    println!("  value_kind: {:?}", found.provenance.value_kind);
+                    println!("  source: {}", found.provenance.source);
+                    if let Some(location) = &found.provenance.location {
+                        println!("  location: {location}");
+                    }
+                    if let Some(sample) = found.provenance.sample_size {
+                        println!("  sample_size: {sample}");
+                    }
+                    println!(
+                        "  reviewed_by: {}",
+                        found
+                            .provenance
+                            .reviewed_by
+                            .as_deref()
+                            .unwrap_or("(not reviewed)")
+                    );
+                    if let Some(compound) = &found.context.compound {
+                        println!("  compound: {compound}");
+                    }
+                    if let Some(species) = &found.context.species {
+                        println!("  species: {species}");
+                    }
+                    if let Some(tissue) = &found.context.tissue {
+                        println!("  tissue: {tissue}");
+                    }
+                    if let Some(endpoint) = &found.context.endpoint {
+                        println!("  endpoint: {endpoint}");
+                    }
+                    for limit in &found.applicability_limits {
+                        println!("  limit: {limit}");
+                    }
+                }
+                BioEvidenceCommand::ToModel {
+                    library,
+                    weights,
+                    region_weights,
+                    semantics,
+                    compound,
+                    species,
+                    tissue,
+                    endpoint,
+                    assumptions,
+                    id,
+                    output,
+                } => {
+                    let lib: openbnct_bio::BioEvidenceLibrary =
+                        serde_json::from_slice(&fs::read(&library)?)?;
+                    lib.validate()
+                        .map_err(|error| io::Error::other(error.to_string()))?;
+                    let semantics = match semantics.as_str() {
+                        "fixed_per_component" => openbnct_bio::WeightSemantics::FixedPerComponent,
+                        "photon_isoeffective" => openbnct_bio::WeightSemantics::PhotonIsoeffective,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "unsupported weight semantics {other:?}"
+                            ))
+                            .into());
+                        }
+                    };
+                    let mut bindings = Vec::new();
+                    for pair in &weights {
+                        let (component, record_id) = pair.split_once('=').ok_or_else(|| {
+                            io::Error::other(format!(
+                                "--weight expects COMPONENT=RECORD_ID, got {pair:?}"
+                            ))
+                        })?;
+                        let record = lib.record(record_id).ok_or_else(|| {
+                            io::Error::other(format!("unknown record {record_id:?}"))
+                        })?;
+                        bindings.push((component, record));
+                    }
+                    let mut region_bindings = Vec::new();
+                    for triple in &region_weights {
+                        let (region_component, record_id) =
+                            triple.split_once('=').ok_or_else(|| {
+                                io::Error::other(format!(
+                                    "--region-weight expects REGION:COMPONENT=RECORD_ID, got {triple:?}"
+                                ))
+                            })?;
+                        let (region, component) =
+                            region_component.split_once(':').ok_or_else(|| {
+                                io::Error::other(format!(
+                                    "--region-weight expects REGION:COMPONENT=RECORD_ID, got {triple:?}"
+                                ))
+                            })?;
+                        let record = lib.record(record_id).ok_or_else(|| {
+                            io::Error::other(format!("unknown record {record_id:?}"))
+                        })?;
+                        region_bindings.push((region.to_string(), component.to_string(), record));
+                    }
+                    let context = openbnct_bio::ContextQuery {
+                        compound,
+                        species,
+                        tissue,
+                        endpoint,
+                        model_family: Some(openbnct_bio::BIOLOGICAL_MODEL_SCHEMA.to_string()),
+                    };
+                    let model = openbnct_bio::to_biological_model(
+                        &id,
+                        semantics,
+                        openbnct_core::DoseUnit::GrayPerSourceParticle,
+                        &bindings,
+                        &context,
+                        &assumptions,
+                        &region_bindings,
+                    )
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                    write_new_json(&output, &model)?;
+                    println!("wrote biological model at {}", output.display());
+                    for (component, record) in &bindings {
+                        println!("  {component}: {}", record.id);
+                    }
+                }
+            },
         },
         Some(Command::Dvh {
             dose,
@@ -11536,6 +12077,173 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     );
                 }
                 println!("scenarios: {}", output.display());
+            }
+            PlanCommand::Compare {
+                result,
+                objective,
+                scenario_set,
+                trained_on,
+                dose,
+                mask,
+                id,
+                output,
+            } => {
+                use openbnct_plan::optimize::{InversePlanObjective, InversePlanResult};
+                use openbnct_plan::scenarios::{
+                    HELDOUT_COMPARISON_SCHEMA, HeldOutComparisonReport, PlanScenarioSet,
+                    compare_plans_heldout,
+                };
+                let spec_bytes = fs::read(&objective)?;
+                let spec: InversePlanObjective =
+                    serde_json::from_slice(&spec_bytes).map_err(|error| {
+                        io::Error::other(format!("inverse-plan objective: {error}"))
+                    })?;
+                let spec_sha = openbnct_evidence::sha256_hex(&spec_bytes);
+                let mut plan_results = Vec::with_capacity(result.len());
+                for path in &result {
+                    let plan_result: InversePlanResult = serde_json::from_slice(&fs::read(path)?)
+                        .map_err(|error| {
+                        io::Error::other(format!("{}: {error}", path.display()))
+                    })?;
+                    if plan_result.objective.sha256 != format!("sha256:{spec_sha}") {
+                        return Err(io::Error::other(format!(
+                            "{}: objective hash mismatch — result binds {}",
+                            path.display(),
+                            plan_result.objective.sha256
+                        ))
+                        .into());
+                    }
+                    plan_results.push(plan_result);
+                }
+                let scenario_bytes = fs::read(&scenario_set)?;
+                let heldout: PlanScenarioSet = serde_json::from_slice(&scenario_bytes)
+                    .map_err(|error| io::Error::other(format!("scenario set: {error}")))?;
+                let trained: PlanScenarioSet = serde_json::from_slice(&fs::read(&trained_on)?)
+                    .map_err(|error| {
+                        io::Error::other(format!("trained-on scenario set: {error}"))
+                    })?;
+                let trained_names: Vec<String> =
+                    trained.scenarios.iter().map(|s| s.name.clone()).collect();
+
+                let comp_name = |c: openbnct_core::DoseComponent| match c {
+                    openbnct_core::DoseComponent::Boron => "boron",
+                    openbnct_core::DoseComponent::Nitrogen => "nitrogen",
+                    openbnct_core::DoseComponent::Hydrogen => "hydrogen",
+                    openbnct_core::DoseComponent::Photon => "photon",
+                };
+                let mut fields = Vec::with_capacity(dose.len());
+                let mut geometry: Option<openbnct_core::GridGeometry> = None;
+                for path in &dose {
+                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)?;
+                    bundle
+                        .validate()
+                        .map_err(|error| io::Error::other(error.to_string()))?;
+                    match &geometry {
+                        Some(g) if *g != bundle.geometry => {
+                            return Err(io::Error::other(format!(
+                                "{}: beam fields must share one grid",
+                                path.display()
+                            ))
+                            .into());
+                        }
+                        None => geometry = Some(bundle.geometry.clone()),
+                        _ => {}
+                    }
+                    let components: std::collections::BTreeMap<String, Vec<f64>> = bundle
+                        .components
+                        .iter()
+                        .map(|volume| {
+                            (
+                                comp_name(volume.component).to_string(),
+                                volume.values.clone(),
+                            )
+                        })
+                        .collect();
+                    fields.push(openbnct_plan::optimize::BeamDoseField {
+                        name: path
+                            .file_stem()
+                            .map(|s| s.to_string_lossy().into_owned())
+                            .unwrap_or_else(|| path.display().to_string()),
+                        values: bundle.physical_total.values.clone(),
+                        components: Some(components),
+                    });
+                }
+                let geometry = geometry
+                    .ok_or_else(|| io::Error::other("--dose requires at least one beam field"))?;
+                let mut mask_voxels: std::collections::BTreeMap<String, Vec<usize>> =
+                    std::collections::BTreeMap::new();
+                for path in &mask {
+                    let region: RegionMask =
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("{}: {error}", path.display()))
+                        })?;
+                    let voxels: Vec<usize> = region
+                        .voxels
+                        .iter()
+                        .enumerate()
+                        .filter_map(|(v, &on)| on.then_some(v))
+                        .collect();
+                    mask_voxels.insert(region.name.clone(), voxels);
+                }
+
+                let plans = compare_plans_heldout(
+                    &plan_results,
+                    &spec,
+                    &fields,
+                    &geometry,
+                    &heldout,
+                    &trained_names,
+                    &mask_voxels,
+                )
+                .map_err(|error| io::Error::other(format!("held-out comparison: {error}")))?;
+                let report = HeldOutComparisonReport {
+                    schema_version: HELDOUT_COMPARISON_SCHEMA.into(),
+                    id,
+                    scenario_set: openbnct_core::ContentReference {
+                        id: heldout.id.clone(),
+                        sha256: format!(
+                            "sha256:{}",
+                            openbnct_evidence::sha256_hex(&scenario_bytes)
+                        ),
+                    },
+                    optimization_scenarios: trained_names,
+                    plans,
+                    qualification: "inverse_plan_heldout_research_only_not_clinical".into(),
+                    provenance_id: format!(
+                        "plan-compare:{}",
+                        &openbnct_evidence::sha256_hex(&scenario_bytes)[..12]
+                    ),
+                };
+                write_new_json(&output, &report)?;
+                for plan in &report.plans {
+                    println!(
+                        "plan {} ({}){}:",
+                        plan.plan,
+                        plan.method.as_deref().unwrap_or("nominal"),
+                        if plan.converged {
+                            ""
+                        } else {
+                            " [NOT CONVERGED]"
+                        }
+                    );
+                    for band in &plan.bands {
+                        println!(
+                            "  {} {}: nominal {:.6e} held-out band [{:.6e}, {:.6e}] worst {:?}{}",
+                            band.kind,
+                            band.mask,
+                            band.nominal_achieved,
+                            band.min_achieved,
+                            band.max_achieved,
+                            band.worst_scenario,
+                            if band.violated_scenarios.is_empty() {
+                                String::new()
+                            } else {
+                                format!(" — violated by {}", band.violated_scenarios.join(", "))
+                            }
+                        );
+                    }
+                }
+                println!("held-out comparison: {}", output.display());
             }
             PlanCommand::Directions {
                 case,
@@ -14487,6 +15195,40 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     correction.intercellular_dose_cv
                 );
             }
+            BoronCommand::Infer { spec, output } => {
+                let spec_doc: openbnct_evidence::BoronInferenceSpec =
+                    serde_json::from_slice(&fs::read(&spec)?)?;
+                let report = openbnct_evidence::run_boron_inference(&spec_doc)
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                write_new_json(&output, &report)?;
+                println!("boron-inference report at {}", output.display());
+                if let Some(last) = report.estimates.last() {
+                    for (i, s) in spec_doc.states.iter().enumerate() {
+                        println!(
+                            "  {} = {:.4} ± {:.4} {} (post/prior σ {:.2})",
+                            s.id,
+                            last.mean[i],
+                            last.sd[i],
+                            s.unit,
+                            report
+                                .posterior_to_prior_sd
+                                .iter()
+                                .find(|(id, _)| id == &s.id)
+                                .map(|(_, r)| *r)
+                                .unwrap_or(f64::NAN)
+                        );
+                    }
+                }
+                for u in &report.unresolved {
+                    println!(
+                        "  unresolved direction {:?} (post/prior {:.2})",
+                        u.direction, u.posterior_to_prior
+                    );
+                }
+                for (a, b) in &report.unobserved_intervals {
+                    println!("  unobserved span [{a:.0}, {b:.0}) s");
+                }
+            }
         },
         Some(Command::Uq(args)) => match args.command {
             UqCommand::Propagate {
@@ -15032,6 +15774,580 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     .copied()
                     .fold(0.0_f64, f64::max);
                 println!("max per-voxel systematic σ: {sys_max:.4e}");
+            }
+            UqCommand::Joint {
+                dose,
+                joint,
+                spec,
+                pk_model,
+                masks,
+                id,
+                output,
+            } => {
+                let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(&dose)?)?;
+                bundle
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let input: openbnct_core::JointUncertaintyInput =
+                    serde_json::from_slice(&fs::read(&joint)?)?;
+                input
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let spec_doc: openbnct_evidence::JointDoseEnsembleSpec =
+                    serde_json::from_slice(&fs::read(&spec)?)?;
+                spec_doc
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let mask_list = load_named_masks(&masks)?;
+                let pk = match (&spec_doc.pk, pk_model.as_ref()) {
+                    (Some(pk_spec), Some(path)) => {
+                        let model: openbnct_evidence::PkModel =
+                            serde_json::from_slice(&fs::read(path)?)?;
+                        model
+                            .validate()
+                            .map_err(|error| io::Error::other(error.to_string()))?;
+                        Some(openbnct_evidence::PkIntegration {
+                            model_ref: openbnct_core::ContentReference {
+                                id: model.id.clone(),
+                                sha256: openbnct_evidence::sha256_file(path)?,
+                            },
+                            model,
+                            bindings: pk_spec.bindings.clone(),
+                            beam_on_epoch_s: pk_spec.beam_on_epoch_s,
+                            beam_time_s: pk_spec.beam_time_s,
+                            source_strength_per_s: pk_spec.source_strength_per_s,
+                        })
+                    }
+                    (Some(_), None) => {
+                        return Err(io::Error::other(
+                            "spec declares pk integration; pass --pk-model",
+                        )
+                        .into());
+                    }
+                    (None, Some(_)) => {
+                        return Err(io::Error::other(
+                            "--pk-model given but the spec declares no pk integration",
+                        )
+                        .into());
+                    }
+                    (None, None) => None,
+                };
+                let bundle_ref = openbnct_core::ContentReference {
+                    id: bundle.provenance_id.clone(),
+                    sha256: openbnct_evidence::sha256_file(&dose)?,
+                };
+                let input_ref = openbnct_core::ContentReference {
+                    id: input.id.clone(),
+                    sha256: openbnct_evidence::sha256_file(&joint)?,
+                };
+                let report = openbnct_evidence::evaluate_joint_dose_ensemble(
+                    &input,
+                    &spec_doc.ensemble,
+                    &bundle,
+                    &bundle_ref,
+                    &mask_list,
+                    &spec_doc.metrics,
+                    &spec_doc.dose_adapters,
+                    &spec_doc.attribution_groups,
+                    pk.as_ref(),
+                    input_ref,
+                    &id,
+                    &format!("uq-joint:{}", bundle.case_id),
+                )
+                .map_err(|error| io::Error::other(format!("uq joint: {error}")))?;
+                write_new_json(&output, &report)?;
+                println!("joint-uncertainty report at {}", output.display());
+                println!("method: {}", report.method);
+                for metric in &report.metrics {
+                    println!(
+                        "  {} = {:.6e} ± {:.6e} {} (n={} used, {} failed)",
+                        metric.metric,
+                        metric.mean,
+                        metric.std_dev,
+                        metric.unit,
+                        metric.successful_realizations,
+                        metric.failed_realizations
+                    );
+                }
+            }
+            UqCommand::JointInfo { report } => {
+                let doc: openbnct_core::JointUncertaintyReport =
+                    serde_json::from_slice(&fs::read(&report)?)?;
+                doc.validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                println!("id: {}", doc.id);
+                println!("case_id: {}", doc.case_id);
+                println!("method: {}", doc.method);
+                println!("seed: {:?}", doc.seed);
+                println!("qualification: {}", doc.qualification);
+                println!("categories:");
+                for c in &doc.categories {
+                    println!("  {:?}: {:?}", c.category, c.status);
+                }
+                println!("metrics:");
+                for metric in &doc.metrics {
+                    println!(
+                        "  {} = {:.6e} ± {:.6e} {} (n={} used, {} failed)",
+                        metric.metric,
+                        metric.mean,
+                        metric.std_dev,
+                        metric.unit,
+                        metric.successful_realizations,
+                        metric.failed_realizations
+                    );
+                    for quantile in &metric.quantiles {
+                        println!("    p{:.2}: {:.6e}", quantile.probability, quantile.value);
+                    }
+                }
+            }
+            UqCommand::Voi { spec, output } => {
+                let spec_doc: openbnct_core::VoiEvaluationSpec =
+                    serde_json::from_slice(&fs::read(&spec)?)?;
+                let report = openbnct_core::evaluate_voi(&spec_doc)
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                write_new_json(&output, &report)?;
+                println!("voi report at {}", output.display());
+                let mut metric = String::new();
+                for u in &report.rankings {
+                    if u.metric != metric {
+                        metric = u.metric.clone();
+                        println!("metric {metric}:");
+                    }
+                    if u.evaluated {
+                        println!(
+                            "  {}: ΔVar {:.6e} → post Var {:.6e} (prior {:.6e}){}",
+                            u.proposal,
+                            u.expected_variance_reduction,
+                            u.expected_posterior_variance,
+                            u.prior_variance,
+                            u.cost_adjusted_utility
+                                .map(|c| format!(" — cost-adjusted {c:.6e}"))
+                                .unwrap_or_default()
+                        );
+                    } else {
+                        println!(
+                            "  {}: not evaluated — {}",
+                            u.proposal,
+                            u.reason.as_deref().unwrap_or("unspecified")
+                        );
+                    }
+                }
+            }
+        },
+        Some(Command::Bench(args)) => match args.command {
+            BenchCommand::Info { catalogue } => {
+                let doc: openbnct_evidence::BenchmarkCatalogue =
+                    serde_json::from_slice(&fs::read(&catalogue)?)?;
+                doc.validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                println!("catalogue: {} ({})", doc.id, doc.title);
+                println!("qualification: {:?}", doc.qualification);
+                println!("entries: {}", doc.entries.len());
+                for entry in &doc.entries {
+                    println!(
+                        "  {:30} {:12} {:?} — {} evidence item(s)",
+                        entry.id,
+                        entry.modality,
+                        entry.status,
+                        entry.evidence.len()
+                    );
+                }
+            }
+            BenchCommand::Report { catalogue, entry } => {
+                let doc: openbnct_evidence::BenchmarkCatalogue =
+                    serde_json::from_slice(&fs::read(&catalogue)?)?;
+                doc.validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let found = doc.entries.iter().find(|e| e.id == entry).ok_or_else(|| {
+                    io::Error::other(format!("unknown catalogue entry {entry:?}"))
+                })?;
+                println!("{}: {}", found.id, found.title);
+                println!("  path: {}", found.path);
+                println!(
+                    "  class: {:?}  modality: {}  status: {:?}",
+                    found.problem_class, found.modality, found.status
+                );
+                if let Some(solver) = &found.solver {
+                    println!("  solver: {solver}");
+                }
+                println!(
+                    "  license: {}",
+                    found.license.as_deref().unwrap_or("(absent)")
+                );
+                println!(
+                    "  uncertainty: {}",
+                    found.uncertainty.as_deref().unwrap_or("(absent)")
+                );
+                if let Some(normalization) = &found.normalization {
+                    println!("  normalization: {normalization}");
+                }
+                for tolerance in &found.tolerances {
+                    println!(
+                        "  tolerance: {} — {} ({:?})",
+                        tolerance.scope, tolerance.criterion, tolerance.declared
+                    );
+                }
+                for item in &found.evidence {
+                    println!(
+                        "  evidence: {:?} {:?} — {}",
+                        item.kind, item.verdict, item.label
+                    );
+                    if let Some(region) = &item.region {
+                        println!("      region: {region}");
+                    }
+                    if let Some(origin) = &item.origin {
+                        println!("      origin: {origin}");
+                    }
+                    if let Some(normalization) = &item.normalization {
+                        println!("      normalization: {normalization}");
+                    }
+                    if let Some(file) = &item.file {
+                        println!("      file: {file}");
+                    }
+                    if let Some(note) = &item.note {
+                        println!("      note: {note}");
+                    }
+                }
+                for limitation in &found.limitations {
+                    println!("  limitation: {limitation}");
+                }
+            }
+            BenchCommand::Verify {
+                catalogue,
+                root,
+                id,
+                output,
+            } => {
+                let doc: openbnct_evidence::BenchmarkCatalogue =
+                    serde_json::from_slice(&fs::read(&catalogue)?)?;
+                let findings = openbnct_evidence::verify_catalogue(&doc, &root)
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let errors = findings
+                    .iter()
+                    .filter(|f| f.severity == openbnct_evidence::FindingSeverity::Error)
+                    .count();
+                let warnings = findings.len() - errors;
+                println!(
+                    "verified {} entries under {}: {} error(s), {} warning(s)",
+                    doc.entries.len(),
+                    root.display(),
+                    errors,
+                    warnings
+                );
+                for finding in &findings {
+                    println!(
+                        "  {:?} [{}] {}",
+                        finding.severity, finding.entry, finding.message
+                    );
+                }
+                if let Some(output) = output {
+                    let report = openbnct_evidence::catalogue_report(
+                        &doc,
+                        openbnct_core::ContentReference {
+                            id: doc.id.clone(),
+                            sha256: openbnct_evidence::sha256_file(&catalogue)?,
+                        },
+                        findings,
+                        &id.expect("--id is required with --output"),
+                        "bench-verify",
+                    )
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                    write_new_json(&output, &report)?;
+                    println!("wrote verification report at {}", output.display());
+                }
+                if errors > 0 {
+                    return Err(io::Error::other(format!(
+                        "catalogue verification failed with {errors} error(s)"
+                    ))
+                    .into());
+                }
+            }
+        },
+        Some(Command::Delivery(args)) => match args.command {
+            DeliveryCommand::Import { spec, output } => {
+                let spec_doc: openbnct_evidence::CsvImportSpec =
+                    serde_json::from_slice(&fs::read(&spec)?)?;
+                spec_doc
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let base = spec.parent().unwrap_or(Path::new(".")).to_path_buf();
+                let delimiter = spec_doc.delimiter.chars().next().unwrap_or(',');
+                let comment = spec_doc.comment.chars().next().unwrap_or('#');
+                let mut streams = Vec::new();
+                for s in &spec_doc.streams {
+                    let path = base.join(&s.csv);
+                    let text = fs::read_to_string(&path)
+                        .map_err(|e| io::Error::other(format!("{}: {e}", path.display())))?;
+                    let (stream, diag) =
+                        openbnct_evidence::import_stream_csv(s, delimiter, comment, &text)
+                            .map_err(|error| io::Error::other(error.to_string()))?;
+                    println!(
+                        "  {}: {} rows parsed, {} rejected, {} reordered, {} duplicate(s) dropped, {} rollover(s) resolved",
+                        diag.stream_id,
+                        diag.rows_parsed,
+                        diag.rows_rejected.len(),
+                        diag.reordered,
+                        diag.duplicates_dropped,
+                        diag.rollovers_resolved
+                    );
+                    for (row, reason) in &diag.rows_rejected {
+                        println!("    row {row}: {reason}");
+                    }
+                    for extra in &diag.extra_columns {
+                        println!("    extra column ignored: {extra}");
+                    }
+                    streams.push(stream);
+                }
+                let history = openbnct_evidence::DeliveryHistory {
+                    schema_version: openbnct_evidence::DELIVERY_HISTORY_SCHEMA.into(),
+                    id: spec_doc.history_id.clone(),
+                    qualification: spec_doc.qualification.clone(),
+                    provenance_id: spec_doc.provenance_id.clone(),
+                    session_id: spec_doc.session_id.clone(),
+                    coordinate_frame: spec_doc.coordinate_frame.clone(),
+                    beams: spec_doc.beams.clone(),
+                    streams,
+                };
+                history
+                    .validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                write_new_json(&output, &history)?;
+                println!("wrote delivery history at {}", output.display());
+            }
+            DeliveryCommand::Info { history, window } => {
+                let doc: openbnct_evidence::DeliveryHistory =
+                    serde_json::from_slice(&fs::read(&history)?)?;
+                doc.validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                println!("history: {} (session {})", doc.id, doc.session_id);
+                println!("  coordinate frame: {}", doc.coordinate_frame);
+                println!("  beams: {}", doc.beams.len());
+                for beam in &doc.beams {
+                    println!(
+                        "    {} cal {} valid [{:.1}, {:.1}] s",
+                        beam.id,
+                        beam.calibration.id,
+                        beam.calibration_valid.0,
+                        beam.calibration_valid.1
+                    );
+                }
+                for stream in &doc.streams {
+                    println!(
+                        "  stream {} ({:?}, {}, clock {}): {} sample(s){}",
+                        stream.id,
+                        stream.kind,
+                        stream.unit,
+                        stream.clock.name,
+                        stream.samples.len(),
+                        stream
+                            .available_at_seconds
+                            .map(|t| format!(", results at t={t}"))
+                            .unwrap_or_default()
+                    );
+                    if let Ok(rates) = doc.interval_rates(&stream.id) {
+                        for r in &rates {
+                            println!(
+                                "    [{:.1}, {:.1}) s: {:.4} {} ({:?})",
+                                r.t_start_s, r.t_end_s, r.rate, stream.unit, r.quality
+                            );
+                        }
+                    }
+                    if let Ok(on) = doc.beam_on_intervals(&stream.id) {
+                        for (a, b) in &on {
+                            match b {
+                                Some(e) => println!("    beam on [{:.1}, {:.1}) s", a, e),
+                                None => println!("    beam on from {:.1} s (open)", a),
+                            }
+                        }
+                    }
+                    if let Some(w) = &window
+                        && w.len() == 2
+                        && let Ok(gaps) = doc.stream_gaps(&stream.id, w[0], w[1])
+                    {
+                        for (a, b) in gaps {
+                            println!("    GAP [{:.1}, {:.1}) s — no observation", a, b);
+                        }
+                    }
+                }
+                if let Some(w) = &window
+                    && w.len() == 2
+                {
+                    for b in doc.expired_calibrations(w[1]) {
+                        println!(
+                            "  WARNING: beam {} calibration expired before t={:.1} s",
+                            b.id, w[1]
+                        );
+                    }
+                }
+            }
+        },
+        Some(Command::Replay(args)) => match args.command {
+            ReplayCommand::Run {
+                spec,
+                history,
+                bundle,
+                planned,
+                bundle_output,
+                report_output,
+            } => {
+                let spec_doc: openbnct_evidence::ReplaySpec =
+                    serde_json::from_slice(&fs::read(&spec)?)?;
+                let history_doc: openbnct_evidence::DeliveryHistory =
+                    serde_json::from_slice(&fs::read(&history)?)?;
+                let named: std::collections::BTreeMap<String, PathBuf> = bundle
+                    .iter()
+                    .map(|entry| {
+                        entry
+                            .split_once('=')
+                            .map(|(k, v)| (k.to_string(), PathBuf::from(v)))
+                            .ok_or_else(|| {
+                                io::Error::other(format!(
+                                    "--bundle wants BEAM_ID=path, got {entry:?}"
+                                ))
+                            })
+                    })
+                    .collect::<Result<_, _>>()?;
+                let mut bundles: Vec<PhysicalDoseBundle> = Vec::new();
+                for beam in &spec_doc.beams {
+                    let path = named.get(&beam.beam).ok_or_else(|| {
+                        io::Error::other(format!("no --bundle supplied for beam {:?}", beam.beam))
+                    })?;
+                    bundles.push(serde_json::from_slice(&fs::read(path)?)?);
+                }
+                let planned_doc: Option<PhysicalDoseBundle> = planned
+                    .as_ref()
+                    .map(|p| {
+                        let bytes = fs::read(p)?;
+                        Ok::<_, io::Error>(serde_json::from_slice::<PhysicalDoseBundle>(&bytes)?)
+                    })
+                    .transpose()?;
+                let planned_ref = planned_doc.as_ref().map(|p| (p, 0.0f64));
+                let (recon, report) = openbnct_evidence::run_replay(
+                    &spec_doc,
+                    &history_doc,
+                    &bundles.iter().collect::<Vec<_>>(),
+                    openbnct_core::ContentReference {
+                        id: spec_doc.id.clone(),
+                        sha256: String::new(),
+                    },
+                    planned_ref,
+                )
+                .map_err(|error| io::Error::other(error.to_string()))?;
+                // Write the reconstructed bundle, hash it, then rebind the
+                // report to its real digest.
+                write_new_json(&bundle_output, &recon)?;
+                let digest = openbnct_evidence::sha256_file(&bundle_output)?;
+                let mut report = report;
+                report.reconstructed = openbnct_core::ContentReference {
+                    id: format!("{}", bundle_output.display()),
+                    sha256: digest,
+                };
+                write_new_json(&report_output, &report)?;
+                println!("reconstructed bundle at {}", bundle_output.display());
+                println!("replay report at {}", report_output.display());
+                println!(
+                    "total reconstructed dose: {:.6} Gy over [{:.1}, {:.1}] s",
+                    report.total_dose_gray, report.coverage.0, report.coverage.1
+                );
+                for beam in &report.beams {
+                    println!(
+                        "  beam {}: {:.1} s delivered, {} gap(s), {} suspect interval(s), {} expired-calibration span(s)",
+                        beam.beam,
+                        beam.delivered_seconds,
+                        beam.gaps.len(),
+                        beam.suspect_intervals.len(),
+                        beam.expired_calibration_intervals.len()
+                    );
+                }
+                if !report.coverage_complete {
+                    println!("coverage: PARTIAL — delivered intervals have unobserved gaps");
+                }
+                if !report.biological_equivalence_available {
+                    println!(
+                        "biological equivalence: not reconstructed (interrupted recorded histories are unsupported)"
+                    );
+                }
+            }
+        },
+        Some(Command::Outcomes(args)) => match args.command {
+            OutcomesCommand::Validate { export } => {
+                let doc: openbnct_evidence::OutcomesExport =
+                    serde_json::from_slice(&fs::read(&export)?)?;
+                doc.validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                println!(
+                    "{}: {} participant(s), {} course(s), {} session(s), {} dose record(s), {} observation(s) — valid",
+                    doc.id,
+                    doc.participants.len(),
+                    doc.courses.len(),
+                    doc.sessions.len(),
+                    doc.dose_records.len(),
+                    doc.observations.len()
+                );
+            }
+            OutcomesCommand::Export {
+                export,
+                whitelist,
+                output,
+                excluded_output,
+            } => {
+                let doc: openbnct_evidence::OutcomesExport =
+                    serde_json::from_slice(&fs::read(&export)?)?;
+                let whitelist: std::collections::BTreeMap<
+                    String,
+                    std::collections::BTreeSet<String>,
+                > = serde_json::from_slice(&fs::read(&whitelist)?)
+                    .map_err(|error| io::Error::other(format!("whitelist: {error}")))?;
+                let (filtered, excluded) = openbnct_evidence::export_fields(&doc, &whitelist)
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                write_new_json(&output, &filtered)?;
+                println!("filtered export at {}", output.display());
+                println!("excluded: {}", excluded.join(", "));
+                if let Some(path) = excluded_output {
+                    write_new_json(&path, &excluded)?;
+                }
+            }
+        },
+        Some(Command::Qual(args)) => match args.command {
+            QualCommand::Info { record } => {
+                let doc: openbnct_evidence::QualificationRecord =
+                    serde_json::from_slice(&fs::read(&record)?)?;
+                doc.validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                println!("{} — {} claim(s)", doc.id, doc.claims.len());
+                for c in &doc.claims {
+                    println!("  [{:?} / {:?}] {}: {}", c.level, c.status, c.id, c.claim);
+                }
+                for a in &doc.absent_records {
+                    println!("  absent: {a}");
+                }
+            }
+            QualCommand::Verify { record, catalogue } => {
+                let doc: openbnct_evidence::QualificationRecord =
+                    serde_json::from_slice(&fs::read(&record)?)?;
+                doc.validate()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let cat: openbnct_evidence::BenchmarkCatalogue =
+                    serde_json::from_slice(&fs::read(&catalogue)?)?;
+                let missing = doc
+                    .verify_against(&cat)
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                if missing.is_empty() {
+                    println!(
+                        "{}: all {} claim(s) verified against catalogue — no dangling evidence",
+                        doc.id,
+                        doc.claims.len()
+                    );
+                } else {
+                    for m in &missing {
+                        println!("missing: {m}");
+                    }
+                    return Err(io::Error::other(format!(
+                        "{} claim evidence reference(s) unresolved",
+                        missing.len()
+                    ))
+                    .into());
+                }
             }
         },
         Some(Command::Vr(args)) => match args.command {

@@ -1,0 +1,433 @@
+{
+  "schema_version": "openbnct.bio-evidence-library/0.1.0",
+  "id": "openbnct.bio-evidence-library.v1",
+  "qualification": "synthetic_research_only",
+  "provenance_id": "catalogue:handoff-impl",
+  "records": [
+    {
+      "id": "cbe-bpa-tumor-tecdoc1223",
+      "parameter": "cbe",
+      "component": "boron",
+      "model_family": "openbnct.biological-model/0.2.0",
+      "context": {
+        "compound": "BPA",
+        "isotope_convention": "10B",
+        "species": "human",
+        "tissue": "tumor",
+        "endpoint": "protocol-convention",
+        "reference_radiation": "photon",
+        "microdistribution": "uniform-macroscopic"
+      },
+      "conditions": [
+        "convention as applied at FiR 1 and in the TECDOC-1223 inter-facility standard model"
+      ],
+      "estimate": {
+        "value": 3.8,
+        "unit": "1",
+        "uncertainty": {"kind": "unavailable"}
+      },
+      "applicability_limits": [
+        "protocol weighting convention, not a fitted biological endpoint",
+        "trace-loaded phantom dosimetry only — not treatment-representative"
+      ],
+      "provenance": {
+        "source": "IAEA TECDOC-1223 standard-model protocol convention (FiR 1)",
+        "location": "models/cbe-protocol.json in fir1-k63-cylindrical-phantom",
+        "method": "manual transcription of the committed protocol artifact",
+        "value_kind": "transferred",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "cbe-bpa-normal-tecdoc1223",
+      "parameter": "cbe",
+      "component": "boron",
+      "model_family": "openbnct.biological-model/0.2.0",
+      "context": {
+        "compound": "BPA",
+        "isotope_convention": "10B",
+        "species": "human",
+        "tissue": "normal-tissue",
+        "endpoint": "protocol-convention",
+        "reference_radiation": "photon",
+        "microdistribution": "uniform-macroscopic"
+      },
+      "estimate": {
+        "value": 1.0,
+        "unit": "1",
+        "uncertainty": {"kind": "unavailable"}
+      },
+      "applicability_limits": [
+        "protocol weighting convention outside the tumor region"
+      ],
+      "provenance": {
+        "source": "IAEA TECDOC-1223 standard-model protocol convention (FiR 1)",
+        "location": "models/cbe-protocol.json in fir1-k63-cylindrical-phantom",
+        "method": "manual transcription of the committed protocol artifact",
+        "value_kind": "transferred",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "rbe-photon-tecdoc1223",
+      "parameter": "rbe",
+      "component": "photon",
+      "model_family": "openbnct.biological-model/0.2.0",
+      "context": {
+        "isotope_convention": "none",
+        "species": "human",
+        "endpoint": "protocol-convention",
+        "reference_radiation": "photon"
+      },
+      "estimate": {
+        "value": 1.0,
+        "unit": "1",
+        "uncertainty": {"kind": "unavailable"}
+      },
+      "applicability_limits": [
+        "definitional anchor of the photon-isoeffective convention — photon weight is 1.0 by construction"
+      ],
+      "provenance": {
+        "source": "IAEA TECDOC-1223 standard-model protocol convention (FiR 1)",
+        "location": "models/cbe-protocol.json in fir1-k63-cylindrical-phantom",
+        "method": "manual transcription of the committed protocol artifact",
+        "value_kind": "transferred",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "rbe-nitrogen-tecdoc1223",
+      "parameter": "rbe",
+      "component": "nitrogen",
+      "model_family": "openbnct.biological-model/0.2.0",
+      "context": {
+        "isotope_convention": "none",
+        "species": "human",
+        "endpoint": "protocol-convention",
+        "reference_radiation": "photon"
+      },
+      "estimate": {
+        "value": 3.2,
+        "unit": "1",
+        "uncertainty": {"kind": "unavailable"}
+      },
+      "provenance": {
+        "source": "IAEA TECDOC-1223 standard-model protocol convention (FiR 1)",
+        "location": "models/cbe-protocol.json in fir1-k63-cylindrical-phantom",
+        "method": "manual transcription of the committed protocol artifact",
+        "value_kind": "transferred",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "rbe-hydrogen-tecdoc1223",
+      "parameter": "rbe",
+      "component": "hydrogen",
+      "model_family": "openbnct.biological-model/0.2.0",
+      "context": {
+        "isotope_convention": "none",
+        "species": "human",
+        "endpoint": "protocol-convention",
+        "reference_radiation": "photon"
+      },
+      "estimate": {
+        "value": 3.2,
+        "unit": "1",
+        "uncertainty": {"kind": "unavailable"}
+      },
+      "provenance": {
+        "source": "IAEA TECDOC-1223 standard-model protocol convention (FiR 1)",
+        "location": "models/cbe-protocol.json in fir1-k63-cylindrical-phantom",
+        "method": "manual transcription of the committed protocol artifact",
+        "value_kind": "transferred",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "lq-alpha0-hsg-mkm",
+      "parameter": "lq_alpha0",
+      "model_family": "openbnct.microdosimetric-model/0.1.0",
+      "context": {
+        "species": "human",
+        "cell_line": "HSG",
+        "endpoint": "cell-survival",
+        "reference_radiation": "photon"
+      },
+      "conditions": [
+        "1 µm tissue-equivalent MKM domain",
+        "domain-domain correlation parameter rd fixed by the model family"
+      ],
+      "estimate": {
+        "value": 0.172,
+        "unit": "Gy^-1",
+        "uncertainty": {"kind": "unavailable"}
+      },
+      "applicability_limits": [
+        "literature-convention constant, not a fitted TEPC-based value"
+      ],
+      "provenance": {
+        "source": "MKM literature convention committed in models/mkm-literature-constants.json (fir1-k63-cylindrical-phantom)",
+        "method": "manual transcription of the committed model artifact",
+        "value_kind": "fitted",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "lq-beta-hsg-mkm",
+      "parameter": "lq_beta",
+      "model_family": "openbnct.microdosimetric-model/0.1.0",
+      "context": {
+        "species": "human",
+        "cell_line": "HSG",
+        "endpoint": "cell-survival",
+        "reference_radiation": "photon"
+      },
+      "conditions": ["1 µm tissue-equivalent MKM domain"],
+      "estimate": {
+        "value": 0.0615,
+        "unit": "Gy^-2",
+        "uncertainty": {"kind": "unavailable"}
+      },
+      "applicability_limits": [
+        "literature-convention constant, not a fitted TEPC-based value"
+      ],
+      "provenance": {
+        "source": "MKM literature convention committed in models/mkm-literature-constants.json (fir1-k63-cylindrical-phantom)",
+        "method": "manual transcription of the committed model artifact",
+        "value_kind": "fitted",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "lineal-energy-boron-lit",
+      "parameter": "lineal_energy",
+      "component": "boron",
+      "model_family": "openbnct.microdosimetric-model/0.1.0",
+      "context": {
+        "endpoint": "protocol-convention"
+      },
+      "estimate": {
+        "value": 180.0,
+        "unit": "keV/um",
+        "uncertainty": {"kind": "population_range", "low": 150.0, "high": 250.0}
+      },
+      "applicability_limits": [
+        "composite dose-mean lineal energy for 10B(n,alpha)7Li products; order depends on cell geometry"
+      ],
+      "provenance": {
+        "source": "MKM literature convention committed in models/mkm-literature-constants.json",
+        "method": "manual transcription of the committed model artifact",
+        "value_kind": "illustrative",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "pk-blood-t1-fast-kashino",
+      "parameter": "pk_half_life",
+      "model_family": "openbnct.pk-model/0.1.0",
+      "context": {
+        "compound": "BPA",
+        "isotope_convention": "10B",
+        "species": "human",
+        "tissue": "blood",
+        "endpoint": "biphasic-elimination first component"
+      },
+      "estimate": {
+        "value": 2.0,
+        "unit": "h",
+        "uncertainty": {"kind": "population_range", "low": 0.7, "high": 3.7}
+      },
+      "provenance": {
+        "source": "Kashino/Kageji critical review of human 10B-BPA blood kinetics (EJNMMI Radiopharm. Chem. lineage)",
+        "location": "reviewed t1/2 ranges; midpoint adopted by the committed blood-model.json",
+        "method": "manual transcription of the committed SPECIFICATION anchors",
+        "value_kind": "measured",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "pk-blood-t1-slow-kashino",
+      "parameter": "pk_half_life",
+      "model_family": "openbnct.pk-model/0.1.0",
+      "context": {
+        "compound": "BPA",
+        "isotope_convention": "10B",
+        "species": "human",
+        "tissue": "blood",
+        "endpoint": "biphasic-elimination second component"
+      },
+      "estimate": {
+        "value": 9.0,
+        "unit": "h",
+        "uncertainty": {"kind": "population_range", "low": 7.2, "high": 12.0}
+      },
+      "provenance": {
+        "source": "Kashino/Kageji critical review of human 10B-BPA blood kinetics",
+        "method": "manual transcription of the committed SPECIFICATION anchors",
+        "value_kind": "measured",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "pk-blood-level-savolainen",
+      "parameter": "pk_end_of_infusion_level",
+      "model_family": "openbnct.pk-model/0.1.0",
+      "context": {
+        "compound": "BPA",
+        "isotope_convention": "10B",
+        "species": "human",
+        "tissue": "blood",
+        "endpoint": "end-of-infusion blood 10B concentration"
+      },
+      "estimate": {
+        "value": 24.4,
+        "unit": "ug/g",
+        "uncertainty": {"kind": "standard_deviation", "sigma": 4.88}
+      },
+      "applicability_limits": [
+        "±20% stated in the FiR 1 series summary; treated as a 1σ spread — confirm the statistic against the primary source before propagating"
+      ],
+      "provenance": {
+        "source": "Savolainen et al., Acta Oncol. (FiR 1 glioma series)",
+        "location": "committed SPECIFICATION anchors of fir1-k63-pmma-pk-anchors",
+        "method": "manual transcription of the committed SPECIFICATION anchors",
+        "value_kind": "measured",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "tb-gbm-kashino",
+      "parameter": "tumor_blood_ratio",
+      "model_family": "openbnct.pk-model/0.1.0",
+      "context": {
+        "compound": "BPA",
+        "isotope_convention": "10B",
+        "species": "human",
+        "tissue": "tumor",
+        "disease_context": "glioblastoma",
+        "endpoint": "resected-sample T/B"
+      },
+      "estimate": {
+        "value": 3.05,
+        "unit": "1",
+        "uncertainty": {"kind": "population_range", "low": 1.4, "high": 4.7}
+      },
+      "applicability_limits": [
+        "resected-sample ratio range; center value is the range midpoint, not a fitted mean"
+      ],
+      "provenance": {
+        "source": "Kashino/Kageji critical review (resected-sample T/B 1.4–4.7, GBM)",
+        "method": "manual transcription of the committed SPECIFICATION anchors",
+        "value_kind": "measured",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "tb-melanoma-kashino",
+      "parameter": "tumor_blood_ratio",
+      "model_family": "openbnct.pk-model/0.1.0",
+      "context": {
+        "compound": "BPA",
+        "isotope_convention": "10B",
+        "species": "human",
+        "tissue": "tumor",
+        "disease_context": "melanoma",
+        "endpoint": "resected-sample T/B"
+      },
+      "estimate": {
+        "value": 3.4,
+        "unit": "1",
+        "uncertainty": {"kind": "standard_deviation", "sigma": 0.83}
+      },
+      "applicability_limits": [
+        "melanoma cohort mean ± SD — a different population than the GBM range; kept as a separate record, not averaged"
+      ],
+      "provenance": {
+        "source": "Kashino/Kageji critical review (melanoma mean 3.40±0.83)",
+        "method": "manual transcription of the committed SPECIFICATION anchors",
+        "value_kind": "measured",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "tb-skin-fir1",
+      "parameter": "tumor_blood_ratio",
+      "model_family": "openbnct.pk-model/0.1.0",
+      "context": {
+        "compound": "BPA",
+        "isotope_convention": "10B",
+        "species": "human",
+        "tissue": "skin",
+        "endpoint": "skin/blood clinical convention"
+      },
+      "estimate": {
+        "value": 1.5,
+        "unit": "1",
+        "uncertainty": {"kind": "unavailable"}
+      },
+      "applicability_limits": ["FiR 1 clinical convention; not a measured endpoint"],
+      "provenance": {
+        "source": "Savolainen et al., Acta Oncol. — FiR 1 skin convention 1.5×blood",
+        "method": "manual transcription of the committed SPECIFICATION anchors",
+        "value_kind": "assumed",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "microdistribution-bpa-sato2018",
+      "parameter": "microdistribution_fraction",
+      "model_family": "openbnct.boron-microdistribution/0.1.0",
+      "context": {
+        "compound": "BPA",
+        "species": "human",
+        "cell_line": "declared-model",
+        "tissue": "cell",
+        "endpoint": "subcellular compartment fraction (cytoplasm)",
+        "microdistribution": "cytoplasm-loaded"
+      },
+      "estimate": {
+        "value": 0.78,
+        "unit": "1",
+        "uncertainty": {"kind": "unavailable"}
+      },
+      "applicability_limits": [
+        "declared-model fractions: N_n = N_s = 0, N_c = 0.78, N_e = 0.22 — amino-acid-transporter uptake distributes to cytoplasm"
+      ],
+      "provenance": {
+        "source": "Sato, Masunaga, Kumada & Hamada, Sci Rep 8, 988 (2018)",
+        "location": "committed bpa-microdistribution.json in cell-microdosimetry-sato2018",
+        "method": "manual transcription of the committed model artifact",
+        "value_kind": "fitted",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    },
+    {
+      "id": "microdistribution-bsh-sato2018",
+      "parameter": "microdistribution_fraction",
+      "model_family": "openbnct.boron-microdistribution/0.1.0",
+      "context": {
+        "compound": "BSH",
+        "species": "human",
+        "cell_line": "declared-model",
+        "tissue": "cell",
+        "endpoint": "subcellular compartment fraction (membrane)",
+        "microdistribution": "membrane-bound"
+      },
+      "estimate": {
+        "value": 0.48,
+        "unit": "1",
+        "uncertainty": {"kind": "standard_deviation", "sigma": 0.05}
+      },
+      "applicability_limits": [
+        "BSH does not cross the cell membrane: N_n = N_c = 0, N_s = 0.48, N_e = 0.52 (intra/extra ≈ 0.86 measured)"
+      ],
+      "provenance": {
+        "source": "Sato, Masunaga, Kumada & Hamada, Sci Rep 8, 988 (2018)",
+        "location": "committed bsh-microdistribution.json in cell-microdosimetry-sato2018",
+        "method": "manual transcription of the committed model artifact",
+        "value_kind": "fitted",
+        "extracted_by": "handoff implementation (AI extraction — not independent expert review)"
+      }
+    }
+  ]
+}

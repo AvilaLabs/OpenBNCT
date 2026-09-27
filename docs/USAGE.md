@@ -849,6 +849,223 @@ openbnct bio sweep \
 
 Python exposes the same path as `sweep_biological_model`.
 
+### Biological-parameter evidence library
+
+`openbnct.bio-evidence-library/0.1.0` documents hold typed parameter
+records — estimate + unit, uncertainty kind (SD, SE, CI, population
+range, or explicitly unavailable), experimental context (compound,
+species, tissue, endpoint, microdistribution), extraction provenance
+(primary source, location, method, sample size, extractor, reviewer),
+and applicability limits. A seeded BPA/BSH collection lives at
+`validation/bio-evidence-library.json`; conflicting study values stay
+as separate records rather than being averaged.
+
+`bio evidence search` ranks every record against a declared context —
+compound and species mismatches are *unsupported* (a mouse endpoint is
+never silently applied to a human model), tissue/endpoint/undeclared
+fields are *partial*:
+
+```text
+openbnct bio evidence search --library validation/bio-evidence-library.json \
+  --compound BPA --species human --endpoint protocol-convention
+```
+
+`bio evidence info` prints one record in full:
+
+```text
+openbnct bio evidence info --library validation/bio-evidence-library.json \
+  --record tb-melanoma-kashino
+```
+
+`bio evidence to-model` converts selected records into a real
+`openbnct.biological-model/0.2.0` document — one `--weight
+component=record-id` per dose component, optional `--region-weight
+region:component=record-id` overrides (each region starts from the
+global weights, so the region map stays a complete table). Any binding
+whose record only partially matches the declared context requires a
+`--assumption` line that lands in the model's `validity_domain`:
+
+```text
+openbnct bio evidence to-model \
+  --library validation/bio-evidence-library.json \
+  --weight boron=cbe-bpa-normal-tecdoc1223 \
+  --weight nitrogen=rbe-nitrogen-tecdoc1223 \
+  --weight hydrogen=rbe-hydrogen-tecdoc1223 \
+  --weight photon=rbe-photon-tecdoc1223 \
+  --region-weight tumor:boron=cbe-bpa-tumor-tecdoc1223 \
+  --species human --compound BPA \
+  --assumption "nitrogen/hydrogen protocol RBE records do not declare compound" \
+  --id evidence-model-v1 --output NEW-MODEL.json
+```
+
+Only `standard_deviation` records map onto the model's
+`component_weight_uncertainty`; an SE or CI cannot be realized as a
+sampling distribution without design information, and `unavailable`
+uncertainty stays absent. The library's `to_joint_source` adapter
+realizes compatible records as UQ-01 joint sources (SD → Normal or
+LogNormal, population range → bounded Uniform; SE/CI refused), so
+record-level covariance and uncertainty feed `uq joint` ensembles.
+
+Python exposes the library as `load_bio_evidence_library` and
+`search_bio_evidence`.
+
+### Retrospective delivery histories
+
+`openbnct.delivery-history/0.1.0` documents normalize what was measured
+during an irradiation session: content-bound beam and calibration
+references with calibration validity windows, a shared coordinate
+frame, and typed streams — instantaneous readings, interval-average
+rates, integrated counts, cumulative counters, and beam-state events.
+Each stream declares its clock basis (offset, optional drift ppm,
+timing uncertainty, epoch), and assay streams keep result-availability
+time separate from draw time. Missing segments are reported as gaps —
+never turned into zero-output intervals or stale carried values.
+
+`delivery import` builds a history from CSV streams under a strict
+`openbnct.delivery-csv-import/0.1.0` mapping spec (declared column
+names, delimiter, comment char, clock, units; quoted fields and unknown
+quality/state values are rejected; extra columns are ignored but
+reported). Reordering, dropped duplicates, resolved counter rollovers,
+and declared resets are reported per stream:
+
+```text
+openbnct delivery import \
+  --spec validation/delivery-history-import/import-spec.json \
+  --output NEW-HISTORY.json
+```
+
+`delivery info` prints streams, converted interval rates, beam-on
+intervals, coverage gaps over an optional window, and
+expired-calibration warnings:
+
+```text
+openbnct delivery info --history HISTORY.json --window 0,1200
+```
+
+Policies are explicit: duplicate timestamps and out-of-order samples
+are resolved at import (counted in diagnostics) and rejected outright
+in a stored history; cumulative decreases need a declared reset or a
+`counter_bits` rollover; overlapping rate intervals, unzoned clock
+epochs, and stream frames mismatched with the history frame all fail
+validation. This is a read-only import workflow — no beam control,
+record modification, or upload.
+
+### Expected value of information
+
+`uq voi` ranks proposed measurements by the exact expected reduction in
+a declared linear dose metric's variance under a `joint/0.1.0`
+uncertainty state — the linear-Gaussian conjugate update, so no
+ensemble is sampled. Each candidate declares which sources it observes,
+its measurement noise, `repeats` (independent replicates), and an
+optional shared calibration-bias source whose variance is a floor that
+replication cannot reduce. A candidate with undeclared measurement
+precision reports *unavailable*, not a flattering default; cost is
+printed alongside unless the spec declares a cost-adjusted objective.
+This compares research measurement designs — it does not schedule care
+or control equipment:
+
+```text
+openbnct uq voi --spec VOI-SPEC.json --output NEW-REPORT.json
+```
+
+### Measurement-informed boron estimation
+
+`boron infer` runs a sequential linear-Gaussian estimator over a small
+declared state (region concentration scales, clearance corrections,
+shared calibration terms) against typed observations: blood/total
+assays, PET surrogate readings (which require an explicit transfer
+declaration — PET is a surrogate, never the concentration itself), and
+raw prompt-gamma count bins with background and live-time metadata.
+The report carries the state trajectory, posterior/prior σ ratios,
+normalized residuals, low-count flags, unobserved coverage spans, and
+state-space directions the data did not resolve — two states that
+produce identical predicted observations stay indistinguishable rather
+than returning a falsely precise estimate. It is a forward filter
+ordered by observation availability, not a retrospective smoother:
+
+```text
+openbnct boron infer --spec BORON-SPEC.json --output NEW-REPORT.json
+```
+
+### Held-out plan comparison
+
+`plan compare` evaluates plan results — nominal and robust weights —
+on a scenario set disjoint from the set the robust weights were
+optimized against. The optimization set is declared with
+`--trained-on`; any name overlap with the held-out set fails, because
+performance on the training scenarios is not independent robustness
+validation. The report keeps the nominal-scenario achieved value next
+to the held-out worst case for every objective, so the nominal-quality
+cost of robust weights stays visible. Emits
+`openbnct.heldout-comparison/0.1.0`:
+
+```text
+openbnct plan compare \
+  --result NOMINAL-RESULT.json --result ROBUST-RESULT.json \
+  --objective OBJECTIVE.json \
+  --scenario-set HELDOUT-SET.json \
+  --trained-on OPTIMIZATION-SET.json \
+  --dose BEAM-BUNDLE.json ... --mask MASK.json ... \
+  --output NEW-COMPARISON.json
+```
+
+### Qualification-readiness records
+
+`qual info` prints a `openbnct.qualification-record/0.1.0` claim matrix
+— level (conformance / numerical / measured / external / clinical),
+status, evidence bindings, and the honest `absent_records` list;
+`qual verify` cross-checks every claim's evidence against the benchmark
+catalogue's entry ids. Clinical and facility claims can only ever be
+recorded as `external_dependency` — the record cannot hold them:
+
+```text
+openbnct qual info   --record qualification-record.json
+openbnct qual verify --record qualification-record.json \
+  --catalogue benchmark-catalogue.json
+```
+
+### Dose-to-outcome research exports
+
+`outcomes validate` checks an `openbnct.outcomes-export/0.1.0` study
+export's linkage and honesty rules: every session belongs to a course
+and participant (a repeated session is never an independent record),
+chronology is monotone, dose records bind session×ROI of the same
+participant with `planned`/`reconstructed` kept distinct, endpoint
+scoring stays within one declared system+version per endpoint, and a
+missing follow-up requires a `missingness_reason` — absent data is
+never read as no event. `outcomes export` applies a declared field
+whitelist and reports every excluded path — a software check, not a
+certification of anonymization:
+
+```text
+openbnct outcomes validate --export EXPORT.json
+openbnct outcomes export --export EXPORT.json --whitelist WHITELIST.json \
+  --output NEW-FILTERED.json --excluded-output NEW-EXCLUSIONS.json
+```
+
+### Retrospective dose reconstruction
+
+`replay run` reconstructs the accumulated physical dose a recorded
+irradiation delivered: it integrates each beam's output stream (× the
+declared concentration history for the boron component — the product
+is integrated jointly, not as a product of averages) over delivered
+beam-on intervals, scales the bound rate-bundle maps into absolute
+Gray, and emits a reconstructed `physical-dose-bundle` plus an
+`openbnct.dose-replay-report/0.1.0`. The report carries delivered
+seconds, integrated output, unobserved gaps, suspect intervals,
+expired-calibration spans, and planned-vs-reconstructed deltas when a
+planned bundle is bound. Repair-capable biological models assume
+constant-rate protraction, so on recorded (possibly interrupted)
+histories `biological_equivalence_available` is `false` — physical
+dose only:
+
+```text
+openbnct replay run \
+  --spec REPLAY-SPEC.json --history HISTORY.json \
+  --bundle epithermal-1=RATE-BUNDLE.json \
+  --bundle-output NEW-RECONSTRUCTED.json --report-output NEW-REPORT.json
+```
+
 ### Multi-exposure accumulation
 
 `openbnct accumulate` implements weighted irradiation-fraction and
@@ -1253,6 +1470,30 @@ slope σ), and reports the fitted slope, its deviation from the declared
 is, and a pass/fail against the tolerance — emitted as
 `openbnct.analytic-oracle-evaluation/0.1.0`. Axis-aligned grids only;
 the oracle is consistency evidence, not a correctness proof.
+
+### Benchmark catalogue
+
+`benchmark-catalogue.json` at the repository root is the versioned
+`openbnct.benchmark-catalogue/0.1.0` index of every committed benchmark
+and validation case. Each entry declares its problem class, evidence
+kinds (analytic, published numerical reference, independent-engine
+comparison, measured experiment, internal closure, declared-input
+study, parser fixture), tolerances with *when they were set*, graded
+versus reported-only regions, and per-item verdicts — including
+recorded failures such as the uncollimated prompt-gamma localization
+negative result. Artifact references are SHA-256 bound; `bench verify`
+re-checks them read-only and reports broken references plus absent
+license/uncertainty metadata rather than filling defaults.
+
+```text
+openbnct bench info --catalogue benchmark-catalogue.json
+openbnct bench report --catalogue benchmark-catalogue.json --entry canonical-kobayashi-p1
+openbnct bench verify --catalogue benchmark-catalogue.json --root . \
+  --id VERIFY-001 --output NEW-VERIFY-REPORT.json
+```
+
+An outside implementation can consume the catalogue and submit against
+the declared references without running OpenBNCT as its dose engine.
 
 ### Deterministic multigroup transport (S_N)
 
@@ -1860,6 +2101,49 @@ openbnct uq apply \
   --id UQ-001 --output NEW-UQ-REPORT.json
 openbnct uq info --report UQ-REPORT.json
 ```
+
+### Joint uncertainty ensembles
+
+`openbnct uq joint` evaluates a
+`openbnct.joint-dose-ensemble-spec/0.1.0` request over a
+`openbnct.joint-uncertainty-input/0.1.0` declaration, emitting a
+`openbnct.joint-uncertainty-report/0.1.0`. Where `uq apply` propagates
+per-voxel σ maps, `uq joint` declares named *sources* with identity,
+scope, and distributions — a shared calibration error is drawn once per
+realization and applied everywhere it scopes, `independent_per_target`
+sources draw separately per scope target, and declared correlation
+groups are sampled jointly through a Gaussian copula. Metrics (mean,
+D/V statistics, EUD over named masks) are computed per realization on
+the fully realized map and then summarized — D95 follows per-map order
+statistics, not per-voxel interval summaries.
+
+The input document carries per-source evidence and an explicit
+disposition for every uncertainty category no source covers, so an
+unassessed category is visible rather than silently absent. The spec
+chooses `monte_carlo` (seeded, deterministic) or `weighted_samples`
+(explicit realization sets), the quantiles to report, optional grouped
+`attribution` (each group re-sampled with the other sources pinned —
+correlated members may only be attributed jointly), dose adapters
+(output/component/region scales) and, when the bundle is in rate units,
+PK integration over realized `pk-model` parameter draws.
+
+```text
+openbnct uq joint \
+  --dose BUNDLE.json \
+  --joint JOINT-INPUT.json \
+  --spec ENSEMBLE-SPEC.json \
+  --pk-model PK-MODEL.json \
+  --mask TARGET=mask.json \
+  --id UQJ-001 --output NEW-JOINT-REPORT.json
+openbnct uq joint-info --report JOINT-REPORT.json
+```
+
+A first-order counterpart without sampling is
+`openbnct_plan::robustness::plan_robustness_joint`
+(`openbnct.joint-robustness/0.1.0`): per-beam signed sensitivity maps
+fold through the declared covariance so a shared source's σ does not
+shrink when a field is subdivided, while `plan robustness` keeps its
+original independent-per-beam convention unchanged.
 
 `openbnct uq propagate` propagates a *declared nuclear-data covariance*
 through the deterministic S_N solve into a

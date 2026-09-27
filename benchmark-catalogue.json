@@ -1,0 +1,580 @@
+{
+  "schema_version": "openbnct.benchmark-catalogue/0.1.0",
+  "id": "openbnct.benchmark-catalogue.v1",
+  "title": "OpenBNCT benchmark and validation evidence catalogue",
+  "revision": "fe3dd64 (handoff baseline); entries authored from committed case documentation",
+  "qualification": "synthetic_research_only",
+  "provenance_id": "catalogue:handoff-impl",
+  "entries": [
+    {
+      "id": "layered-head-phantom",
+      "title": "Layered head phantom — 25³ synthetic head, skin/skull/brain, disk epithermal beam",
+      "path": "benchmarks/synthetic/layered-head-phantom",
+      "problem_class": "transport",
+      "modality": "synthetic",
+      "qualification": "synthetic_research_only",
+      "status": "executed",
+      "solver": "S8 diamond-difference S_N; 28/56-group collapses from processed ENDF/B-VIII.1; OpenMC CE cross-check under intercomparison-layered-head",
+      "uncertainty": "Declared nuclear-data covariance propagated via `uq propagate` (boron MT=107 budget ~0.34% rel); per-voxel MC σ carried on dose bundles",
+      "normalization": "Absolute flux per source neutron; dose in Gy/source-particle",
+      "tolerances": [
+        {
+          "scope": "intercomparison vs OpenMC CE",
+          "criterion": "order-of-magnitude axial agreement; 56g pathology flagged, not graded",
+          "declared": "documented_after"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "internal_closure",
+          "label": "frozen case + multi-collapse solves",
+          "file": "SPECIFICATION.md",
+          "sha256": "71f583686750c37a23c28b190204f5885387f5d95e25846233720501f856ddc2",
+          "verdict": "documented",
+          "note": "Transported inputs, collapse scripts, and planning fixtures committed; group-condensation question arbitrated by the independent-engine leg (validation/intercomparison-layered-head)"
+        }
+      ],
+      "limitations": [
+        "synthetic phantom — no patient anatomy",
+        "56-group collapse produced deep-field pathology (resolved solver-side); see intercomparison entry"
+      ]
+    },
+    {
+      "id": "nf-bnct-001",
+      "title": "NF-BNCT-001 — macroscopic component-dose truth case (first synthetic DICOM geometry)",
+      "path": "benchmarks/synthetic/nf-bnct-001",
+      "problem_class": "transport",
+      "modality": "synthetic",
+      "qualification": "synthetic_research_only",
+      "status": "candidate",
+      "solver": "OpenMC continuous-energy ENDF/B-VIII.1, 600M histories/frozen seed; NJOY-processed ACE via transport/candidates",
+      "uncertainty": "MC per-voxel σ on profiles; declared acceptance gates",
+      "normalization": "per source particle; component-resolved absorbed dose",
+      "tolerances": [
+        {
+          "scope": "all acceptance gates",
+          "criterion": "frozen in openmc-acceptance-contract.json",
+          "declared": "preregistered"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "internal_closure",
+          "label": "600M-history acceptance report",
+          "file": "transport/openmc-acceptance-report-600M.json",
+          "sha256": "5f57a0fc21f860e988d2058533ad5bd7689eec7e09343abd8f2f69b87d15b220",
+          "verdict": "pass",
+          "note": "passed every predeclared gate at 600M histories; candidate remains unpromoted pending cross-code reproduction"
+        },
+        {
+          "kind": "parser_fixture",
+          "label": "frozen specification",
+          "file": "SPECIFICATION.md",
+          "sha256": "76494975fc7ef53fc4248a8fe4c64855e9f678f493551f1a8a85d12911d24c07",
+          "verdict": "documented",
+          "note": "first NJOY run and transported-photon suitability evidence rejected and dispositioned (ADR 0031) — rejected evidence is preserved, not hidden"
+        }
+      ],
+      "limitations": [
+        "single-code result; promotion requires independent reproduction",
+        "KERMA response tables and reference outputs intentionally unqualified at this revision"
+      ]
+    },
+    {
+      "id": "nf-bnct-002",
+      "title": "NF-BNCT-002 — deep-penetration heterogeneous case (30 cm cube, skull slab, tumor insert)",
+      "path": "benchmarks/synthetic/nf-bnct-002",
+      "problem_class": "transport",
+      "modality": "synthetic",
+      "qualification": "synthetic_research_only",
+      "status": "unexecuted",
+      "uncertainty": "acceptance contract declared; no execution evidence yet",
+      "evidence": [
+        {
+          "kind": "parser_fixture",
+          "label": "frozen specification",
+          "file": "SPECIFICATION.md",
+          "sha256": "dabc38aada423b5a90ea4e80356e720d1b48be7ff0815bb742aad1f7f2151d0d",
+          "verdict": "unexecuted",
+          "note": "machine inputs committed; execution pending the material-bound response set"
+        }
+      ],
+      "limitations": [
+        "declared inputs only — no transported result exists at this revision"
+      ]
+    },
+    {
+      "id": "nf-bnct-003",
+      "title": "NF-BNCT-003 — analytic pure-absorber slab (0.0253 eV beam into near-pure ¹⁰B)",
+      "path": "benchmarks/synthetic/nf-bnct-003",
+      "problem_class": "transport",
+      "modality": "synthetic",
+      "qualification": "synthetic_research_only",
+      "status": "executed",
+      "solver": "deterministic S_N on declared one-group data; closed-form exp(−Σ_t·z) oracle",
+      "uncertainty": "analytic bound documented in oracle; multigroup covariance artifact present",
+      "normalization": "absolute; prefactor ties normalization to source/material constants",
+      "tolerances": [
+        {
+          "scope": "boron log-slope",
+          "criterion": "0.2308 cm⁻¹ analytic slope; S_N within 0.000% relative",
+          "declared": "at_execution"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "analytic",
+          "label": "oracle evaluation (WDD solve)",
+          "file": "transport/analytic-oracle-evaluation-wdd.json",
+          "sha256": "50c82a9c7211bb051292532b37299e6db2d1211840e061c0c0cae5a5ddc917fb",
+          "verdict": "pass",
+          "origin": "closed-form uncollided attenuation"
+        },
+        {
+          "kind": "declared_input_study",
+          "label": "PK washout scheduling on the slab phantom",
+          "file": "planning/result-pk-irradiation.json",
+          "sha256": "2590fb392bd7cd69f658f99e3f21db6d10a20fd2ef075ecaa36f566b8229eef9",
+          "verdict": "documented"
+        }
+      ],
+      "limitations": [
+        "idealized material — a code-verification oracle, not a tissue surrogate"
+      ]
+    },
+    {
+      "id": "scenario-robust-planning",
+      "title": "Scenario robust-planning oracle — degenerate four-voxel two-field case",
+      "path": "benchmarks/synthetic/scenario-robust-planning",
+      "problem_class": "planning",
+      "modality": "synthetic",
+      "qualification": "synthetic_research_only",
+      "status": "executed",
+      "solver": "worst-case-scenario optimizer vs closed-form optimum (w_h* = 1.498875, w_b* = 0)",
+      "tolerances": [
+        {
+          "scope": "optimizer weights",
+          "criterion": "closed-form optimum under declared regularization",
+          "declared": "at_execution"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "analytic",
+          "label": "scenario optimizer vs closed-form optimum",
+          "file": "scenario-report.json",
+          "sha256": "396769deb4152dd0fe467abcadd0dbff80d16870104ba79942a4240eebf87748",
+          "verdict": "pass"
+        },
+        {
+          "kind": "internal_closure",
+          "label": "optimizer result record",
+          "file": "result.json",
+          "sha256": "e834c2566107dc3d5c15a5225167fb58b2e7d67d443fba38571fdeb8b768f1cf",
+          "verdict": "documented"
+        }
+      ],
+      "limitations": [
+        "degenerate fixture by construction — checks the optimizer path, not clinical planning"
+      ],
+      "uncertainty": "closed-form optimum — deterministic check, no statistical uncertainty"
+    },
+    {
+      "id": "canonical-reed-problem",
+      "title": "Reed (1971) heterogeneous 1-D slab — strong absorber/source, void gap, c=0.9",
+      "path": "validation/canonical-reed-problem",
+      "problem_class": "transport",
+      "modality": "canonical-literature",
+      "qualification": "synthetic_research_only",
+      "status": "executed",
+      "solver": "deterministic S_N vs Warsa (2002) eigenfunction expansion, 81 pointwise fluxes",
+      "tolerances": [
+        {
+          "scope": "region means",
+          "criterion": "1% flat / ~2% scattering peak",
+          "declared": "at_execution"
+        },
+        {
+          "scope": "interior pointwise",
+          "criterion": "RMS 0.9%",
+          "declared": "at_execution"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "published_numerical",
+          "label": "Warsa eigenfunction comparison",
+          "file": "comparison.json",
+          "sha256": "808b865a76719b5a39ba1c25c2fcb402487c9f0354e2b607e992b80fedefb114",
+          "verdict": "pass",
+          "origin": "Warsa 2002 eigenfunction expansion (ReedSol.csv, DrRyanMc/Benchmarks)"
+        }
+      ],
+      "limitations": [
+        "angular-truncation peak deviation is documented, not hidden in the mean"
+      ],
+      "uncertainty": "deterministic comparison — no measurement σ; angular-truncation deviation documented per region"
+    },
+    {
+      "id": "canonical-azmy-problem",
+      "title": "Azmy (1988) weighted-DD quadrant problem — central source in absorber",
+      "path": "validation/canonical-azmy-problem",
+      "problem_class": "transport",
+      "modality": "canonical-literature",
+      "qualification": "synthetic_research_only",
+      "status": "executed",
+      "solver": "deterministic S_N, full-domain mirror realization",
+      "tolerances": [
+        {
+          "scope": "quadrant means",
+          "criterion": "0.17% / 0.67% / 3.9% vs published 1.676 / 4.159e-2 / 1.992e-3",
+          "declared": "at_execution"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "published_numerical",
+          "label": "quadrant-mean comparison",
+          "file": "comparison.json",
+          "sha256": "2550378aacee170260b8a19b5f497f6850c1144a26046a8b5f8a9f577cc7ff03",
+          "verdict": "pass",
+          "origin": "Azmy 1988 published quadrant means; machine-precision quadrant symmetry"
+        }
+      ],
+      "limitations": [],
+      "uncertainty": "deterministic comparison — machine-precision quadrant symmetry; no measurement σ"
+    },
+    {
+      "id": "canonical-kobayashi-p1",
+      "title": "Kobayashi (2001) nested-cubes void problem — pure absorber and 50% scattering",
+      "path": "validation/canonical-kobayashi-p1",
+      "problem_class": "transport",
+      "modality": "canonical-literature",
+      "qualification": "synthetic_research_only",
+      "status": "executed",
+      "solver": "deterministic S8/S16; references: analytic ray integral + GMVP Monte Carlo table",
+      "tolerances": [
+        {
+          "scope": "near-field probes (max coordinate ≤ 25 cm)",
+          "criterion": "5% relative",
+          "declared": "at_execution"
+        },
+        {
+          "scope": "deep-field ray-effect regime",
+          "criterion": "reported, not graded — S_N cannot resolve the void-shadow probes",
+          "declared": "at_execution"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "analytic",
+          "label": "case-i near-field probes",
+          "file": "comparison.json",
+          "sha256": "435b2fd704f075e486abf5012c4e1e095036e5f818556fe42dbebb8233fa4eb0",
+          "region": "near field (transport-dominated, ≤ 25 cm)",
+          "verdict": "pass",
+          "origin": "cell-averaged analytic ray integrals, verified <0.14% vs COG LLNL-TR-648225"
+        },
+        {
+          "kind": "analytic",
+          "label": "case-i deep-field ray-effect regime",
+          "file": "comparison.json",
+          "sha256": "435b2fd704f075e486abf5012c4e1e095036e5f818556fe42dbebb8233fa4eb0",
+          "region": "deep field beyond the void shadow",
+          "verdict": "documented",
+          "note": "severe deep-field discrepancies are the benchmark's purpose — the S16 sharpening signature is recorded, not graded as a pass"
+        },
+        {
+          "kind": "published_numerical",
+          "label": "case-ii scattering probes",
+          "file": "comparison-ii.json",
+          "sha256": "58291383bac19538caac3c8cc02cfcd4d9a22ae64120f2755c7048c44f904210",
+          "region": "source-interior and just-outside probes",
+          "verdict": "pass",
+          "origin": "GMVP Monte Carlo, NEA/NSC Kobayashi benchmark report (PNE 39:119-144 2001)"
+        }
+      ],
+      "limitations": [
+        "S_N ray effects dominate the deep field — kept visible as a separate region rather than averaged into one verdict"
+      ],
+      "uncertainty": "analytic/GMVP references are exact-resolution; ray-effect regime documented separately, not averaged into the verdict"
+    },
+    {
+      "id": "intercomparison-kobayashi-p1",
+      "title": "Kobayashi P1-ii through OpenMC multigroup — independent-engine arbitration",
+      "path": "validation/intercomparison-kobayashi-p1",
+      "problem_class": "transport",
+      "modality": "intercomparison",
+      "qualification": "cross_code_research_only",
+      "status": "executed",
+      "solver": "OpenMC multigroup, 20M histories, same 2 cm lattice vs our S8",
+      "evidence": [
+        {
+          "kind": "independent_engine",
+          "label": "MC vs GMVP probe agreement and S_N ray-effect measurement",
+          "file": "comparison-mc.json",
+          "sha256": "5d67c1e58095523aa554800b37eca28d0166808f4f934ebbbf163a36c227b06c",
+          "verdict": "documented",
+          "origin": "OpenMC multigroup tally",
+          "note": "MC within ~1σ of GMVP at all probes; measures S_N −40% off-lobe underfill / +110–218% diagonal overshoot"
+        }
+      ],
+      "limitations": [
+        "quantifies the deterministic solver's angular artifact — not a pass/fail gate"
+      ],
+      "uncertainty": "OpenMC 20M-history tally σ reported per probe; MC↔GMVP agreement ~1σ"
+    },
+    {
+      "id": "intercomparison-layered-head",
+      "title": "Layered-head phantom — S_N vs continuous-energy OpenMC",
+      "path": "validation/intercomparison-layered-head",
+      "problem_class": "transport",
+      "modality": "intercomparison",
+      "qualification": "cross_code_research_only",
+      "status": "executed",
+      "solver": "OpenMC CE ENDF/B-VIII.1 (400k pilot) vs S8 28g/56g",
+      "evidence": [
+        {
+          "kind": "independent_engine",
+          "label": "CE tallies vs S_N solves",
+          "file": "openmc-tallies.json",
+          "sha256": "eb60471b3bc37a81bd64abbfe60f4bd905bee2c17fb749d38ed90a929d5e6c53",
+          "verdict": "documented",
+          "note": "28g tracks CE within ~±30% axial flux; 56g overproduces deep flux 40–100× — the mechanism was resolved solver-side"
+        }
+      ],
+      "limitations": [
+        "pilot statistics (400k histories); production run budgeted at ~15–20M"
+      ],
+      "uncertainty": "pilot 400k-history statistics: mid-head capture rel-err 2–9%, deepest axial ~18%"
+    },
+    {
+      "id": "fir1-k63-water-phantom",
+      "title": "FiR 1 K63 in the ~51 cm cubical water phantom (published reference geometry)",
+      "path": "validation/fir1-k63-water-phantom",
+      "problem_class": "transport",
+      "modality": "measured-phantom",
+      "qualification": "experimentally_validated_research_only",
+      "status": "executed",
+      "solver": "20M-history OpenMC Monte Carlo; deterministic S8 28g TSL+P1 cross-check",
+      "uncertainty": "±3% activation-foil uncertainty on source measurements; published anchors carry stated uncertainties",
+      "normalization": "advantage-depth / thermal-fluence-maximum anchors + digitized TECDOC-1223 depth shape — the cubical phantom differs from the measured Ø20 cm cylinder, so profile agreement is shape-level only",
+      "evidence": [
+        {
+          "kind": "measured_experiment",
+          "label": "digitized TECDOC-1223 depth profile (shape comparison)",
+          "file": "measurement-comparison-water-28g-tsl-p1-1e.json",
+          "sha256": "396989a74d310de3de53ce4644ca2b7d2e5577fd861391171440f7848c05e5c6",
+          "verdict": "documented",
+          "origin": "Seppälä 2002 / TECDOC-1223 digitization (measurements/fir1-k63-water-phantom.json)",
+          "normalization": "shape comparison only — phantom geometry differs from the measured cylinder; not an absolute-dose pass"
+        },
+        {
+          "kind": "independent_engine",
+          "label": "S_N vs OpenMC gamma on the same phantom",
+          "file": "results/gamma-sn-vs-openmc-5pct-20mm.json",
+          "sha256": "02ff3c167e927deb9655be34634b0db73987ebda7270825628ebbe08e8b7e8e5",
+          "verdict": "documented"
+        }
+      ],
+      "limitations": [
+        "cubical phantom cannot reproduce the measured small-cylinder tail — comparison is shape-level by construction",
+        "trace ¹⁰B/¹⁴N loading exists only for component-fold capability gating (~1e-5 relative effect)"
+      ]
+    },
+    {
+      "id": "fir1-k63-cylindrical-phantom",
+      "title": "FiR 1 K63 in the measured Ø20 × 24 cm water cylinder (like-for-like TECDOC-1223 geometry)",
+      "path": "validation/fir1-k63-cylindrical-phantom",
+      "problem_class": "dosimetry",
+      "modality": "measured-phantom",
+      "qualification": "experimentally_validated_research_only",
+      "status": "executed",
+      "solver": "deterministic S8; declared 3-group and real-data 28-group ENDF/B-VIII.1 collapses incl. lwtr S(α,β) TSL",
+      "uncertainty": "σ-weighted comparison against digitized measurement uncertainties",
+      "normalization": "peak-normalized and absolute comparisons both reported",
+      "tolerances": [
+        {
+          "scope": "depth-profile bins",
+          "criterion": "all bins within 2σ of digitized measurement",
+          "declared": "at_execution"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "measured_experiment",
+          "label": "TECDOC-1223 FIG. 3 water series, TSL+P1 solve",
+          "file": "measurement-comparison-cylindrical-28g-tsl-p1-1e.json",
+          "sha256": "25c24daf06ae7ec62a129224309de00a48bbc749de184fbfc17beada6057648e",
+          "verdict": "pass",
+          "origin": "digitized TECDOC-1223 thermoluminescent-detector study",
+          "normalization": "peak-normalized σ-weighted; absolute comparison carried in the same artifact",
+          "note": "12 bins ≤ ~1.3σ, χ² = 6.7 (3g); normalized χ² = 18.8 for the 28g TSL+P1 solve"
+        }
+      ],
+      "limitations": [
+        "digitized figure data carries digitization uncertainty alongside the stated detector σ"
+      ]
+    },
+    {
+      "id": "fir1-k63-pmma-phantom",
+      "title": "FiR 1 K63 in the measured Ø20 × 24 cm PMMA cylinder (second composition)",
+      "path": "validation/fir1-k63-pmma-phantom",
+      "problem_class": "dosimetry",
+      "modality": "measured-phantom",
+      "qualification": "experimentally_validated_research_only",
+      "status": "executed",
+      "solver": "deterministic S8; 3-group and 28-group collapses incl. H(Lucite) TSL",
+      "uncertainty": "σ-weighted comparison against digitized measurement uncertainties",
+      "tolerances": [
+        {
+          "scope": "depth-profile bins",
+          "criterion": "all bins within 2σ of digitized measurement",
+          "declared": "at_execution"
+        }
+      ],
+      "evidence": [
+        {
+          "kind": "measured_experiment",
+          "label": "TECDOC-1223 FIG. 3 PMMA series, TSL+P1 solve",
+          "file": "measurement-comparison-pmma-28g-tsl-p1-1e.json",
+          "sha256": "88c3e52954870eab3b3b83d3566224fd4edcb8374a5e77367c68dfd0d2997705",
+          "verdict": "pass",
+          "origin": "digitized TECDOC-1223 thermoluminescent-detector study",
+          "normalization": "peak-normalized σ-weighted; absolute comparison carried in the same artifact",
+          "note": "15 bins ≤ ~1.15σ, χ² = 6.0; independent cross-check of the H1/C12/O16 collapse"
+        }
+      ],
+      "limitations": [
+        "digitization uncertainty applies as for the water series"
+      ]
+    },
+    {
+      "id": "fir1-k63-liquid-b-phantom",
+      "title": "FiR 1 K63 in the Liquid B brain-substitute cylinder — the only transverse measurement",
+      "path": "validation/fir1-k63-liquid-b-phantom",
+      "problem_class": "dosimetry",
+      "modality": "measured-phantom",
+      "qualification": "experimentally_validated_research_only",
+      "status": "executed",
+      "solver": "deterministic S8, 28-group transport-corrected P0",
+      "uncertainty": "σ-weighted transverse-profile comparison",
+      "evidence": [
+        {
+          "kind": "measured_experiment",
+          "label": "TECDOC-1223 FIG. 4 transverse profiles",
+          "file": "measurement-comparison-28g.json",
+          "sha256": "4bfc332164e2b58554693426d04e4cb484c56fc1b724d9782b83b7e8f78d5264",
+          "verdict": "pass",
+          "origin": "Aschan et al., TECDOC-1223 pp. 169–175 (digitized FIG. 4)"
+        }
+      ],
+      "limitations": [
+        "aqueous solvent molecular binding not applied — free-gas collapse; declared second-order omission"
+      ]
+    },
+    {
+      "id": "fir1-k63-pmma-pk-anchors",
+      "title": "FiR 1 PMMA phantom — published PK anchors (biphasic BPA blood, T/B ratios, JRR comparison)",
+      "path": "validation/fir1-k63-pmma-pk-anchors",
+      "problem_class": "pharmacokinetic",
+      "modality": "measured-phantom",
+      "qualification": "experimentally_validated_research_only",
+      "status": "executed",
+      "solver": "PK scheduling layer against declared two-component blood curve",
+      "uncertainty": "published anchor ranges (blood ¹⁰B 24.4 µg/g ±20%; T/B 1.4–4.7 GBM / 3.40±0.83 melanoma)",
+      "evidence": [
+        {
+          "kind": "declared_input_study",
+          "label": "PK-vs-fixed-T/N schedule evaluation",
+          "file": "schedule-report.json",
+          "sha256": "0e96a49bef1526b6dfa168252c75fc4920df42996fb4d63254f034202c759b4c",
+          "verdict": "documented",
+          "origin": "Kashino/Kageji review, Savolainen et al. Acta Oncol., JRR rraf038"
+        }
+      ],
+      "limitations": [
+        "synthetic structures on a homogeneous phantom — declared curves, not a clinical case"
+      ]
+    },
+    {
+      "id": "fir1-k63-scenario-budget",
+      "title": "FiR 1 published uncertainty budget encoded as a scenario set",
+      "path": "validation/fir1-k63-scenario-budget",
+      "problem_class": "planning",
+      "modality": "measured-phantom",
+      "qualification": "experimentally_validated_research_only",
+      "status": "executed",
+      "solver": "discrete scenario-set evaluation on the committed transported beam",
+      "uncertainty": "Savolainen 6.0% total reference-dose σ; Kotiluoto 8% computational σ excluding boron; BPA-F T/B ±30% region scales",
+      "evidence": [
+        {
+          "kind": "declared_input_study",
+          "label": "published-budget scenario evaluation",
+          "file": "scenario-report.json",
+          "sha256": "dc25de1103402c20beded3fd934bc75db4eb2c9f21729f79e6bdbdd483073d4a",
+          "verdict": "documented",
+          "origin": "Savolainen et al. Acta Oncol.; Kotiluoto et al. FiR 1 beam model"
+        }
+      ],
+      "limitations": [
+        "virtual structures on a homogeneous water phantom; no clinical plan implied"
+      ]
+    },
+    {
+      "id": "cell-microdosimetry-sato2018",
+      "title": "Sato (2018) cell microdosimetry — BPA/BSH SMK microdistribution evaluations",
+      "path": "validation/cell-microdosimetry-sato2018",
+      "problem_class": "biological_response",
+      "modality": "canonical-literature",
+      "qualification": "synthetic_research_only",
+      "status": "executed",
+      "solver": "SMK cell-microdosimetry + microdistribution correction models",
+      "evidence": [
+        {
+          "kind": "published_numerical",
+          "label": "BPA SMK evaluation vs Sato (2018)",
+          "file": "bpa-smk-evaluation.json",
+          "sha256": "60946e884812df713447b8db131032fcd565f2afbe332b9dfb10fb10f2682e6c",
+          "verdict": "documented",
+          "origin": "Sato et al. 2018 microdosimetric parameters"
+        }
+      ],
+      "limitations": [
+        "literature parameter sets; heterogeneous microdistribution is a declared convention"
+      ],
+      "uncertainty": "literature parameter sets as published; no propagated σ on the evaluations"
+    },
+    {
+      "id": "pg-benedicte-geometry",
+      "title": "Prompt-gamma literature geometry — BeNEdiCTE/LENA-class reconstruction chain",
+      "path": "validation/pg-benedicte-geometry",
+      "problem_class": "instrumentation",
+      "modality": "canonical-literature",
+      "qualification": "synthetic_research_only",
+      "status": "executed",
+      "solver": "emission → adjoint response → expected counts → observation → NNLS reconstruction on committed FiR 1 transport",
+      "evidence": [
+        {
+          "kind": "internal_closure",
+          "label": "forward model closure (emission → observation)",
+          "file": "observation.json",
+          "sha256": "7915f59a2a482b23340e7207ccb3ec514c0b250f55f4216d12970d995909f67f",
+          "verdict": "pass",
+          "note": "the forward chain closes on the committed phantom transport"
+        },
+        {
+          "kind": "published_numerical",
+          "label": "source localization on uncollimated detectors",
+          "verdict": "fail",
+          "origin": "Polimi BeNEdiCTE / Nagoya BNCT-SPECT geometry class; LENA IEEE TRPMS 2025 anchors",
+          "note": "recorded failure, not suppressed: uncollimated detector configurations do not localize the two-vial source"
+        }
+      ],
+      "limitations": [
+        "vial spatial extent synthesized around real transported emissions — insert self-shielding is a declared second-order omission"
+      ],
+      "uncertainty": "NNLS count-space reconstruction; no measurement σ declared on the synthesized geometry"
+    }
+  ]
+}

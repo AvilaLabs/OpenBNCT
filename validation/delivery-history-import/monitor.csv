@@ -1,0 +1,9 @@
+# synthetic cumulative monitor counter (16-bit, rolls at 65536)
+t_s,cum_counts,quality,reset_marker,note_col
+0,1000,good,0,startup
+10,61000,good,0,nominal
+20,2000,good,0,rolled-over-past-65535
+30,8000,good,0,post-rollover
+40,12000,suspect,0,suspect-window
+50,500,good,reset,manual-reset
+60,4500,good,0,post-reset

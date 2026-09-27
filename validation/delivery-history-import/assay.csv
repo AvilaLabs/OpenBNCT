@@ -1,0 +1,6 @@
+# synthetic blood-assay draws; results released at lab time 7200 s
+t_s,conc_ug_g
+-1200,0.0
+0,24.4
+1800,19.1
+3600,14.8

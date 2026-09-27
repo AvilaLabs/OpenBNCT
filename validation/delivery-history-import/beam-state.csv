@@ -1,0 +1,6 @@
+# synthetic beam-state events
+t_s,state
+0,beam_on
+600,beam_hold
+660,beam_on
+1200,beam_off

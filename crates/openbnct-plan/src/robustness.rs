@@ -42,7 +42,10 @@
 use std::collections::BTreeMap;
 
 use openbnct_bio::BiologicalModel;
-use openbnct_core::{ContentReference, DoseComponent, UncertaintySource};
+use openbnct_core::{
+    CategoryDisposition, ContentReference, DoseComponent, JointUncertaintyInput, SourceSensitivity,
+    SourceSharing, UncertaintySource, propagate_first_order,
+};
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
@@ -119,6 +122,358 @@ pub enum RobustnessError {
     Invalid(String),
     #[error("optimizer input error: {0}")]
     Optimize(#[from] crate::optimize::OptimizeError),
+}
+
+/// Joint-robustness artifact schema token.
+pub const JOINT_ROBUSTNESS_SCHEMA: &str = "openbnct.joint-robustness/0.1.0";
+
+/// One source's signed per-voxel sensitivity map on one beam:
+/// `s(v) = ∂D_beam(v)/∂(source draw)` in the evaluated dose unit per
+/// unit draw. For a relative-σ scale source this is `rel·D_c(v)` —
+/// callers compose it with [`relative_scale_sensitivities`]; a
+/// `component` of `None` means the map is already expressed in the
+/// objective's evaluated quantity (physical total, or the isoeffective
+/// combination), `Some(c)` is weighted by the objective's component
+/// weight for `c`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct BeamSourceSensitivity {
+    /// Beam name (matching [`InversePlanResult::beams`] order).
+    pub beam: String,
+    /// `source_id` → sensitivity entries for that beam.
+    pub sensitivities: Vec<SourceSensitivityMap>,
+}
+
+/// One signed sensitivity map for a (beam, source) pair.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct SourceSensitivityMap {
+    /// `JointSource::id` this sensitivity applies to.
+    pub source_id: String,
+    /// `None` = the map is in the evaluated dose quantity directly;
+    /// `Some(name)` = per-component map weighted by the objective's
+    /// component weights.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub component: Option<String>,
+    /// Signed per-voxel map in grid order.
+    pub values: Vec<f64>,
+}
+
+/// Build the sensitivity maps for a scale source that multiplies dose
+/// component `component` by `(1 + draw·rel)` — `s_i(v) =
+/// rel·D_{i,component}(v)` per beam. For a dimensionless scale draw
+/// `rel` is 1.0; for a draw declared in percent it is 0.01 — `rel`
+/// converts one unit of draw into a dose multiplier. `component: None`
+/// scales the field's evaluated total (`rel·D_total(v)`).
+pub fn relative_scale_sensitivities(
+    fields: &[BeamDoseField],
+    source_id: &str,
+    component: Option<&str>,
+    rel: f64,
+) -> Result<Vec<BeamSourceSensitivity>, RobustnessError> {
+    if !rel.is_finite() || rel < 0.0 {
+        return Err(RobustnessError::Invalid(
+            "relative scale must be finite and non-negative".into(),
+        ));
+    }
+    fields
+        .iter()
+        .map(|field| {
+            let base: &Vec<f64> = match component {
+                Some(name) => field
+                    .components
+                    .as_ref()
+                    .and_then(|c| c.get(name))
+                    .ok_or_else(|| {
+                        RobustnessError::Invalid(format!(
+                            "beam {:?} carries no {name:?} component map",
+                            field.name
+                        ))
+                    })?,
+                None => &field.values,
+            };
+            Ok(BeamSourceSensitivity {
+                beam: field.name.clone(),
+                sensitivities: vec![SourceSensitivityMap {
+                    source_id: source_id.into(),
+                    component: component.map(str::to_string),
+                    values: base.iter().map(|v| rel * v).collect(),
+                }],
+            })
+        })
+        .collect()
+}
+
+/// One objective's outcome under the joint-correlated path — same
+/// fields as [`ObjectiveRobustness`] plus the variance contributions
+/// per source/correlation group (nonnegative, in metric² units).
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JointObjectiveRobustness {
+    #[serde(flatten)]
+    pub robustness: ObjectiveRobustness,
+    /// Variance contribution per ungrouped source id, and one entry
+    /// per correlation group keyed by the joined member ids — reported
+    /// alongside the total, never normalized into shares.
+    pub contributions: BTreeMap<String, f64>,
+}
+
+/// `openbnct.joint-robustness/0.1.0` — first-order joint-uncertainty
+/// robustness report binding the inverse-plan result, objective
+/// document, beam dose bundles, and the joint input by hash.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct JointRobustnessReport {
+    #[serde(deserialize_with = "openbnct_core::deserialize_contract_id")]
+    pub schema_version: String,
+    pub id: String,
+    pub case_id: String,
+    /// The joint-uncertainty input propagated.
+    pub input: ContentReference,
+    /// The inverse-plan result whose weights are propagated.
+    pub result: ContentReference,
+    /// The objective document the plan was optimized under.
+    pub objective: ContentReference,
+    /// Per-beam dose-bundle references, in result order.
+    pub dose_references: Vec<ContentReference>,
+    /// Full input echoed for standalone interpretation.
+    pub joint_input: JointUncertaintyInput,
+    /// Uncertainty-category coverage declared by the input.
+    pub categories: Vec<CategoryDisposition>,
+    /// Per-objective outcomes, parallel to `spec.objectives`.
+    pub objectives: Vec<JointObjectiveRobustness>,
+    /// Propagation convention tag (`first_order_gaussian`).
+    pub method: String,
+    /// Declared assumptions — the same honesty list the ensemble path
+    /// carries.
+    pub assumptions: Vec<String>,
+    pub qualification: String,
+    pub provenance_id: String,
+}
+
+impl JointRobustnessReport {
+    pub fn validate(&self) -> Result<(), RobustnessError> {
+        if !openbnct_core::schema_matches(&self.schema_version, JOINT_ROBUSTNESS_SCHEMA) {
+            return Err(RobustnessError::UnsupportedSchema(
+                self.schema_version.clone(),
+            ));
+        }
+        for (label, value) in [
+            ("id", self.id.as_str()),
+            ("case_id", self.case_id.as_str()),
+            ("method", self.method.as_str()),
+            ("qualification", self.qualification.as_str()),
+            ("provenance_id", self.provenance_id.as_str()),
+        ] {
+            if value.trim().is_empty() {
+                return Err(RobustnessError::Invalid(format!(
+                    "{label} must be non-empty"
+                )));
+            }
+        }
+        self.input
+            .validate()
+            .map_err(|e| RobustnessError::Invalid(format!("input reference: {e}")))?;
+        self.result
+            .validate()
+            .map_err(|e| RobustnessError::Invalid(format!("result reference: {e}")))?;
+        self.objective
+            .validate()
+            .map_err(|e| RobustnessError::Invalid(format!("objective reference: {e}")))?;
+        self.joint_input
+            .validate()
+            .map_err(|e| RobustnessError::Invalid(format!("joint input: {e}")))?;
+        Ok(())
+    }
+}
+
+/// Plan robustness under a declared joint-uncertainty input — the
+/// correlated counterpart of [`plan_robustness`]. Per objective, the
+/// per-(beam, source, component) sensitivity maps fold with the beam
+/// weights, the objective's component weights, and the analytic metric
+/// gradient into first-order coefficients
+/// `a = Σ_{i,c,v} w_i·w_c·(∂m/∂D_v)·s_{i,c,s}(v)`, then
+/// [`propagate_first_order`] folds them through the declared
+/// covariance: shared draws add linearly (a shared calibration does
+/// not shrink when the field is subdivided), `independent_per_target`
+/// draws fold in quadrature per beam, and correlation groups form
+/// joint ρ·σᵢσⱼ blocks.
+///
+/// First-order Gaussian assumptions apply: linearized propagation and
+/// one-sided normal violation probabilities. Run the ensemble path
+/// (`evaluate_joint_dose_ensemble`) for nonlinear or support-
+/// constrained behavior; the two paths are complementary, and this
+/// function's results are *not* a second implementation of the same
+/// quantity — they are the same first-order answer computed without
+/// sampling.
+#[allow(clippy::too_many_arguments)]
+pub fn plan_robustness_joint(
+    result: &InversePlanResult,
+    spec: &InversePlanObjective,
+    fields: &[BeamDoseField],
+    input: &JointUncertaintyInput,
+    sensitivities: &[BeamSourceSensitivity],
+    mask_voxels: &BTreeMap<String, Vec<usize>>,
+) -> Result<Vec<JointObjectiveRobustness>, RobustnessError> {
+    input
+        .validate()
+        .map_err(|e| RobustnessError::Invalid(format!("joint input: {e}")))?;
+    if fields.len() != result.weights.len() || sensitivities.len() != fields.len() {
+        return Err(RobustnessError::Invalid(format!(
+            "expected {} beam fields/sensitivities (result order), got {}/{}",
+            result.weights.len(),
+            fields.len(),
+            sensitivities.len()
+        )));
+    }
+    let weights: Vec<f64> = result.weights.iter().map(|b| b.weight).collect();
+    let n = fields
+        .first()
+        .map(|f| {
+            if f.values.is_empty() {
+                f.components
+                    .as_ref()
+                    .and_then(|c| c.values().next().map(Vec::len))
+                    .unwrap_or(0)
+            } else {
+                f.values.len()
+            }
+        })
+        .ok_or_else(|| RobustnessError::Invalid("no beam fields".into()))?;
+    for (beam_sens, field) in sensitivities.iter().zip(fields) {
+        if beam_sens.beam != field.name {
+            return Err(RobustnessError::Invalid(format!(
+                "sensitivity beam {:?} does not match field {:?} (result order)",
+                beam_sens.beam, field.name
+            )));
+        }
+        for map in &beam_sens.sensitivities {
+            if map.values.len() != n {
+                return Err(RobustnessError::Invalid(format!(
+                    "sensitivity {:?} on beam {:?} has {} voxels, expected {n}",
+                    map.source_id,
+                    beam_sens.beam,
+                    map.values.len()
+                )));
+            }
+            if map.values.iter().any(|v| !v.is_finite()) {
+                return Err(RobustnessError::Invalid(format!(
+                    "sensitivity {:?} on beam {:?} has non-finite values",
+                    map.source_id, beam_sens.beam
+                )));
+            }
+            if !input.sources.iter().any(|s| s.id == map.source_id) {
+                return Err(RobustnessError::Invalid(format!(
+                    "sensitivity references unknown joint source {:?}",
+                    map.source_id
+                )));
+            }
+        }
+    }
+
+    let mut shared = vec![0.0; n];
+    for (field, &w) in fields.iter().zip(&weights) {
+        for (d, &v) in shared.iter_mut().zip(&field.values) {
+            *d += w * v;
+        }
+    }
+
+    let isoeffective = spec.dose_quantity == crate::optimize::DoseQuantity::Isoeffective;
+    let model: Option<&BiologicalModel> = spec.bio_model.as_ref();
+
+    let mut outcomes = Vec::with_capacity(spec.objectives.len());
+    for objective in &spec.objectives {
+        let mask_name = objective_mask(objective);
+        let voxels = mask_voxels.get(mask_name).ok_or_else(|| {
+            RobustnessError::Invalid(format!("objective mask {mask_name:?} has no voxels"))
+        })?;
+        let (dose, _eff) = objective_view(fields, &weights, &shared, spec, objective);
+        let (metric, gradient) = objective_metric(objective, &dose, voxels);
+        let weights_map: BTreeMap<String, f64> = if isoeffective {
+            let model = model.expect("objective document validated with a bio_model");
+            model
+                .region_weights
+                .get(mask_name)
+                .unwrap_or(&model.component_weights)
+                .clone()
+        } else {
+            [
+                DoseComponent::Boron,
+                DoseComponent::Nitrogen,
+                DoseComponent::Hydrogen,
+                DoseComponent::Photon,
+            ]
+            .iter()
+            .map(|c| (component_name(*c).to_string(), 1.0))
+            .collect()
+        };
+
+        // First-order coefficients: for each (beam, source, component)
+        // map, a = w_i·w_c·Σ_v∇m·s(v) — signed, summed per draw before
+        // the covariance fold.
+        let mut coefficients: Vec<SourceSensitivity> = Vec::new();
+        for (beam_sens, &w) in sensitivities.iter().zip(&weights) {
+            if w == 0.0 {
+                continue;
+            }
+            let beam_index = fields
+                .iter()
+                .position(|f| f.name == beam_sens.beam)
+                .expect("validated");
+            for map in &beam_sens.sensitivities {
+                let source_index = input
+                    .sources
+                    .iter()
+                    .position(|s| s.id == map.source_id)
+                    .expect("validated");
+                let wc = match &map.component {
+                    Some(component) => weights_map.get(component).copied().unwrap_or(0.0),
+                    None => 1.0,
+                };
+                let a: f64 = w
+                    * wc
+                    * voxels
+                        .iter()
+                        .map(|&v| gradient[v] * map.values[v])
+                        .sum::<f64>();
+                if a == 0.0 {
+                    continue;
+                }
+                let source = &input.sources[source_index];
+                let target = match source.sharing {
+                    SourceSharing::Shared => None,
+                    SourceSharing::IndependentPerTarget => Some(fields[beam_index].name.clone()),
+                };
+                coefficients.push(SourceSensitivity {
+                    source: source_index,
+                    target,
+                    coefficient: a,
+                });
+            }
+        }
+        let (contributions, sigma2) = propagate_first_order(input, &coefficients)
+            .map_err(|e| RobustnessError::Invalid(format!("propagation: {e}")))?;
+        let sigma_metric = sigma2.sqrt();
+
+        let (bound, sense) = objective_bound(objective);
+        let violation_probability = if sigma_metric > 0.0 {
+            normal_cdf(sense * (metric - bound) / sigma_metric)
+        } else {
+            f64::from(sense * (metric - bound) > 0.0)
+        };
+        outcomes.push(JointObjectiveRobustness {
+            robustness: ObjectiveRobustness {
+                kind: objective_kind(objective).to_string(),
+                mask: mask_name.to_string(),
+                bound,
+                achieved: metric,
+                sigma_1sigma: sigma_metric,
+                violation_probability,
+            },
+            contributions: contributions.into_iter().collect(),
+        });
+    }
+    Ok(outcomes)
 }
 
 /// Gaussian Φ(x) — Abramowitz–Stegun 7.1.26, |ε| < 1.5e-7; reporting-
@@ -462,5 +817,303 @@ mod tests {
         assert!((cdf(0.0) - 0.5).abs() < 1e-7);
         assert!((cdf(1.96) - 0.9750021).abs() < 1e-4);
         assert!((cdf(-1.96) - 0.0249979).abs() < 1e-4);
+    }
+
+    // --- UQ-01 joint-robustness fixtures -------------------------------
+
+    use openbnct_core::{
+        CategoryStatus, CorrelationGroup, Distribution, JointSource, SourceEvidence, SourceTarget,
+        Support, UncertaintyCategory,
+    };
+
+    fn physical_spec() -> InversePlanObjective {
+        InversePlanObjective {
+            schema_version: "openbnct.inverse-plan-objective/0.1.0".into(),
+            id: "spec".into(),
+            case_id: "case".into(),
+            dose_quantity: DoseQuantity::PhysicalTotal,
+            objectives: vec![DoseObjective::MaxMean {
+                mask: "tumor".into(),
+                limit: 10.0,
+                weight: 1.0,
+            }],
+            max_iterations: 100,
+            gradient_tolerance: 1e-8,
+            weight_bound: None,
+            weight_regularization: 0.0,
+            bio_model: None,
+            validity_domain: "test".into(),
+            provenance_id: "test".into(),
+        }
+    }
+
+    fn joint_source(id: &str, sharing: SourceSharing, scope: Vec<SourceTarget>) -> JointSource {
+        JointSource {
+            id: id.into(),
+            category: UncertaintyCategory::InputParameter,
+            scope,
+            sharing,
+            unit: "1".into(),
+            // First-order propagation uses σ only; the declared real
+            // support is honest — a Normal scale is never sampled here.
+            support: Support::Real,
+            distribution: Distribution::Normal {
+                mean: 1.0,
+                std_dev: 0.1,
+            },
+            evidence: SourceEvidence {
+                basis: "synthetic fixture".into(),
+                reference: None,
+            },
+        }
+    }
+
+    fn joint_input(
+        sources: Vec<JointSource>,
+        correlations: Vec<CorrelationGroup>,
+    ) -> JointUncertaintyInput {
+        JointUncertaintyInput {
+            schema_version: openbnct_core::JOINT_UNCERTAINTY_INPUT_SCHEMA.into(),
+            id: "joint.test".into(),
+            subjects: Vec::new(),
+            sources,
+            correlations,
+            category_disposition: [
+                UncertaintyCategory::StatisticalSampling,
+                UncertaintyCategory::StructuralModel,
+                UncertaintyCategory::ModelDiscrepancy,
+            ]
+            .iter()
+            .map(|category| CategoryDisposition {
+                category: *category,
+                status: CategoryStatus::Unassessed,
+                note: "out of scope for this fixture".into(),
+            })
+            .collect(),
+            qualification: openbnct_core::JOINT_UNCERTAINTY_QUALIFICATION.into(),
+            provenance_id: "test".into(),
+        }
+    }
+
+    fn field(name: &str, dose: f64) -> BeamDoseField {
+        BeamDoseField {
+            name: name.into(),
+            values: vec![dose],
+            components: None,
+        }
+    }
+
+    #[test]
+    fn joint_shared_vs_independent_two_field_fixture() {
+        // The handoff's canonical check: fields 2 and 3 with relative σ
+        // 0.1 — shared → σ = 0.1·(2+3) = 0.5; independent →
+        // sqrt(0.2²+0.3²) = sqrt(0.13) ≈ 0.3606.
+        let fields = vec![field("beam0", 2.0), field("beam1", 3.0)];
+        let weights = result(vec![1.0, 1.0]);
+        let spec = physical_spec();
+        let masks = [("tumor".to_string(), vec![0usize])].into_iter().collect();
+
+        // Shared: one draw scales both fields — a = 0.1·2 + 0.1·3 = 0.5.
+        let shared = joint_input(
+            vec![joint_source(
+                "output",
+                SourceSharing::Shared,
+                vec![SourceTarget::Global],
+            )],
+            Vec::new(),
+        );
+        let sens: Vec<BeamSourceSensitivity> = fields
+            .iter()
+            .map(|f| BeamSourceSensitivity {
+                beam: f.name.clone(),
+                sensitivities: vec![SourceSensitivityMap {
+                    source_id: "output".into(),
+                    component: None,
+                    values: f.values.clone(),
+                }],
+            })
+            .collect();
+        let out = plan_robustness_joint(&weights, &spec, &fields, &shared, &sens, &masks).unwrap();
+        assert!((out[0].robustness.achieved - 5.0).abs() < 1e-12);
+        assert!((out[0].robustness.sigma_1sigma - 0.5).abs() < 1e-12);
+        assert!((out[0].contributions["output"] - 0.25).abs() < 1e-12);
+
+        // Independent per beam: two separate draws fold in quadrature.
+        let independent = joint_input(
+            vec![joint_source(
+                "output",
+                SourceSharing::IndependentPerTarget,
+                vec![
+                    SourceTarget::Field {
+                        name: "beam0".into(),
+                    },
+                    SourceTarget::Field {
+                        name: "beam1".into(),
+                    },
+                ],
+            )],
+            Vec::new(),
+        );
+        let out =
+            plan_robustness_joint(&weights, &spec, &fields, &independent, &sens, &masks).unwrap();
+        let expected = (0.13_f64).sqrt();
+        assert!((out[0].robustness.sigma_1sigma - expected).abs() < 1e-12);
+        assert!((out[0].contributions["output"] - 0.13).abs() < 1e-12);
+
+        // Two ungrouped shared sources, one per field — same quadrature.
+        let two_shared = joint_input(
+            vec![
+                joint_source(
+                    "cal-a",
+                    SourceSharing::Shared,
+                    vec![SourceTarget::Field {
+                        name: "beam0".into(),
+                    }],
+                ),
+                joint_source(
+                    "cal-b",
+                    SourceSharing::Shared,
+                    vec![SourceTarget::Field {
+                        name: "beam1".into(),
+                    }],
+                ),
+            ],
+            Vec::new(),
+        );
+        let sens2 = vec![
+            BeamSourceSensitivity {
+                beam: "beam0".into(),
+                sensitivities: vec![SourceSensitivityMap {
+                    source_id: "cal-a".into(),
+                    component: None,
+                    values: vec![2.0],
+                }],
+            },
+            BeamSourceSensitivity {
+                beam: "beam1".into(),
+                sensitivities: vec![SourceSensitivityMap {
+                    source_id: "cal-b".into(),
+                    component: None,
+                    values: vec![3.0],
+                }],
+            },
+        ];
+        let out =
+            plan_robustness_joint(&weights, &spec, &fields, &two_shared, &sens2, &masks).unwrap();
+        assert!((out[0].robustness.sigma_1sigma - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn joint_shared_sigma_survives_field_splitting() {
+        // Splitting a field must not shrink a shared uncertainty:
+        // [2, 3] under one shared draw gives the same σ as
+        // [2, 1.5, 1.5]; three independent draws do not.
+        let spec = physical_spec();
+        let masks = [("tumor".to_string(), vec![0usize])].into_iter().collect();
+        let fields3 = vec![
+            field("beam0", 2.0),
+            field("beam1a", 1.5),
+            field("beam1b", 1.5),
+        ];
+        let weights3 = result(vec![1.0, 1.0, 1.0]);
+        let sens3: Vec<BeamSourceSensitivity> = fields3
+            .iter()
+            .map(|f| BeamSourceSensitivity {
+                beam: f.name.clone(),
+                sensitivities: vec![SourceSensitivityMap {
+                    source_id: "output".into(),
+                    component: None,
+                    values: f.values.clone(),
+                }],
+            })
+            .collect();
+
+        let shared = joint_input(
+            vec![joint_source(
+                "output",
+                SourceSharing::Shared,
+                vec![SourceTarget::Global],
+            )],
+            Vec::new(),
+        );
+        let out =
+            plan_robustness_joint(&weights3, &spec, &fields3, &shared, &sens3, &masks).unwrap();
+        // 0.2 + 0.15 + 0.15 = 0.5 — identical to the unsplit case.
+        assert!((out[0].robustness.sigma_1sigma - 0.5).abs() < 1e-12);
+
+        let per_target = joint_input(
+            vec![joint_source(
+                "output",
+                SourceSharing::IndependentPerTarget,
+                vec![
+                    SourceTarget::Field {
+                        name: "beam0".into(),
+                    },
+                    SourceTarget::Field {
+                        name: "beam1a".into(),
+                    },
+                    SourceTarget::Field {
+                        name: "beam1b".into(),
+                    },
+                ],
+            )],
+            Vec::new(),
+        );
+        let out =
+            plan_robustness_joint(&weights3, &spec, &fields3, &per_target, &sens3, &masks).unwrap();
+        // sqrt(0.2² + 0.15² + 0.15²) = sqrt(0.085).
+        let expected = (0.085_f64).sqrt();
+        assert!((out[0].robustness.sigma_1sigma - expected).abs() < 1e-12);
+    }
+
+    #[test]
+    fn joint_correlation_group_interpolates_between_limits() {
+        // ρ=1 must reproduce the shared-draw answer; ρ=0 the quadrature
+        // answer; ρ=0.5 lies between, and the group contribution is the
+        // full quadratic form.
+        let fields = vec![field("beam0", 2.0), field("beam1", 3.0)];
+        let weights = result(vec![1.0, 1.0]);
+        let spec = physical_spec();
+        let masks = [("tumor".to_string(), vec![0usize])].into_iter().collect();
+        let sens = vec![
+            BeamSourceSensitivity {
+                beam: "beam0".into(),
+                sensitivities: vec![SourceSensitivityMap {
+                    source_id: "a".into(),
+                    component: None,
+                    values: vec![2.0],
+                }],
+            },
+            BeamSourceSensitivity {
+                beam: "beam1".into(),
+                sensitivities: vec![SourceSensitivityMap {
+                    source_id: "b".into(),
+                    component: None,
+                    values: vec![3.0],
+                }],
+            },
+        ];
+        for (rho, expected_var) in [(1.0, 0.25), (0.0, 0.13), (0.5, 0.19)] {
+            let input = joint_input(
+                vec![
+                    joint_source("a", SourceSharing::Shared, vec![SourceTarget::Global]),
+                    joint_source("b", SourceSharing::Shared, vec![SourceTarget::Global]),
+                ],
+                vec![CorrelationGroup {
+                    sources: vec!["a".into(), "b".into()],
+                    correlation: vec![1.0, rho, rho, 1.0],
+                }],
+            );
+            let out =
+                plan_robustness_joint(&weights, &spec, &fields, &input, &sens, &masks).unwrap();
+            assert!(
+                (out[0].robustness.sigma_1sigma.powi(2) - expected_var).abs() < 1e-12,
+                "ρ={rho}: σ² {} != {expected_var}",
+                out[0].robustness.sigma_1sigma.powi(2)
+            );
+            // The group's quadratic-form contribution is the whole σ²
+            // (its two members carry all declared variance).
+            assert!((out[0].contributions["a+b"] - expected_var).abs() < 1e-12);
+        }
     }
 }

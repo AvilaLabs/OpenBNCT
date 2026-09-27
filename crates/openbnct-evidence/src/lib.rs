@@ -13,26 +13,49 @@ use sha2::{Digest, Sha256};
 use thiserror::Error;
 
 mod analytic_oracle;
+mod boron_infer;
 mod bundle;
+mod catalogue;
 mod compare;
+mod delivery_history;
 mod dvh;
 mod gamma;
 mod limits;
 mod metamorphic;
 mod metrics;
+mod outcomes;
 mod pk;
+mod qualification;
+mod replay;
+mod uq_ensemble;
 
 pub use analytic_oracle::{
     ANALYTIC_EVALUATION_SCHEMA, ANALYTIC_ORACLE_SCHEMA, AnalyticLaw, AnalyticOracle,
     AnalyticOracleEvaluation, evaluate_analytic_oracle,
 };
+pub use boron_infer::{
+    BORON_INFERENCE_REPORT_SCHEMA, BORON_INFERENCE_SCHEMA, BoronInferenceError,
+    BoronInferenceReport, BoronInferenceSpec, BoronObservation, EstimationState,
+    ObservationResidual, StateEstimate, UnresolvedDirection, run_boron_inference,
+};
 pub use bundle::{
     BundleInput, EVIDENCE_BUNDLE_MANIFEST_NAME, EVIDENCE_BUNDLE_MANIFEST_SCHEMA,
     EvidenceBundleManifest, export_evidence_bundle,
 };
+pub use catalogue::{
+    BENCHMARK_CATALOGUE_SCHEMA, BENCHMARK_REPORT_SCHEMA, BenchmarkCatalogue, BenchmarkReport,
+    CatalogueEntry, CatalogueError, CatalogueFinding, CatalogueTolerance, EntryStatus,
+    EvidenceItem, EvidenceKind, EvidenceVerdict, FindingSeverity, ProblemClass, ToleranceDeclared,
+    catalogue_report, verify_catalogue,
+};
 pub use compare::{
     ComparisonInput, DOSE_COMPARISON_SCHEMA, DoseComparison, QuantityAgreement,
     compare_dose_bundles,
+};
+pub use delivery_history::{
+    BeamReference, BeamState, CSV_IMPORT_SPEC_SCHEMA, ClockBasis, CsvColumns, CsvImportSpec,
+    CsvStreamSpec, DELIVERY_HISTORY_SCHEMA, DeliveryHistory, HistoryError, HistorySample,
+    HistoryStream, ImportDiagnostics, QualityFlag, RateInterval, StreamKind, import_stream_csv,
 };
 pub use dvh::{DVH_SCHEMA, DoseVolumeHistogram};
 pub use gamma::{
@@ -50,12 +73,29 @@ pub use metamorphic::{
 pub use metrics::{
     CoverageMetric, DOSE_METRICS_SCHEMA, EudMetric, RegionDoseMetrics, VolumeMetric,
 };
+pub use outcomes::{
+    Course, DoseRecord, EndpointDefinition, OUTCOMES_EXPORT_SCHEMA, OutcomeObservation,
+    OutcomesError, OutcomesExport, Participant, RegionOfInterest, Session, export_fields,
+};
 pub use pk::{
     PK_IRRADIATION_SCHEMA, PK_MODEL_SCHEMA, PK_SAMPLES_SCHEMA, PK_SCHEDULE_SCHEMA,
     PK_TISSUE_SPEC_SCHEMA, PkIrradiationReport, PkModel, PkRegion, PkRegionResult, PkSample,
     PkSampleSeries, PkSamples, PkScheduleReport, PkScheduleWindow, PkTimeUncertainty,
     PkTissueRegion, PkTissueSpec, apply_tissue_spec, evaluate_pk_schedule, fit_pk_model,
     pk_integrated_dose_bundle, pk_integrated_scale, pk_region_endpoint, pk_shifted,
+};
+pub use qualification::{
+    ClaimLevel, ClaimStatus, QUALIFICATION_RECORD_SCHEMA, QualificationClaim, QualificationError,
+    QualificationRecord,
+};
+pub use replay::{
+    BeamReplay, ConcentrationHistory, ConcentrationRule, REPLAY_REPORT_SCHEMA, REPLAY_SPEC_SCHEMA,
+    ReplayBeam, ReplayDelta, ReplayError, ReplayReport, ReplaySpec, reconstruct_beam, run_replay,
+};
+pub use uq_ensemble::{
+    DoseAdapter, JOINT_DOSE_ENSEMBLE_SPEC_SCHEMA, JointDoseEnsembleSpec, MetricKind,
+    MetricQuantity, MetricRequest, PkBinding, PkIntegration, PkIntegrationSpec, PkSlot,
+    UqEnsembleError, evaluate_joint_dose_ensemble, realize_dose_bundle, realize_pk_model,
 };
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]

@@ -5,9 +5,11 @@
 mod exposure;
 mod external_dose;
 mod interchange;
+mod joint;
 mod registration;
 mod stats;
 mod systematic;
+mod voi;
 
 use std::collections::BTreeSet;
 
@@ -27,6 +29,17 @@ pub use interchange::{
     COMPONENT_DOSE_INTERCHANGE_SCHEMA, ComponentDoseInterchange, ExternalProducer, ExternalTotal,
     InterchangeError, grid_geometry_equivalent, import_component_dose,
 };
+pub use joint::{
+    AttributionResult, CategoryDisposition, CategoryStatus, CorrelationGroup, Distribution,
+    EnsembleMethod, EnsembleSpec, JOINT_UNCERTAINTY_INPUT_SCHEMA, JOINT_UNCERTAINTY_QUALIFICATION,
+    JOINT_UNCERTAINTY_REPORT_SCHEMA, JointError, JointSource, JointUncertaintyInput,
+    JointUncertaintyReport, MAX_REALIZATIONS, MAX_RETAINED_VALUES, MAX_SOURCES, MetricAttribution,
+    MetricDistribution, MetricValue, QuantileEstimator, Realization, ReportedQuantile, SourceDraw,
+    SourceEvidence, SourceSensitivity, SourceSharing, SourceTarget, Support, UncertaintyCategory,
+    attribute_first_order, category_coverage, cholesky_psd, distribution_dimension,
+    marginal_std_dev, propagate_first_order, realize_ensemble, run_ensemble,
+    validate_attribution_groups,
+};
 pub use registration::{
     LandmarkPair, REGISTRATION_SCHEMA, Registration, RegistrationError, RegistrationMethod,
     RigidTransform, declared_registration, fit_landmark_transform, landmark_registration,
@@ -40,6 +53,10 @@ pub use systematic::{
     SourceSummary, SystematicError, SystematicUncertaintyReport, UncertaintySource,
     boron_field_sigma, combine_total_sigma, combine_voxel_sigma, positioning_sigma,
     region_uncertainty, relative_component_sigma, summarize_source,
+};
+pub use voi::{
+    CandidateUtility, CostObjective, MeasurementProposal, VOI_EVALUATION_SCHEMA, VOI_REPORT_SCHEMA,
+    VoiEvaluationSpec, VoiMetric, VoiReport, evaluate_voi,
 };
 
 /// A regular patient-coordinate voxel grid.

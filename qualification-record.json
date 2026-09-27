@@ -1,0 +1,197 @@
+{
+ "schema_version": "openbnct.qualification-record/0.1.0",
+ "id": "openbnct-qualification-r1",
+ "software_versions": [
+  "openbnct crates 0.2.2 (workspace HEAD)"
+ ],
+ "data_versions": [
+  "benchmark-catalogue 0.1.0"
+ ],
+ "claims": [
+  {
+   "id": "q1",
+   "claim": "Discrete-ordinates solver reproduces canonical 1-D/void benchmark profiles within declared tolerances",
+   "level": "numerical_verification",
+   "status": "held",
+   "evidence": [
+    {
+     "id": "canonical-reed-problem",
+     "sha256": "808b865a76719b5a39ba1c25c2fcb402487c9f0354e2b607e992b80fedefb114",
+     "artifact": "comparison.json"
+    },
+    {
+     "id": "canonical-azmy-problem",
+     "sha256": "2550378aacee170260b8a19b5f497f6850c1144a26046a8b5f8a9f577cc7ff03",
+     "artifact": "comparison.json"
+    },
+    {
+     "id": "canonical-kobayashi-p1",
+     "sha256": "435b2fd704f075e486abf5012c4e1e095036e5f818556fe42dbebb8233fa4eb0",
+     "artifact": "comparison.json"
+    }
+   ],
+   "applicability": "1-D slab and nested-cube geometries at the committed multigroup data; pass/fail is per the recorded tolerances, and documented ray-effect discrepancies stand as findings, not failures",
+   "limitations": [
+    "deep-field ray effects are a recorded limitation of the discrete method, not evidence against it"
+   ]
+  },
+  {
+   "id": "q2",
+   "claim": "Component-dose computation agrees with continuous-energy Monte Carlo on the layered head phantom",
+   "level": "measurement_comparison",
+   "status": "held",
+   "evidence": [
+    {
+     "id": "intercomparison-layered-head",
+     "sha256": "eb60471b3bc37a81bd64abbfe60f4bd905bee2c17fb749d38ed90a929d5e6c53",
+     "artifact": "openmc-tallies.json"
+    }
+   ],
+   "applicability": "the committed phantom, spectra, and tally grid of the intercomparison entry; not a general accuracy claim",
+   "limitations": [
+    "single geometry; no voxel-resolution claim beyond the comparison grid"
+   ]
+  },
+  {
+   "id": "q3",
+   "claim": "Transport/dose chain reproduces published FiR-1 phantom dose-depth data within declared uncertainty",
+   "level": "measurement_comparison",
+   "status": "held",
+   "evidence": [
+    {
+     "id": "fir1-k63-cylindrical-phantom",
+     "sha256": "25c24daf06ae7ec62a129224309de00a48bbc749de184fbfc17beada6057648e",
+     "artifact": "measurement-comparison-cylindrical-28g-tsl-p1-1e.json"
+    },
+    {
+     "id": "fir1-k63-pmma-phantom",
+     "sha256": "88c3e52954870eab3b3b83d3566224fd4edcb8374a5e77367c68dfd0d2997705",
+     "artifact": "measurement-comparison-pmma-28g-tsl-p1-1e.json"
+    },
+    {
+     "id": "fir1-k63-liquid-b-phantom",
+     "sha256": "4bfc332164e2b58554693426d04e4cb484c56fc1b724d9782b83b7e8f78d5264",
+     "artifact": "measurement-comparison-28g.json"
+    }
+   ],
+   "applicability": "the published FiR-1 K63 beam in the committed phantom geometries, at phantom depth resolution",
+   "limitations": [
+    "in-air beam model is fit to published in-phantom data; end-of-range and surface regions carry stated caveats"
+   ]
+  },
+  {
+   "id": "q4",
+   "claim": "Scenario-based robust weight optimization converges on the declared worst-case objective",
+   "level": "software_conformance",
+   "status": "held",
+   "evidence": [
+    {
+     "id": "scenario-robust-planning",
+     "sha256": "396769deb4152dd0fe467abcadd0dbff80d16870104ba79942a4240eebf87748",
+     "artifact": "scenario-report.json"
+    }
+   ],
+   "applicability": "the linear penalty/objective forms the scenario optimizer supports; nonlinear biological objectives are not established",
+   "limitations": [
+    "a research scenario optimum is not a certified dose bound; unsupported machine deliverability constraints remain unassessed"
+   ]
+  },
+  {
+   "id": "q5",
+   "claim": "Cell microdosimetry corrections reproduce Sato (2018) parameterizations for BPA/BSH compounds",
+   "level": "numerical_verification",
+   "status": "held",
+   "evidence": [
+    {
+     "id": "cell-microdosimetry-sato2018",
+     "sha256": "60946e884812df713447b8db131032fcd565f2afbe332b9dfb10fb10f2682e6c",
+     "artifact": "bpa-smk-evaluation.json"
+    }
+   ],
+   "applicability": "the published compound/parameter domain; microdistribution models remain literature-parameterized",
+   "limitations": [
+    "single literature basis; independent microdosimetric measurement is external"
+   ]
+  },
+  {
+   "id": "q6",
+   "claim": "Prompt-gamma reconstruction matches the BeNEdiCTE/LENA-class literature geometry",
+   "level": "numerical_verification",
+   "status": "held",
+   "evidence": [
+    {
+     "id": "pg-benedicte-geometry",
+     "sha256": "7915f59a2a482b23340e7207ccb3ec514c0b250f55f4216d12970d995909f67f",
+     "artifact": "observation.json"
+    }
+   ],
+   "applicability": "the committed literature geometry at its declared quadrature resolution \u2014 not sub-centimeter imaging",
+   "limitations": [
+    "the two-vial negative control stands; no spatial-resolution claim beyond the declared response"
+   ]
+  },
+  {
+   "id": "q7",
+   "claim": "Joint uncertainty propagation preserves shared/correlated sources across beam targets",
+   "level": "software_conformance",
+   "status": "held",
+   "evidence": [
+    {
+     "id": "fir1-k63-scenario-budget",
+     "sha256": "dc25de1103402c20beded3fd934bc75db4eb2c9f21729f79e6bdbdd483073d4a",
+     "artifact": "scenario-report.json"
+    },
+    {
+     "id": "nf-bnct-001",
+     "sha256": "5f57a0fc21f860e988d2058533ad5bd7689eec7e09343abd8f2f69b87d15b220",
+     "artifact": "transport/openmc-acceptance-report-600M.json"
+    }
+   ],
+   "applicability": "declared joint/0.1.0 inputs \u2014 analytic two-field fixtures and ensemble paths within the declared source scope",
+   "limitations": [
+    "source covariance relies on declared inputs; real facility covariance evidence is external"
+   ]
+  },
+  {
+   "id": "q8",
+   "claim": "Independent external reproduction of results",
+   "level": "external_reproduction",
+   "status": "external_dependency",
+   "applicability": null,
+   "evidence": [],
+   "limitations": [],
+   "external_requirement": "an independent institution reproducing benchmark/intercomparison cases outside this repository's release channel"
+  },
+  {
+   "id": "q9",
+   "claim": "Clinical or facility treatment-device qualification",
+   "level": "clinical_qualification",
+   "status": "external_dependency",
+   "applicability": null,
+   "evidence": [],
+   "limitations": [
+    "no clinical TPS equivalence, commissioning, or regulatory readiness is claimed anywhere in this repository"
+   ],
+   "external_requirement": "qualified-partner program with intended-use definition, facility measurements, human review, and jurisdiction/standards review"
+  },
+  {
+   "id": "q10",
+   "claim": "Prospective partner phantom run with recorded interruptions and independently measured dose",
+   "level": "measurement_comparison",
+   "status": "planned",
+   "applicability": null,
+   "evidence": [],
+   "limitations": [],
+   "external_requirement": "partner facility run with raw delivery export + independent dosimetry"
+  }
+ ],
+ "absent_records": [
+  "per-case data-license declarations on catalogue entries (verify reports them as warnings)",
+  "no real delivery-log formats \u2014 only the synthetic CSV import contract exists",
+  "no per-study joint covariance in the biological evidence library (sources don't report one)",
+  "no release/regression record index beyond the repository history itself",
+  "no institutional review, audit trail, or clinical-usability record"
+ ],
+ "qualification": "research_only_not_clinical",
+ "provenance_id": "handoff-qual-01"
+}
