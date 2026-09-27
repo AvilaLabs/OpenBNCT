@@ -30,12 +30,12 @@ use openbnct_core::GridGeometry;
 use crate::ct::{PixelKind, assemble_series, attribute_error, float, read_series, string};
 use crate::{DicomError, Result};
 
-const UNITS: Tag = Tag(0x0054, 0x1001);
-const DECAY_CORRECTION: Tag = Tag(0x0054, 0x1002);
-const RADIOPHARMACEUTICAL_INFORMATION: Tag = Tag(0x0054, 0x0016);
-const RADIONUCLIDE_TOTAL_DOSE: Tag = Tag(0x0018, 0x1074);
-const RADIOPHARMACEUTICAL_START_TIME: Tag = Tag(0x0018, 0x1072);
-const RADIONUCLIDE_HALF_LIFE: Tag = Tag(0x0018, 0x1075);
+pub(crate) const UNITS: Tag = Tag(0x0054, 0x1001);
+pub(crate) const DECAY_CORRECTION: Tag = Tag(0x0054, 0x1002);
+pub(crate) const RADIOPHARMACEUTICAL_INFORMATION: Tag = Tag(0x0054, 0x0016);
+pub(crate) const RADIONUCLIDE_TOTAL_DOSE: Tag = Tag(0x0018, 0x1074);
+pub(crate) const RADIOPHARMACEUTICAL_START_TIME: Tag = Tag(0x0018, 0x1072);
+pub(crate) const RADIONUCLIDE_HALF_LIFE: Tag = Tag(0x0018, 0x1075);
 const PATIENT_WEIGHT: Tag = Tag(0x0010, 0x1030);
 
 /// A validated PET series converted to SUVbw on the shared volume grid.
@@ -486,5 +486,34 @@ mod tests {
         let a = write_pet_slice(dir.path(), 0, &[1, 1, 1, 1], "CNTS");
         let b = write_pet_slice(dir.path(), 1, &[1, 1, 1, 1], "CNTS");
         assert!(import_pet_series(&[a, b]).is_err());
+    }
+
+    /// The synthetic companion series must round-trip through the real
+    /// Part-10 writer + importer and recover its declared SUV pattern —
+    /// CORE box at `core_suv`, background elsewhere — through the full
+    /// SUVbw decay correction.
+    #[test]
+    fn synthetic_pet_series_round_trips_suv() {
+        let dir = tempfile::tempdir().unwrap();
+        let pet_dir = dir.path().join("pet");
+        let files = crate::synthetic::write_pet_series(
+            &pet_dir,
+            &crate::synthetic::SyntheticPetSpec {
+                core_suv: 4.0,
+                background_suv: 1.0,
+                ..Default::default()
+            },
+        )
+        .unwrap();
+        assert_eq!(files.len(), crate::synthetic::SLICES);
+        let volume = import_pet_series(&files).unwrap();
+        assert_eq!(volume.geometry.shape, [40, 40, 40]);
+        assert!((volume.patient_weight_kg - 70.0).abs() < 1e-9);
+        assert!((volume.delta_t_s - 3600.0).abs() < 1.0);
+        // Center voxel (19/20 boundary crosses z center — check a
+        // clearly-core voxel) is CORE; a corner is background.
+        let idx = |x: usize, y: usize, z: usize| x + 40 * y + 1600 * z;
+        assert!((volume.suv[idx(20, 20, 20)] - 4.0).abs() < 0.01);
+        assert!((volume.suv[idx(0, 0, 0)] - 1.0).abs() < 0.01);
     }
 }

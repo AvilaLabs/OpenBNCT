@@ -8,6 +8,91 @@ own versions independent of the crate version.
 
 ### Added — transport
 
+- Declared source-spectrum interpolation: `sn solve --source-weighting
+  {collapse_consistent|uniform_in_bin}` selects the within-bin spread
+  of a `TabulatedHistogram` source — Maxwellian-below-0.5 eV / 1/E
+  above (collapse-consistent, the default) or uniform-per-eV matching
+  OpenMC `Tabular(interpolation="histogram")` and MCNP histogram
+  semantics for CE cross-code comparison. The selected convention is
+  recorded on the emitted flux artifact's `source_spectrum_weighting`;
+  on the layered-head intercomparison it closed the fast-bin deficit
+  from 0.16–0.43× to 0.50–0.86× of the continuous-energy reference.
+- `sn collapse --attenuation-depth <cm>`: multiplies collapse weights
+  by `exp(−σ_t,material(E)·z)` — survival weighting for penetrating
+  problems; verified to shift this phantom's fast-group σ_t by only
+  a few percent (intra-group condensation exonerated as the deep-flux
+  deficit mechanism).
+- `sn spectrum`: extract a per-cell/material `EnergyDistribution`
+  histogram from a flux artifact for transport-informed collapse
+  weighting (`sn collapse --weighting-spectrum`).
+- `sn solve --allow-unconverged`: writes the provisional field with
+  `converged: false` and its residual instead of discarding it —
+  diagnostics for slow upscatter-coupled (TSL) outer iterations.
+  The artifact also carries `residual_site` — the (cell, group) pair
+  with the largest last-iterate relative change — so a stalled solve
+  is diagnosable from the file alone.
+- `sn boundaries`: adaptive group-boundary placement by equal
+  importance mass over lethargy (R17-04). Reads an `EnergyDistribution`
+  histogram (`sn spectrum` extraction, measured beam, or fine-group
+  flux collapse), folds an optional same-binned `--response`, and
+  emits a `openbnct.boundary-proposal/0.1.0` document carrying
+  descending edges plus the placement rationale (per-group mass
+  shares and lethargy widths). `sn collapse --boundaries-file`
+  consumes the proposal directly. `--uniform-floor` (default 0.25)
+  reserves a share of the importance mass for uniform-lethargy
+  coverage — the anti-starvation guard measured on the water-column
+  experiment, where pure flux importance allocated 41/56 groups
+  below 0.5 eV and zero above 10 keV.
+- Multigroup data carries `beam_sigma_nodes_per_cm`: a 4-node
+  uniform-in-eV sub-bin σ_t kernel per group. Under
+  `--source-weighting uniform_in_bin` the uncollided deposit is
+  `Σ_j w_j·e^{−σ_j·s}` — a broad group's penetrating tail survives
+  instead of attenuating at the flux-weighted group σ_t. Neutral in
+  the bisected-56 structure (sub-bin σ_t spread is already small);
+  it matters for coarse or adaptively wide groups.
+
+### Fixed — transport
+
+- Period-2 limit cycle in the outer iteration: the alternating
+  group-sweep direction plus lagged periodic-wrap inflow make the
+  composed operator a two-step map, and on near-conservative
+  periodic problems it settles into a stable period-2 orbit — the
+  field is already at its fixed point while the one-step residual
+  sits pinned at the oscillation amplitude (~0.29 on the S4
+  periodic water column, driven by a single deep high-energy cell).
+  Convergence is now measured on the same-parity distance
+  `|x_n − x_{n−2}|`; a settled cycle emits the parity midpoint.
+  The column then converges at outer 30–32 (S4, 56 and 112 groups).
+- `uncollided_beam_flux` deposited the full disk intensity `J/μ̄`
+  into every cell whose CENTER back-rayed into the source disk —
+  cells the beam footprint only partially covers received the whole
+  beam (≈1/coverage overcount at the rim annulus; ~27% systematic
+  overshoot when the disk is inscribed in a periodic cell). The
+  deposit is now the transverse cell-average over an 8×8 point
+  grid — partially covered cells receive the illuminated fraction.
+  Verified by `uncollided_deposit_scales_by_transverse_coverage`
+  (quadrant-coverage known answer) and the water-column experiment,
+  where it removed the coverage component of the near-face
+  overshoot by exactly the predicted factor.
+
+### Added — interoperability
+
+- `export meshtal`: emits an MCNP `meshtal`-layout file from a
+  physical dose bundle in the OpenPINT convention — one mesh, tallies
+  14/24/34/44 for B10/N14/hydrogen/photon — so OpenPINT's
+  `sim_result_2_nifti.py` and `get_dose_components` ingest
+  deterministic dose volumes unmodified. Rows carry cell-center
+  (x,y,z) + `Result Rel Error` (sigma/|value| where the bundle carries
+  uncertainties, else 0 — not an accuracy claim); axis-aligned grids
+  with signed-permutation directions supported, oblique rejected.
+  Verified against the actual OpenPINT `read_mcnp_mesh` parser: all
+  four tallies parse and the values match the source bundle to the
+  5-decimal print precision (≈1.4e-6).
+- `openbnct_mcnp::pint_meshtal` / `meshtal_from_dose_bundle` with
+  round-trip coverage through the existing parser.
+
+### Added — transport
+
 - Volumetric fixed sources: `SourceSpatialDistribution::UniformBox`
   declares an axis-aligned emission box in cm. Emission is isotropic
   (the model requires the full-sphere cone) and the field's
@@ -316,6 +401,17 @@ own versions independent of the crate version.
   boron`) and propagated with `uq propagate` — the ¹⁰B(n,α)
   nuclear-data contribution to the folded boron dose is a 0.34%
   relative 1σ, computed analytically (zero perturbed solves).
+
+### Added — imaging
+
+- `dicom synth-pet`: writes a deterministic synthetic PET DICOM
+  series (standard PET SOP class, modality PT) on any case's grid —
+  layered SUV structure mirroring the phantom's region convention —
+  so the `import-pet` → `register apply` → `boron apply` → `boron
+  materialize` → tiered-assignment chain is exercisable end-to-end
+  without patient data. Verified on the NF-BNCT-001 frame: SUV ratio
+  4× core/background maps to 16.2 vs 3.2 µg/g with washout, and the
+  materialized assignment feeds `sn solve` tiered materials.
 
 ## [0.2.2] — 2026-09-23
 

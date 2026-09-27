@@ -292,6 +292,7 @@ impl MultigroupPhotonData {
                         scatter_p1_matrix_per_cm: m.scatter_p1_matrix_per_cm.clone(),
                         scatter_legendre_moments_per_cm: m.scatter_legendre_moments_per_cm.clone(),
                         transport_mu_bar: Some(m.transport_mu_bar.clone()),
+                        beam_sigma_nodes_per_cm: None,
                         dose_response_gy_cm2: dose,
                     }
                 })
@@ -540,6 +541,7 @@ mod tests {
             coarse_rebalance: true,
             inner_convergence: None,
             theta_repair: true,
+            source_weighting: crate::multigroup::SourceWeighting::CollapseConsistent,
         }
     }
 

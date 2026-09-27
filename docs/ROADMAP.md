@@ -552,6 +552,15 @@ Implementation status:
   pipeline's declared step before `import mcnp` re-ingests the meshtal.
   Source planes outside the grid are rejected. Execution against real MCNP
   remains the open acceptance gate;
+- complete (OpenPINT-convention slice): meshtal emission — `openbnct
+  export meshtal` writes a physical dose bundle as a
+  `meshtal`-layout file with the OpenPINT tally convention (one mesh,
+  tallies 14/24/34/44 = B10/N14/hydrogen/photon), so OpenPINT's own
+  `sim_result_2_nifti.py` and `get_dose_components` consume a
+  deterministic result unmodified. Signed-permutation axis-aligned
+  grids; `Rel Error` reports sigma/|value| where carried else 0;
+  round-trip covered through the crate's own parser. Real OpenPINT
+  pipeline execution remains the open acceptance gate;
 - complete (first slice): OP-10 external-dose/BED combined analysis —
   `openbnct.external-dose/0.1.0` imports one absolute-dose course with
   declared fractionation (uniform or explicit, hash-bound provenance);
@@ -1862,7 +1871,39 @@ convention.
   by response-weighted lethargy density instead of uniform
   refinement; emits a `multigroup-data` artifact plus a declared
   boundary rationale. Turns grid convergence from a manual ladder
-  into tooling.
+  into tooling. Intercomparison found the dominant deterministic
+  gaps were conventions, not group structure: the source's
+  within-bin spectrum (`--source-weighting`, now recorded on flux
+  artifacts) and missing thermal upscatter (`--tsl`) — the residual
+  ~10× thermal deficit localizes to near-field epithermal buildup
+  and thermal residence condensation, which boundary adaptation
+  targets directly. Tooling landed: `sn boundaries` places edges at
+  equal importance mass over lethargy from any `EnergyDistribution`
+  histogram (optionally response-folded), emitting a
+  `boundary-proposal` artifact with per-group mass shares and
+  lethargy widths; `sn collapse --boundaries-file` consumes it. A
+  transverse-periodic water-column diagnostic confirmed the split:
+  TSL upscatter closes thermal to 0.67–0.95× CE while the condensed
+  downscatter over-deposits epi/fast ~2–3× at entry and
+  under-transports it deep — the remaining adaptive-boundary target.
+  Follow-up (2026-09-29, S4 56/112-group brain column vs 1.2M-history
+  OpenMC, periodic transverse boundaries on both sides): the column
+  solves had been stalling at residual ~0.29 with a stable field —
+  root cause identified and fixed: the alternating-direction group
+  sweep plus lagged periodic-wrap inflow make the composed operator
+  a two-step map that settles into a stable **period-2 limit cycle**
+  (iterates 59 and 61 bit-identical, ±20–40% swing at the residual
+  site). The solver now tracks the two-step residual and, when the
+  cycle is converged but the one-step residual is not, emits the
+  parity midpoint — the column converges at outer 30–32. With
+  boundaries matched the converged field tracks MC cell totals at
+  0.54–1.54× over 16 cm; per-bin residuals are thermal 0.5–0.8×
+  (TSL), a genuine deep epi over-moderation pileup (to ~10× in the
+  0.2 eV–keV shoulder at 15 cm), and fast under-transport deep
+  (0.2–0.6×) — the condensation signature the boundary tooling
+  targets. Unconverged artifacts additionally carry a
+  `residual_site` (cell, group, relative change) diagnostic so a
+  stalled solve is diagnosable from the file alone.
 - **R17-05 — plan metrics layer.** DVH-derived D95/V20/EUD (and
   TCP–NTCP under the declared bio model) summarized into
   `InversePlanResult` and the GUI table — plans should read like

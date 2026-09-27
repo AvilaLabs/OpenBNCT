@@ -58,13 +58,88 @@ real physics or residual multigroup condensation error.
   (H capture untallied). The θ-WDD positivity clamps were *not* the
   mechanism — the θ repair landed independently (negligible change
   to this field) and stays as hardening.
-- **Open:** the conserving 56g solve now *under*produces deep flux
-  (~0.03–0.4× CE on axis, ~0.15× whole-domain) — an honest
-  discretization/condensation question (fine-group σ_t
-  condensation, group-boundary placement), not a balance violation.
-  That is the R17-04 study. The uncollided-split and boundary-flux
-  models show the same deficit sign (source-path exonerated:
-  boundary-mode audit was 12.0 pre-fix).
+- **R17-04 status (diagnosis largely closed):** the underproduction
+  decomposed into two conventions the artifact never declared:
+  1. *Within-bin source spectrum.* OpenMC's
+     `Tabular(interpolation="histogram")` samples a declared bin
+     **uniformly per eV** — the [10 keV, 16.9 MeV] fast bin is ~99%
+     MeV-range. The deterministic source mapping historically spread
+     the same bins at the collapse weighting (Maxwellian ≤0.5 eV,
+     1/E above), putting ~40% of the fast component below ~200 keV
+     where σ_t ~1.5/cm kills it within ~2 cm. Re-solving with
+     `--source-weighting uniform_in_bin` (a declared artifact-level
+     convention) moves the slice-integrated fast bin from
+     **0.16–0.43× → 0.50–0.86× CE** and epithermal from ~0.15× to
+     ~0.2–1.6× (rising with depth). The 28g artifact's apparent
+     agreement was the same convention — it predates the switch and
+     ran the uniform-per-eV spread.
+  2. *Missing thermal upscatter.* Neither collapse used a TSL tape,
+     so deep-thermal groups were one-way absorbing sinks while the
+     CE free-gas kernel keeps ~kT thermal motion. Re-collapsing 56g
+     with `--tsl H1=<H(H2O) tape>` puts real upscatter in the matrix
+     (g55→g50–54 ≈ 1.2–3.5/cm); the phantom solve's thermal slice
+     rises ~3× to a stable ~0.10× CE and the absorbed-fraction audit
+     lands at 0.048 against ~0.04 tallied B10+N14 (+ untallied H
+     capture) on the CE side.
+- **Residual (open):** a ~10× slice-integrated thermal deficit and a
+  ~0.5–0.85× fast-bin remainder persist at 56g, plus a ~0.2×
+  near-field epithermal deficit common to *every* deterministic
+  variant including 28g — suspected remaining sources are the
+  epithermal near-field buildup (first-moderation generation) and
+  thermal residence-time condensation; `--p1` and S4/S8 A/B runs
+  show the transport correction and quadrature are not the residual
+  mechanism. `compare-condensation.py` gives the slice-integrated,
+  lethargy-proportional remap used for these numbers.
+- **Water-column experiment (diagnostic, `target/preflight-tmp/wcol`,
+  not frozen):** a transverse-periodic 1×1×20 brain column (8 mm
+  cells, the same disk+cone+spectrum source) tallied in 21 fine
+  energy bins vs the same 56g solve. It isolates the moderation
+  chain without the head-shell stack:
+  - *Thermal:* with the TSL matrix the column agrees to
+    **0.67–0.95× CE** below ~0.2 eV across all depths — vs
+    0.03–0.3× with the free-gas matrix. The phantom's ~10× thermal
+    deficit was dominantly the missing upscatter; the remaining
+    phantom factor comes through the degraded epithermal feed.
+  - *Epi/fast:* after two defects were found and fixed the residual
+    is ~1.5–2× over-deposition of the 0.5 eV–100 keV range near the
+    entrance transitioning to ~0.2–0.5× under-transport deep —
+    the same flattening signature the phantom shows as the
+    near-field epi deficit + deep fast underproduction.
+  - *Fixed in transport, not data:* the uncollided-split deposit
+    applied the full disk intensity `J/μ̄` to every cell whose
+    center back-rayed into the disk — cells the footprint only
+    partially covers got the whole beam (≈1/coverage overcount;
+    ~27% in this column, an annulus error at the phantom's disk
+    rim). `uncollided_beam_flux` now deposits the cell-averaged
+    fluence over an 8×8 transverse point grid — partially covered
+    cells get the illuminated fraction — verified by
+    `uncollided_deposit_scales_by_transverse_coverage` and it
+    removed the near-face overshoot's coverage component
+    (~0.75×) exactly.
+  - *Added: `beam_sigma_nodes_per_cm`.* The collapse now emits a
+    4-node uniform-in-eV sub-bin σ_t kernel per group; under
+    `--source-weighting uniform_in_bin` the uncollided deposit is
+    Σ_j w_j·e^{−σ_j·s} — the penetrating tail survives instead of
+    attenuating at the group's flux-weighted σ_t (which
+    over-removes in broad fast groups). Neutral in the bisected-56
+    structure (sub-bin σ spread is already small); it matters for
+    coarse or adaptive structures spanning strong σ_t curvature.
+  - *Boundary-placement verdict:* two opposite 56g allocations —
+    flux-importance (41 thermal groups) and region budgets
+    (30 epithermal groups) — leave the epi over-production
+    essentially unchanged (identical 2.7–4.4× near-field values
+    within provisional-solve tolerance), while pure flux mass
+    *starves the source bands* (residual worsens to 0.72, fast
+    bins overshoot >400× at the cap). Edge positions are not the
+    mechanism; the remaining term is the condensed transfer
+    density/deposit amplitude itself. `sn boundaries` +
+    `--boundaries-file` stay as documented tooling, with the
+    flux-starvation caveat: equal-importance placement needs a
+    source-band floor to be usable for transport structures.
+  - Caveat: the S4 column solve emits a stable field (24- vs
+    60-outer agreement to ~0.1%) while its residual metric plateaus
+    at ~0.3 — the artifact records `converged: false`; treat the
+    magnitude pattern, not a qualified number.
 - Caveat noted in code: `openmc.stats.Tabular(interpolation=
   "histogram")` takes pdf *heights* — passing declared bin
   probabilities emits a ~98%-fast spectrum.

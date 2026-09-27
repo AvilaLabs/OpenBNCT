@@ -94,7 +94,23 @@ pub struct MultigroupMaterial {
     /// correction, the sweep uses σ_t,tr = σ_t − μ̄_g·Σ_s,g.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport_mu_bar: Option<Vec<f64>>,
+    /// Uncollided-attenuation kernel nodes for the `uniform_in_bin`
+    /// source convention: `[g][node]` → `(weight, σ_t)` pairs, flattened
+    /// as `nodes[g * 2 * BEAM_KERNEL_NODES + 2*j]` = weight_j,
+    /// `[.. + 2*j + 1]` = σ_t,j cm⁻¹. A uniform-in-eV source population
+    /// does NOT attenuate as a single exponential at the group's mean
+    /// σ_t — the penetrating sub-population survives preferentially, so
+    /// the deposit is Σ_j w_j·e^{−σ_j·s} over sub-bin means. Used only
+    /// for the analytic uncollided deposit; the collided field keeps
+    /// σ_t so the removal/scatter balance stays self-consistent.
+    /// Absent on pre-existing artifacts → the solve falls back to a
+    /// single exponential at σ_t.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beam_sigma_nodes_per_cm: Option<Vec<f64>>,
 }
+
+/// Sub-bin quadrature count of [`MultigroupMaterial::beam_sigma_nodes_per_cm`].
+pub const BEAM_KERNEL_NODES: usize = 4;
 
 /// `openbnct.multigroup-data/0.1.0` — declared group structure and
 /// per-material data for the deterministic solver.
@@ -196,6 +212,24 @@ impl MultigroupData {
             {
                 return Err(invalid(format!(
                     "material {:?} transport_mu_bar must be {groups} values in [-1,1]",
+                    material.material_id
+                )));
+            }
+            if let Some(nodes) = &material.beam_sigma_nodes_per_cm
+                && (nodes.len() != groups * 2 * BEAM_KERNEL_NODES
+                    || !finite_nonneg(nodes)
+                    || !(0..groups).all(|g| {
+                        ((0..BEAM_KERNEL_NODES)
+                            .map(|j| nodes[g * 2 * BEAM_KERNEL_NODES + 2 * j])
+                            .sum::<f64>()
+                            - 1.0)
+                            .abs()
+                            < 1e-9
+                    }))
+            {
+                return Err(invalid(format!(
+                    "material {:?} beam_sigma_nodes must be {groups} × {BEAM_KERNEL_NODES} \
+                     (weight, σ) pairs with unit-sum weights",
                     material.material_id
                 )));
             }
@@ -427,6 +461,10 @@ pub struct SnOptions {
     /// is nonnegative (pure-P0 cells). `OPENBNCT_NO_THETA_REPAIR`
     /// disables it (A/B diagnostics vs the legacy clamp).
     pub theta_repair: bool,
+    /// Within-bin interpolation convention for a `TabulatedHistogram`
+    /// source spectrum — see [`SourceWeighting`]. Recorded on the
+    /// emitted flux artifact's `source_spectrum_weighting`.
+    pub source_weighting: SourceWeighting,
 }
 
 impl Default for SnOptions {
@@ -446,6 +484,7 @@ impl Default for SnOptions {
             coarse_rebalance: true,
             inner_convergence: None,
             theta_repair: true,
+            source_weighting: SourceWeighting::CollapseConsistent,
         }
     }
 }
@@ -645,8 +684,31 @@ pub struct MultigroupFlux {
     /// produced before the audit existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub balance_absorbed_fraction: Option<f64>,
+    /// Where the limiting residual lives — cell linear index, energy
+    /// group, and the relative change measured at the final outer
+    /// iteration. Recorded whenever the outer cap is reached without
+    /// convergence (`converged: false`) so a stalled solve is
+    /// diagnosable from the artifact alone — the plateau cases this was
+    /// added for showed a stable field whose residual stayed pinned by
+    /// a small set of (cell, group) pairs rather than a global mode.
+    /// Absent on converged artifacts and pre-existing files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub residual_site: Option<ResidualSite>,
     pub qualification: String,
     pub provenance_id: String,
+}
+
+/// Argmax location of the final outer-iteration residual.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResidualSite {
+    /// Cell linear index (`i + nx·j + nx·ny·k`) of the largest
+    /// relative change.
+    pub cell: u32,
+    /// Energy group of the largest relative change.
+    pub group: u32,
+    /// The relative change itself — equals the artifact `residual`.
+    pub relative_change: f64,
 }
 
 impl MultigroupFlux {
@@ -728,6 +790,7 @@ pub(crate) fn require_disk_on_face(
 pub(crate) fn source_coverage(
     case: &TransportCase,
     data: &MultigroupData,
+    weighting: SourceWeighting,
 ) -> Result<SourceCoverage, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
@@ -792,7 +855,7 @@ pub(crate) fn source_coverage(
     Ok(SourceCoverage {
         face,
         cells,
-        group_weights: source_group_weights(source, data)?,
+        group_weights: source_group_weights(source, data, weighting)?,
     })
 }
 
@@ -814,6 +877,7 @@ fn map_boundary_source(
     case: &TransportCase,
     data: &MultigroupData,
     quadrature: &[([f64; 3], f64)],
+    weighting: SourceWeighting,
 ) -> Result<BoundarySource, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
@@ -822,7 +886,7 @@ fn map_boundary_source(
         return Err(invalid("volumetric sources have no boundary face".into()));
     };
     let axis = axis_p.index();
-    let coverage = source_coverage(case, data)?;
+    let coverage = source_coverage(case, data, weighting)?;
     let (face, cells, group_weights) = (coverage.face, coverage.cells, coverage.group_weights);
     let inward_sign = if face % 2 == 0 { 1.0_f64 } else { -1.0_f64 };
 
@@ -959,29 +1023,56 @@ fn map_boundary_source(
 /// Maxwellian ∝ E·exp(−E/kT) below 0.5 eV, 1/E slowing-down above —
 /// histogram bins declare only integrals, so the within-bin shape must
 /// come from the same declared convention the data was collapsed under.
-fn spectrum_weight_integral(lo_ev: f64, hi_ev: f64) -> f64 {
-    const KT_EV: f64 = 0.0253;
-    const CUT_EV: f64 = 0.5;
-    let maxwell = |a: f64, b: f64| {
-        (KT_EV * (KT_EV + a) * (-a / KT_EV).exp()) - (KT_EV * (KT_EV + b) * (-b / KT_EV).exp())
-    };
-    let inv_e = |a: f64, b: f64| (b / a).ln();
+/// Within-bin interpolation convention for a `TabulatedHistogram`
+/// source spectrum. The artifact declares bin *probabilities* only —
+/// the within-bin shape is a solve-time interpretation, recorded on
+/// the flux artifact's `source_spectrum_weighting`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceWeighting {
+    /// Maxwellian flux (kT = 0.0253 eV) below 0.5 eV, 1/E above — the
+    /// same shape the multigroup collapse declares, so a source bin
+    /// spanning several groups splits exactly as the condensation
+    /// assumed the flux would.
+    CollapseConsistent,
+    /// Uniform per eV inside each declared bin — the histogram
+    /// convention continuous-energy codes (OpenMC `Tabular`,
+    /// MCNP histogram bins) apply to tabulated spectra. The honest
+    /// choice when the declared bins are coarse: lethargy weighting
+    /// piles a wide high-energy bin's mass at its low edge, where a
+    /// few-cm σ_t swallows it before it streams.
+    UniformInBin,
+}
+
+fn spectrum_weight_integral(lo_ev: f64, hi_ev: f64, weighting: SourceWeighting) -> f64 {
     let (lo, hi) = (lo_ev.max(1.0e-30), hi_ev.max(lo_ev));
-    let mid = CUT_EV.clamp(lo, hi);
-    let mut w = 0.0;
-    if mid > lo {
-        w += maxwell(lo, mid);
+    match weighting {
+        SourceWeighting::UniformInBin => hi - lo,
+        SourceWeighting::CollapseConsistent => {
+            const KT_EV: f64 = 0.0253;
+            const CUT_EV: f64 = 0.5;
+            let maxwell = |a: f64, b: f64| {
+                (KT_EV * (KT_EV + a) * (-a / KT_EV).exp())
+                    - (KT_EV * (KT_EV + b) * (-b / KT_EV).exp())
+            };
+            let inv_e = |a: f64, b: f64| (b / a).ln();
+            let mid = CUT_EV.clamp(lo, hi);
+            let mut w = 0.0;
+            if mid > lo {
+                w += maxwell(lo, mid);
+            }
+            if hi > mid {
+                w += inv_e(mid.max(1.0e-30), hi);
+            }
+            w
+        }
     }
-    if hi > mid {
-        w += inv_e(mid.max(1.0e-30), hi);
-    }
-    w
 }
 
 /// Map the source's energy distribution onto normalized group weights.
 fn source_group_weights(
     source: &crate::model::FixedSourceDefinition,
     data: &MultigroupData,
+    weighting: SourceWeighting,
 ) -> Result<Vec<f64>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let groups = data.group_count();
@@ -1002,7 +1093,7 @@ fn source_group_weights(
             for (bin, w) in bin_weights.iter().enumerate() {
                 let lo = energy_boundaries_ev[bin];
                 let hi = energy_boundaries_ev[bin + 1];
-                let bin_norm = spectrum_weight_integral(lo, hi);
+                let bin_norm = spectrum_weight_integral(lo, hi, weighting);
                 if bin_norm <= 0.0 {
                     continue;
                 }
@@ -1011,7 +1102,7 @@ fn source_group_weights(
                     let ghi = data.energy_boundaries_ev[g];
                     let (olo, ohi) = (lo.max(glo), hi.min(ghi));
                     if ohi > olo {
-                        *weight += w * spectrum_weight_integral(olo, ohi) / bin_norm;
+                        *weight += w * spectrum_weight_integral(olo, ohi, weighting) / bin_norm;
                     }
                 }
             }
@@ -1035,6 +1126,7 @@ fn source_group_weights(
 fn map_volume_source(
     case: &TransportCase,
     data: &MultigroupData,
+    weighting: SourceWeighting,
 ) -> Result<Vec<Vec<f64>>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let SourceSpatialDistribution::UniformBox {
@@ -1046,7 +1138,7 @@ fn map_volume_source(
     else {
         return Err(invalid("not a volumetric source".into()));
     };
-    let group_weights = source_group_weights(&case.source, data)?;
+    let group_weights = source_group_weights(&case.source, data, weighting)?;
     let geometry = &case.geometry;
     let ranges_cm = [*x_range_cm, *y_range_cm, *z_range_cm];
     let box_vol_cm3: f64 = ranges_cm.iter().map(|r| r[1] - r[0]).product();
@@ -1174,11 +1266,17 @@ fn cone_directions(
 }
 
 /// Analytic uncollided-flux ray-trace for an on-face disk source.
-/// For each cell the back-ray to the source-face plane determines disk
-/// coverage; φ_unc(cell, g) = (R/A_disk)·w_g·⟨hit·e^{−Σ_t·s}⟩/μ̄ where
-/// s is the path length from entry to the cell center and the average
-/// is over the angular distribution (a single direction for a
-/// monodirectional beam, the cone solid angle for an isotropic cone).
+/// Each cell's uncollided fluence is the transverse cell-average of the
+/// incident fluence: φ_unc(cell, g) = (R/A_disk)·w_g·⟨e^{−Σ_t·s}⟩_pts/μ̄
+/// where the average runs over an 8×8 point grid on the cell's
+/// transverse face, each point's back-ray hitting the disk or missing
+/// it — cells the footprint covers only partially receive the
+/// illuminated fraction rather than the full intensity. s is the path
+/// length from the source-face entry point to the sample point and the
+/// outer average is over the angular distribution (a single direction
+/// for a monodirectional beam, the cone solid angle for an isotropic
+/// cone). Attenuation uses the target cell's material along the whole
+/// ray — a declared approximation for layered geometries.
 ///
 /// Returns `None` for source shapes/angles that stay on the
 /// boundary-flux path (wide cones, isotropic, off-face sources).
@@ -1190,6 +1288,7 @@ pub fn uncollided_beam_flux(
     case: &TransportCase,
     data: &MultigroupData,
     case_material: &[usize],
+    weighting: SourceWeighting,
 ) -> Result<Option<Vec<Vec<f64>>>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
@@ -1243,14 +1342,23 @@ pub fn uncollided_beam_flux(
     let disk_area_cm2 = std::f64::consts::PI * radius_cm * radius_cm;
     // Scalar fluence at the face per unit current: J/μ̄ with J = R/A.
     let beam_intensity = rate / (disk_area_cm2 * mu_bar.abs());
-    let group_weights = source_group_weights(source, data)?;
+    let group_weights = source_group_weights(source, data, weighting)?;
     let groups = data.group_count();
     let n_cells = geometry.voxel_count()?;
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
     let r2 = radius_cm * radius_cm;
 
-    // Per-direction solid-angle average of hit·e^{−Σ_t·s}: only sample
-    // directions pointing inward contribute.
+    // Per-direction solid-angle average of the cell-averaged uncollided
+    // fluence. The deposit at each cell is the beam intensity times the
+    // ILLUMINATED FRACTION of its transverse area — sub-sampled on a
+    // transverse point grid — not the center-ray value applied to the
+    // whole cell. Depositing J/μ̄ into every center-hit cell overcounts
+    // cells the footprint only partially covers (a disk inscribed in a
+    // square periodic cell inflates by ~27%; the rim annulus of a beam
+    // covering a wider grid inflates each rim cell by up to
+    // 1/coverage). Only sample directions pointing inward contribute.
+    const TRANSVERSE_POINTS: u32 = 8;
+    let sub = TRANSVERSE_POINTS as f64;
     let mut unc = vec![vec![0.0; groups]; n_cells];
     let mut lit = false;
     for k in 0..nz {
@@ -1264,30 +1372,63 @@ pub fn uncollided_beam_flux(
                 ];
                 let cell = i + nx * j + nx * ny * k;
                 let material = &data.materials[case_material[cell]];
+                // The uncollided population was spread per eV under
+                // `uniform_in_bin` — attenuate it with the artifact's
+                // sub-bin kernel Σ_j w_j·e^{−σ_j·s} (a broad group's
+                // penetrating tail survives; a single mean σ_t
+                // over-removes it). Falls back to the collapsed σ_t
+                // on artifacts without the kernel or for the
+                // collapse-consistent convention.
+                let sigma_t_unc: &[f64] = match (weighting, &material.beam_sigma_nodes_per_cm) {
+                    (SourceWeighting::UniformInBin, Some(nodes)) => nodes.as_slice(),
+                    _ => &[],
+                };
+                let su = geometry.spacing_mm[u] / 10.0;
+                let sv = geometry.spacing_mm[v] / 10.0;
                 for (d_hat, w_dir) in &dirs {
                     let d_axis = d_hat[a];
                     if inward * d_axis <= 0.0 {
                         continue;
                     }
-                    let s = (c[a] - face_cm) / d_axis;
-                    if s <= 0.0 {
-                        continue;
-                    }
-                    let eu = c[u] - d_hat[u] * s;
-                    let ev = c[v] - d_hat[v] * s;
-                    let du = eu - center_uv_cm[0];
-                    let dv = ev - center_uv_cm[1];
-                    if du * du + dv * dv > r2 {
-                        continue;
-                    }
-                    lit = true;
                     let frac = w_dir / omega;
-                    for (g, w) in group_weights.iter().enumerate() {
-                        if *w > 0.0 {
-                            unc[cell][g] += beam_intensity
-                                * w
-                                * frac
-                                * (-material.sigma_total_per_cm[g] * s).exp();
+                    for pu in 0..TRANSVERSE_POINTS {
+                        for pv in 0..TRANSVERSE_POINTS {
+                            let mut p = c;
+                            p[u] += ((pu as f64 + 0.5) / sub - 0.5) * su;
+                            p[v] += ((pv as f64 + 0.5) / sub - 0.5) * sv;
+                            let s = (p[a] - face_cm) / d_axis;
+                            if s <= 0.0 {
+                                continue;
+                            }
+                            let eu = p[u] - d_hat[u] * s;
+                            let ev = p[v] - d_hat[v] * s;
+                            let du = eu - center_uv_cm[0];
+                            let dv = ev - center_uv_cm[1];
+                            if du * du + dv * dv > r2 {
+                                continue;
+                            }
+                            lit = true;
+                            // Cell-mean uncollided fluence: beam
+                            // intensity times the transverse
+                            // illuminated fraction, attenuated along
+                            // the ray to each sample point.
+                            for (g, w) in group_weights.iter().enumerate() {
+                                if *w <= 0.0 {
+                                    continue;
+                                }
+                                let survival = if sigma_t_unc.is_empty() {
+                                    (-material.sigma_total_per_cm[g] * s).exp()
+                                } else {
+                                    let base = g * 2 * BEAM_KERNEL_NODES;
+                                    (0..BEAM_KERNEL_NODES)
+                                        .map(|j| {
+                                            sigma_t_unc[base + 2 * j]
+                                                * (-sigma_t_unc[base + 2 * j + 1] * s).exp()
+                                        })
+                                        .sum()
+                                };
+                                unc[cell][g] += beam_intensity * w * frac / (sub * sub) * survival;
+                            }
                         }
                     }
                 }
@@ -1892,19 +2033,19 @@ pub(crate) fn solve_multigroup_unchecked(
     );
     // Uncollided beam split or the discrete boundary-flux path.
     let uncollided = if options.beam_uncollided_split && !volume_source {
-        uncollided_beam_flux(case, data, &case_material)?
+        uncollided_beam_flux(case, data, &case_material, options.source_weighting)?
     } else {
         None
     };
     let boundary = if uncollided.is_some() || volume_source {
         BoundarySource::new()
     } else {
-        map_boundary_source(case, data, &quadrature)?
+        map_boundary_source(case, data, &quadrature, options.source_weighting)?
     };
     // First-collision source driven by the uncollided flux, or the
     // volumetric emission density for interior sources.
     let fixed_source: Vec<Vec<f64>> = if volume_source {
-        map_volume_source(case, data)?
+        map_volume_source(case, data, options.source_weighting)?
     } else {
         match &uncollided {
             Some(unc) => (0..n_cells)
@@ -2111,7 +2252,9 @@ pub fn adjoint_direction_score(
     aimed_case.source = aimed_source;
     let (_ad, case_material) =
         material_composition_map(&aimed_case, data, options.assignment.as_ref())?;
-    let Some(uncollided) = uncollided_beam_flux(&aimed_case, data, &case_material)? else {
+    let Some(uncollided) =
+        uncollided_beam_flux(&aimed_case, data, &case_material, options.source_weighting)?
+    else {
         return Err(invalid(
             "direction does not admit an uncollided beam — needs an on-face disk source".into(),
         ));
@@ -2298,6 +2441,12 @@ fn blend_material(
             .collect::<Option<Vec<_>>>(),
         dose_response_gy_cm2: dose,
         transport_mu_bar: mu_bar,
+        beam_sigma_nodes_per_cm: weighted(
+            signature,
+            materials,
+            |m| m.beam_sigma_nodes_per_cm.as_deref(),
+            groups * 2 * BEAM_KERNEL_NODES,
+        ),
     }
 }
 
@@ -2615,6 +2764,7 @@ pub(crate) fn solve_sn_problem(
     let mut converged = false;
     let mut residual = f64::MAX;
     let mut outer_done = 0;
+    let mut last_residual_site: Option<ResidualSite> = None;
     let mut anderson =
         (options.anderson_depth > 0).then(|| AndersonState::new(options.anderson_depth));
     // Origin of the current symmetric down+up cycle — the residual
@@ -2675,6 +2825,16 @@ pub(crate) fn solve_sn_problem(
             .sum::<f64>()
             / omega_sum.max(1e-30)
     });
+    // Two-iterate history for the parity test: the alternating sweep
+    // direction plus the lagged periodic-wrap inflow make the composed
+    // operator a two-step map — on near-conservative problems it can
+    // settle into a stable period-2 orbit that pins the one-step
+    // residual while same-parity iterates converge exactly. The
+    // convergence decision therefore measures the two-step distance
+    // `|x_n − x_{n−2}|`; when that is under tolerance but the one-step
+    // residual is not, the emitted field is the parity midpoint, which
+    // halves the cycle's systematic error relative to either endpoint.
+    let mut two_back: Option<Vec<Vec<f64>>> = None;
     for outer in 0..options.max_outer_iterations {
         let previous = flux.clone();
         if anderson.is_some() && outer % 2 == 0 {
@@ -2843,24 +3003,55 @@ pub(crate) fn solve_sn_problem(
         // is never counted (and so CMR's taper sees the true map
         // residual). At the transport fixed point this residual → 0 and
         // the correction fades out cleanly.
+        // Track the argmax too — the (cell, group) pair holding the
+        // largest relative change is what makes a plateaued solve
+        // diagnosable after the fact.
+        let mut argmax: Option<ResidualSite> = None;
         residual = flux
             .iter()
             .zip(previous.iter())
-            .flat_map(|(a, b)| a.iter().zip(b.iter()))
-            .map(|(x, y)| (x - y).abs() / x.abs().max(1e-30))
-            .fold(0.0_f64, |m, v| {
+            .enumerate()
+            .flat_map(|(cell, (a, b))| {
+                a.iter()
+                    .zip(b.iter())
+                    .enumerate()
+                    .map(move |(g, (x, y))| (cell, g, (x - y).abs() / x.abs().max(1e-30)))
+            })
+            .fold(0.0_f64, |m, (cell, g, v)| {
                 if v.is_nan() || m.is_nan() {
                     f64::NAN
                 } else {
+                    if v > m {
+                        argmax = Some(ResidualSite {
+                            cell: cell as u32,
+                            group: g as u32,
+                            relative_change: v,
+                        });
+                    }
                     m.max(v)
                 }
             });
+        last_residual_site = argmax;
         if !residual.is_finite() {
             return Err(MultigroupError::Solve(format!(
                 "non-finite outer residual after iteration {}",
                 outer + 1
             )));
         }
+        // Same-parity (two-step) residual: |x_n − x_{n−2}|/x_n with its
+        // own argmax. This is the composed map's contraction measure —
+        // on a period-2 limit cycle it goes to zero exactly while the
+        // one-step residual pins at the oscillation amplitude.
+        let residual_two_step = two_back
+            .as_ref()
+            .map(|tb| {
+                flux.iter()
+                    .zip(tb.iter())
+                    .flat_map(|(a, b)| a.iter().zip(b.iter()))
+                    .map(|(x, y)| (x - y).abs() / x.abs().max(1e-30))
+                    .fold(0.0_f64, |m, v| if v.is_nan() { f64::NAN } else { m.max(v) })
+            })
+            .unwrap_or(f64::INFINITY);
         // Coarse-mesh rebalance of the upscatter block: the slow mode
         // is the long-wavelength spatial imbalance of the
         // near-conservative sub-eV flux. Multiplicative factors
@@ -3140,6 +3331,23 @@ pub(crate) fn solve_sn_problem(
             converged = true;
             break;
         }
+        // Parity-cycle convergence: the two-step residual under
+        // tolerance with the one-step residual still high means the
+        // iterate settled into a stable period-2 orbit — the alternating
+        // group order and lagged wrap inflow make the composed map
+        // two-step, so same-parity distance is the honest measure. The
+        // emitted field is the parity midpoint, a better fixed-point
+        // estimate than either endpoint.
+        if residual_two_step < options.convergence {
+            for (f, p) in flux.iter_mut().zip(previous.iter()) {
+                for (x, y) in f.iter_mut().zip(p.iter()) {
+                    *x = 0.5 * (*x + *y);
+                }
+            }
+            residual = residual_two_step;
+            converged = true;
+            break;
+        }
         // Anderson mix once per symmetric down+up cycle (the composed
         // map is the consistent operator the accelerator applies to).
         // The convergence check above already used the true map
@@ -3150,6 +3358,7 @@ pub(crate) fn solve_sn_problem(
         {
             flux = acc.mix(&flux, &cycle_origin);
         }
+        two_back = Some(previous);
         if std::env::var_os("OPENBNCT_SOLVE_PROGRESS").is_some() {
             eprintln!("[sn-solve] outer {} residual {:.4e}", outer + 1, residual);
         }
@@ -3188,12 +3397,16 @@ pub(crate) fn solve_sn_problem(
             }
             .into(),
         ),
-        source_spectrum_weighting: "collapse_consistent".into(),
+        source_spectrum_weighting: match options.source_weighting {
+            SourceWeighting::CollapseConsistent => "collapse_consistent".into(),
+            SourceWeighting::UniformInBin => "uniform_in_bin".into(),
+        },
         quadrature_order: options.quadrature_order,
         outer_iterations: outer_done,
         residual,
         converged,
         balance_absorbed_fraction: None,
+        residual_site: (!converged).then_some(last_residual_site).flatten(),
         qualification: "research-only: deterministic multigroup flux, not a clinical quantity"
             .into(),
         provenance_id: format!("sn-s{}-{}", options.quadrature_order, case.case_id),
@@ -3418,6 +3631,7 @@ pub(crate) mod tests {
                 scatter_legendre_moments_per_cm: None,
                 dose_response_gy_cm2: Default::default(),
                 transport_mu_bar: None,
+                beam_sigma_nodes_per_cm: None,
             }],
         }
     }
@@ -3440,6 +3654,7 @@ pub(crate) mod tests {
             coarse_rebalance: true,
             inner_convergence: None,
             theta_repair: true,
+            source_weighting: SourceWeighting::CollapseConsistent,
         }
     }
 
@@ -3463,6 +3678,7 @@ pub(crate) mod tests {
                 vec![0.5, 0.9],
             )]),
             transport_mu_bar: Some(vec![0.6, 0.6]),
+            beam_sigma_nodes_per_cm: None,
         });
         d
     }
@@ -3636,6 +3852,31 @@ pub(crate) mod tests {
         assert!(absorbed > 0.0 && absorbed <= 1.0);
     }
 
+    /// A solve capped before convergence must report where the residual
+    /// lives — the argmax (cell, group) — so a stalled field is
+    /// diagnosable from the artifact rather than a bare float.
+    #[test]
+    fn unconverged_solve_reports_residual_site() {
+        let case = slab_case();
+        // Two groups with an upscatter term (row 1 feeds group 0), so a
+        // single outer sweep can't reach the fixed point.
+        let mg = data(&[2.0, 1.0], vec![0.1, 0.3, 0.2, 0.4]);
+        mg.validate().unwrap();
+        let mut opts = options();
+        opts.max_outer_iterations = 1;
+        let flux = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap();
+        assert!(!flux.converged);
+        assert!(flux.residual > 0.0);
+        let site = flux.residual_site.expect("unconverged artifact lacks site");
+        assert!((site.relative_change - flux.residual).abs() < 1e-15);
+        assert!((site.cell as usize) < 4 * 4 * 20);
+        assert!((site.group as usize) < 2);
+        // Converged artifacts carry no site.
+        let flux_ok = solve_multigroup(&case, &mg, &options(), cref("mg"), cref("case")).unwrap();
+        assert!(flux_ok.converged);
+        assert!(flux_ok.residual_site.is_none());
+    }
+
     /// The transport correction must remove the forward-scatter
     /// fraction from σ_t and from the scatter row by the SAME amount —
     /// or σ_t,tr − Σ_s,eff drifts below the declared σ_a and every cell
@@ -3721,6 +3962,49 @@ pub(crate) mod tests {
                 .flatten()
                 .all(|v| v.is_finite() && *v >= 0.0)
         );
+    }
+
+    /// A disk narrower than the cell deposits the cell-AVERAGE fluence,
+    /// not the center-ray value: cells inside the footprint carry
+    /// J/μ̄, so the cell mean is J·(illuminated fraction)/μ̄ — the
+    /// footprint's transverse coverage, sub-sampled on an 8×8 grid.
+    /// Regression for the fixed deposit inflating every center-hit
+    /// cell to full intensity (≈1/coverage overcount at the beam rim).
+    #[test]
+    fn uncollided_deposit_scales_by_transverse_coverage() {
+        let mut case = slab_case();
+        // Disk r = 0.04 cm inscribed inside the 0.1 cm transverse
+        // cells; 8×8 point grid puts 32/64 samples inside r < 0.04.
+        case.source.space = SourceSpatialDistribution::UniformDisk {
+            axis: PlaneAxis::Z,
+            offset_cm: -1.0,
+            center_uv_cm: [0.0, 0.0],
+            radius_cm: 0.04,
+        };
+        let mg = data(&[0.0], vec![0.0]); // σ_t = 0: no attenuation
+        mg.validate().unwrap();
+        let unc = uncollided_beam_flux(
+            &case,
+            &mg,
+            &vec![0usize; case.geometry.voxel_count().unwrap()],
+            SourceWeighting::CollapseConsistent,
+        )
+        .unwrap()
+        .unwrap();
+        let a_disk = std::f64::consts::PI * 0.04 * 0.04;
+        // The disk center sits on the corner shared by cells
+        // (1,1),(2,1),(1,2),(2,2) — each carries a disk quadrant; the
+        // 8×8 grid counts 8/64 points inside r < 0.04 per cell.
+        let expected = (1.0 / a_disk) * (8.0 / 64.0);
+        for cell in [5usize, 6, 9, 10] {
+            let deposit = unc[cell][0];
+            assert!(
+                (deposit - expected).abs() / expected < 1e-9,
+                "cell {cell}: coverage-scaled deposit {deposit} vs expected {expected}"
+            );
+        }
+        // A corner cell away from the beam must carry zero.
+        assert_eq!(unc[0][0], 0.0);
     }
 
     /// Volumetric sources deposit an isotropic emission density into
@@ -3910,7 +4194,8 @@ pub(crate) mod tests {
         let mut mg = data(&[0.5; 8], vec![0.0; 64]);
         mg.energy_boundaries_ev = vec![1e4, 3e3, 1e3, 3e2, 1e2, 3e1, 1e1, 3.0, 0.5];
         mg.validate().unwrap();
-        let w = source_group_weights(&case.source, &mg).unwrap();
+        let w =
+            source_group_weights(&case.source, &mg, SourceWeighting::CollapseConsistent).unwrap();
         assert!(w.iter().all(|x| x.is_finite() && *x >= 0.0));
         assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
         // 1/E weighting: equal per decade → lowest two groups (0.5–3 eV
@@ -3923,6 +4208,42 @@ pub(crate) mod tests {
             "1/E low-end weighting: w_low={} w_high={}",
             w[7],
             w[0]
+        );
+    }
+
+    #[test]
+    fn histogram_source_uniform_in_bin_matches_openmc_convention() {
+        // OpenMC `Tabular(interpolation="histogram")` (and the MCNP
+        // analog) samples a declared bin uniformly per eV — a broad
+        // fast bin is therefore nearly all high-energy. The
+        // `UniformInBin` weighting must reproduce exactly that split:
+        // group weight ∝ energy overlap, not lethargy.
+        let mut case = slab_case();
+        case.source.energy = EnergyDistribution::TabulatedHistogram {
+            energy_boundaries_ev: vec![0.5, 10_000.0],
+            bin_weights: vec![1.0],
+        };
+        let mut mg = data(&[0.5; 8], vec![0.0; 64]);
+        mg.energy_boundaries_ev = vec![1e4, 3e3, 1e3, 3e2, 1e2, 3e1, 1e1, 3.0, 0.5];
+        mg.validate().unwrap();
+        let w = source_group_weights(&case.source, &mg, SourceWeighting::UniformInBin).unwrap();
+        assert!(w.iter().all(|x| x.is_finite() && *x >= 0.0));
+        assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        // Uniform per eV: the top group [3e3, 1e4] spans 7000 of the
+        // bin's 9999.5 eV → ~0.7001; the bottom group [0.5, 3] spans
+        // 2.5 eV → ~2.5e-4.
+        let span = 10_000.0 - 0.5;
+        assert!((w[0] - 7000.0 / span).abs() < 1e-9, "w[0]={}", w[0]);
+        assert!((w[7] - 2.5 / span).abs() < 1e-9, "w[7]={}", w[7]);
+        // The same split under CollapseConsistent must differ —
+        // the convention is a real modeling choice, not a rename.
+        let w1e =
+            source_group_weights(&case.source, &mg, SourceWeighting::CollapseConsistent).unwrap();
+        assert!(
+            w1e[7] > 100.0 * w[7],
+            "1/E must weight the low edge far above uniform: {} vs {}",
+            w1e[7],
+            w[7]
         );
     }
 
@@ -4493,6 +4814,7 @@ mod heterogeneous_tests {
                     scatter_legendre_moments_per_cm: None,
                     dose_response_gy_cm2: Default::default(),
                     transport_mu_bar: None,
+                    beam_sigma_nodes_per_cm: None,
                 },
                 MultigroupMaterial {
                     material_id: "insert".into(),
@@ -4502,6 +4824,7 @@ mod heterogeneous_tests {
                     scatter_legendre_moments_per_cm: None,
                     dose_response_gy_cm2: Default::default(),
                     transport_mu_bar: None,
+                    beam_sigma_nodes_per_cm: None,
                 },
             ],
         };

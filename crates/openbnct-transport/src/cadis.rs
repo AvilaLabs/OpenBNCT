@@ -116,7 +116,7 @@ pub fn resolve_adjoint_windows(
         material_composition_map(case, data, options.assignment.as_ref())?;
     let data = &data_eff;
     // Source birth cells and group weights — the w_ref normalization.
-    let coverage = source_coverage(case, data)?;
+    let coverage = source_coverage(case, data, options.source_weighting)?;
     let src_linear = face_cells_linear(geometry, coverage.face, &coverage.cells);
     let src_group_weights = coverage.group_weights;
 

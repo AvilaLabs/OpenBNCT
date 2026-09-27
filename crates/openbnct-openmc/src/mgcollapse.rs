@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 
 use hdf5_pure::File;
 use openbnct_transport::{
-    ContentReference, MaterialDefinition, MultigroupData, MultigroupMaterial,
+    BEAM_KERNEL_NODES, ContentReference, MaterialDefinition, MultigroupData, MultigroupMaterial,
 };
 use thiserror::Error;
 
@@ -65,19 +65,30 @@ pub(crate) fn invalid(msg: impl Into<String>) -> CollapseError {
 }
 
 /// Declared weighting spectrum for the collapse integrals.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum WeightingSpectrum {
     /// Maxwellian flux (kT = 0.0253 eV) below `cut` eV, 1/E above.
     ThermalMaxwellianEpithermalFlat { cut_ev: f64 },
     /// 1/E everywhere.
     FlatLethargy,
+    /// Tabulated flux-density weighting — `w(E)` is piecewise-constant
+    /// at `bin_weights[b]` inside histogram bin
+    /// `[energy_boundaries_ev[b], energy_boundaries_ev[b+1]]` (bounds
+    /// may ascend or descend). A problem-informed spectrum — e.g. one
+    /// extracted from a fine-group or MC solve — transports
+    /// intra-group spectral hardening into the collapsed constants;
+    /// analytic shapes cannot represent that.
+    Tabulated {
+        energy_boundaries_ev: Vec<f64>,
+        bin_weights: Vec<f64>,
+    },
 }
 
 impl WeightingSpectrum {
     pub fn w(&self, energy_ev: f64) -> f64 {
-        match *self {
+        match self {
             WeightingSpectrum::ThermalMaxwellianEpithermalFlat { cut_ev } => {
-                if energy_ev <= cut_ev {
+                if energy_ev <= *cut_ev {
                     // Maxwellian *flux* spectrum ∝ E·exp(−E/kT).
                     energy_ev * (-energy_ev / 0.0253e-0_f64.max(f64::MIN_POSITIVE)).exp()
                 } else {
@@ -85,15 +96,52 @@ impl WeightingSpectrum {
                 }
             }
             WeightingSpectrum::FlatLethargy => 1.0 / energy_ev,
+            WeightingSpectrum::Tabulated {
+                energy_boundaries_ev,
+                bin_weights,
+            } => {
+                let b = energy_boundaries_ev;
+                let asc = b.first().zip(b.last()).map(|(a, z)| a < z).unwrap_or(false);
+                let idx = if asc {
+                    // b0 < b1 < … — bin g covers [b[g], b[g+1])
+                    match b.iter().position(|&x| x > energy_ev) {
+                        Some(0) | None => return 0.0,
+                        Some(p) => p - 1,
+                    }
+                } else {
+                    // descending: bin g covers (b[g+1], b[g]]
+                    match b.iter().position(|&x| x < energy_ev) {
+                        Some(0) | None => return 0.0,
+                        Some(p) => p - 1,
+                    }
+                };
+                if idx >= bin_weights.len() {
+                    return 0.0;
+                }
+                let lo = if asc { b[idx] } else { b[idx + 1] };
+                let hi = if asc { b[idx + 1] } else { b[idx] };
+                // Normalize per-bin weight to a per-eV density so the
+                // histogram's integral equals Σ bin_weights.
+                bin_weights[idx] / (hi - lo).max(f64::MIN_POSITIVE)
+            }
         }
     }
 
     fn describe(&self) -> String {
-        match *self {
+        match self {
             WeightingSpectrum::ThermalMaxwellianEpithermalFlat { cut_ev } => {
                 format!("Maxwellian flux weighting (kT = 0.0253 eV) below {cut_ev} eV, 1/E above")
             }
             WeightingSpectrum::FlatLethargy => "1/E (flat lethargy) weighting everywhere".into(),
+            WeightingSpectrum::Tabulated {
+                energy_boundaries_ev,
+                ..
+            } => {
+                format!(
+                    "tabulated weighting spectrum ({} bins)",
+                    energy_boundaries_ev.len().saturating_sub(1)
+                )
+            }
         }
     }
 }
@@ -533,6 +581,16 @@ pub struct CollapseOptions {
     /// nuclide's effective weighting locally — the correct first-order
     /// self-shielding treatment. Recorded in the declaration.
     pub self_shielding: bool,
+    /// Penetration weighting depth, cm. When set, every collapse weight
+    /// is additionally multiplied by `exp(−σ_t,mat(E)·depth)` — the
+    /// uncollided-survival spectrum of the host material at that
+    /// depth. This carries intra-group spectral hardening into the
+    /// collapsed constants: deep-penetrating group constants are
+    /// dominated by the low-σ_t in-group tail rather than the
+    /// 1/E-weighted mean — the correct condensation for a beam-driven
+    /// penetration problem. `depth` is a declared reference depth
+    /// (e.g. the dose-relevant mid-target range), not an iteration.
+    pub attenuation_depth_cm: Option<f64>,
     /// Artifact id.
     pub id: String,
     /// Component-profile reference for the dose-response vectors.
@@ -749,6 +807,16 @@ fn collapse_material(
     }
 
     let mut sigma_t = vec![0.0; groups];
+    // Sub-bin σ_t nodes for the `uniform_in_bin` uncollided deposit:
+    // BEAM_KERNEL_NODES uniform-in-eV sub-bins per group, each with
+    // weight 1/N and its own mean σ_t — the exponential mixture
+    // preserves the penetrating tail a single group mean removes.
+    let mut sigma_beam_nodes = vec![0.0; groups * 2 * BEAM_KERNEL_NODES];
+    for g in 0..groups {
+        for j in 0..BEAM_KERNEL_NODES {
+            sigma_beam_nodes[g * 2 * BEAM_KERNEL_NODES + 2 * j] = 1.0 / BEAM_KERNEL_NODES as f64;
+        }
+    }
     let mut transfer = vec![0.0; groups * groups];
     let mut transfer_p1 = vec![0.0; groups * groups];
     // l = 2..=5 Legendre transfer moments — the free-gas iso-CM kernel
@@ -816,9 +884,22 @@ fn collapse_material(
             let st = log_interp(&table.energy, &total_xs[n_idx], e) * n_density;
             if s0 + st > 0.0 { s0 / (s0 + st) } else { 1.0 }
         };
+        // Penetration weighting: ×exp(−σ_t,mat(E)·z). σ_t,mat is the
+        // whole-material macroscopic total — `sigma0_macro(n_idx, e)`
+        // plus this nuclide's own contribution.
+        let attenuation = |x: f64| -> f64 {
+            match opts.attenuation_depth_cm {
+                Some(z) if z > 0.0 => {
+                    let st = sigma0_macro(n_idx, x)
+                        + n_density * log_interp(&table.energy, &total_xs[n_idx], x);
+                    (-st * z).exp()
+                }
+                _ => 1.0,
+            }
+        };
         let weight: Vec<f64> = e
             .iter()
-            .map(|&x| opts.weighting.w(x) * shield_factor(x))
+            .map(|&x| opts.weighting.w(x) * shield_factor(x) * attenuation(x))
             .collect();
         let sw = |xs: &[f64]| -> Vec<f64> { xs.iter().zip(&weight).map(|(s, w)| s * w).collect() };
         let absorption: Vec<f64> = (0..e.len())
@@ -861,7 +942,7 @@ fn collapse_material(
                 let mut k_acc = 0.0;
                 for j in 0..NE {
                     let e_j = lo + (j as f64 + 0.5) * (hi - lo) / NE as f64;
-                    let w_j = opts.weighting.w(e_j) * shield_factor(e_j);
+                    let w_j = opts.weighting.w(e_j) * shield_factor(e_j) * attenuation(e_j);
                     let sig_f = log_interp(e, &table.elastic, e_j);
                     let mut s0tot = 0.0;
                     for gp in 0..groups {
@@ -941,8 +1022,29 @@ fn collapse_material(
             for (gp, val) in row.iter().enumerate() {
                 transfer[g * groups + gp] += n_density * val;
             }
+            let mut row_p1_clamped = vec![0.0_f64; groups];
             for (gp, val) in row_p1.iter().enumerate() {
-                transfer_p1[g * groups + gp] += n_density * val;
+                // Realizability bound: |P1 moment| ≤ P0 for any
+                // positive kernel (|P1(μ)| ≤ 1). Deep-downscatter tail
+                // entries can violate it by quadrature error alone —
+                // both moments are ~1e-20 there and the P0/P1
+                // partitions differ — clamp to the P0 entry exactly as
+                // the l ≥ 2 moments are below. An excess that is not
+                // quadrature-scale (>|bound| by more than a rounding
+                // margin) is a kernel defect — surface it rather than
+                // silently clamping.
+                let bound = row[gp].max(0.0);
+                let excess = val.abs() - bound;
+                if excess > 1e-9 * bound.max(1.0) {
+                    eprintln!(
+                        "collapse warning: P1 realizability excess {excess:.3e} over \
+                         bound {bound:.3e} at transfer {g}->{gp} (nuclide {})",
+                        table.name
+                    );
+                }
+                let clamped = val.clamp(-bound, bound);
+                row_p1_clamped[gp] = clamped;
+                transfer_p1[g * groups + gp] += n_density * clamped;
             }
             for (li, mat) in transfer_pl.iter_mut().enumerate() {
                 for (gp, val) in row_pl[li].iter().enumerate() {
@@ -960,10 +1062,17 @@ fn collapse_material(
             // sum over σ_s is absorbed into removal so the solver's
             // row_sum ≤ σ_t invariant holds by construction.
             sigma_t[g] += n_density * (sigma_a + row.iter().sum::<f64>().max(sigma_s));
+            for j in 0..BEAM_KERNEL_NODES {
+                let slo = lo + (hi - lo) * j as f64 / BEAM_KERNEL_NODES as f64;
+                let shi = lo + (hi - lo) * (j + 1) as f64 / BEAM_KERNEL_NODES as f64;
+                let base = g * 2 * BEAM_KERNEL_NODES + 2 * j;
+                sigma_beam_nodes[base + 1] +=
+                    n_density * integrate_grid(e, &total_xs[n_idx], slo, shi) / (shi - slo);
+            }
             // Scatter-weighted mean lab cosine: analytic 2/(3A) for
             // free-gas, the TSL P1/P0 ratio when bound-atom applies.
             if tsl.is_some() {
-                mu_num[g] += n_density * row_p1.iter().sum::<f64>();
+                mu_num[g] += n_density * row_p1_clamped.iter().sum::<f64>();
                 mu_den[g] += n_density * row.iter().sum::<f64>();
             } else {
                 let mu = 2.0 / (3.0 * table.mass_number as f64);
@@ -1018,6 +1127,7 @@ fn collapse_material(
                 .map(|(&num, &den)| if den > 0.0 { num / den } else { 0.0 })
                 .collect(),
         ),
+        beam_sigma_nodes_per_cm: Some(sigma_beam_nodes),
     })
 }
 
@@ -1297,6 +1407,29 @@ mod tests {
         assert!((w.w(1.0e6) - 1.0e-6).abs() < 1e-18);
     }
 
+    #[test]
+    fn tabulated_weighting_returns_per_ev_bin_density() {
+        // Three bins covering [1, 100] eV with weights 1, 2, 1 — w(E)
+        // is the per-eV density weight/ΔE inside its bin and 0 outside.
+        let w = WeightingSpectrum::Tabulated {
+            energy_boundaries_ev: vec![1.0, 10.0, 50.0, 100.0],
+            bin_weights: vec![1.0, 2.0, 1.0],
+        };
+        assert!((w.w(5.0) - 1.0 / 9.0).abs() < 1e-15);
+        assert!((w.w(30.0) - 2.0 / 40.0).abs() < 1e-15);
+        assert!((w.w(90.0) - 1.0 / 50.0).abs() < 1e-15);
+        assert_eq!(w.w(0.5), 0.0);
+        assert_eq!(w.w(200.0), 0.0);
+        // Descending bounds (the multigroup convention) work too.
+        let w = WeightingSpectrum::Tabulated {
+            energy_boundaries_ev: vec![100.0, 50.0, 10.0, 1.0],
+            bin_weights: vec![1.0, 2.0, 1.0],
+        };
+        assert!((w.w(75.0) - 1.0 / 50.0).abs() < 1e-15);
+        assert!((w.w(30.0) - 2.0 / 40.0).abs() < 1e-15);
+        assert!((w.w(5.0) - 1.0 / 9.0).abs() < 1e-15);
+    }
+
     /// One ENDF-6 record line: six 11-column fields, MAT, MF, MT, sequence.
     fn endf_line(fields: [&str; 6], mat: u32, mf: u32, mt: u32, seq: u32) -> String {
         let mut line = String::new();
@@ -1384,6 +1517,7 @@ mod tests {
             tsl_paths: BTreeMap::new(),
             tsl_temperature_k: 294.0,
             self_shielding: false,
+            attenuation_depth_cm: None,
             id: "test.hydrogen-kerma".into(),
             component_profile: None,
             note: String::new(),
@@ -1514,6 +1648,7 @@ mod tests {
             tsl_paths: BTreeMap::new(),
             tsl_temperature_k: 294.0,
             self_shielding: shield,
+            attenuation_depth_cm: None,
             id: "test.shielding".into(),
             component_profile: None,
             note: String::new(),

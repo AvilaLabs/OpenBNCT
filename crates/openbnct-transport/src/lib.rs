@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 mod accelerator;
 mod beam;
 mod beam_quality;
+mod boundaries;
 mod bsa;
 mod cadis;
 mod hu_calibration;
@@ -39,6 +40,7 @@ pub use beam_quality::{
     TransverseFluenceProfile, attach_absolute_fluence_profile, attach_transverse_fluence_profiles,
     evaluate_beam_quality, in_air_metrics, in_phantom_metrics,
 };
+pub use boundaries::{BOUNDARY_PROPOSAL_SCHEMA, BoundaryError, BoundaryProposal, adapt_boundaries};
 pub use bsa::{
     BSA_SCHEMA, BSA_SWEEP_SCHEMA, BeamShapingAssembly, BsaError, BsaLayer, BsaLayerKind,
     BsaRadialExtent, BsaSweep, BsaSweepParameter, BsaSweepRecord, BsaSweepVariant,
@@ -65,10 +67,11 @@ pub use model::{
     TransportModelError,
 };
 pub use multigroup::{
-    MULTIGROUP_DATA_SCHEMA, MULTIGROUP_FLUX_SCHEMA, MultigroupData, MultigroupError,
-    MultigroupFlux, MultigroupMaterial, SnOptions, adjoint_direction_score, cell_compositions,
-    cell_materials, fold_multigroup_dose, level_symmetric_quadrature, material_composition_map,
-    solve_multigroup, solve_multigroup_adjoint, uncollided_beam_flux,
+    BEAM_KERNEL_NODES, MULTIGROUP_DATA_SCHEMA, MULTIGROUP_FLUX_SCHEMA, MultigroupData,
+    MultigroupError, MultigroupFlux, MultigroupMaterial, SnOptions, SourceWeighting,
+    adjoint_direction_score, cell_compositions, cell_materials, fold_multigroup_dose,
+    level_symmetric_quadrature, material_composition_map, solve_multigroup,
+    solve_multigroup_adjoint, uncollided_beam_flux,
 };
 pub use openbnct_core::ContentReference;
 pub use photon::{

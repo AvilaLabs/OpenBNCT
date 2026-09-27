@@ -679,11 +679,12 @@ pub fn collapse_photon(
          n→γ production from neutron evaluations' photon products ({}); {}. \
          Pair production sources 2×511 keV annihilation photons (transported). \
          Research-use data; not a clinical library.",
-        match opts.weighting {
+        match &opts.weighting {
             WeightingSpectrum::ThermalMaxwellianEpithermalFlat { .. } => {
                 "Maxwellian+1/E weighting"
             }
             WeightingSpectrum::FlatLethargy => "1/E weighting",
+            WeightingSpectrum::Tabulated { .. } => "tabulated weighting spectrum",
         },
         opts.note
     );
