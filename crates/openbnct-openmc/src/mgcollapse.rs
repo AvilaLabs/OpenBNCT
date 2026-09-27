@@ -65,19 +65,30 @@ pub(crate) fn invalid(msg: impl Into<String>) -> CollapseError {
 }
 
 /// Declared weighting spectrum for the collapse integrals.
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum WeightingSpectrum {
     /// Maxwellian flux (kT = 0.0253 eV) below `cut` eV, 1/E above.
     ThermalMaxwellianEpithermalFlat { cut_ev: f64 },
     /// 1/E everywhere.
     FlatLethargy,
+    /// Tabulated flux-density weighting — `w(E)` is piecewise-constant
+    /// at `bin_weights[b]` inside histogram bin
+    /// `[energy_boundaries_ev[b], energy_boundaries_ev[b+1]]` (bounds
+    /// may ascend or descend). A problem-informed spectrum — e.g. one
+    /// extracted from a fine-group or MC solve — transports
+    /// intra-group spectral hardening into the collapsed constants;
+    /// analytic shapes cannot represent that.
+    Tabulated {
+        energy_boundaries_ev: Vec<f64>,
+        bin_weights: Vec<f64>,
+    },
 }
 
 impl WeightingSpectrum {
     pub fn w(&self, energy_ev: f64) -> f64 {
-        match *self {
+        match self {
             WeightingSpectrum::ThermalMaxwellianEpithermalFlat { cut_ev } => {
-                if energy_ev <= cut_ev {
+                if energy_ev <= *cut_ev {
                     // Maxwellian *flux* spectrum ∝ E·exp(−E/kT).
                     energy_ev * (-energy_ev / 0.0253e-0_f64.max(f64::MIN_POSITIVE)).exp()
                 } else {
@@ -85,15 +96,52 @@ impl WeightingSpectrum {
                 }
             }
             WeightingSpectrum::FlatLethargy => 1.0 / energy_ev,
+            WeightingSpectrum::Tabulated {
+                energy_boundaries_ev,
+                bin_weights,
+            } => {
+                let b = energy_boundaries_ev;
+                let asc = b.first().zip(b.last()).map(|(a, z)| a < z).unwrap_or(false);
+                let idx = if asc {
+                    // b0 < b1 < … — bin g covers [b[g], b[g+1])
+                    match b.iter().position(|&x| x > energy_ev) {
+                        Some(0) | None => return 0.0,
+                        Some(p) => p - 1,
+                    }
+                } else {
+                    // descending: bin g covers (b[g+1], b[g]]
+                    match b.iter().position(|&x| x < energy_ev) {
+                        Some(0) | None => return 0.0,
+                        Some(p) => p - 1,
+                    }
+                };
+                if idx >= bin_weights.len() {
+                    return 0.0;
+                }
+                let lo = if asc { b[idx] } else { b[idx + 1] };
+                let hi = if asc { b[idx + 1] } else { b[idx] };
+                // Normalize per-bin weight to a per-eV density so the
+                // histogram's integral equals Σ bin_weights.
+                bin_weights[idx] / (hi - lo).max(f64::MIN_POSITIVE)
+            }
         }
     }
 
     fn describe(&self) -> String {
-        match *self {
+        match self {
             WeightingSpectrum::ThermalMaxwellianEpithermalFlat { cut_ev } => {
                 format!("Maxwellian flux weighting (kT = 0.0253 eV) below {cut_ev} eV, 1/E above")
             }
             WeightingSpectrum::FlatLethargy => "1/E (flat lethargy) weighting everywhere".into(),
+            WeightingSpectrum::Tabulated {
+                energy_boundaries_ev,
+                ..
+            } => {
+                format!(
+                    "tabulated weighting spectrum ({} bins)",
+                    energy_boundaries_ev.len().saturating_sub(1)
+                )
+            }
         }
     }
 }
@@ -533,6 +581,16 @@ pub struct CollapseOptions {
     /// nuclide's effective weighting locally — the correct first-order
     /// self-shielding treatment. Recorded in the declaration.
     pub self_shielding: bool,
+    /// Penetration weighting depth, cm. When set, every collapse weight
+    /// is additionally multiplied by `exp(−σ_t,mat(E)·depth)` — the
+    /// uncollided-survival spectrum of the host material at that
+    /// depth. This carries intra-group spectral hardening into the
+    /// collapsed constants: deep-penetrating group constants are
+    /// dominated by the low-σ_t in-group tail rather than the
+    /// 1/E-weighted mean — the correct condensation for a beam-driven
+    /// penetration problem. `depth` is a declared reference depth
+    /// (e.g. the dose-relevant mid-target range), not an iteration.
+    pub attenuation_depth_cm: Option<f64>,
     /// Artifact id.
     pub id: String,
     /// Component-profile reference for the dose-response vectors.
@@ -816,9 +874,22 @@ fn collapse_material(
             let st = log_interp(&table.energy, &total_xs[n_idx], e) * n_density;
             if s0 + st > 0.0 { s0 / (s0 + st) } else { 1.0 }
         };
+        // Penetration weighting: ×exp(−σ_t,mat(E)·z). σ_t,mat is the
+        // whole-material macroscopic total — `sigma0_macro(n_idx, e)`
+        // plus this nuclide's own contribution.
+        let attenuation = |x: f64| -> f64 {
+            match opts.attenuation_depth_cm {
+                Some(z) if z > 0.0 => {
+                    let st = sigma0_macro(n_idx, x)
+                        + n_density * log_interp(&table.energy, &total_xs[n_idx], x);
+                    (-st * z).exp()
+                }
+                _ => 1.0,
+            }
+        };
         let weight: Vec<f64> = e
             .iter()
-            .map(|&x| opts.weighting.w(x) * shield_factor(x))
+            .map(|&x| opts.weighting.w(x) * shield_factor(x) * attenuation(x))
             .collect();
         let sw = |xs: &[f64]| -> Vec<f64> { xs.iter().zip(&weight).map(|(s, w)| s * w).collect() };
         let absorption: Vec<f64> = (0..e.len())
@@ -861,7 +932,7 @@ fn collapse_material(
                 let mut k_acc = 0.0;
                 for j in 0..NE {
                     let e_j = lo + (j as f64 + 0.5) * (hi - lo) / NE as f64;
-                    let w_j = opts.weighting.w(e_j) * shield_factor(e_j);
+                    let w_j = opts.weighting.w(e_j) * shield_factor(e_j) * attenuation(e_j);
                     let sig_f = log_interp(e, &table.elastic, e_j);
                     let mut s0tot = 0.0;
                     for gp in 0..groups {
@@ -1297,6 +1368,29 @@ mod tests {
         assert!((w.w(1.0e6) - 1.0e-6).abs() < 1e-18);
     }
 
+    #[test]
+    fn tabulated_weighting_returns_per_ev_bin_density() {
+        // Three bins covering [1, 100] eV with weights 1, 2, 1 — w(E)
+        // is the per-eV density weight/ΔE inside its bin and 0 outside.
+        let w = WeightingSpectrum::Tabulated {
+            energy_boundaries_ev: vec![1.0, 10.0, 50.0, 100.0],
+            bin_weights: vec![1.0, 2.0, 1.0],
+        };
+        assert!((w.w(5.0) - 1.0 / 9.0).abs() < 1e-15);
+        assert!((w.w(30.0) - 2.0 / 40.0).abs() < 1e-15);
+        assert!((w.w(90.0) - 1.0 / 50.0).abs() < 1e-15);
+        assert_eq!(w.w(0.5), 0.0);
+        assert_eq!(w.w(200.0), 0.0);
+        // Descending bounds (the multigroup convention) work too.
+        let w = WeightingSpectrum::Tabulated {
+            energy_boundaries_ev: vec![100.0, 50.0, 10.0, 1.0],
+            bin_weights: vec![1.0, 2.0, 1.0],
+        };
+        assert!((w.w(75.0) - 1.0 / 50.0).abs() < 1e-15);
+        assert!((w.w(30.0) - 2.0 / 40.0).abs() < 1e-15);
+        assert!((w.w(5.0) - 1.0 / 9.0).abs() < 1e-15);
+    }
+
     /// One ENDF-6 record line: six 11-column fields, MAT, MF, MT, sequence.
     fn endf_line(fields: [&str; 6], mat: u32, mf: u32, mt: u32, seq: u32) -> String {
         let mut line = String::new();
@@ -1384,6 +1478,7 @@ mod tests {
             tsl_paths: BTreeMap::new(),
             tsl_temperature_k: 294.0,
             self_shielding: false,
+            attenuation_depth_cm: None,
             id: "test.hydrogen-kerma".into(),
             component_profile: None,
             note: String::new(),
@@ -1514,6 +1609,7 @@ mod tests {
             tsl_paths: BTreeMap::new(),
             tsl_temperature_k: 294.0,
             self_shielding: shield,
+            attenuation_depth_cm: None,
             id: "test.shielding".into(),
             component_profile: None,
             note: String::new(),

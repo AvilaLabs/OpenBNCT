@@ -427,6 +427,10 @@ pub struct SnOptions {
     /// is nonnegative (pure-P0 cells). `OPENBNCT_NO_THETA_REPAIR`
     /// disables it (A/B diagnostics vs the legacy clamp).
     pub theta_repair: bool,
+    /// Within-bin interpolation convention for a `TabulatedHistogram`
+    /// source spectrum — see [`SourceWeighting`]. Recorded on the
+    /// emitted flux artifact's `source_spectrum_weighting`.
+    pub source_weighting: SourceWeighting,
 }
 
 impl Default for SnOptions {
@@ -446,6 +450,7 @@ impl Default for SnOptions {
             coarse_rebalance: true,
             inner_convergence: None,
             theta_repair: true,
+            source_weighting: SourceWeighting::CollapseConsistent,
         }
     }
 }
@@ -728,6 +733,7 @@ pub(crate) fn require_disk_on_face(
 pub(crate) fn source_coverage(
     case: &TransportCase,
     data: &MultigroupData,
+    weighting: SourceWeighting,
 ) -> Result<SourceCoverage, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
@@ -792,7 +798,7 @@ pub(crate) fn source_coverage(
     Ok(SourceCoverage {
         face,
         cells,
-        group_weights: source_group_weights(source, data)?,
+        group_weights: source_group_weights(source, data, weighting)?,
     })
 }
 
@@ -814,6 +820,7 @@ fn map_boundary_source(
     case: &TransportCase,
     data: &MultigroupData,
     quadrature: &[([f64; 3], f64)],
+    weighting: SourceWeighting,
 ) -> Result<BoundarySource, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
@@ -822,7 +829,7 @@ fn map_boundary_source(
         return Err(invalid("volumetric sources have no boundary face".into()));
     };
     let axis = axis_p.index();
-    let coverage = source_coverage(case, data)?;
+    let coverage = source_coverage(case, data, weighting)?;
     let (face, cells, group_weights) = (coverage.face, coverage.cells, coverage.group_weights);
     let inward_sign = if face % 2 == 0 { 1.0_f64 } else { -1.0_f64 };
 
@@ -959,29 +966,56 @@ fn map_boundary_source(
 /// Maxwellian ∝ E·exp(−E/kT) below 0.5 eV, 1/E slowing-down above —
 /// histogram bins declare only integrals, so the within-bin shape must
 /// come from the same declared convention the data was collapsed under.
-fn spectrum_weight_integral(lo_ev: f64, hi_ev: f64) -> f64 {
-    const KT_EV: f64 = 0.0253;
-    const CUT_EV: f64 = 0.5;
-    let maxwell = |a: f64, b: f64| {
-        (KT_EV * (KT_EV + a) * (-a / KT_EV).exp()) - (KT_EV * (KT_EV + b) * (-b / KT_EV).exp())
-    };
-    let inv_e = |a: f64, b: f64| (b / a).ln();
+/// Within-bin interpolation convention for a `TabulatedHistogram`
+/// source spectrum. The artifact declares bin *probabilities* only —
+/// the within-bin shape is a solve-time interpretation, recorded on
+/// the flux artifact's `source_spectrum_weighting`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SourceWeighting {
+    /// Maxwellian flux (kT = 0.0253 eV) below 0.5 eV, 1/E above — the
+    /// same shape the multigroup collapse declares, so a source bin
+    /// spanning several groups splits exactly as the condensation
+    /// assumed the flux would.
+    CollapseConsistent,
+    /// Uniform per eV inside each declared bin — the histogram
+    /// convention continuous-energy codes (OpenMC `Tabular`,
+    /// MCNP histogram bins) apply to tabulated spectra. The honest
+    /// choice when the declared bins are coarse: lethargy weighting
+    /// piles a wide high-energy bin's mass at its low edge, where a
+    /// few-cm σ_t swallows it before it streams.
+    UniformInBin,
+}
+
+fn spectrum_weight_integral(lo_ev: f64, hi_ev: f64, weighting: SourceWeighting) -> f64 {
     let (lo, hi) = (lo_ev.max(1.0e-30), hi_ev.max(lo_ev));
-    let mid = CUT_EV.clamp(lo, hi);
-    let mut w = 0.0;
-    if mid > lo {
-        w += maxwell(lo, mid);
+    match weighting {
+        SourceWeighting::UniformInBin => hi - lo,
+        SourceWeighting::CollapseConsistent => {
+            const KT_EV: f64 = 0.0253;
+            const CUT_EV: f64 = 0.5;
+            let maxwell = |a: f64, b: f64| {
+                (KT_EV * (KT_EV + a) * (-a / KT_EV).exp())
+                    - (KT_EV * (KT_EV + b) * (-b / KT_EV).exp())
+            };
+            let inv_e = |a: f64, b: f64| (b / a).ln();
+            let mid = CUT_EV.clamp(lo, hi);
+            let mut w = 0.0;
+            if mid > lo {
+                w += maxwell(lo, mid);
+            }
+            if hi > mid {
+                w += inv_e(mid.max(1.0e-30), hi);
+            }
+            w
+        }
     }
-    if hi > mid {
-        w += inv_e(mid.max(1.0e-30), hi);
-    }
-    w
 }
 
 /// Map the source's energy distribution onto normalized group weights.
 fn source_group_weights(
     source: &crate::model::FixedSourceDefinition,
     data: &MultigroupData,
+    weighting: SourceWeighting,
 ) -> Result<Vec<f64>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let groups = data.group_count();
@@ -1002,7 +1036,7 @@ fn source_group_weights(
             for (bin, w) in bin_weights.iter().enumerate() {
                 let lo = energy_boundaries_ev[bin];
                 let hi = energy_boundaries_ev[bin + 1];
-                let bin_norm = spectrum_weight_integral(lo, hi);
+                let bin_norm = spectrum_weight_integral(lo, hi, weighting);
                 if bin_norm <= 0.0 {
                     continue;
                 }
@@ -1011,7 +1045,7 @@ fn source_group_weights(
                     let ghi = data.energy_boundaries_ev[g];
                     let (olo, ohi) = (lo.max(glo), hi.min(ghi));
                     if ohi > olo {
-                        *weight += w * spectrum_weight_integral(olo, ohi) / bin_norm;
+                        *weight += w * spectrum_weight_integral(olo, ohi, weighting) / bin_norm;
                     }
                 }
             }
@@ -1035,6 +1069,7 @@ fn source_group_weights(
 fn map_volume_source(
     case: &TransportCase,
     data: &MultigroupData,
+    weighting: SourceWeighting,
 ) -> Result<Vec<Vec<f64>>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let SourceSpatialDistribution::UniformBox {
@@ -1046,7 +1081,7 @@ fn map_volume_source(
     else {
         return Err(invalid("not a volumetric source".into()));
     };
-    let group_weights = source_group_weights(&case.source, data)?;
+    let group_weights = source_group_weights(&case.source, data, weighting)?;
     let geometry = &case.geometry;
     let ranges_cm = [*x_range_cm, *y_range_cm, *z_range_cm];
     let box_vol_cm3: f64 = ranges_cm.iter().map(|r| r[1] - r[0]).product();
@@ -1190,6 +1225,7 @@ pub fn uncollided_beam_flux(
     case: &TransportCase,
     data: &MultigroupData,
     case_material: &[usize],
+    weighting: SourceWeighting,
 ) -> Result<Option<Vec<Vec<f64>>>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
@@ -1243,7 +1279,7 @@ pub fn uncollided_beam_flux(
     let disk_area_cm2 = std::f64::consts::PI * radius_cm * radius_cm;
     // Scalar fluence at the face per unit current: J/μ̄ with J = R/A.
     let beam_intensity = rate / (disk_area_cm2 * mu_bar.abs());
-    let group_weights = source_group_weights(source, data)?;
+    let group_weights = source_group_weights(source, data, weighting)?;
     let groups = data.group_count();
     let n_cells = geometry.voxel_count()?;
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
@@ -1892,19 +1928,19 @@ pub(crate) fn solve_multigroup_unchecked(
     );
     // Uncollided beam split or the discrete boundary-flux path.
     let uncollided = if options.beam_uncollided_split && !volume_source {
-        uncollided_beam_flux(case, data, &case_material)?
+        uncollided_beam_flux(case, data, &case_material, options.source_weighting)?
     } else {
         None
     };
     let boundary = if uncollided.is_some() || volume_source {
         BoundarySource::new()
     } else {
-        map_boundary_source(case, data, &quadrature)?
+        map_boundary_source(case, data, &quadrature, options.source_weighting)?
     };
     // First-collision source driven by the uncollided flux, or the
     // volumetric emission density for interior sources.
     let fixed_source: Vec<Vec<f64>> = if volume_source {
-        map_volume_source(case, data)?
+        map_volume_source(case, data, options.source_weighting)?
     } else {
         match &uncollided {
             Some(unc) => (0..n_cells)
@@ -2111,7 +2147,9 @@ pub fn adjoint_direction_score(
     aimed_case.source = aimed_source;
     let (_ad, case_material) =
         material_composition_map(&aimed_case, data, options.assignment.as_ref())?;
-    let Some(uncollided) = uncollided_beam_flux(&aimed_case, data, &case_material)? else {
+    let Some(uncollided) =
+        uncollided_beam_flux(&aimed_case, data, &case_material, options.source_weighting)?
+    else {
         return Err(invalid(
             "direction does not admit an uncollided beam — needs an on-face disk source".into(),
         ));
@@ -3188,7 +3226,10 @@ pub(crate) fn solve_sn_problem(
             }
             .into(),
         ),
-        source_spectrum_weighting: "collapse_consistent".into(),
+        source_spectrum_weighting: match options.source_weighting {
+            SourceWeighting::CollapseConsistent => "collapse_consistent".into(),
+            SourceWeighting::UniformInBin => "uniform_in_bin".into(),
+        },
         quadrature_order: options.quadrature_order,
         outer_iterations: outer_done,
         residual,
@@ -3440,6 +3481,7 @@ pub(crate) mod tests {
             coarse_rebalance: true,
             inner_convergence: None,
             theta_repair: true,
+            source_weighting: SourceWeighting::CollapseConsistent,
         }
     }
 
@@ -3910,7 +3952,8 @@ pub(crate) mod tests {
         let mut mg = data(&[0.5; 8], vec![0.0; 64]);
         mg.energy_boundaries_ev = vec![1e4, 3e3, 1e3, 3e2, 1e2, 3e1, 1e1, 3.0, 0.5];
         mg.validate().unwrap();
-        let w = source_group_weights(&case.source, &mg).unwrap();
+        let w =
+            source_group_weights(&case.source, &mg, SourceWeighting::CollapseConsistent).unwrap();
         assert!(w.iter().all(|x| x.is_finite() && *x >= 0.0));
         assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
         // 1/E weighting: equal per decade → lowest two groups (0.5–3 eV
@@ -3923,6 +3966,42 @@ pub(crate) mod tests {
             "1/E low-end weighting: w_low={} w_high={}",
             w[7],
             w[0]
+        );
+    }
+
+    #[test]
+    fn histogram_source_uniform_in_bin_matches_openmc_convention() {
+        // OpenMC `Tabular(interpolation="histogram")` (and the MCNP
+        // analog) samples a declared bin uniformly per eV — a broad
+        // fast bin is therefore nearly all high-energy. The
+        // `UniformInBin` weighting must reproduce exactly that split:
+        // group weight ∝ energy overlap, not lethargy.
+        let mut case = slab_case();
+        case.source.energy = EnergyDistribution::TabulatedHistogram {
+            energy_boundaries_ev: vec![0.5, 10_000.0],
+            bin_weights: vec![1.0],
+        };
+        let mut mg = data(&[0.5; 8], vec![0.0; 64]);
+        mg.energy_boundaries_ev = vec![1e4, 3e3, 1e3, 3e2, 1e2, 3e1, 1e1, 3.0, 0.5];
+        mg.validate().unwrap();
+        let w = source_group_weights(&case.source, &mg, SourceWeighting::UniformInBin).unwrap();
+        assert!(w.iter().all(|x| x.is_finite() && *x >= 0.0));
+        assert!((w.iter().sum::<f64>() - 1.0).abs() < 1e-12);
+        // Uniform per eV: the top group [3e3, 1e4] spans 7000 of the
+        // bin's 9999.5 eV → ~0.7001; the bottom group [0.5, 3] spans
+        // 2.5 eV → ~2.5e-4.
+        let span = 10_000.0 - 0.5;
+        assert!((w[0] - 7000.0 / span).abs() < 1e-9, "w[0]={}", w[0]);
+        assert!((w[7] - 2.5 / span).abs() < 1e-9, "w[7]={}", w[7]);
+        // The same split under CollapseConsistent must differ —
+        // the convention is a real modeling choice, not a rename.
+        let w1e =
+            source_group_weights(&case.source, &mg, SourceWeighting::CollapseConsistent).unwrap();
+        assert!(
+            w1e[7] > 100.0 * w[7],
+            "1/E must weight the low edge far above uniform: {} vs {}",
+            w1e[7],
+            w[7]
         );
     }
 

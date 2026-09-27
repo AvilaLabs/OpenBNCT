@@ -66,9 +66,9 @@ pub use model::{
 };
 pub use multigroup::{
     MULTIGROUP_DATA_SCHEMA, MULTIGROUP_FLUX_SCHEMA, MultigroupData, MultigroupError,
-    MultigroupFlux, MultigroupMaterial, SnOptions, adjoint_direction_score, cell_compositions,
-    cell_materials, fold_multigroup_dose, level_symmetric_quadrature, material_composition_map,
-    solve_multigroup, solve_multigroup_adjoint, uncollided_beam_flux,
+    MultigroupFlux, MultigroupMaterial, SnOptions, SourceWeighting, adjoint_direction_score,
+    cell_compositions, cell_materials, fold_multigroup_dose, level_symmetric_quadrature,
+    material_composition_map, solve_multigroup, solve_multigroup_adjoint, uncollided_beam_flux,
 };
 pub use openbnct_core::ContentReference;
 pub use photon::{

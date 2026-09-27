@@ -1862,7 +1862,13 @@ convention.
   by response-weighted lethargy density instead of uniform
   refinement; emits a `multigroup-data` artifact plus a declared
   boundary rationale. Turns grid convergence from a manual ladder
-  into tooling.
+  into tooling. Intercomparison found the dominant deterministic
+  gaps were conventions, not group structure: the source's
+  within-bin spectrum (`--source-weighting`, now recorded on flux
+  artifacts) and missing thermal upscatter (`--tsl`) — the residual
+  ~10× thermal deficit localizes to near-field epithermal buildup
+  and thermal residence condensation, which boundary adaptation
+  targets directly.
 - **R17-05 — plan metrics layer.** DVH-derived D95/V20/EUD (and
   TCP–NTCP under the declared bio model) summarized into
   `InversePlanResult` and the GUI table — plans should read like

@@ -2887,6 +2887,20 @@ enum SnCommand {
         /// mode bound-atom S(α,β) upscatter introduces.
         #[arg(long, default_value_t = 0)]
         anderson: usize,
+        /// Within-bin spread of a tabulated-histogram source spectrum:
+        /// `collapse_consistent` (Maxwellian below 0.5 eV, 1/E above —
+        /// the default) or `uniform_in_bin` (uniform per eV — the
+        /// histogram convention OpenMC/MCNP apply; the honest match
+        /// for a coarse-bin spectrum compared against CE transport).
+        #[arg(long, default_value = "collapse_consistent")]
+        source_weighting: String,
+        /// Write the flux field even when the outer iteration exhausts
+        /// `max_outer` unconverged — the artifact records
+        /// `converged: false` and the residual. For diagnostics only;
+        /// downstream consumers should treat unconverged fields as
+        /// provisional.
+        #[arg(long)]
+        allow_unconverged: bool,
         /// Also write a folded `openbnct.physical-dose-bundle/0.2.0` to
         /// this path (the data must declare `dose_response_gy_cm2` and a
         /// `component_profile` binding).
@@ -2969,10 +2983,56 @@ enum SnCommand {
         /// for `--dose` folding at solve time.
         #[arg(long)]
         component_profile: Option<PathBuf>,
+        /// Optional `EnergyDistribution` JSON overriding the default
+        /// Maxwellian+1/E collapse weighting — a tabulated histogram
+        /// from a fine-group or MC solve carries intra-group spectral
+        /// hardening that analytic weighting cannot represent. Bin
+        /// weights are normalized to a per-eV flux density.
+        #[arg(long)]
+        weighting_spectrum: Option<PathBuf>,
+        /// Penetration depth (cm) for survival-weighted condensation:
+        /// each collapse weight is multiplied by the host material's
+        /// uncollided-survival factor exp(−σ_t(E)·z), carrying
+        /// intra-group spectral hardening into the group constants.
+        /// The right condensation for a beam-driven deep-penetration
+        /// problem; `z` is the declared dose-relevant reference depth.
+        #[arg(long)]
+        attenuation_depth: Option<f64>,
         /// Free-text appended to the collapse declaration.
         #[arg(long)]
         note: Option<String>,
         /// Artifact path; printed to stdout when omitted.
+        #[arg(long)]
+        output: Option<PathBuf>,
+    },
+    /// Extract a volume-weighted group-flux spectrum from a
+    /// `multigroup-flux` artifact as an `EnergyDistribution`
+    /// tabulated histogram — feed it to `sn collapse
+    /// --weighting-spectrum` to condense cross sections against a
+    /// problem-informed spectrum (intra-group hardening), or to
+    /// `plan synthesize --spectrum` as a source variant.
+    Spectrum {
+        /// `openbnct.multigroup-flux` artifact.
+        #[arg(long)]
+        flux: PathBuf,
+        /// Restrict to cells inside this `openbnct.region-mask`.
+        #[arg(long, conflicts_with = "material")]
+        mask: Option<PathBuf>,
+        /// Restrict to cells whose assignment resolves to this
+        /// material id — requires `--case`, `--data`, `--assignment`.
+        #[arg(long)]
+        material: Option<String>,
+        /// `openbnct.transport-case` (required with `--material`).
+        #[arg(long)]
+        case: Option<PathBuf>,
+        /// `openbnct.multigroup-data` (required with `--material`).
+        #[arg(long)]
+        data: Option<PathBuf>,
+        /// `openbnct.material-assignment` (required with `--material`).
+        #[arg(long)]
+        assignment: Option<PathBuf>,
+        /// Output path for the `EnergyDistribution` JSON; stdout when
+        /// omitted.
         #[arg(long)]
         output: Option<PathBuf>,
     },
@@ -9056,6 +9116,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: ph_data.id.clone(),
@@ -10204,6 +10265,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 p1,
                 anisotropy,
                 anderson,
+                source_weighting,
+                allow_unconverged,
                 dose,
                 output,
             } => {
@@ -10248,6 +10311,19 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence,
                     theta_repair: true,
+                    source_weighting: match source_weighting.as_str() {
+                        "collapse_consistent" => {
+                            openbnct_transport::SourceWeighting::CollapseConsistent
+                        }
+                        "uniform_in_bin" => openbnct_transport::SourceWeighting::UniformInBin,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "--source-weighting {other:?} must be \
+                                 collapse_consistent or uniform_in_bin"
+                            ))
+                            .into());
+                        }
+                    },
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: mg_data.id.clone(),
@@ -10265,12 +10341,18 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     case_ref,
                 )
                 .map_err(|error| io::Error::other(format!("multigroup: {error}")))?;
-                if !flux.converged {
+                if !flux.converged && !allow_unconverged {
                     return Err(io::Error::other(format!(
-                        "multigroup solve did not converge (residual {:.3e} after {} outer iterations)",
+                        "multigroup solve did not converge (residual {:.3e} after {} outer iterations);                          --allow-unconverged writes the provisional field",
                         flux.residual, flux.outer_iterations
                     ))
                     .into());
+                }
+                if !flux.converged {
+                    eprintln!(
+                        "warning: solve unconverged (residual {:.3e});                          emitting provisional field with converged=false",
+                        flux.residual
+                    );
                 }
                 write_new_json(&output, &flux)?;
                 println!(
@@ -10355,6 +10437,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 boundaries,
                 id,
                 component_profile,
+                weighting_spectrum,
+                attenuation_depth,
                 note,
                 output,
             } => {
@@ -10396,6 +10480,35 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                     None => None,
                 };
+                let weighting = match &weighting_spectrum {
+                    Some(path) => {
+                        let spec: openbnct_transport::EnergyDistribution =
+                            serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                                io::Error::other(format!(
+                                    "weighting spectrum {}: {error}",
+                                    path.display()
+                                ))
+                            })?;
+                        match spec {
+                            openbnct_transport::EnergyDistribution::TabulatedHistogram {
+                                energy_boundaries_ev,
+                                bin_weights,
+                            } => openbnct_openmc::WeightingSpectrum::Tabulated {
+                                energy_boundaries_ev,
+                                bin_weights,
+                            },
+                            openbnct_transport::EnergyDistribution::Monoenergetic { .. } => {
+                                return Err(io::Error::other(
+                                    "--weighting-spectrum requires a tabulated histogram",
+                                )
+                                .into());
+                            }
+                        }
+                    }
+                    None => openbnct_openmc::WeightingSpectrum::ThermalMaxwellianEpithermalFlat {
+                        cut_ev: 0.5,
+                    },
+                };
                 let options = openbnct_openmc::CollapseOptions {
                     library_dir: library.clone(),
                     endf_paths,
@@ -10404,10 +10517,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     self_shielding,
                     materials: material_models,
                     energy_boundaries_ev: boundaries,
-                    weighting:
-                        openbnct_openmc::WeightingSpectrum::ThermalMaxwellianEpithermalFlat {
-                            cut_ev: 0.5,
-                        },
+                    weighting,
+                    attenuation_depth_cm: attenuation_depth,
                     id: id.clone(),
                     component_profile: profile_ref,
                     note: note.unwrap_or_default(),
@@ -10424,6 +10535,128 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                             data.energy_boundaries_ev.len() - 1,
                             data.materials.len()
                         );
+                    }
+                    None => println!("{json}"),
+                }
+            }
+            SnCommand::Spectrum {
+                flux,
+                mask,
+                material,
+                case,
+                data,
+                assignment,
+                output,
+            } => {
+                let flux_doc: openbnct_transport::MultigroupFlux =
+                    serde_json::from_slice(&fs::read(&flux)?).map_err(|error| {
+                        io::Error::other(format!("flux {}: {error}", flux.display()))
+                    })?;
+                let groups = flux_doc.energy_boundaries_ev.len().saturating_sub(1);
+                if groups == 0 || flux_doc.flux.iter().any(|row| row.len() != groups) {
+                    return Err(
+                        io::Error::other("flux artifact group structure is inconsistent").into(),
+                    );
+                }
+                let n_cells = flux_doc.flux.len();
+                // Cell selection: mask, material id via assignment, or
+                // all cells.
+                let selector: Vec<bool> = if let Some(path) = &mask {
+                    let m: RegionMask =
+                        serde_json::from_slice(&fs::read(path)?).map_err(|error| {
+                            io::Error::other(format!("mask {}: {error}", path.display()))
+                        })?;
+                    if m.voxels.len() != n_cells {
+                        return Err(io::Error::other(format!(
+                            "mask has {} voxels, flux has {n_cells} cells",
+                            m.voxels.len()
+                        ))
+                        .into());
+                    }
+                    m.voxels
+                } else if let Some(name) = &material {
+                    let (case, data, assignment) = match (&case, &data, &assignment) {
+                        (Some(c), Some(d), Some(a)) => (c, d, a),
+                        _ => {
+                            return Err(io::Error::other(
+                                "--material requires --case, --data and --assignment",
+                            )
+                            .into());
+                        }
+                    };
+                    let case_document: TransportCase = serde_json::from_slice(&fs::read(case)?)
+                        .map_err(|error| {
+                            io::Error::other(format!("case {}: {error}", case.display()))
+                        })?;
+                    let mg_data: openbnct_transport::MultigroupData =
+                        serde_json::from_slice(&fs::read(data)?).map_err(|error| {
+                            io::Error::other(format!("data {}: {error}", data.display()))
+                        })?;
+                    let assignment_doc: MaterialAssignment =
+                        serde_json::from_slice(&fs::read(assignment)?).map_err(|error| {
+                            io::Error::other(format!(
+                                "assignment {}: {error}",
+                                assignment.display()
+                            ))
+                        })?;
+                    let cell_mat = openbnct_transport::cell_materials(
+                        &case_document,
+                        &mg_data,
+                        Some(&assignment_doc),
+                    )
+                    .map_err(|error| io::Error::other(format!("materials: {error}")))?;
+                    let wanted: Vec<usize> = mg_data
+                        .materials
+                        .iter()
+                        .enumerate()
+                        .filter(|(_, m)| m.material_id == *name)
+                        .map(|(i, _)| i)
+                        .collect();
+                    if wanted.is_empty() {
+                        return Err(io::Error::other(format!(
+                            "no material {name:?} in the multigroup data"
+                        ))
+                        .into());
+                    }
+                    cell_mat.iter().map(|&m| wanted.contains(&m)).collect()
+                } else {
+                    vec![true; n_cells]
+                };
+                let mut acc = vec![0.0; groups];
+                let mut selected = 0usize;
+                for (cell, row) in flux_doc.flux.iter().enumerate() {
+                    if selector[cell] {
+                        selected += 1;
+                        for (g, v) in row.iter().enumerate() {
+                            acc[g] += v;
+                        }
+                    }
+                }
+                if selected == 0 {
+                    return Err(io::Error::other("selection contains no cells").into());
+                }
+                // Per-group integrated fluence (uniform cell volume cancels
+                // in the weighting ratios); `w(E)` then returns the
+                // per-eV density φ_g.
+                let bin_weights: Vec<f64> = acc
+                    .iter()
+                    .enumerate()
+                    .map(|(g, v)| {
+                        let w = (flux_doc.energy_boundaries_ev[g]
+                            - flux_doc.energy_boundaries_ev[g + 1])
+                            .abs();
+                        v * w / selected as f64
+                    })
+                    .collect();
+                let spec = openbnct_transport::EnergyDistribution::TabulatedHistogram {
+                    energy_boundaries_ev: flux_doc.energy_boundaries_ev.clone(),
+                    bin_weights,
+                };
+                let json = serde_json::to_string_pretty(&spec)?;
+                match &output {
+                    Some(path) => {
+                        fs::write(path, &json)?;
+                        println!("spectrum ({} cells) at {}", selected, path.display());
                     }
                     None => println!("{json}"),
                 }
@@ -10555,6 +10788,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let data_ref = openbnct_core::ContentReference {
                     id: ph_data.id.clone(),
@@ -12861,6 +13095,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         &beamlet_case,
                         &mg_data,
                         &cell_mat,
+                        openbnct_transport::SourceWeighting::CollapseConsistent,
                     ) {
                         Ok(Some(unc)) => Some(unc),
                         Ok(None) => {
@@ -13133,6 +13368,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let profile = mg_data.component_profile.clone().ok_or_else(|| {
                     io::Error::other(
@@ -14553,6 +14789,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let nominal_flux =
                     match &forward_flux {
@@ -14696,6 +14933,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let report = openbnct_transport::run_screening(
                     &transport_case,
@@ -15150,6 +15388,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let forward = forward_flux
                     .as_ref()

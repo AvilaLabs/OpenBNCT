@@ -8,6 +8,26 @@ own versions independent of the crate version.
 
 ### Added — transport
 
+- Declared source-spectrum interpolation: `sn solve --source-weighting
+  {collapse_consistent|uniform_in_bin}` selects the within-bin spread
+  of a `TabulatedHistogram` source — Maxwellian-below-0.5 eV / 1/E
+  above (collapse-consistent, the default) or uniform-per-eV matching
+  OpenMC `Tabular(interpolation="histogram")` and MCNP histogram
+  semantics for CE cross-code comparison. The selected convention is
+  recorded on the emitted flux artifact's `source_spectrum_weighting`;
+  on the layered-head intercomparison it closed the fast-bin deficit
+  from 0.16–0.43× to 0.50–0.86× of the continuous-energy reference.
+- `sn collapse --attenuation-depth <cm>`: multiplies collapse weights
+  by `exp(−σ_t,material(E)·z)` — survival weighting for penetrating
+  problems; verified to shift this phantom's fast-group σ_t by only
+  a few percent (intra-group condensation exonerated as the deep-flux
+  deficit mechanism).
+- `sn spectrum`: extract a per-cell/material `EnergyDistribution`
+  histogram from a flux artifact for transport-informed collapse
+  weighting (`sn collapse --weighting-spectrum`).
+- `sn solve --allow-unconverged`: writes the provisional field with
+  `converged: false` and its residual instead of discarding it —
+  diagnostics for slow upscatter-coupled (TSL) outer iterations.
 - Volumetric fixed sources: `SourceSpatialDistribution::UniformBox`
   declares an axis-aligned emission box in cm. Emission is isotropic
   (the model requires the full-sphere cone) and the field's

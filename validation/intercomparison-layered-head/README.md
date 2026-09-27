@@ -58,13 +58,38 @@ real physics or residual multigroup condensation error.
   (H capture untallied). The θ-WDD positivity clamps were *not* the
   mechanism — the θ repair landed independently (negligible change
   to this field) and stays as hardening.
-- **Open:** the conserving 56g solve now *under*produces deep flux
-  (~0.03–0.4× CE on axis, ~0.15× whole-domain) — an honest
-  discretization/condensation question (fine-group σ_t
-  condensation, group-boundary placement), not a balance violation.
-  That is the R17-04 study. The uncollided-split and boundary-flux
-  models show the same deficit sign (source-path exonerated:
-  boundary-mode audit was 12.0 pre-fix).
+- **R17-04 status (diagnosis largely closed):** the underproduction
+  decomposed into two conventions the artifact never declared:
+  1. *Within-bin source spectrum.* OpenMC's
+     `Tabular(interpolation="histogram")` samples a declared bin
+     **uniformly per eV** — the [10 keV, 16.9 MeV] fast bin is ~99%
+     MeV-range. The deterministic source mapping historically spread
+     the same bins at the collapse weighting (Maxwellian ≤0.5 eV,
+     1/E above), putting ~40% of the fast component below ~200 keV
+     where σ_t ~1.5/cm kills it within ~2 cm. Re-solving with
+     `--source-weighting uniform_in_bin` (a declared artifact-level
+     convention) moves the slice-integrated fast bin from
+     **0.16–0.43× → 0.50–0.86× CE** and epithermal from ~0.15× to
+     ~0.2–1.6× (rising with depth). The 28g artifact's apparent
+     agreement was the same convention — it predates the switch and
+     ran the uniform-per-eV spread.
+  2. *Missing thermal upscatter.* Neither collapse used a TSL tape,
+     so deep-thermal groups were one-way absorbing sinks while the
+     CE free-gas kernel keeps ~kT thermal motion. Re-collapsing 56g
+     with `--tsl H1=<H(H2O) tape>` puts real upscatter in the matrix
+     (g55→g50–54 ≈ 1.2–3.5/cm); the phantom solve's thermal slice
+     rises ~3× to a stable ~0.10× CE and the absorbed-fraction audit
+     lands at 0.048 against ~0.04 tallied B10+N14 (+ untallied H
+     capture) on the CE side.
+- **Residual (open):** a ~10× slice-integrated thermal deficit and a
+  ~0.5–0.85× fast-bin remainder persist at 56g, plus a ~0.2×
+  near-field epithermal deficit common to *every* deterministic
+  variant including 28g — suspected remaining sources are the
+  epithermal near-field buildup (first-moderation generation) and
+  thermal residence-time condensation; `--p1` and S4/S8 A/B runs
+  show the transport correction and quadrature are not the residual
+  mechanism. `compare-condensation.py` gives the slice-integrated,
+  lethargy-proportional remap used for these numbers.
 - Caveat noted in code: `openmc.stats.Tabular(interpolation=
   "histogram")` takes pdf *heights* — passing declared bin
   probabilities emits a ~98%-fast spectrum.
