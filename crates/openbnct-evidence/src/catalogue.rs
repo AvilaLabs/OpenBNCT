@@ -715,4 +715,86 @@ mod tests {
             Err(CatalogueError::PathEscapesRoot(_))
         ));
     }
+
+    /// `schemas/registry.json` mirrors every `pub const .*_SCHEMA`
+    /// token declared in the crates — a contract added or moved without
+    /// regenerating the registry fails this test.
+    #[test]
+    fn schema_registry_mirrors_crate_constants() {
+        use std::path::PathBuf;
+        let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let registry: serde_json::Value = serde_json::from_str(
+            &std::fs::read_to_string(root.join("schemas/registry.json")).unwrap(),
+        )
+        .unwrap();
+        // Scan `crates/*/src/*.rs` for `pub const NAME: &str = "openbnct.*"`.
+        let mut declared: Vec<(String, String, String, String)> = Vec::new();
+        for entry in std::fs::read_dir(root.join("crates")).unwrap().flatten() {
+            let src = entry.path().join("src");
+            if !src.is_dir() {
+                continue;
+            }
+            for file in std::fs::read_dir(&src).unwrap().flatten() {
+                let path = file.path();
+                if path.extension().and_then(|e| e.to_str()) != Some("rs") {
+                    continue;
+                }
+                let text = std::fs::read_to_string(&path).unwrap();
+                for line in text.lines() {
+                    let line = line.trim();
+                    if !line.starts_with("pub const ") || !line.contains(": &str = \"openbnct.") {
+                        continue;
+                    }
+                    let name = line
+                        .strip_prefix("pub const ")
+                        .unwrap()
+                        .split(':')
+                        .next()
+                        .unwrap()
+                        .trim()
+                        .to_string();
+                    let token = line.split('"').nth(1).unwrap().to_string();
+                    // Full token shape `openbnct.<name>/<version>` —
+                    // skips prefix constants like `SCHEMA_PREFIX`.
+                    if !token.contains('/') || token.contains('*') {
+                        continue;
+                    }
+                    declared.push((
+                        token,
+                        entry.file_name().to_str().unwrap().to_string(),
+                        format!("src/{}.rs", path.file_stem().unwrap().to_str().unwrap()),
+                        name,
+                    ));
+                }
+            }
+        }
+        declared.sort();
+        declared.dedup();
+        let registered: std::collections::BTreeMap<String, &serde_json::Value> = registry["tokens"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|e| (e["token"].as_str().unwrap().to_string(), e))
+            .collect();
+        let mut problems = Vec::new();
+        for (token, krate, module, name) in &declared {
+            match registered.get(token) {
+                None => problems.push(format!("missing {token}")),
+                Some(e)
+                    if e["crate"].as_str() != Some(krate.as_str())
+                        || e["module"].as_str() != Some(module.as_str())
+                        || e["constant"].as_str() != Some(name.as_str()) =>
+                {
+                    problems.push(format!("wrong metadata {token}"))
+                }
+                _ => {}
+            }
+        }
+        for token in registered.keys() {
+            if !declared.iter().any(|(tok, ..)| tok == token) {
+                problems.push(format!("stale {token}"));
+            }
+        }
+        assert!(problems.is_empty(), "registry drift: {problems:?}");
+    }
 }

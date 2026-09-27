@@ -95,12 +95,57 @@ pub struct ReplayBeam {
     pub source_strength_per_s: f64,
 }
 
+/// Declared bi-exponential concentration curve
+/// `C(t) = Σᵢ aᵢ·e^(−λᵢ·(t − t0))` — the PK-model path for
+/// concentration-driven replay. `rates_per_s` ≥ 0 (λ=0 is a constant
+/// term); `amplitudes` are in the history's declared `unit`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct PkConcentrationCurve {
+    /// Amplitude per decay component, at `t0_s`.
+    pub amplitudes: Vec<f64>,
+    /// Elimination rate per component (1/s). Must match `amplitudes`
+    /// in length; zero means a constant term.
+    pub rates_per_s: Vec<f64>,
+    /// Session time the curve is anchored at — typically the end of
+    /// infusion / the time the amplitudes are quoted at.
+    pub t0_s: f64,
+}
+
+impl PkConcentrationCurve {
+    /// Unscaled model value `Σᵢ aᵢ·e^(−λᵢ·(t − t0))`.
+    pub fn evaluate(&self, t: f64) -> f64 {
+        self.amplitudes
+            .iter()
+            .zip(self.rates_per_s.iter())
+            .map(|(a, l)| a * (-l * (t - self.t0_s)).exp())
+            .sum()
+    }
+}
+
+/// Measured-vs-model check at one anchor draw.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ConcentrationAnchorCheck {
+    pub t_s: f64,
+    /// The declared measured value.
+    pub measured: f64,
+    /// The anchor-scaled model value at `t_s`.
+    pub model_scaled: f64,
+    /// `measured − model_scaled` — visible, never hidden.
+    pub residual: f64,
+}
+
 /// Concentration history for boron integration.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ConcentrationHistory {
     /// Explicit `(t_session_s, concentration)` samples, sorted —
     /// typically transcribed from an assay stream with its draw times.
+    /// When `pk_curve` is set these become *calibration anchors*: the
+    /// curve is amplitude-scaled to them (least squares) and per-anchor
+    /// residuals are reported — they are not interpolated. Empty is
+    /// allowed only when `pk_curve` is set.
     pub points: Vec<(f64, f64)>,
     pub rule: ConcentrationRule,
     /// `µg/g` or the bundle's declared concentration unit.
@@ -109,9 +154,14 @@ pub struct ConcentrationHistory {
     /// quoted at (the plan concentration).
     pub reference_concentration: f64,
     /// Concentration outside `[t_first, t_last]` holds the boundary
-    /// value — a declared convention, surfaced in assumptions.
+    /// value — a declared convention, surfaced in assumptions. With
+    /// `pk_curve`, `t < t0_s` holds the scaled curve's `t0` value.
     #[serde(default)]
     pub hold_boundary: bool,
+    /// Optional PK-model concentration curve. When set, `amplitudes`
+    /// are already anchor-scaled when the run resolves them.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pk_curve: Option<PkConcentrationCurve>,
 }
 
 /// The replay spec.
@@ -190,11 +240,90 @@ pub struct ReplayReport {
     /// models require constant-rate protraction and are not applied to
     /// recorded interrupted histories.
     pub biological_equivalence_available: bool,
+    /// Measured-vs-PK-model checks when `pk_curve` is set — the
+    /// anchor-scaled model and the residual per draw. Empty on the
+    /// sample-interpolation path.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anchor_checks: Vec<ConcentrationAnchorCheck>,
     pub assumptions: Vec<String>,
+}
+
+/// Validate the declared concentration input and resolve the effective
+/// curve. With `pk_curve`, the declared samples are *anchors*: the curve
+/// is amplitude-scaled by least squares at the anchor times (`s =
+/// Σ meas·model / Σ model²`) and per-anchor residuals are returned for
+/// the report — the measurement-vs-model discrepancy is surfaced, not
+/// absorbed. Without `pk_curve`, samples are required and the returned
+/// history is the declared one.
+fn resolve_concentration(
+    conc: &ConcentrationHistory,
+) -> Result<(ConcentrationHistory, Vec<ConcentrationAnchorCheck>), ReplayError> {
+    let Some(curve) = &conc.pk_curve else {
+        if conc.points.is_empty() {
+            return Err(ReplayError::Invalid(
+                "concentration needs at least one declared point or a pk_curve".into(),
+            ));
+        }
+        return Ok((conc.clone(), Vec::new()));
+    };
+    if curve.amplitudes.is_empty() || curve.amplitudes.len() != curve.rates_per_s.len() {
+        return Err(ReplayError::Invalid(
+            "pk_curve needs matching non-empty amplitudes and rates_per_s".into(),
+        ));
+    }
+    if !curve
+        .amplitudes
+        .iter()
+        .chain(curve.rates_per_s.iter())
+        .all(|x| x.is_finite() && *x >= 0.0)
+        || !curve.t0_s.is_finite()
+    {
+        return Err(ReplayError::Invalid(
+            "pk_curve amplitudes/rates must be finite and ≥ 0".into(),
+        ));
+    }
+    let num: f64 = conc
+        .points
+        .iter()
+        .map(|(t, c)| c * curve.evaluate(*t))
+        .sum();
+    let den: f64 = conc
+        .points
+        .iter()
+        .map(|(t, _)| curve.evaluate(*t).powi(2))
+        .sum();
+    let scale = if den > 0.0 { num / den } else { 1.0 };
+    let mut resolved = conc.clone();
+    resolved.pk_curve = Some(PkConcentrationCurve {
+        amplitudes: curve.amplitudes.iter().map(|a| a * scale).collect(),
+        rates_per_s: curve.rates_per_s.clone(),
+        t0_s: curve.t0_s,
+    });
+    let effective = resolved.pk_curve.as_ref().unwrap();
+    let checks = conc
+        .points
+        .iter()
+        .map(|(t, measured)| {
+            let model_scaled = effective.evaluate(*t);
+            ConcentrationAnchorCheck {
+                t_s: *t,
+                measured: *measured,
+                model_scaled,
+                residual: *measured - model_scaled,
+            }
+        })
+        .collect();
+    Ok((resolved, checks))
 }
 
 /// Piecewise concentration value at session time `t`.
 fn concentration_at(conc: &ConcentrationHistory, t: f64) -> Option<f64> {
+    if let Some(curve) = &conc.pk_curve {
+        if t < curve.t0_s {
+            return conc.hold_boundary.then_some(curve.evaluate(curve.t0_s));
+        }
+        return Some(curve.evaluate(t));
+    }
     let pts = &conc.points;
     if pts.is_empty() {
         return None;
@@ -221,10 +350,38 @@ fn concentration_at(conc: &ConcentrationHistory, t: f64) -> Option<f64> {
 }
 
 /// `∫_a^b conc(t) dt` under the declared rule — exact for piecewise
-/// linear/step concentration, splitting at every sample inside `[a,b)`.
+/// linear/step concentration, splitting at every sample inside `[a,b)`;
+/// closed-form (exact) under `pk_curve`.
 fn integrate_concentration(conc: &ConcentrationHistory, a: f64, b: f64) -> Option<f64> {
     if a.partial_cmp(&b) != Some(std::cmp::Ordering::Less) {
         return Some(0.0);
+    }
+    if let Some(curve) = &conc.pk_curve {
+        // Below the anchor time: only the held boundary value is
+        // defined (a declared convention), never a silent zero.
+        if b <= curve.t0_s {
+            return conc
+                .hold_boundary
+                .then_some(curve.evaluate(curve.t0_s) * (b - a));
+        }
+        let mut sum = 0.0;
+        if a < curve.t0_s {
+            if !conc.hold_boundary {
+                return None;
+            }
+            sum += curve.evaluate(curve.t0_s) * (curve.t0_s - a);
+        }
+        // ∫ sa^sb Σᵢ aᵢ e^(−λᵢ(t−t0)) dt — closed form.
+        let (sa, sb) = (a.max(curve.t0_s), b);
+        for (amp, lam) in curve.amplitudes.iter().zip(curve.rates_per_s.iter()) {
+            if *lam == 0.0 {
+                sum += amp * (sb - sa);
+            } else {
+                sum += amp * ((-lam * (sa - curve.t0_s)).exp() - (-lam * (sb - curve.t0_s)).exp())
+                    / lam;
+            }
+        }
+        return Some(sum);
     }
     let pts = &conc.points;
     if pts.is_empty() {
@@ -438,16 +595,12 @@ pub fn run_replay(
     if spec.beams.is_empty() {
         return Err(ReplayError::Invalid("at least one beam is required".into()));
     }
-    if spec.concentration.points.is_empty() {
-        return Err(ReplayError::Invalid(
-            "concentration history needs at least one declared point".into(),
-        ));
-    }
     if spec.concentration.reference_concentration <= 0.0 {
         return Err(ReplayError::Invalid(
             "concentration.reference_concentration must be positive".into(),
         ));
     }
+    let (resolved_conc, anchor_checks) = resolve_concentration(&spec.concentration)?;
     history.validate()?;
 
     let template = bundles[0];
@@ -466,7 +619,7 @@ pub fn run_replay(
                 beam.beam
             )));
         }
-        let (values, record) = reconstruct_beam(history, beam, bundle, &spec.concentration)?;
+        let (values, record) = reconstruct_beam(history, beam, bundle, &resolved_conc)?;
         for (vol, acc) in bundle.components.iter().zip(values.iter()) {
             accum
                 .entry(vol.component)
@@ -565,12 +718,18 @@ pub fn run_replay(
         deltas,
         coverage_complete,
         biological_equivalence_available: false,
+        anchor_checks: anchor_checks.clone(),
         assumptions: vec![
             "monitor/output readings are normalized through the declared calibrated reference_output mapping — a monitor reading is not inherently fluence".into(),
             "boron dose integrates output(t)·conc(t) jointly over each delivered interval; other components integrate output(t)".into(),
             "unobserved spans contribute no dose and are reported as gaps".into(),
             "time-dependent biological interpretation is not reconstructed: repair-capable models assume constant-rate protraction and are not applied to interrupted recorded histories".into(),
-            if spec.concentration.hold_boundary {
+            if spec.concentration.pk_curve.is_some() {
+                format!(
+                    "concentration driven by the declared bi-exponential pk_curve (anchor-scaled, least squares over {} anchor(s)); per-anchor residuals are reported — the model is not validated beyond those draws",
+                    anchor_checks.len()
+                )
+            } else if spec.concentration.hold_boundary {
                 "concentration outside the sampled range holds the boundary value (declared)".into()
             } else {
                 "concentration outside the sampled range is undefined — such intervals fail rather than extrapolate".into()
@@ -812,6 +971,7 @@ mod tests {
             unit: "ug/g".into(),
             reference_concentration: 20.0,
             hold_boundary: false,
+            pk_curve: None,
         };
         let s = spec(conc);
         let (recon, report) = run_replay(
@@ -916,6 +1076,7 @@ mod tests {
             unit: "ug/g".into(),
             reference_concentration: 20.0,
             hold_boundary: true,
+            pk_curve: None,
         };
         let s = spec(conc);
         let (_, report) = run_replay(
@@ -995,6 +1156,7 @@ mod tests {
             unit: "ug/g".into(),
             reference_concentration: 20.0,
             hold_boundary: true,
+            pk_curve: None,
         };
         let s = spec(conc);
         let (recon, _) = run_replay(
@@ -1067,6 +1229,7 @@ mod tests {
             unit: "ug/g".into(),
             reference_concentration: 20.0,
             hold_boundary: true,
+            pk_curve: None,
         };
         let s = spec(conc);
         let (_, report) = run_replay(
@@ -1102,6 +1265,7 @@ mod tests {
             unit: "ug/g".into(),
             reference_concentration: 20.0,
             hold_boundary: false,
+            pk_curve: None,
         };
         let s = spec(conc());
         let cref = |n: usize| ContentReference {
@@ -1157,6 +1321,7 @@ mod tests {
             unit: "ug/g".into(),
             reference_concentration: c_ref,
             hold_boundary: false,
+            pk_curve: None,
         };
         let analytic = c0 * (1.0 - (-lambda * t_end).exp()) / lambda; // ≈ 172.933
         let numeric = integrate_concentration(&conc, 0.0, t_end).unwrap();
@@ -1217,6 +1382,7 @@ mod tests {
             unit: "ug/g".into(),
             reference_concentration: 20.0,
             hold_boundary: true,
+            pk_curve: None,
         };
         let s = spec(conc);
         let (_, report) = run_replay(
@@ -1233,5 +1399,95 @@ mod tests {
         assert_eq!(report.coverage, (0.0, 1000.0));
         assert!(!report.coverage_complete);
         assert_eq!(report.beams[0].gaps, vec![(100.0, 1000.0)]);
+    }
+
+    #[test]
+    fn pk_curve_drives_concentration_with_analytic_integral() {
+        // C(t) = 20·e^(−0.01t) anchored at t0=0, no measured draws —
+        // the boron integral must equal the closed form, not a
+        // trapezoid approximation.
+        let mut conc = ConcentrationHistory {
+            points: vec![],
+            rule: ConcentrationRule::Linear,
+            unit: "ug/g".into(),
+            reference_concentration: 20.0,
+            hold_boundary: false,
+            pk_curve: Some(PkConcentrationCurve {
+                amplitudes: vec![20.0],
+                rates_per_s: vec![0.01],
+                t0_s: 0.0,
+            }),
+        };
+        let numeric = integrate_concentration(&conc, 0.0, 200.0).unwrap();
+        let analytic = 20.0 * (1.0 - (-0.01_f64 * 200.0).exp()) / 0.01;
+        assert!((numeric - analytic).abs() < 1e-9);
+        // No concentration is defined before t0 without hold_boundary.
+        assert!(integrate_concentration(&conc, -10.0, -5.0).is_none());
+        conc.hold_boundary = true;
+        assert_eq!(
+            integrate_concentration(&conc, -10.0, -5.0).unwrap(),
+            20.0 * 5.0
+        );
+    }
+
+    #[test]
+    fn pk_curve_scales_to_anchors_and_reports_residuals() {
+        // Model shape: C(t) = 10·e^(−0.01t). Anchors at t=0 read 12,
+        // t=100 read 5 — least-squares scale s = Σc·m/Σm², and each
+        // residual is carried on the report.
+        let conc = ConcentrationHistory {
+            points: vec![(0.0, 12.0), (100.0, 5.0)],
+            rule: ConcentrationRule::Step,
+            unit: "ug/g".into(),
+            reference_concentration: 12.0,
+            hold_boundary: false,
+            pk_curve: Some(PkConcentrationCurve {
+                amplitudes: vec![10.0],
+                rates_per_s: vec![0.01],
+                t0_s: 0.0,
+            }),
+        };
+        let (resolved, checks) = resolve_concentration(&conc).unwrap();
+        let m0 = 10.0_f64;
+        let m1 = 10.0 * (-0.01_f64 * 100.0).exp(); // ≈ 3.6788
+        let scale = (12.0 * m0 + 5.0 * m1) / (m0 * m0 + m1 * m1);
+        let c = resolved.pk_curve.as_ref().unwrap();
+        assert!((c.amplitudes[0] - 10.0 * scale).abs() < 1e-12);
+        assert_eq!(checks.len(), 2);
+        assert!((checks[0].model_scaled - m0 * scale).abs() < 1e-9);
+        assert!((checks[0].residual - (12.0 - m0 * scale)).abs() < 1e-9);
+        assert!((checks[1].residual - (5.0 - m1 * scale)).abs() < 1e-9);
+        // The scaled curve integrates to the scaled analytic value.
+        let numeric = integrate_concentration(&resolved, 0.0, 100.0).unwrap();
+        let analytic = 10.0 * scale * (1.0 - (-0.01_f64 * 100.0).exp()) / 0.01;
+        assert!((numeric - analytic).abs() < 1e-9);
+    }
+
+    #[test]
+    fn pk_curve_rejects_malformed_and_sample_less_specs() {
+        // Empty samples without a curve remain an error.
+        let mut conc = ConcentrationHistory {
+            points: vec![],
+            rule: ConcentrationRule::Step,
+            unit: "ug/g".into(),
+            reference_concentration: 20.0,
+            hold_boundary: false,
+            pk_curve: None,
+        };
+        assert!(resolve_concentration(&conc).is_err());
+        // Mismatched amplitude/rate lengths are invalid.
+        conc.pk_curve = Some(PkConcentrationCurve {
+            amplitudes: vec![20.0, 5.0],
+            rates_per_s: vec![0.01],
+            t0_s: 0.0,
+        });
+        assert!(resolve_concentration(&conc).is_err());
+        // Negative rate (a growing curve) is rejected.
+        conc.pk_curve = Some(PkConcentrationCurve {
+            amplitudes: vec![20.0],
+            rates_per_s: vec![-0.01],
+            t0_s: 0.0,
+        });
+        assert!(resolve_concentration(&conc).is_err());
     }
 }

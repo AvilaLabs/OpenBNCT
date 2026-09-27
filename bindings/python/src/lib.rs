@@ -7,7 +7,7 @@
 //! contracts used by the CLI and GUI so Python users observe identical
 //! acceptance, rejection, serialization, and content-identity behavior.
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::fmt::Display;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -2374,6 +2374,159 @@ fn search_bio_evidence(
     serde_json::to_string_pretty(&hits).map_err(reject)
 }
 
+/// Evaluate a `openbnct.voi-evaluation/0.1.0` spec (JSON string) into
+/// the `openbnct.voi-report/0.1.0` JSON — analytic or ensemble method
+/// as declared on the spec.
+#[pyfunction]
+fn uq_voi_evaluate(spec_json: &str) -> PyResult<String> {
+    let spec: openbnct_core::VoiEvaluationSpec = serde_json::from_str(spec_json).map_err(reject)?;
+    let report = openbnct_core::evaluate_voi(&spec).map_err(reject)?;
+    serde_json::to_string_pretty(&report).map_err(reject)
+}
+
+/// Run `openbnct.boron-inference/0.1.0` (JSON string) into the
+/// `openbnct.boron-inference-report/0.1.0` JSON.
+#[pyfunction]
+fn boron_infer(spec_json: &str) -> PyResult<String> {
+    let spec: openbnct_evidence::BoronInferenceSpec =
+        serde_json::from_str(spec_json).map_err(reject)?;
+    let report = openbnct_evidence::run_boron_inference(&spec).map_err(reject)?;
+    serde_json::to_string_pretty(&report).map_err(reject)
+}
+
+/// Run `openbnct.dose-replay/0.1.0` (JSON string) against a
+/// `openbnct.delivery-history/0.1.0` (JSON string) and per-beam
+/// `openbnct.physical-dose-bundle/0.2.0` JSON strings. Returns
+/// `(reconstructed_bundle_json, report_json)`; the report's
+/// `reconstructed` reference binds the emitted bundle's content hash.
+#[pyfunction]
+#[pyo3(signature = (spec_json, history_json, bundles, planned_json=None))]
+fn replay_run(
+    spec_json: &str,
+    history_json: &str,
+    bundles: Vec<(String, String)>,
+    planned_json: Option<String>,
+) -> PyResult<(String, String)> {
+    let spec: openbnct_evidence::ReplaySpec = serde_json::from_str(spec_json).map_err(reject)?;
+    let history: openbnct_evidence::DeliveryHistory =
+        serde_json::from_str(history_json).map_err(reject)?;
+    // Order the supplied bundles to `spec.beams` — a dict maps by beam
+    // id, but the contract is positional.
+    let bundle_map: HashMap<String, PhysicalDoseBundle> = bundles
+        .into_iter()
+        .map(|(beam, json)| {
+            serde_json::from_str::<PhysicalDoseBundle>(&json)
+                .map(|b| (beam, b))
+                .map_err(reject)
+        })
+        .collect::<Result<_, _>>()?;
+    let mut ordered = Vec::with_capacity(spec.beams.len());
+    for beam in &spec.beams {
+        ordered.push(
+            bundle_map
+                .get(&beam.beam)
+                .ok_or_else(|| reject(format!("no bundle supplied for beam {:?}", beam.beam)))?,
+        );
+    }
+    let planned: Option<PhysicalDoseBundle> = planned_json
+        .as_deref()
+        .map(serde_json::from_str)
+        .transpose()
+        .map_err(reject)?;
+    let planned_ref = planned.as_ref().map(|p| (p, 0.0f64));
+    let (recon, mut report) = openbnct_evidence::run_replay(
+        &spec,
+        &history,
+        &ordered,
+        ContentReference {
+            id: spec.id.clone(),
+            sha256: String::new(),
+        },
+        planned_ref,
+    )
+    .map_err(reject)?;
+    let bundle_json = serde_json::to_string_pretty(&recon).map_err(reject)?;
+    report.reconstructed = content_reference("in-memory-reconstructed-bundle", &recon)?;
+    Ok((
+        bundle_json,
+        serde_json::to_string_pretty(&report).map_err(reject)?,
+    ))
+}
+
+/// Structural validation of an `openbnct.outcomes-export/0.1.0`
+/// document (JSON string): linkage, chronology, endpoint-system
+/// consistency, missingness semantics. Returns `{"valid": true}`;
+/// failures raise `NctForgeError` with the reason.
+#[pyfunction]
+fn outcomes_validate(export_json: &str) -> PyResult<String> {
+    let export: openbnct_evidence::OutcomesExport =
+        serde_json::from_str(export_json).map_err(reject)?;
+    export.validate().map_err(reject)?;
+    serde_json::to_string_pretty(&serde_json::json!({
+        "valid": true,
+        "schema_version": export.schema_version,
+        "participants": export.participants.len(),
+        "observations": export.observations.len(),
+    }))
+    .map_err(reject)
+}
+
+/// Whitelist-filtered export of an outcomes document. `whitelist` maps
+/// top-level fields to kept sub-fields (`[]` keeps the whole section);
+/// absent fields are excluded. Returns `(filtered_json, excluded_paths)`.
+#[pyfunction]
+fn outcomes_export(
+    export_json: &str,
+    whitelist: HashMap<String, Vec<String>>,
+) -> PyResult<(String, Vec<String>)> {
+    let export: openbnct_evidence::OutcomesExport =
+        serde_json::from_str(export_json).map_err(reject)?;
+    let whitelist: BTreeMap<String, BTreeSet<String>> = whitelist
+        .into_iter()
+        .map(|(k, v)| (k, v.into_iter().collect()))
+        .collect();
+    let (kept, excluded) = openbnct_evidence::export_fields(&export, &whitelist).map_err(reject)?;
+    Ok((
+        serde_json::to_string_pretty(&kept).map_err(reject)?,
+        excluded,
+    ))
+}
+
+/// Verify a benchmark catalogue against a root directory: every
+/// content-bound artifact is re-hashed; unresolved paths, absent
+/// licenses, and missing uncertainty statements are findings.
+/// Read-only — nothing is written. Returns the findings JSON array.
+#[pyfunction]
+fn bench_verify(catalogue_path: PathBuf, root: PathBuf) -> PyResult<String> {
+    let bytes = fs::read(&catalogue_path).map_err(reject)?;
+    let catalogue: openbnct_evidence::BenchmarkCatalogue =
+        serde_json::from_slice(&bytes).map_err(reject)?;
+    let findings = openbnct_evidence::verify_catalogue(&catalogue, &root).map_err(reject)?;
+    serde_json::to_string_pretty(&findings).map_err(reject)
+}
+
+/// Verify an `openbnct.qualification-record/0.1.0` (JSON string)
+/// against a benchmark catalogue (path): every claim's evidence must
+/// resolve to a catalogue entry AND bind the sha256 of the named
+/// artifact. Returns `{"claims": n, "findings": []}` — non-empty
+/// findings are mismatches, not a thrown error.
+#[pyfunction]
+fn qual_verify(record_json: &str, catalogue_path: PathBuf) -> PyResult<String> {
+    let record: openbnct_evidence::QualificationRecord =
+        serde_json::from_str(record_json).map_err(reject)?;
+    record.validate().map_err(reject)?;
+    let bytes = fs::read(&catalogue_path).map_err(reject)?;
+    let catalogue: openbnct_evidence::BenchmarkCatalogue =
+        serde_json::from_slice(&bytes).map_err(reject)?;
+    catalogue.validate().map_err(reject)?;
+    let findings = record.verify_against(&catalogue).map_err(reject)?;
+    serde_json::to_string_pretty(&serde_json::json!({
+        "claims": record.claims.len(),
+        "findings": findings,
+    }))
+    .map_err(reject)
+}
+
 /// A validated cross-model biological comparison artifact.
 #[pyclass(frozen, name = "BioModelComparison")]
 struct PyBioModelComparison {
@@ -4354,5 +4507,12 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(avify_review, m)?)?;
     m.add_function(wrap_pyfunction!(avify_load_certificate, m)?)?;
     m.add_function(wrap_pyfunction!(avify_diff, m)?)?;
+    m.add_function(wrap_pyfunction!(uq_voi_evaluate, m)?)?;
+    m.add_function(wrap_pyfunction!(boron_infer, m)?)?;
+    m.add_function(wrap_pyfunction!(replay_run, m)?)?;
+    m.add_function(wrap_pyfunction!(outcomes_validate, m)?)?;
+    m.add_function(wrap_pyfunction!(outcomes_export, m)?)?;
+    m.add_function(wrap_pyfunction!(bench_verify, m)?)?;
+    m.add_function(wrap_pyfunction!(qual_verify, m)?)?;
     Ok(())
 }

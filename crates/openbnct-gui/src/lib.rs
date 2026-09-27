@@ -3444,6 +3444,9 @@ fn show_inspector_window(context: &egui::Context, inspector: &mut Option<Inspect
         .default_size([560.0, 480.0])
         .show(context, |ui| {
             ui.monospace(&artifact.schema);
+            for line in inspector_summary(&artifact.schema, &artifact.value) {
+                ui.label(line);
+            }
             ui.separator();
             egui::ScrollArea::vertical().show(ui, |ui| {
                 if let serde_json::Value::Object(map) = &artifact.value {
@@ -3456,6 +3459,154 @@ fn show_inspector_window(context: &egui::Context, inspector: &mut Option<Inspect
     if !open {
         *inspector = None;
     }
+}
+
+/// Short headline summary for schemas with no dedicated panel — the
+/// numbers a researcher looks at first, rendered above the raw JSON
+/// tree. Display-only: every value is copied verbatim from the
+/// artifact, nothing is recomputed.
+fn inspector_summary(schema: &str, value: &serde_json::Value) -> Vec<String> {
+    let get = |key: &str| value.get(key);
+    let num = |v: &serde_json::Value| v.as_f64().map(|f| format!("{f:.4e}"));
+    let mut lines = Vec::new();
+    if schema.starts_with("openbnct.voi-report/") {
+        if let Some(ranks) = get("rankings").and_then(|r| r.as_array()) {
+            let best = ranks
+                .iter()
+                .find(|r| r.get("evaluated") == Some(&true.into()));
+            lines.push(format!(
+                "measurement candidates evaluated: {}",
+                ranks
+                    .iter()
+                    .filter(|r| r.get("evaluated") == Some(&true.into()))
+                    .count()
+            ));
+            if let Some(best) = best {
+                lines.push(format!(
+                    "highest expected information: {} ({})",
+                    best["proposal"].as_str().unwrap_or("?"),
+                    num(&best["expected_variance_reduction"]).unwrap_or_else(|| "?".into())
+                ));
+            }
+        }
+    } else if schema.starts_with("openbnct.dose-replay-report/") {
+        if let Some(total) = get("total_dose_gray").and_then(num) {
+            lines.push(format!("total reconstructed dose: {total} Gy"));
+        }
+        if let Some(cov) = get("coverage").and_then(|c| c.as_array()) {
+            lines.push(format!(
+                "coverage window: {} – {} s (complete: {})",
+                cov.first().and_then(num).unwrap_or_default(),
+                cov.get(1).and_then(num).unwrap_or_default(),
+                get("coverage_complete")
+                    .and_then(|c| c.as_bool())
+                    .unwrap_or(false)
+            ));
+        }
+        if let Some(checks) = get("anchor_checks").and_then(|c| c.as_array())
+            && !checks.is_empty()
+        {
+            lines.push(format!("pk anchor residual(s): {}", checks.len()));
+        }
+    } else if schema.starts_with("openbnct.boron-inference-report/") {
+        if let Some(last) = get("estimates")
+            .and_then(|e| e.as_array())
+            .and_then(|a| a.last())
+        {
+            // State order is fixed by the spec; `posterior_to_prior_sd`
+            // carries the ids in that order.
+            let states: Vec<String> = get("posterior_to_prior_sd")
+                .and_then(|p| p.as_array())
+                .map(|pairs| {
+                    pairs
+                        .iter()
+                        .filter_map(|p| p.as_array()?.first()?.as_str().map(str::to_string))
+                        .collect()
+                })
+                .unwrap_or_default();
+            let means: Vec<String> = last["mean"]
+                .as_array()
+                .map(|m| m.iter().filter_map(&num).collect())
+                .unwrap_or_default();
+            lines.push(format!(
+                "final epoch {} s: {}",
+                last["epoch_s"].as_f64().unwrap_or(0.0),
+                states
+                    .iter()
+                    .zip(&means)
+                    .map(|(s, m)| format!("{s} = {m}"))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            ));
+        }
+        if let Some(u) = get("unresolved").and_then(|u| u.as_array()) {
+            lines.push(format!("unresolved direction(s): {}", u.len()));
+        }
+    } else if schema.starts_with("openbnct.qualification-record/") {
+        lines.push(format!(
+            "claims: {} · evidence references: {}",
+            get("claims")
+                .and_then(|c| c.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0),
+            get("claims")
+                .and_then(|c| c.as_array())
+                .map(|a| {
+                    a.iter()
+                        .map(|c| c["evidence"].as_array().map(|e| e.len()).unwrap_or(0))
+                        .sum::<usize>()
+                })
+                .unwrap_or(0)
+        ));
+    } else if schema.starts_with("openbnct.benchmark-catalogue/") {
+        if let Some(n) = get("entries").and_then(|e| e.as_array()).map(|a| a.len()) {
+            lines.push(format!("catalogue entries: {n}"));
+        }
+    } else if schema.starts_with("openbnct.outcomes-export/") {
+        lines.push(format!(
+            "participants: {} · dose records: {} · observations: {}",
+            get("participants")
+                .and_then(|c| c.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0),
+            get("dose_records")
+                .and_then(|c| c.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0),
+            get("observations")
+                .and_then(|c| c.as_array())
+                .map(|a| a.len())
+                .unwrap_or(0)
+        ));
+    } else if schema.starts_with("openbnct.heldout-comparison/") {
+        for (label, key) in [("nominal", "nominal"), ("robust", "robust")] {
+            if let Some(entry) = get(key) {
+                lines.push(format!(
+                    "{label}: converged {} · violated {}",
+                    entry["converged"].as_bool().unwrap_or(false),
+                    entry["violated_scenarios"]
+                        .as_array()
+                        .map(|a| a.len())
+                        .unwrap_or(0)
+                ));
+            }
+        }
+    } else if schema.starts_with("openbnct.joint-uncertainty-report/")
+        || schema.starts_with("openbnct.joint-robustness/")
+    {
+        if let Some(m) = get("metrics").and_then(|m| m.as_array()) {
+            lines.push(format!("metrics propagated: {}", m.len()));
+        }
+        for (ok, key) in [
+            ("realized", "successful_realizations"),
+            ("failed", "failed_realizations"),
+        ] {
+            if let Some(n) = get(key).and_then(|v| v.as_u64()) {
+                lines.push(format!("{ok}: {n}"));
+            }
+        }
+    }
+    lines
 }
 
 /// Recursive collapsible JSON tree for the inspector: objects and

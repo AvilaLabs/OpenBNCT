@@ -1539,5 +1539,246 @@ class AvifyConnectorTest(unittest.TestCase):
             self.assertEqual(status["review"]["state"], "stale")
 
 
+
+def _dose_bundle_json(boron_rate: float = 1e-13, other_rate: float = 1e-12) -> str:
+    """Minimal `openbnct.physical-dose-bundle/0.2.0` — the same shape
+    as the Rust replay test fixture."""
+    def vol(component, rate):
+        return {
+            "component": component,
+            "unit": "gray_per_source_particle",
+            "values": [rate],
+            "absolute_standard_uncertainty": None,
+        }
+    return json.dumps({
+        "schema_version": "openbnct.physical-dose-bundle/0.2.0",
+        "case_id": "rate-map",
+        "frame_of_reference_uid": None,
+        "geometry": {
+            "shape": [1, 1, 1],
+            "spacing_mm": [10.0, 10.0, 10.0],
+            "origin_mm": [0.0, 0.0, 0.0],
+            "direction": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        },
+        "component_profile": {"id": "openbnct.test-profile.v1", "sha256": "f" * 64},
+        "response_set": {"id": "openbnct.test-response.v1", "sha256": "9" * 64},
+        "components": [
+            vol("boron", boron_rate), vol("nitrogen", other_rate),
+            vol("hydrogen", other_rate), vol("photon", other_rate),
+        ],
+        "physical_total": {
+            "unit": "gray_per_source_particle",
+            "values": [boron_rate + other_rate],
+            "absolute_standard_uncertainty": None,
+            "uncertainty_method": "unavailable",
+        },
+        "provenance_id": "test",
+    })
+
+
+def _delivery_history_json() -> str:
+    """One output stream at constant 100 over [0,200) with a beam_state
+    gate on for the same span."""
+    clock = {"name": "accelerator_monotonic", "offset_seconds": 0.0,
+             "timing_uncertainty_seconds": 0.0}
+    return json.dumps({
+        "schema_version": "openbnct.delivery-history/0.1.0",
+        "id": "h1", "qualification": "synthetic_research_only",
+        "provenance_id": "test", "session_id": "s1",
+        "coordinate_frame": "iec61217-table-top",
+        "beams": [{"id": "b1", "beam": {"id": "beam-desc", "sha256": "b" * 64},
+             "calibration": {"id": "cal", "sha256": "e" * 64},
+             "calibration_valid": [0.0, 3600.0]}],
+        "streams": [
+            {"id": "out", "kind": "interval_average_rate", "unit": "counts/s",
+             "clock": clock, "beam": "b1",
+             "samples": [{"kind": "interval_average", "t_start_s": 0.0,
+                          "t_end_s": 200.0, "rate": 100.0, "quality": "good"}]},
+            {"id": "state", "kind": "beam_state", "unit": "1",
+             "clock": clock, "beam": "b1",
+             "samples": [{"kind": "state", "time_s": 0.0, "state": "on",
+                          "quality": "good"},
+                         {"kind": "state", "time_s": 200.0, "state": "off",
+                          "quality": "good"}]},
+        ],
+    })
+
+
+def _replay_spec_json() -> str:
+    return json.dumps({
+        "schema_version": "openbnct.dose-replay/0.1.0",
+        "id": "r1", "qualification": "synthetic_research_only",
+        "provenance_id": "test",
+        "history": {"id": "h1", "sha256": "c" * 64},
+        "beams": [{
+            "beam": "b1",
+            "dose_bundle": {"id": "rate-map", "sha256": "d" * 64},
+            "output_stream": "out", "beam_state_stream": "state",
+            "reference_output": 100.0, "source_strength_per_s": 1e9,
+        }],
+        "concentration": {
+            "points": [[0.0, 20.0]], "rule": "linear", "unit": "ug/g",
+            "reference_concentration": 20.0, "hold_boundary": True,
+        },
+    })
+
+
+class ResearchSurfaceParityTest(unittest.TestCase):
+    """JSON passthroughs for the -01 research roadmap surfaces — the
+    Python layer must observe identical acceptance and arithmetic as the
+    Rust/CLI paths."""
+
+    def test_voi_analytic_matches_conjugate(self):
+        # Prior σ=2 → v=4; measurement σ=1 → posterior = 0.8.
+        spec = {
+            "schema_version": "openbnct.voi-evaluation/0.1.0",
+            "id": "v1", "qualification": "synthetic_research_only",
+            "provenance_id": "test",
+            "joint": {
+                "schema_version": "openbnct.joint-uncertainty-input/0.1.0",
+                "id": "j1", "qualification": "synthetic_research_only",
+                "provenance_id": "test",
+                "subjects": [{"id": "d", "sha256": "a" * 64}],
+                "category_disposition": [
+                    {"category": "statistical_sampling", "status": "unassessed",
+                     "note": "test fixture — transport statistics not part of this input"},
+                    {"category": "structural_model", "status": "unassessed",
+                     "note": "test fixture"},
+                    {"category": "model_discrepancy", "status": "unassessed",
+                     "note": "test fixture"},
+                ],
+                "sources": [{
+                    "id": "x", "category": "input_parameter",
+                    "scope": [{"kind": "global"}], "sharing": "shared",
+                    "unit": "1", "support": {"kind": "real"},
+                    "distribution": {"kind": "normal", "mean": 0.0, "std_dev": 2.0},
+                    "evidence": {"basis": "test"},
+                }],
+            },
+            "metrics": [{"id": "m", "sensitivity": [{"source": 0, "coefficient": 1.0}]}],
+            "candidates": [{
+                "id": "assay", "kind": "assay",
+                "sensitivity": [{"source": 0, "coefficient": 1.0}],
+                "measurement_sd": 1.0,
+            }],
+        }
+        report = json.loads(openbnct.uq_voi_evaluate(json.dumps(spec)))
+        u = report["rankings"][0]
+        self.assertTrue(u["evaluated"])
+        self.assertAlmostEqual(u["prior_variance"], 4.0, places=9)
+        self.assertAlmostEqual(u["expected_posterior_variance"], 0.8, places=9)
+
+    def test_voi_ensemble_reports_mc_error_and_ess(self):
+        spec = json.loads(openbnct.uq_voi_evaluate(json.dumps({
+            "schema_version": "openbnct.voi-evaluation/0.1.0",
+            "id": "v2", "qualification": "synthetic_research_only",
+            "provenance_id": "test",
+            "method": {"ensemble": {"realizations": 2000, "seed": 3, "outer_draws": 32}},
+            "joint": {
+                "schema_version": "openbnct.joint-uncertainty-input/0.1.0",
+                "id": "j1", "qualification": "synthetic_research_only",
+                "provenance_id": "test",
+                "subjects": [{"id": "d", "sha256": "a" * 64}],
+                "category_disposition": [
+                    {"category": "statistical_sampling", "status": "unassessed",
+                     "note": "test fixture — transport statistics not part of this input"},
+                    {"category": "structural_model", "status": "unassessed",
+                     "note": "test fixture"},
+                    {"category": "model_discrepancy", "status": "unassessed",
+                     "note": "test fixture"},
+                ],
+                "sources": [{
+                    "id": "x", "category": "input_parameter",
+                    "scope": [{"kind": "global"}], "sharing": "shared",
+                    "unit": "1", "support": {"kind": "real"},
+                    "distribution": {"kind": "normal", "mean": 0.0, "std_dev": 2.0},
+                    "evidence": {"basis": "test"},
+                }],
+            },
+            "metrics": [{"id": "m", "sensitivity": [{"source": 0, "coefficient": 1.0}]}],
+            "candidates": [{
+                "id": "assay", "kind": "assay",
+                "sensitivity": [{"source": 0, "coefficient": 1.0}],
+                "measurement_sd": 1.0,
+            }],
+        })))["rankings"][0]
+        self.assertTrue(spec["evaluated"])
+        self.assertGreater(spec["mc_standard_error"], 0.0)
+        self.assertGreater(spec["min_effective_sample"], 0.0)
+        self.assertAlmostEqual(spec["expected_posterior_variance"], 0.8, delta=0.3)
+
+    def test_boron_infer_updates_state(self):
+        spec = {
+            "schema_version": "openbnct.boron-inference/0.1.0",
+            "id": "b1", "qualification": "synthetic_research_only",
+            "provenance_id": "test",
+            "states": [{"id": "tumor", "meaning": "tumor concentration",
+                        "prior_mean": 20.0, "prior_sd": 5.0, "unit": "ug/g"}],
+            "observations": [{
+                "id": "draw1", "kind": "assay", "time_s": 100.0,
+                "sensitivity": [["tumor", 1.0]], "mean": 18.0, "sd": 1.0,
+            }],
+            "coverage": [0.0, 300.0],
+        }
+        report = json.loads(openbnct.boron_infer(json.dumps(spec)))
+        post = report["estimates"][-1]
+        # Kalman: K = 25/(25+1) → mean = 20 − 25/26·2 ≈ 18.077.
+        self.assertAlmostEqual(post["mean"][0], 18.0769, places=3)
+        self.assertAlmostEqual(post["sd"][0], (25.0 / 26.0) ** 0.5, places=6)
+
+    def test_replay_run_reconstructs_bundle(self):
+        bundle, report_json = openbnct.replay_run(
+            _replay_spec_json(), _delivery_history_json(),
+            [("b1", _dose_bundle_json())], None,
+        )
+        report = json.loads(report_json)
+        recon = json.loads(bundle)
+        # Output is constant at reference → static dose exactly:
+        # 1e-13·1e9·200 s · (conc 20/ref 20) = 0.02 Gy boron.
+        self.assertTrue(report["coverage_complete"])
+        boron = next(c for c in recon["components"] if c["component"] == "boron")
+        self.assertAlmostEqual(boron["values"][0], 1e-13 * 1e9 * 200.0, places=12)
+        self.assertEqual(len(report["reconstructed"]["sha256"]), 64)
+
+    def test_replay_pk_curve_and_outcomes_export(self):
+        spec = json.loads(_replay_spec_json())
+        spec["concentration"] = {
+            "points": [], "rule": "linear", "unit": "ug/g",
+            "reference_concentration": 20.0, "hold_boundary": False,
+            "pk_curve": {"amplitudes": [20.0], "rates_per_s": [0.01], "t0_s": 0.0},
+        }
+        _, report_json = openbnct.replay_run(
+            json.dumps(spec), _delivery_history_json(),
+            [("b1", _dose_bundle_json())], None,
+        )
+        report = json.loads(report_json)
+        analytic = 20.0 * (1.0 - __import__("math").exp(-2.0)) / 0.01
+        # boron = rate · strength · ∫conc/C_ref: 1e-13·1e9·analytic/20
+        boron = report["component_dose_gray"]["boron"]
+        self.assertAlmostEqual(boron, 1e-13 * 1e9 * analytic / 20.0, places=12)
+
+    def test_outcomes_and_qual_surfaces(self):
+        export = {
+            "schema_version": "openbnct.outcomes-export/0.1.0",
+            "id": "e1", "study": "synthetic", "qualification": "synthetic_research_only",
+            "provenance_id": "test",
+            "participants": [{"id": "p1"}],
+        }
+        result = json.loads(openbnct.outcomes_validate(json.dumps(export)))
+        self.assertTrue(result["valid"])
+        kept, excluded = openbnct.outcomes_export(
+            json.dumps(export), {"participants": []}
+        )
+        self.assertIn("dose_records", excluded)
+        self.assertIn("participants", json.loads(kept))
+        # The committed record verifies against the committed catalogue.
+        record = (REPO_ROOT / "qualification-record.json").read_text()
+        outcome = json.loads(openbnct.qual_verify(
+            record, str(REPO_ROOT / "benchmark-catalogue.json"),
+        ))
+        self.assertEqual(outcome["findings"], [])
+
+
 if __name__ == "__main__":
+
     unittest.main()

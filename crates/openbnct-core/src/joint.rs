@@ -717,11 +717,15 @@ impl Realization {
 }
 
 /// Deterministic PRNG (xorshift64*) — the same algorithm the transport
-/// screening design uses, kept private to this module so ensemble draws
+/// screening design uses, kept crate-private so ensemble draws
 /// are bit-reproducible under a declared seed.
-struct XorShift64(u64);
+pub(crate) struct XorShift64(u64);
 
 impl XorShift64 {
+    pub(crate) fn new(seed: u64) -> Self {
+        Self(seed.max(1))
+    }
+
     fn next(&mut self) -> u64 {
         let mut x = self.0;
         x ^= x >> 12;
@@ -731,11 +735,11 @@ impl XorShift64 {
         x.wrapping_mul(0x2545F4914F6CDD1D)
     }
     /// Uniform double in [0, 1).
-    fn uniform(&mut self) -> f64 {
+    pub(crate) fn uniform(&mut self) -> f64 {
         (self.next() >> 11) as f64 / (1u64 << 53) as f64
     }
     /// Standard normal via Box–Muller.
-    fn standard_normal(&mut self) -> f64 {
+    pub(crate) fn standard_normal(&mut self) -> f64 {
         let u1 = (1.0 - self.uniform()).max(f64::MIN_POSITIVE);
         let u2 = self.uniform();
         (-2.0 * u1.ln()).sqrt() * (2.0 * std::f64::consts::PI * u2).cos()

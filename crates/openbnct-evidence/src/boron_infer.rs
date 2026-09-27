@@ -51,9 +51,19 @@ pub struct EstimationState {
     /// What the coordinate is, e.g. `tumor concentration scale` —
     /// carried verbatim into the report.
     pub meaning: String,
+    /// Prior mean at the state's `pk_curve.t0_s` (or at the session
+    /// reference epoch when no curve is declared).
     pub prior_mean: f64,
     pub prior_sd: f64,
     pub unit: String,
+    /// Optional PK concentration curve coupling this state to session
+    /// time: between epochs the coordinate transitions deterministically
+    /// by `C(t)/C(epoch)` (mean scaled, covariance scaled by r²), and a
+    /// delayed observation of time `t` informs the current state through
+    /// the same declared map. When set, `prior_mean`/`prior_sd` are
+    /// quoted at `t0_s`. All coupled states must share one `t0_s`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub pk_curve: Option<crate::replay::PkConcentrationCurve>,
 }
 
 /// Typed observation.
@@ -283,6 +293,7 @@ pub fn run_boron_inference(
         return Err(invalid("state dimension must be 1..=16"));
     }
     let mut index = BTreeMap::new();
+    let mut pk_t0: Option<f64> = None;
     for (i, s) in spec.states.iter().enumerate() {
         if !s.prior_sd.is_finite() || s.prior_sd <= 0.0 {
             return Err(invalid(format!(
@@ -293,7 +304,60 @@ pub fn run_boron_inference(
         if index.insert(s.id.clone(), i).is_some() {
             return Err(invalid(format!("duplicate state id {:?}", s.id)));
         }
+        if let Some(curve) = &s.pk_curve {
+            if curve.amplitudes.is_empty()
+                || curve.amplitudes.len() != curve.rates_per_s.len()
+                || !curve
+                    .amplitudes
+                    .iter()
+                    .chain(curve.rates_per_s.iter())
+                    .all(|x| x.is_finite() && *x >= 0.0)
+                || !curve.t0_s.is_finite()
+            {
+                return Err(invalid(format!(
+                    "state {:?}: pk_curve needs matching non-negative finite amplitudes/rates_per_s",
+                    s.id
+                )));
+            }
+            if curve.evaluate(curve.t0_s) <= 0.0 {
+                return Err(invalid(format!(
+                    "state {:?}: pk_curve must be positive at t0_s — it anchors the declared prior",
+                    s.id
+                )));
+            }
+            match pk_t0 {
+                None => pk_t0 = Some(curve.t0_s),
+                Some(t0) if (t0 - curve.t0_s).abs() <= 1e-9 * t0.abs().max(1.0) => {}
+                Some(t0) => {
+                    return Err(invalid(format!(
+                        "state {:?}: pk_coupled states must share one t0_s (saw {t0}, now {})",
+                        s.id, curve.t0_s
+                    )));
+                }
+            }
+        }
     }
+    // The tracked state epoch starts at the declared prior epoch — the
+    // shared pk t0 when coupled, else the coverage start.
+    let mut epoch_now = pk_t0.unwrap_or(spec.coverage.0);
+    // Per-state transition ratio: C_i(t)/C_i(epoch), 1 for uncoupled
+    // states.
+    fn ratio_at(states: &[EstimationState], i: usize, t: f64, epoch: f64) -> f64 {
+        match &states[i].pk_curve {
+            Some(c) => c.evaluate(t) / c.evaluate(epoch),
+            None => 1.0,
+        }
+    }
+    let transition = |mean: &mut [f64], cov: &mut [f64], ratios: &[f64], n: usize| {
+        for i in 0..n {
+            mean[i] *= ratios[i];
+        }
+        for i in 0..n {
+            for j in 0..n {
+                cov[i * n + j] *= ratios[i] * ratios[j];
+            }
+        }
+    };
     // Prior covariance.
     let mut cov = vec![0.0; n * n];
     for (i, s) in spec.states.iter().enumerate() {
@@ -313,7 +377,7 @@ pub fn run_boron_inference(
     let mut mean: Vec<f64> = spec.states.iter().map(|s| s.prior_mean).collect();
 
     let mut estimates = vec![StateEstimate {
-        epoch_s: spec.coverage.0,
+        epoch_s: epoch_now,
         mean: mean.clone(),
         sd: (0..n).map(|i| cov[i * n + i].sqrt()).collect(),
         after_observation: None,
@@ -383,7 +447,27 @@ pub fn run_boron_inference(
             }
             (mean, sd * sd, None)
         };
-        let (predicted, s) = update(&mut mean, &mut cov, &h, observed, r);
+        // PK coupling: the observation sees the state at `obs.time_s`;
+        // the filter tracks the state at `epoch_now`. For a
+        // deterministic curve the forward map is scalar —
+        // x_i(t_s) = x_i(now)·C_i(t_s)/C_i(epoch_now) — so the effective
+        // row is h_i·r_i and the update needs no backward stepping.
+        let h_eff: Vec<f64> = h
+            .iter()
+            .enumerate()
+            .map(|(i, c)| c * ratio_at(&spec.states, i, obs.time_s, epoch_now))
+            .collect();
+        let (predicted, s) = update(&mut mean, &mut cov, &h_eff, observed, r);
+        // Advance the tracked epoch to the observation's availability
+        // time — a delayed assay's posterior only becomes current then.
+        let avail = obs.available_at_s.unwrap_or(obs.time_s);
+        if avail > epoch_now {
+            let ratios: Vec<f64> = (0..n)
+                .map(|i| ratio_at(&spec.states, i, avail, epoch_now))
+                .collect();
+            transition(&mut mean, &mut cov, &ratios, n);
+            epoch_now = avail;
+        }
         residuals.push(ObservationResidual {
             observation: obs.id.clone(),
             time_s: obs.time_s,
@@ -481,6 +565,11 @@ pub fn run_boron_inference(
             "PET surrogate observations are concentration-equivalent readings only through the declared transfer — the surrogate status is preserved".into(),
             "observations update at their availability time; this is a forward filter, not a retrospective smoother".into(),
             "state-space directions with posterior/prior variance ratio above 0.9 are reported unresolved rather than falsely precise".into(),
+            if pk_t0.is_some() {
+                "pk_coupled states transition deterministically by C(t)/C(epoch) between epochs — a declared drift, not fitted dynamics; no inter-epoch process noise is modeled".into()
+            } else {
+                "states carry constant priors across epochs — no declared inter-epoch dynamics".into()
+            },
         ],
     })
 }
@@ -496,6 +585,7 @@ mod tests {
             prior_mean: mean,
             prior_sd: sd,
             unit: "ug/g".into(),
+            pk_curve: None,
         }
     }
 
@@ -690,5 +780,98 @@ mod tests {
         // be carried as an explicit observability caveat.
         assert!((e.mean[0] - truth_rim).abs() < 5.0);
         assert!(report.residuals[0].normalized.abs() < 3.0);
+    }
+
+    #[test]
+    fn pk_coupling_drifts_state_and_scales_uncertainty() {
+        // C(t) = 20·e^(−0.001t); prior at t0=0: mean 20, sd 2. An
+        // observation at t=1000 of h=1·x(t), value 10 ± 0.5.
+        // Equivalent by hand: at t=1000 the prior is mean 20·e^−1 ≈
+        // 7.358, sd 2·e^−1 ≈ 0.7358; Kalman with R=0.25:
+        //   S = 0.7358²+0.25 ≈ 0.7914, K = 0.5414/0.7914 ≈ 0.6840
+        //   mean = 7.358 + 0.6840·(10−7.358) ≈ 9.165
+        let mut s = state("tumor", 20.0, 2.0);
+        s.pk_curve = Some(crate::replay::PkConcentrationCurve {
+            amplitudes: vec![20.0],
+            rates_per_s: vec![0.001],
+            t0_s: 0.0,
+        });
+        let obs = BoronObservation {
+            id: "draw".into(),
+            kind: "assay".into(),
+            time_s: 1000.0,
+            sensitivity: vec![("tumor".into(), 1.0)],
+            mean: Some(10.0),
+            sd: Some(0.5),
+            counts: None,
+            background: None,
+            background_variance: None,
+            transfer_note: None,
+            available_at_s: None,
+        };
+        let mut sp = spec(vec![s], vec![obs]);
+        sp.coverage = (0.0, 1500.0);
+        let report = run_boron_inference(&sp).unwrap();
+        let e = &report.estimates[1];
+        assert_eq!(e.epoch_s, 1000.0);
+        let e1 = (-1.0_f64).exp();
+        let expected_mean =
+            20.0 * e1 + (4.0 * e1 * e1 / (4.0 * e1 * e1 + 0.25)) * (10.0 - 20.0 * e1);
+        assert!((e.mean[0] - expected_mean).abs() < 1e-9);
+        // Posterior sd = sqrt(σ²_prior_scaled · R / S) = e^−1·sqrt(4·0.25/0.7914).
+        let expected_sd = e1 * (4.0 * 0.25 / (4.0 * e1 * e1 + 0.25)).sqrt();
+        assert!((e.sd[0] - expected_sd).abs() < 1e-9);
+        assert!(report.assumptions.iter().any(|a| a.contains("pk_coupled")));
+    }
+
+    #[test]
+    fn pk_coupled_states_require_a_shared_t0() {
+        let mut a = state("tumor", 20.0, 2.0);
+        a.pk_curve = Some(crate::replay::PkConcentrationCurve {
+            amplitudes: vec![20.0],
+            rates_per_s: vec![0.001],
+            t0_s: 0.0,
+        });
+        let mut b = state("blood", 10.0, 1.0);
+        b.pk_curve = Some(crate::replay::PkConcentrationCurve {
+            amplitudes: vec![10.0],
+            rates_per_s: vec![0.002],
+            t0_s: 60.0,
+        });
+        let sp = spec(vec![a, b], vec![]);
+        let err = run_boron_inference(&sp).unwrap_err().to_string();
+        assert!(err.contains("share one t0_s"), "{err}");
+    }
+
+    #[test]
+    fn uncoupled_states_ignore_the_coupled_epoch() {
+        // One coupled + one uncoupled state: the uncoupled coordinate
+        // neither drifts nor rescales between epochs.
+        let mut coupled = state("tumor", 20.0, 2.0);
+        coupled.pk_curve = Some(crate::replay::PkConcentrationCurve {
+            amplitudes: vec![20.0],
+            rates_per_s: vec![0.001],
+            t0_s: 0.0,
+        });
+        let plain = state("bias", 1.0, 0.5);
+        let obs = BoronObservation {
+            id: "draw".into(),
+            kind: "assay".into(),
+            time_s: 500.0,
+            sensitivity: vec![("tumor".into(), 1.0), ("bias".into(), 1.0)],
+            mean: Some(17.0),
+            sd: Some(1.0),
+            counts: None,
+            background: None,
+            background_variance: None,
+            transfer_note: None,
+            available_at_s: None,
+        };
+        let mut sp = spec(vec![coupled, plain], vec![obs]);
+        sp.coverage = (0.0, 1000.0);
+        let report = run_boron_inference(&sp).unwrap();
+        // Predicted obs at t=500: x_t·e^−0.5 + x_b = 20·0.6065 + 1.0.
+        let predicted = 20.0 * (-0.5_f64).exp() + 1.0;
+        assert!((report.residuals[0].predicted - predicted).abs() < 1e-9);
     }
 }

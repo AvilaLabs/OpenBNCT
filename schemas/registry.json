@@ -1,0 +1,696 @@
+{
+  "schema_version": "openbnct.schema-registry/0.1.0",
+  "id": "openbnct-schema-registry",
+  "qualification": "development_index",
+  "provenance_id": "generated-from-crate-constants",
+  "notes": [
+    "Machine-readable index of every versioned interchange token declared by the Rust crates. Authoritative truth is the `pub const ...` values in the crates; this registry is a checked mirror \u2014 a workspace test fails when they drift.",
+    "Entries carry the declaring crate and module so consumers can locate the serde contract. No JSON Schema documents are implied: those remain a separate reviewed deliverable."
+  ],
+  "tokens": [
+    {
+      "token": "openbnct.accelerator-source/0.1.0",
+      "constant": "ACCELERATOR_SOURCE_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/accelerator.rs"
+    },
+    {
+      "token": "openbnct.acceptance-contract/0.1.0",
+      "constant": "ACCEPTANCE_CONTRACT_SCHEMA",
+      "crate": "openbnct-openmc",
+      "module": "src/input.rs"
+    },
+    {
+      "token": "openbnct.analytic-oracle-evaluation/0.1.0",
+      "constant": "ANALYTIC_EVALUATION_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/analytic_oracle.rs"
+    },
+    {
+      "token": "openbnct.analytic-oracle/0.1.0",
+      "constant": "ANALYTIC_ORACLE_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/analytic_oracle.rs"
+    },
+    {
+      "token": "openbnct.aperture-shape/0.1.0",
+      "constant": "APERTURE_SHAPE_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/synthesis.rs"
+    },
+    {
+      "token": "openbnct.avify-review/0.1.0",
+      "constant": "REVIEW_SCHEMA",
+      "crate": "openbnct-avify",
+      "module": "src/review.rs"
+    },
+    {
+      "token": "openbnct.avify-run/0.1.0",
+      "constant": "RUN_SCHEMA",
+      "crate": "openbnct-avify",
+      "module": "src/receipt.rs"
+    },
+    {
+      "token": "openbnct.beam-description/0.1.0",
+      "constant": "BEAM_DESCRIPTION_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/beam.rs"
+    },
+    {
+      "token": "openbnct.beam-field-set/0.1.0",
+      "constant": "BEAM_FIELD_SET_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/fields.rs"
+    },
+    {
+      "token": "openbnct.beam-quality/0.1.0",
+      "constant": "BEAM_QUALITY_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/beam_quality.rs"
+    },
+    {
+      "token": "openbnct.beam-selection/0.1.0",
+      "constant": "BEAM_SELECTION_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/selection.rs"
+    },
+    {
+      "token": "openbnct.beam-shaping-assembly/0.1.0",
+      "constant": "BSA_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/bsa.rs"
+    },
+    {
+      "token": "openbnct.bed-bundle/0.1.0",
+      "constant": "BED_BUNDLE_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/bed.rs"
+    },
+    {
+      "token": "openbnct.benchmark-catalogue/0.1.0",
+      "constant": "BENCHMARK_CATALOGUE_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/catalogue.rs"
+    },
+    {
+      "token": "openbnct.benchmark-report/0.1.0",
+      "constant": "BENCHMARK_REPORT_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/catalogue.rs"
+    },
+    {
+      "token": "openbnct.bio-evidence-library/0.1.0",
+      "constant": "BIO_EVIDENCE_LIBRARY_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/evidence.rs"
+    },
+    {
+      "token": "openbnct.bio-model-comparison/0.1.0",
+      "constant": "BIO_MODEL_COMPARISON_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/compare.rs"
+    },
+    {
+      "token": "openbnct.bio-sensitivity-sweep/0.1.0",
+      "constant": "BIO_SWEEP_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/sweep.rs"
+    },
+    {
+      "token": "openbnct.biological-dose-bundle/0.2.0",
+      "constant": "BIOLOGICAL_DOSE_BUNDLE_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/lib.rs"
+    },
+    {
+      "token": "openbnct.biological-model/0.2.0",
+      "constant": "BIOLOGICAL_MODEL_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/lib.rs"
+    },
+    {
+      "token": "openbnct.boron-field/0.1.0",
+      "constant": "BORON_FIELD_SCHEMA",
+      "crate": "openbnct-boron",
+      "module": "src/lib.rs"
+    },
+    {
+      "token": "openbnct.boron-inference-report/0.1.0",
+      "constant": "BORON_INFERENCE_REPORT_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/boron_infer.rs"
+    },
+    {
+      "token": "openbnct.boron-inference/0.1.0",
+      "constant": "BORON_INFERENCE_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/boron_infer.rs"
+    },
+    {
+      "token": "openbnct.boron-microdistribution/0.1.0",
+      "constant": "BORON_MICRODISTRIBUTION_SCHEMA",
+      "crate": "openbnct-boron",
+      "module": "src/microdistribution.rs"
+    },
+    {
+      "token": "openbnct.boron-uptake-model/0.1.0",
+      "constant": "BORON_UPTAKE_MODEL_SCHEMA",
+      "crate": "openbnct-boron",
+      "module": "src/lib.rs"
+    },
+    {
+      "token": "openbnct.bsa-sweep/0.1.0",
+      "constant": "BSA_SWEEP_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/bsa.rs"
+    },
+    {
+      "token": "openbnct.cell-microdosimetry/0.1.0",
+      "constant": "CELL_MICRODOSIMETRY_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/cell_microdosimetry.rs"
+    },
+    {
+      "token": "openbnct.combined-dose/0.1.0",
+      "constant": "COMBINED_DOSE_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/bed.rs"
+    },
+    {
+      "token": "openbnct.component-dose-interchange/0.1.0",
+      "constant": "COMPONENT_DOSE_INTERCHANGE_SCHEMA",
+      "crate": "openbnct-core",
+      "module": "src/interchange.rs"
+    },
+    {
+      "token": "openbnct.component-nifti-manifest/0.1.0",
+      "constant": "COMPONENT_NIFTI_MANIFEST_SCHEMA",
+      "crate": "openbnct-nifti",
+      "module": "src/lib.rs"
+    },
+    {
+      "token": "openbnct.data-acquisition-profile/0.2.0",
+      "constant": "ACQUISITION_PROFILE_SCHEMA",
+      "crate": "openbnct-openmc",
+      "module": "src/acquisition.rs"
+    },
+    {
+      "token": "openbnct.data-acquisition-receipt/0.1.0",
+      "constant": "ACQUISITION_RECEIPT_SCHEMA",
+      "crate": "openbnct-openmc",
+      "module": "src/acquisition.rs"
+    },
+    {
+      "token": "openbnct.delivery-csv-import/0.1.0",
+      "constant": "CSV_IMPORT_SPEC_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/delivery_history.rs"
+    },
+    {
+      "token": "openbnct.delivery-history/0.1.0",
+      "constant": "DELIVERY_HISTORY_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/delivery_history.rs"
+    },
+    {
+      "token": "openbnct.direction-candidates/0.1.0",
+      "constant": "DIRECTION_CANDIDATES_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/directions.rs"
+    },
+    {
+      "token": "openbnct.dose-comparison/0.1.0",
+      "constant": "DOSE_COMPARISON_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/compare.rs"
+    },
+    {
+      "token": "openbnct.dose-metrics/0.1.0",
+      "constant": "DOSE_METRICS_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/metrics.rs"
+    },
+    {
+      "token": "openbnct.dose-replay-report/0.1.0",
+      "constant": "REPLAY_REPORT_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/replay.rs"
+    },
+    {
+      "token": "openbnct.dose-replay/0.1.0",
+      "constant": "REPLAY_SPEC_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/replay.rs"
+    },
+    {
+      "token": "openbnct.dose-uncertainty-budget/0.1.0",
+      "constant": "DOSE_UNCERTAINTY_BUDGET_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/uq.rs"
+    },
+    {
+      "token": "openbnct.dose-volume-histogram/0.1.0",
+      "constant": "DVH_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/dvh.rs"
+    },
+    {
+      "token": "openbnct.endf-reaction-energy-balance/0.1.0",
+      "constant": "ENDF_REACTION_ENERGY_BALANCE_SCHEMA",
+      "crate": "openbnct-njoy",
+      "module": "src/reaction_energy_balance.rs"
+    },
+    {
+      "token": "openbnct.endpoint-evaluation/0.1.0",
+      "constant": "ENDPOINT_EVALUATION_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/endpoint.rs"
+    },
+    {
+      "token": "openbnct.endpoint-model/0.1.0",
+      "constant": "ENDPOINT_MODEL_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/endpoint.rs"
+    },
+    {
+      "token": "openbnct.evidence-bundle-manifest/0.1.0",
+      "constant": "EVIDENCE_BUNDLE_MANIFEST_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/bundle.rs"
+    },
+    {
+      "token": "openbnct.exposure-plan-table/1",
+      "constant": "TABLE_FORMAT",
+      "crate": "openbnct-plan",
+      "module": "src/lib.rs"
+    },
+    {
+      "token": "openbnct.exposure-plan/0.1.0",
+      "constant": "EXPOSURE_PLAN_SCHEMA",
+      "crate": "openbnct-core",
+      "module": "src/exposure.rs"
+    },
+    {
+      "token": "openbnct.external-dose/0.1.0",
+      "constant": "EXTERNAL_DOSE_SCHEMA",
+      "crate": "openbnct-core",
+      "module": "src/external_dose.rs"
+    },
+    {
+      "token": "openbnct.fraction-scales/0.1.0",
+      "constant": "FRACTION_SCALES_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/fractions.rs"
+    },
+    {
+      "token": "openbnct.gamma-evaluation/0.1.0",
+      "constant": "GAMMA_EVALUATION_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/gamma.rs"
+    },
+    {
+      "token": "openbnct.heldout-comparison/0.1.0",
+      "constant": "HELDOUT_COMPARISON_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/scenarios.rs"
+    },
+    {
+      "token": "openbnct.hu-calibration/0.1.0",
+      "constant": "HU_CALIBRATION_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/hu_calibration.rs"
+    },
+    {
+      "token": "openbnct.inverse-plan-objective/0.1.0",
+      "constant": "INVERSE_PLAN_OBJECTIVE_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/optimize.rs"
+    },
+    {
+      "token": "openbnct.inverse-plan-result/0.1.0",
+      "constant": "INVERSE_PLAN_RESULT_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/optimize.rs"
+    },
+    {
+      "token": "openbnct.irradiation-time-report/0.1.0",
+      "constant": "IRRADIATION_TIME_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/limits.rs"
+    },
+    {
+      "token": "openbnct.isoeffective-model/0.1.0",
+      "constant": "ISOEFFECTIVE_MODEL_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/isoeffective.rs"
+    },
+    {
+      "token": "openbnct.iteration-report/0.1.0",
+      "constant": "ITERATION_REPORT_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/synthesis.rs"
+    },
+    {
+      "token": "openbnct.joint-dose-ensemble-spec/0.1.0",
+      "constant": "JOINT_DOSE_ENSEMBLE_SPEC_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/uq_ensemble.rs"
+    },
+    {
+      "token": "openbnct.joint-robustness/0.1.0",
+      "constant": "JOINT_ROBUSTNESS_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/robustness.rs"
+    },
+    {
+      "token": "openbnct.joint-uncertainty-input/0.1.0",
+      "constant": "JOINT_UNCERTAINTY_INPUT_SCHEMA",
+      "crate": "openbnct-core",
+      "module": "src/joint.rs"
+    },
+    {
+      "token": "openbnct.joint-uncertainty-report/0.1.0",
+      "constant": "JOINT_UNCERTAINTY_REPORT_SCHEMA",
+      "crate": "openbnct-core",
+      "module": "src/joint.rs"
+    },
+    {
+      "token": "openbnct.lineal-spectrum/0.1.0",
+      "constant": "LINEAL_SPECTRUM_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/mkm.rs"
+    },
+    {
+      "token": "openbnct.lineal-tally-spec/0.1.0",
+      "constant": "LINEAL_TALLY_SPEC_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/lineal_tally.rs"
+    },
+    {
+      "token": "openbnct.material-assignment/0.2.0",
+      "constant": "MATERIAL_ASSIGNMENT_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/model.rs"
+    },
+    {
+      "token": "openbnct.measurement-comparison/0.1.0",
+      "constant": "MEASUREMENT_COMPARISON_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/measurement.rs"
+    },
+    {
+      "token": "openbnct.measurement-record/0.1.0",
+      "constant": "MEASUREMENT_RECORD_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/measurement.rs"
+    },
+    {
+      "token": "openbnct.metamorphic-evaluation/0.1.0",
+      "constant": "METAMORPHIC_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/metamorphic.rs"
+    },
+    {
+      "token": "openbnct.microdistribution-correction/0.1.0",
+      "constant": "MICRODISTRIBUTION_CORRECTION_SCHEMA",
+      "crate": "openbnct-boron",
+      "module": "src/microdistribution.rs"
+    },
+    {
+      "token": "openbnct.microdosimetric-model/0.1.0",
+      "constant": "MICRODOSIMETRIC_MODEL_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/mkm.rs"
+    },
+    {
+      "token": "openbnct.multigroup-covariance/0.1.0",
+      "constant": "MULTIGROUP_COVARIANCE_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/uq.rs"
+    },
+    {
+      "token": "openbnct.multigroup-data/0.1.0",
+      "constant": "MULTIGROUP_DATA_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/multigroup.rs"
+    },
+    {
+      "token": "openbnct.multigroup-flux/0.1.0",
+      "constant": "MULTIGROUP_FLUX_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/multigroup.rs"
+    },
+    {
+      "token": "openbnct.multigroup-photon-data/0.1.0",
+      "constant": "MULTIGROUP_PHOTON_DATA_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/photon.rs"
+    },
+    {
+      "token": "openbnct.neutron-response-set/0.1.0",
+      "constant": "NEUTRON_RESPONSE_SET_SCHEMA",
+      "crate": "openbnct-njoy",
+      "module": "src/response_tables.rs"
+    },
+    {
+      "token": "openbnct.njoy-diagnostic-triage-check/0.1.0",
+      "constant": "NJOY_DIAGNOSTIC_TRIAGE_CHECK_SCHEMA",
+      "crate": "openbnct-njoy",
+      "module": "src/diagnostic_triage_check.rs"
+    },
+    {
+      "token": "openbnct.njoy-diagnostic-triage/0.1.0",
+      "constant": "NJOY_DIAGNOSTIC_TRIAGE_SCHEMA",
+      "crate": "openbnct-njoy",
+      "module": "src/diagnostic_triage.rs"
+    },
+    {
+      "token": "openbnct.njoy-evidence-aware-check/0.1.0",
+      "constant": "NJOY_EVIDENCE_AWARE_CHECK_SCHEMA",
+      "crate": "openbnct-njoy",
+      "module": "src/core_check.rs"
+    },
+    {
+      "token": "openbnct.njoy-execution-receipt/0.1.0",
+      "constant": "NJOY_EXECUTION_RECEIPT_SCHEMA",
+      "crate": "openbnct-njoy",
+      "module": "src/execution.rs"
+    },
+    {
+      "token": "openbnct.njoy-input-manifest/0.1.0",
+      "constant": "NJOY_INPUT_MANIFEST_SCHEMA",
+      "crate": "openbnct-njoy",
+      "module": "src/lib.rs"
+    },
+    {
+      "token": "openbnct.njoy-input-manifest/0.2.0",
+      "constant": "NJOY_INPUT_MANIFEST_MIXED_SCHEMA",
+      "crate": "openbnct-njoy",
+      "module": "src/lib.rs"
+    },
+    {
+      "token": "openbnct.njoy-response-set-review/0.1.0",
+      "constant": "NJOY_RESPONSE_SET_REVIEW_SCHEMA",
+      "crate": "openbnct-njoy",
+      "module": "src/response_tables.rs"
+    },
+    {
+      "token": "openbnct.openmc-acceptance-report/0.1.0",
+      "constant": "ACCEPTANCE_REPORT_SCHEMA",
+      "crate": "openbnct-openmc",
+      "module": "src/acceptance.rs"
+    },
+    {
+      "token": "openbnct.openmc-nuclear-data-manifest/0.3.0",
+      "constant": "TARGET_NUCLEAR_DATA_MANIFEST_SCHEMA",
+      "crate": "openbnct-openmc",
+      "module": "src/data.rs"
+    },
+    {
+      "token": "openbnct.outcomes-export/0.1.0",
+      "constant": "OUTCOMES_EXPORT_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/outcomes.rs"
+    },
+    {
+      "token": "openbnct.pg-counts-array/0.1.0",
+      "constant": "PG_COUNTS_ARRAY_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/prompt_gamma.rs"
+    },
+    {
+      "token": "openbnct.pg-counts/0.1.0",
+      "constant": "PROMPT_GAMMA_COUNTS_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/prompt_gamma.rs"
+    },
+    {
+      "token": "openbnct.pg-observation/0.1.0",
+      "constant": "PROMPT_GAMMA_OBSERVATION_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/prompt_gamma.rs"
+    },
+    {
+      "token": "openbnct.pg-reconstruction/0.1.0",
+      "constant": "PROMPT_GAMMA_RECONSTRUCTION_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/prompt_gamma.rs"
+    },
+    {
+      "token": "openbnct.pg-response-array/0.1.0",
+      "constant": "PG_RESPONSE_ARRAY_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/prompt_gamma.rs"
+    },
+    {
+      "token": "openbnct.pg-response/0.1.0",
+      "constant": "PROMPT_GAMMA_RESPONSE_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/prompt_gamma.rs"
+    },
+    {
+      "token": "openbnct.physical-dose-bundle/0.2.0",
+      "constant": "PHYSICAL_DOSE_BUNDLE_SCHEMA",
+      "crate": "openbnct-core",
+      "module": "src/lib.rs"
+    },
+    {
+      "token": "openbnct.pk-irradiation-report/0.1.0",
+      "constant": "PK_IRRADIATION_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/pk.rs"
+    },
+    {
+      "token": "openbnct.pk-model/0.1.0",
+      "constant": "PK_MODEL_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/pk.rs"
+    },
+    {
+      "token": "openbnct.pk-samples/0.1.0",
+      "constant": "PK_SAMPLES_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/pk.rs"
+    },
+    {
+      "token": "openbnct.pk-schedule/0.1.0",
+      "constant": "PK_SCHEDULE_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/pk.rs"
+    },
+    {
+      "token": "openbnct.pk-tissue-spec/0.1.0",
+      "constant": "PK_TISSUE_SPEC_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/pk.rs"
+    },
+    {
+      "token": "openbnct.plan-robustness/0.1.0",
+      "constant": "PLAN_ROBUSTNESS_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/robustness.rs"
+    },
+    {
+      "token": "openbnct.position-report/0.1.0",
+      "constant": "POSITION_REPORT_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/positioning.rs"
+    },
+    {
+      "token": "openbnct.prompt-gamma-source/0.1.0",
+      "constant": "PROMPT_GAMMA_SOURCE_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/prompt_gamma.rs"
+    },
+    {
+      "token": "openbnct.qualification-record/0.1.0",
+      "constant": "QUALIFICATION_RECORD_SCHEMA",
+      "crate": "openbnct-evidence",
+      "module": "src/qualification.rs"
+    },
+    {
+      "token": "openbnct.registration/0.1.0",
+      "constant": "REGISTRATION_SCHEMA",
+      "crate": "openbnct-core",
+      "module": "src/registration.rs"
+    },
+    {
+      "token": "openbnct.rtplan-summary/0.1.0",
+      "constant": "RTPLAN_SUMMARY_SCHEMA",
+      "crate": "openbnct-dicom",
+      "module": "src/rtplan.rs"
+    },
+    {
+      "token": "openbnct.scenario-report/0.1.0",
+      "constant": "PLAN_SCENARIO_REPORT_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/scenarios.rs"
+    },
+    {
+      "token": "openbnct.scenario-set/0.1.0",
+      "constant": "PLAN_SCENARIO_SET_SCHEMA",
+      "crate": "openbnct-plan",
+      "module": "src/scenarios.rs"
+    },
+    {
+      "token": "openbnct.sensitivity-screening/0.1.0",
+      "constant": "SENSITIVITY_SCREENING_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/screening.rs"
+    },
+    {
+      "token": "openbnct.sensitivity-spec/0.1.0",
+      "constant": "SENSITIVITY_SPEC_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/screening.rs"
+    },
+    {
+      "token": "openbnct.smk-evaluation/0.1.0",
+      "constant": "SMK_EVALUATION_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/cell_microdosimetry.rs"
+    },
+    {
+      "token": "openbnct.smk-model/0.1.0",
+      "constant": "SMK_MODEL_SCHEMA",
+      "crate": "openbnct-bio",
+      "module": "src/cell_microdosimetry.rs"
+    },
+    {
+      "token": "openbnct.systematic-uncertainty/0.1.0",
+      "constant": "SYSTEMATIC_UNCERTAINTY_SCHEMA",
+      "crate": "openbnct-core",
+      "module": "src/systematic.rs"
+    },
+    {
+      "token": "openbnct.variance-reduction/0.1.0",
+      "constant": "VARIANCE_REDUCTION_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/variance_reduction.rs"
+    },
+    {
+      "token": "openbnct.voi-evaluation/0.1.0",
+      "constant": "VOI_EVALUATION_SCHEMA",
+      "crate": "openbnct-core",
+      "module": "src/voi.rs"
+    },
+    {
+      "token": "openbnct.voi-report/0.1.0",
+      "constant": "VOI_REPORT_SCHEMA",
+      "crate": "openbnct-core",
+      "module": "src/voi.rs"
+    },
+    {
+      "token": "openbnct.vr-validation/0.1.0",
+      "constant": "VR_VALIDATION_SCHEMA",
+      "crate": "openbnct-openmc",
+      "module": "src/variance_reduction.rs"
+    },
+    {
+      "token": "openbnct.weight-windows/0.1.0",
+      "constant": "WEIGHT_WINDOWS_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/variance_reduction.rs"
+    }
+  ]
+}
