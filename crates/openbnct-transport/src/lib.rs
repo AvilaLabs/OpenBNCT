@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 mod accelerator;
 mod beam;
 mod beam_quality;
+mod boundaries;
 mod bsa;
 mod cadis;
 mod hu_calibration;
@@ -39,6 +40,7 @@ pub use beam_quality::{
     TransverseFluenceProfile, attach_absolute_fluence_profile, attach_transverse_fluence_profiles,
     evaluate_beam_quality, in_air_metrics, in_phantom_metrics,
 };
+pub use boundaries::{BOUNDARY_PROPOSAL_SCHEMA, BoundaryError, BoundaryProposal, adapt_boundaries};
 pub use bsa::{
     BSA_SCHEMA, BSA_SWEEP_SCHEMA, BeamShapingAssembly, BsaError, BsaLayer, BsaLayerKind,
     BsaRadialExtent, BsaSweep, BsaSweepParameter, BsaSweepRecord, BsaSweepVariant,

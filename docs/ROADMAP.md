@@ -552,6 +552,15 @@ Implementation status:
   pipeline's declared step before `import mcnp` re-ingests the meshtal.
   Source planes outside the grid are rejected. Execution against real MCNP
   remains the open acceptance gate;
+- complete (OpenPINT-convention slice): meshtal emission — `openbnct
+  export meshtal` writes a physical dose bundle as a
+  `meshtal`-layout file with the OpenPINT tally convention (one mesh,
+  tallies 14/24/34/44 = B10/N14/hydrogen/photon), so OpenPINT's own
+  `sim_result_2_nifti.py` and `get_dose_components` consume a
+  deterministic result unmodified. Signed-permutation axis-aligned
+  grids; `Rel Error` reports sigma/|value| where carried else 0;
+  round-trip covered through the crate's own parser. Real OpenPINT
+  pipeline execution remains the open acceptance gate;
 - complete (first slice): OP-10 external-dose/BED combined analysis —
   `openbnct.external-dose/0.1.0` imports one absolute-dose course with
   declared fractionation (uniform or explicit, hash-bound provenance);
@@ -1868,7 +1877,15 @@ convention.
   artifacts) and missing thermal upscatter (`--tsl`) — the residual
   ~10× thermal deficit localizes to near-field epithermal buildup
   and thermal residence condensation, which boundary adaptation
-  targets directly.
+  targets directly. Tooling landed: `sn boundaries` places edges at
+  equal importance mass over lethargy from any `EnergyDistribution`
+  histogram (optionally response-folded), emitting a
+  `boundary-proposal` artifact with per-group mass shares and
+  lethargy widths; `sn collapse --boundaries-file` consumes it. A
+  transverse-periodic water-column diagnostic confirmed the split:
+  TSL upscatter closes thermal to 0.67–0.95× CE while the condensed
+  downscatter over-deposits epi/fast ~2–3× at entry and
+  under-transports it deep — the remaining adaptive-boundary target.
 - **R17-05 — plan metrics layer.** DVH-derived D95/V20/EUD (and
   TCP–NTCP under the declared bio model) summarized into
   `InversePlanResult` and the GUI table — plans should read like

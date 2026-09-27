@@ -530,6 +530,174 @@ pub fn interchange_from_meshtals(
     })
 }
 
+/// OpenPINT's `get_dose_components` reads the four BNCT dose
+/// components from fixed tally numbers of a single meshtal file —
+/// B10→14, N14→24, hydrogen dose→34, photon dose→44.
+pub const OPENPINT_TALLIES: [(DoseComponent, u32, &str); 4] = [
+    (DoseComponent::Boron, 14, "neutron"),
+    (DoseComponent::Nitrogen, 24, "neutron"),
+    (DoseComponent::Hydrogen, 34, "neutron"),
+    (DoseComponent::Photon, 44, "photon"),
+];
+
+/// Signed-permutation axis map: for each world axis `a`, the voxel axis
+/// it maps to and whether it flips. Returns None for oblique grids —
+/// meshtal meshes are axis-aligned, so oblique export is rejected rather
+/// than silently approximated.
+fn axis_map(geometry: &GridGeometry) -> Result<[(usize, bool); 3], McnpError> {
+    let mut map = [(0usize, false); 3];
+    let mut used = [false; 3];
+    for (a, map_row) in map.iter_mut().enumerate() {
+        let row = [
+            geometry.direction[3 * a],
+            geometry.direction[3 * a + 1],
+            geometry.direction[3 * a + 2],
+        ];
+        let mut found = None;
+        for (v, entry) in row.iter().enumerate() {
+            if entry.abs() > 1e-9 {
+                if found.is_some() || (entry.abs() - 1.0).abs() > 1e-9 {
+                    return Err(McnpError::ObliqueGeometry);
+                }
+                found = Some(v);
+            }
+        }
+        let v = found.ok_or(McnpError::ObliqueGeometry)?;
+        if used[v] {
+            return Err(McnpError::ObliqueGeometry);
+        }
+        used[v] = true;
+        *map_row = (v, row[v] < 0.0);
+    }
+    Ok(map)
+}
+
+/// Emit a `meshtal` file (`out=col` layout, one single-energy-bin tally
+/// per entry of `tallies`) so external readers — including OpenPINT's
+/// `read_mcnp_mesh` — can ingest deterministic dose volumes with the
+/// same code path they use for MCNP results.
+///
+/// `tallies` entries are `(tally_number, particle_label, component)`
+/// naming one `DoseVolume` already present in `bundle`. Data rows are
+/// cell-center `(x, y, z)` in cm with `Result Rel Error` columns, Z
+/// varying fastest — the exact layout the format writes. The rel-error
+/// column reports `sigma/|value|` when the component carries
+/// `absolute_standard_uncertainty`, else `0` (deterministic fields have
+/// no Monte-Carlo statistical error — not an accuracy claim).
+///
+/// Normalization/unit honesty stays with the bundle's own manifest:
+/// this writes the bundle's declared values verbatim.
+pub fn meshtal_from_dose_bundle(
+    bundle: &openbnct_core::PhysicalDoseBundle,
+    tallies: &[(u32, &str, DoseComponent)],
+) -> Result<String, McnpError> {
+    let map = axis_map(&bundle.geometry)?;
+    let nx = bundle.geometry.shape[0] as usize;
+    let ny = bundle.geometry.shape[1] as usize;
+    // World-axis edges (ascending, cm) and centers per axis.
+    let mut world_edges: [Vec<f64>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    let mut world_centers: [Vec<f64>; 3] = [Vec::new(), Vec::new(), Vec::new()];
+    for a in 0..3 {
+        let (v, _flip) = map[a];
+        let lo = bundle.geometry.origin_mm[v] / 10.0 - bundle.geometry.spacing_mm[v] / 20.0;
+        let sp = bundle.geometry.spacing_mm[v] / 10.0;
+        let n = bundle.geometry.shape[v] as usize;
+        world_edges[a] = (0..=n).map(|m| lo + m as f64 * sp).collect();
+        world_centers[a] = (0..n).map(|m| lo + (m as f64 + 0.5) * sp).collect();
+    }
+
+    let mut out = String::new();
+    out.push_str(
+        "openbnct meshtal export (deterministic dose; rel-error column is sigma/result where carried, else 0)\n",
+    );
+    out.push_str(&format!(" case_id {}\n", bundle.case_id));
+    out.push_str(" Number of histories used for normalizing tallies =    1.00\n");
+    for (number, particle, component) in tallies {
+        let volume = bundle
+            .components
+            .iter()
+            .find(|c| c.component == *component)
+            .ok_or(McnpError::MissingComponent(*component))?;
+        out.push_str(&format!("\n Mesh Tally Number{:10}\n", number));
+        out.push_str(&format!(" {particle}  mesh tally.\n\n"));
+        out.push_str(" Tally bin boundaries:\n");
+        // OpenPINT's reader classifies each boundary line by its first
+        // token — continuation lines starting with a number would
+        // corrupt the parse, so every axis is emitted on one line
+        // regardless of bin count.
+        let mut boundary = |label: &str, edges: &[f64]| {
+            out.push_str(&format!("   {label}:"));
+            for e in edges {
+                out.push_str(&format!(" {:>13}", sci(*e)));
+            }
+            out.push('\n');
+        };
+        boundary("X direction", &world_edges[0]);
+        boundary("Y direction", &world_edges[1]);
+        boundary("Z direction", &world_edges[2]);
+        boundary("Energy bin boundaries", &[0.0, 2.0e7]);
+        // OpenPINT's reader derives the per-row token count as
+        // `len(header.split()) - 1`: the six-token header below yields
+        // five-token data rows (x, y, z, result, rel-error). Emitting
+        // an `Energy` column header would require a sixth data column.
+        out.push_str("\n            X         Y         Z     Result     Rel Error\n");
+        for wx in 0..world_centers[0].len() {
+            for wy in 0..world_centers[1].len() {
+                for wz in 0..world_centers[2].len() {
+                    let (v0, f0) = map[0];
+                    let (v1, f1) = map[1];
+                    let (v2, f2) = map[2];
+                    let mut idx = [0usize; 3];
+                    idx[v0] = if f0 { idx_len(bundle, v0) - 1 - wx } else { wx };
+                    idx[v1] = if f1 { idx_len(bundle, v1) - 1 - wy } else { wy };
+                    idx[v2] = if f2 { idx_len(bundle, v2) - 1 - wz } else { wz };
+                    let cell = idx[0] + nx * idx[1] + nx * ny * idx[2];
+                    let value = volume.values.get(cell).copied().unwrap_or(0.0);
+                    let relerr = volume
+                        .absolute_standard_uncertainty
+                        .as_ref()
+                        .and_then(|s| s.get(cell))
+                        .map(|s| if value != 0.0 { s / value.abs() } else { 0.0 })
+                        .unwrap_or(0.0);
+                    out.push_str(&format!(
+                        "{:>12.5}{:>12.5}{:>12.5} {:>12} {:>12}\n",
+                        world_centers[0][wx],
+                        world_centers[1][wy],
+                        world_centers[2][wz],
+                        sci(value),
+                        sci(relerr)
+                    ));
+                }
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// MCNP-style scientific notation (`1.23400E-02`) — Rust's `{E}`
+/// formatter omits the exponent sign/zero-pad, which some Fortran
+/// readers treat as a distinct token.
+fn sci(x: f64) -> String {
+    let s = format!("{x:.5E}");
+    let (mant, exp) = s.split_once('E').expect("sci format");
+    format!("{mant}E{:+03}", exp.parse::<i32>().unwrap_or(0))
+}
+
+fn idx_len(bundle: &openbnct_core::PhysicalDoseBundle, v: usize) -> usize {
+    bundle.geometry.shape[v] as usize
+}
+
+/// Emit the OpenPINT-convention four-tally meshtal (B10=14, N14=24,
+/// n=34, g=44) so `sim_result_2_nifti.py` and `get_dose_components`
+/// consume a deterministic dose bundle unchanged.
+pub fn pint_meshtal(bundle: &openbnct_core::PhysicalDoseBundle) -> Result<String, McnpError> {
+    let tallies: Vec<(u32, &str, DoseComponent)> = OPENPINT_TALLIES
+        .iter()
+        .map(|(c, n, p)| (*n, *p, *c))
+        .collect();
+    meshtal_from_dose_bundle(bundle, &tallies)
+}
+
 #[derive(Debug, Error)]
 pub enum McnpError {
     #[error("failed to read {path}: {source}")]
@@ -569,6 +737,10 @@ pub enum McnpError {
     VersionMismatch { declared: String, parsed: String },
     #[error("meshtal file carries no mcnp version banner; pass --producer-version")]
     VersionUnknown,
+    #[error("component {0:?} absent from the dose bundle")]
+    MissingComponent(DoseComponent),
+    #[error("grid direction is not axis-aligned; meshtal meshes are rectangular")]
+    ObliqueGeometry,
 }
 
 #[cfg(test)]
@@ -640,6 +812,90 @@ mcnp   version 6.2 ld=01/01/20  probid =  01/01/20 00:00:00
         0.000    0.500     0.500 5.00000E-03
         0.000    0.500     1.500 6.00000E-03
 ";
+
+    fn tiny_bundle() -> openbnct_core::PhysicalDoseBundle {
+        use openbnct_core::*;
+        let geometry = GridGeometry {
+            shape: [1, 2, 3],
+            spacing_mm: [10.0, 10.0, 10.0],
+            origin_mm: [5.0, -15.0, -15.0],
+            direction: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        };
+        let comps = [
+            DoseComponent::Boron,
+            DoseComponent::Nitrogen,
+            DoseComponent::Hydrogen,
+            DoseComponent::Photon,
+        ];
+        let components = comps
+            .iter()
+            .enumerate()
+            .map(|(c, &component)| DoseVolume {
+                component,
+                unit: DoseUnit::Gray,
+                values: (0..6)
+                    .map(|i| (c + 1) as f64 * 1e-3 * (i + 1) as f64)
+                    .collect(),
+                absolute_standard_uncertainty: Some(vec![1e-6; 6]),
+            })
+            .collect();
+        PhysicalDoseBundle {
+            schema_version: "openbnct.physical-dose-bundle/0.1.0".into(),
+            case_id: "tiny".into(),
+            frame_of_reference_uid: None,
+            geometry,
+            component_profile: ComponentProfileReference {
+                id: "p".into(),
+                sha256: "0".repeat(64),
+            },
+            response_set: ContentReference {
+                id: "r".into(),
+                sha256: "0".repeat(64),
+            },
+            components,
+            physical_total: PhysicalTotalDoseVolume {
+                unit: DoseUnit::Gray,
+                values: vec![0.0; 6],
+                absolute_standard_uncertainty: None,
+                uncertainty_method: TotalUncertaintyMethod::Unavailable,
+            },
+            provenance_id: "test".into(),
+        }
+    }
+
+    #[test]
+    fn pint_meshtal_round_trips_through_openpint_layout() {
+        let bundle = tiny_bundle();
+        let text = pint_meshtal(&bundle).unwrap();
+        // OpenPINT's reader contract: fixed tally numbers, the
+        // `Mesh Tally Number%10d` marker, six-token column header
+        // (lastlayerlen=5) and five-token data rows.
+        for n in [14, 24, 34, 44] {
+            assert!(text.contains(&format!("Mesh Tally Number{:10}", n)));
+        }
+        let header = text
+            .lines()
+            .find(|l| l.contains("Result") && l.contains("Rel Error"))
+            .unwrap();
+        assert_eq!(header.split_whitespace().count() - 1, 5);
+        let first_row = text
+            .lines()
+            .skip_while(|l| !l.contains("Rel Error"))
+            .nth(1)
+            .unwrap();
+        assert_eq!(first_row.split_whitespace().count(), 5);
+        // Our own parser re-ingests it losslessly.
+        let parsed = parse_meshtal(&text).unwrap();
+        assert_eq!(parsed.tallies.len(), 4);
+        let b10 = parsed.tally(14).unwrap();
+        assert_eq!((b10.nx(), b10.ny(), b10.nz()), (1, 2, 3));
+        let volume = tally_dose_volume(b10, None, DoseComponent::Boron, DoseUnit::Gray).unwrap();
+        let orig = &bundle.components[0].values;
+        assert_eq!(volume.values.len(), orig.len());
+        for (a, b) in orig.iter().zip(volume.values.iter()) {
+            assert!((a - b).abs() < 1e-9, "{a} vs {b}");
+        }
+    }
 
     #[test]
     fn parses_real_layout() {

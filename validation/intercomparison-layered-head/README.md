@@ -90,6 +90,29 @@ real physics or residual multigroup condensation error.
   show the transport correction and quadrature are not the residual
   mechanism. `compare-condensation.py` gives the slice-integrated,
   lethargy-proportional remap used for these numbers.
+- **Water-column experiment (diagnostic, `target/preflight-tmp/wcol`,
+  not frozen):** a transverse-periodic 1×1×20 brain column (8 mm
+  cells, the same disk+cone+spectrum source) tallied in 21 fine
+  energy bins vs the same 56g solve. It isolates the moderation
+  chain without the head-shell stack:
+  - *Thermal:* with the TSL matrix the column agrees to
+    **0.67–0.95× CE** below ~0.2 eV across all depths — vs
+    0.03–0.3× with the free-gas matrix. The phantom's ~10× thermal
+    deficit was dominantly the missing upscatter; the remaining
+    phantom factor comes through the degraded epithermal feed.
+  - *Epi/fast:* the SN column *over*-deposits the 0.5 eV–100 keV
+    moderation range ~2.2–3× at the entrance and *under*-transports
+    it deep (~0.2–0.5× at 15 cm) — the same flattening signature the
+    phantom shows as the near-field epi deficit + deep fast
+    underproduction. The mechanism is inside the condensed
+    downscatter/σ_t representation, not the sweep: this is exactly
+    the term R17-04's response-weighted boundaries (`sn
+    boundaries` + `sn collapse --boundaries-file`) is built to
+    attack.
+  - Caveat: the S4 column solve emits a stable field (24- vs
+    60-outer agreement to ~0.1%) while its residual metric plateaus
+    at ~0.3 — the artifact records `converged: false`; treat the
+    magnitude pattern, not a qualified number.
 - Caveat noted in code: `openmc.stats.Tabular(interpolation=
   "histogram")` takes pdf *heights* — passing declared bin
   probabilities emits a ~98%-fast spectrum.

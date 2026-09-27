@@ -1988,6 +1988,24 @@ enum ExportCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Emit a `meshtal` file from a physical dose bundle, in the
+    /// OpenPINT convention — tallies 14/24/34/44 for B10/N14/n/g on one
+    /// mesh — so OpenPINT's `sim_result_2_nifti.py` and
+    /// `get_dose_components` consume the deterministic dose unchanged.
+    ///
+    /// The grid must be axis-aligned (any signed permutation). The
+    /// `Rel Error` column reports `sigma/|value|` where the bundle
+    /// carries per-voxel uncertainties, else 0 — a deterministic field
+    /// has no Monte-Carlo statistical error, which is not an accuracy
+    /// claim; units and normalization follow the bundle's own manifest.
+    Meshtal {
+        /// `openbnct.physical-dose-bundle` document.
+        #[arg(long)]
+        dose: PathBuf,
+        /// New output path for the meshtal text file.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Emit a PHITS input deck for a transport case.
     ///
     /// Supports disk (Z face) and rectangular-plane sources, monoenergetic
@@ -2974,8 +2992,19 @@ enum SnCommand {
         material: Vec<PathBuf>,
         /// Energy boundaries in eV, strictly descending — e.g.
         /// `--boundaries 1.7e7,1e4,0.5,1e-5` (group 0 = highest).
-        #[arg(long, value_delimiter = ',', required = true)]
+        /// Mutually exclusive with `--boundaries-file`.
+        #[arg(
+            long,
+            value_delimiter = ',',
+            conflicts_with = "boundaries_file",
+            required_unless_present = "boundaries_file"
+        )]
         boundaries: Vec<f64>,
+        /// `openbnct.boundary-proposal/0.1.0` document (or a bare
+        /// `{"energy_boundaries_ev": [...]}` object) supplying the
+        /// descending edge list — from `sn boundaries`.
+        #[arg(long)]
+        boundaries_file: Option<PathBuf>,
         /// Artifact id for the emitted multigroup-data artifact.
         #[arg(long)]
         id: String,
@@ -3131,6 +3160,31 @@ enum SnCommand {
         #[arg(long)]
         dose: Option<PathBuf>,
         /// Output path for the photon multigroup-flux JSON.
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Place adaptive group boundaries by equal importance mass over
+    /// lethargy (R17-04).
+    ///
+    /// `--spectrum` is an `EnergyDistribution` tabulated histogram — a
+    /// `sn spectrum` extraction, a measured beam histogram, or a
+    /// fine-group flux collapse — optionally folded with `--response`
+    /// (a second histogram on the same binning supplying per-bin
+    /// weights). Edges land so every group carries equal importance
+    /// mass; emitted as a `openbnct.boundary-proposal/0.1.0` document
+    /// whose `energy_boundaries_ev` drops into `sn collapse
+    /// --boundaries-file` (or paste the list into `--boundaries`).
+    Boundaries {
+        /// Importance spectrum: `EnergyDistribution` JSON.
+        #[arg(long)]
+        spectrum: PathBuf,
+        /// Optional response histogram (same binning as `--spectrum`).
+        #[arg(long)]
+        response: Option<PathBuf>,
+        /// Number of groups to place.
+        #[arg(long, default_value_t = 56)]
+        groups: usize,
+        /// New output path for the boundary-proposal document.
         #[arg(long)]
         output: PathBuf,
     },
@@ -9945,6 +9999,19 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 write_new_text(&output, deck.as_bytes())?;
                 println!("wrote MCNP deck at {}", output.display());
             }
+            ExportCommand::Meshtal { dose, output } => {
+                let bundle: openbnct_core::PhysicalDoseBundle =
+                    serde_json::from_slice(&fs::read(&dose)?).map_err(|error| {
+                        io::Error::other(format!("dose {}: {error}", dose.display()))
+                    })?;
+                let text = openbnct_mcnp::pint_meshtal(&bundle)
+                    .map_err(|error| io::Error::other(format!("meshtal export: {error}")))?;
+                write_new_text(&output, text.as_bytes())?;
+                println!(
+                    "wrote OpenPINT-convention meshtal (tallies 14/24/34/44) at {}",
+                    output.display()
+                );
+            }
             ExportCommand::Phits {
                 case,
                 assignment,
@@ -10435,6 +10502,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 self_shielding,
                 material,
                 boundaries,
+                boundaries_file,
                 id,
                 component_profile,
                 weighting_spectrum,
@@ -10442,6 +10510,25 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 note,
                 output,
             } => {
+                let boundaries = match boundaries_file {
+                    Some(path) => {
+                        let doc: serde_json::Value = serde_json::from_slice(&fs::read(&path)?)
+                            .map_err(|error| {
+                                io::Error::other(format!("boundaries {}: {error}", path.display()))
+                            })?;
+                        doc.get("energy_boundaries_ev")
+                            .and_then(|v| v.as_array())
+                            .map(|a| a.iter().filter_map(|v| v.as_f64()).collect::<Vec<f64>>())
+                            .filter(|b| b.len() >= 2)
+                            .ok_or_else(|| {
+                                io::Error::other(format!(
+                                    "boundaries {}: no `energy_boundaries_ev` list",
+                                    path.display()
+                                ))
+                            })?
+                    }
+                    None => boundaries,
+                };
                 let mut endf_paths = std::collections::BTreeMap::new();
                 for spec in &endf {
                     let (name, path) = spec.split_once('=').ok_or_else(|| {
@@ -10660,6 +10747,86 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                     None => println!("{json}"),
                 }
+            }
+            SnCommand::Boundaries {
+                spectrum,
+                response,
+                groups,
+                output,
+            } => {
+                let spectrum_bytes = fs::read(&spectrum)?;
+                let spec: openbnct_transport::EnergyDistribution =
+                    serde_json::from_slice(&spectrum_bytes).map_err(|error| {
+                        io::Error::other(format!("spectrum {}: {error}", spectrum.display()))
+                    })?;
+                let mut proposal = match &response {
+                    Some(path) => {
+                        let bytes = fs::read(path)?;
+                        let resp: openbnct_transport::EnergyDistribution =
+                            serde_json::from_slice(&bytes).map_err(|error| {
+                                io::Error::other(format!("response {}: {error}", path.display()))
+                            })?;
+                        let (edges, mut weights) = match &resp {
+                            openbnct_transport::EnergyDistribution::TabulatedHistogram {
+                                energy_boundaries_ev,
+                                bin_weights,
+                            } => (energy_boundaries_ev.clone(), bin_weights.clone()),
+                            _ => {
+                                return Err(io::Error::other(
+                                    "--response must be a tabulated histogram",
+                                )
+                                .into());
+                            }
+                        };
+                        let spec_edges = match &spec {
+                            openbnct_transport::EnergyDistribution::TabulatedHistogram {
+                                energy_boundaries_ev,
+                                ..
+                            } => energy_boundaries_ev.clone(),
+                            _ => {
+                                return Err(io::Error::other(
+                                    "boundaries: spectrum must be a tabulated histogram",
+                                )
+                                .into());
+                            }
+                        };
+                        // Compare on a common ascending orientation;
+                        // reverse the response weights when its edges
+                        // run descending.
+                        let mut resp_asc = edges.clone();
+                        let mut resp_w = std::mem::take(&mut weights);
+                        if resp_asc.len() >= 2 && resp_asc[0] > *resp_asc.last().unwrap() {
+                            resp_asc.reverse();
+                            resp_w.reverse();
+                        }
+                        let mut spec_asc = spec_edges;
+                        if spec_asc.len() >= 2 && spec_asc[0] > *spec_asc.last().unwrap() {
+                            spec_asc.reverse();
+                        }
+                        if resp_asc != spec_asc {
+                            return Err(io::Error::other(
+                                "--response binning must match --spectrum",
+                            )
+                            .into());
+                        }
+                        let mut p =
+                            openbnct_transport::adapt_boundaries(&spec, groups, Some(&resp_w))
+                                .map_err(|error| {
+                                    io::Error::other(format!("boundaries: {error}"))
+                                })?;
+                        p.response_sha256 = Some(openbnct_evidence::sha256_hex(&bytes));
+                        p
+                    }
+                    None => openbnct_transport::adapt_boundaries(&spec, groups, None)
+                        .map_err(|error| io::Error::other(format!("boundaries: {error}")))?,
+                };
+                proposal.spectrum_sha256 = Some(openbnct_evidence::sha256_hex(&spectrum_bytes));
+                write_new_json(&output, &proposal)?;
+                println!(
+                    "{}-group boundary proposal at {}",
+                    proposal.energy_boundaries_ev.len() - 1,
+                    output.display()
+                );
             }
             SnCommand::PhotonCollapse {
                 photon_library,

@@ -28,6 +28,30 @@ own versions independent of the crate version.
 - `sn solve --allow-unconverged`: writes the provisional field with
   `converged: false` and its residual instead of discarding it —
   diagnostics for slow upscatter-coupled (TSL) outer iterations.
+- `sn boundaries`: adaptive group-boundary placement by equal
+  importance mass over lethargy (R17-04). Reads an `EnergyDistribution`
+  histogram (`sn spectrum` extraction, measured beam, or fine-group
+  flux collapse), folds an optional same-binned `--response`, and
+  emits a `openbnct.boundary-proposal/0.1.0` document carrying
+  descending edges plus the placement rationale (per-group mass
+  shares and lethargy widths). `sn collapse --boundaries-file`
+  consumes the proposal directly.
+
+### Added — interoperability
+
+- `export meshtal`: emits an MCNP `meshtal`-layout file from a
+  physical dose bundle in the OpenPINT convention — one mesh, tallies
+  14/24/34/44 for B10/N14/hydrogen/photon — so OpenPINT's
+  `sim_result_2_nifti.py` and `get_dose_components` ingest
+  deterministic dose volumes unmodified. Rows carry cell-center
+  (x,y,z) + `Result Rel Error` (sigma/|value| where the bundle carries
+  uncertainties, else 0 — not an accuracy claim); axis-aligned grids
+  with signed-permutation directions supported, oblique rejected.
+- `openbnct_mcnp::pint_meshtal` / `meshtal_from_dose_bundle` with
+  round-trip coverage through the existing parser.
+
+### Added — transport
+
 - Volumetric fixed sources: `SourceSpatialDistribution::UniformBox`
   declares an axis-aligned emission box in cm. Emission is isotropic
   (the model requires the full-sphere cone) and the field's
