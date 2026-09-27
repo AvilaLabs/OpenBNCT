@@ -684,8 +684,31 @@ pub struct MultigroupFlux {
     /// produced before the audit existed.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub balance_absorbed_fraction: Option<f64>,
+    /// Where the limiting residual lives — cell linear index, energy
+    /// group, and the relative change measured at the final outer
+    /// iteration. Recorded whenever the outer cap is reached without
+    /// convergence (`converged: false`) so a stalled solve is
+    /// diagnosable from the artifact alone — the plateau cases this was
+    /// added for showed a stable field whose residual stayed pinned by
+    /// a small set of (cell, group) pairs rather than a global mode.
+    /// Absent on converged artifacts and pre-existing files.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub residual_site: Option<ResidualSite>,
     pub qualification: String,
     pub provenance_id: String,
+}
+
+/// Argmax location of the final outer-iteration residual.
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ResidualSite {
+    /// Cell linear index (`i + nx·j + nx·ny·k`) of the largest
+    /// relative change.
+    pub cell: u32,
+    /// Energy group of the largest relative change.
+    pub group: u32,
+    /// The relative change itself — equals the artifact `residual`.
+    pub relative_change: f64,
 }
 
 impl MultigroupFlux {
@@ -2741,6 +2764,7 @@ pub(crate) fn solve_sn_problem(
     let mut converged = false;
     let mut residual = f64::MAX;
     let mut outer_done = 0;
+    let mut last_residual_site: Option<ResidualSite> = None;
     let mut anderson =
         (options.anderson_depth > 0).then(|| AndersonState::new(options.anderson_depth));
     // Origin of the current symmetric down+up cycle — the residual
@@ -2801,6 +2825,16 @@ pub(crate) fn solve_sn_problem(
             .sum::<f64>()
             / omega_sum.max(1e-30)
     });
+    // Two-iterate history for the parity test: the alternating sweep
+    // direction plus the lagged periodic-wrap inflow make the composed
+    // operator a two-step map — on near-conservative problems it can
+    // settle into a stable period-2 orbit that pins the one-step
+    // residual while same-parity iterates converge exactly. The
+    // convergence decision therefore measures the two-step distance
+    // `|x_n − x_{n−2}|`; when that is under tolerance but the one-step
+    // residual is not, the emitted field is the parity midpoint, which
+    // halves the cycle's systematic error relative to either endpoint.
+    let mut two_back: Option<Vec<Vec<f64>>> = None;
     for outer in 0..options.max_outer_iterations {
         let previous = flux.clone();
         if anderson.is_some() && outer % 2 == 0 {
@@ -2969,24 +3003,55 @@ pub(crate) fn solve_sn_problem(
         // is never counted (and so CMR's taper sees the true map
         // residual). At the transport fixed point this residual → 0 and
         // the correction fades out cleanly.
+        // Track the argmax too — the (cell, group) pair holding the
+        // largest relative change is what makes a plateaued solve
+        // diagnosable after the fact.
+        let mut argmax: Option<ResidualSite> = None;
         residual = flux
             .iter()
             .zip(previous.iter())
-            .flat_map(|(a, b)| a.iter().zip(b.iter()))
-            .map(|(x, y)| (x - y).abs() / x.abs().max(1e-30))
-            .fold(0.0_f64, |m, v| {
+            .enumerate()
+            .flat_map(|(cell, (a, b))| {
+                a.iter()
+                    .zip(b.iter())
+                    .enumerate()
+                    .map(move |(g, (x, y))| (cell, g, (x - y).abs() / x.abs().max(1e-30)))
+            })
+            .fold(0.0_f64, |m, (cell, g, v)| {
                 if v.is_nan() || m.is_nan() {
                     f64::NAN
                 } else {
+                    if v > m {
+                        argmax = Some(ResidualSite {
+                            cell: cell as u32,
+                            group: g as u32,
+                            relative_change: v,
+                        });
+                    }
                     m.max(v)
                 }
             });
+        last_residual_site = argmax;
         if !residual.is_finite() {
             return Err(MultigroupError::Solve(format!(
                 "non-finite outer residual after iteration {}",
                 outer + 1
             )));
         }
+        // Same-parity (two-step) residual: |x_n − x_{n−2}|/x_n with its
+        // own argmax. This is the composed map's contraction measure —
+        // on a period-2 limit cycle it goes to zero exactly while the
+        // one-step residual pins at the oscillation amplitude.
+        let residual_two_step = two_back
+            .as_ref()
+            .map(|tb| {
+                flux.iter()
+                    .zip(tb.iter())
+                    .flat_map(|(a, b)| a.iter().zip(b.iter()))
+                    .map(|(x, y)| (x - y).abs() / x.abs().max(1e-30))
+                    .fold(0.0_f64, |m, v| if v.is_nan() { f64::NAN } else { m.max(v) })
+            })
+            .unwrap_or(f64::INFINITY);
         // Coarse-mesh rebalance of the upscatter block: the slow mode
         // is the long-wavelength spatial imbalance of the
         // near-conservative sub-eV flux. Multiplicative factors
@@ -3266,6 +3331,23 @@ pub(crate) fn solve_sn_problem(
             converged = true;
             break;
         }
+        // Parity-cycle convergence: the two-step residual under
+        // tolerance with the one-step residual still high means the
+        // iterate settled into a stable period-2 orbit — the alternating
+        // group order and lagged wrap inflow make the composed map
+        // two-step, so same-parity distance is the honest measure. The
+        // emitted field is the parity midpoint, a better fixed-point
+        // estimate than either endpoint.
+        if residual_two_step < options.convergence {
+            for (f, p) in flux.iter_mut().zip(previous.iter()) {
+                for (x, y) in f.iter_mut().zip(p.iter()) {
+                    *x = 0.5 * (*x + *y);
+                }
+            }
+            residual = residual_two_step;
+            converged = true;
+            break;
+        }
         // Anderson mix once per symmetric down+up cycle (the composed
         // map is the consistent operator the accelerator applies to).
         // The convergence check above already used the true map
@@ -3276,6 +3358,7 @@ pub(crate) fn solve_sn_problem(
         {
             flux = acc.mix(&flux, &cycle_origin);
         }
+        two_back = Some(previous);
         if std::env::var_os("OPENBNCT_SOLVE_PROGRESS").is_some() {
             eprintln!("[sn-solve] outer {} residual {:.4e}", outer + 1, residual);
         }
@@ -3323,6 +3406,7 @@ pub(crate) fn solve_sn_problem(
         residual,
         converged,
         balance_absorbed_fraction: None,
+        residual_site: (!converged).then_some(last_residual_site).flatten(),
         qualification: "research-only: deterministic multigroup flux, not a clinical quantity"
             .into(),
         provenance_id: format!("sn-s{}-{}", options.quadrature_order, case.case_id),
@@ -3766,6 +3850,31 @@ pub(crate) mod tests {
         // Balance audit present and bounded by the source rate.
         let absorbed = flux.balance_absorbed_fraction.unwrap();
         assert!(absorbed > 0.0 && absorbed <= 1.0);
+    }
+
+    /// A solve capped before convergence must report where the residual
+    /// lives — the argmax (cell, group) — so a stalled field is
+    /// diagnosable from the artifact rather than a bare float.
+    #[test]
+    fn unconverged_solve_reports_residual_site() {
+        let case = slab_case();
+        // Two groups with an upscatter term (row 1 feeds group 0), so a
+        // single outer sweep can't reach the fixed point.
+        let mg = data(&[2.0, 1.0], vec![0.1, 0.3, 0.2, 0.4]);
+        mg.validate().unwrap();
+        let mut opts = options();
+        opts.max_outer_iterations = 1;
+        let flux = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap();
+        assert!(!flux.converged);
+        assert!(flux.residual > 0.0);
+        let site = flux.residual_site.expect("unconverged artifact lacks site");
+        assert!((site.relative_change - flux.residual).abs() < 1e-15);
+        assert!((site.cell as usize) < 4 * 4 * 20);
+        assert!((site.group as usize) < 2);
+        // Converged artifacts carry no site.
+        let flux_ok = solve_multigroup(&case, &mg, &options(), cref("mg"), cref("case")).unwrap();
+        assert!(flux_ok.converged);
+        assert!(flux_ok.residual_site.is_none());
     }
 
     /// The transport correction must remove the forward-scatter

@@ -1886,6 +1886,24 @@ convention.
   TSL upscatter closes thermal to 0.67–0.95× CE while the condensed
   downscatter over-deposits epi/fast ~2–3× at entry and
   under-transports it deep — the remaining adaptive-boundary target.
+  Follow-up (2026-09-29, S4 56/112-group brain column vs 1.2M-history
+  OpenMC, periodic transverse boundaries on both sides): the column
+  solves had been stalling at residual ~0.29 with a stable field —
+  root cause identified and fixed: the alternating-direction group
+  sweep plus lagged periodic-wrap inflow make the composed operator
+  a two-step map that settles into a stable **period-2 limit cycle**
+  (iterates 59 and 61 bit-identical, ±20–40% swing at the residual
+  site). The solver now tracks the two-step residual and, when the
+  cycle is converged but the one-step residual is not, emits the
+  parity midpoint — the column converges at outer 30–32. With
+  boundaries matched the converged field tracks MC cell totals at
+  0.54–1.54× over 16 cm; per-bin residuals are thermal 0.5–0.8×
+  (TSL), a genuine deep epi over-moderation pileup (to ~10× in the
+  0.2 eV–keV shoulder at 15 cm), and fast under-transport deep
+  (0.2–0.6×) — the condensation signature the boundary tooling
+  targets. Unconverged artifacts additionally carry a
+  `residual_site` (cell, group, relative change) diagnostic so a
+  stalled solve is diagnosable from the file alone.
 - **R17-05 — plan metrics layer.** DVH-derived D95/V20/EUD (and
   TCP–NTCP under the declared bio model) summarized into
   `InversePlanResult` and the GUI table — plans should read like

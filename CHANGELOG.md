@@ -28,6 +28,9 @@ own versions independent of the crate version.
 - `sn solve --allow-unconverged`: writes the provisional field with
   `converged: false` and its residual instead of discarding it —
   diagnostics for slow upscatter-coupled (TSL) outer iterations.
+  The artifact also carries `residual_site` — the (cell, group) pair
+  with the largest last-iterate relative change — so a stalled solve
+  is diagnosable from the file alone.
 - `sn boundaries`: adaptive group-boundary placement by equal
   importance mass over lethargy (R17-04). Reads an `EnergyDistribution`
   histogram (`sn spectrum` extraction, measured beam, or fine-group
@@ -50,6 +53,16 @@ own versions independent of the crate version.
 
 ### Fixed — transport
 
+- Period-2 limit cycle in the outer iteration: the alternating
+  group-sweep direction plus lagged periodic-wrap inflow make the
+  composed operator a two-step map, and on near-conservative
+  periodic problems it settles into a stable period-2 orbit — the
+  field is already at its fixed point while the one-step residual
+  sits pinned at the oscillation amplitude (~0.29 on the S4
+  periodic water column, driven by a single deep high-energy cell).
+  Convergence is now measured on the same-parity distance
+  `|x_n − x_{n−2}|`; a settled cycle emits the parity midpoint.
+  The column then converges at outer 30–32 (S4, 56 and 112 groups).
 - `uncollided_beam_flux` deposited the full disk intensity `J/μ̄`
   into every cell whose CENTER back-rayed into the source disk —
   cells the beam footprint only partially covers received the whole
@@ -388,6 +401,17 @@ own versions independent of the crate version.
   boron`) and propagated with `uq propagate` — the ¹⁰B(n,α)
   nuclear-data contribution to the folded boron dose is a 0.34%
   relative 1σ, computed analytically (zero perturbed solves).
+
+### Added — imaging
+
+- `dicom synth-pet`: writes a deterministic synthetic PET DICOM
+  series (standard PET SOP class, modality PT) on any case's grid —
+  layered SUV structure mirroring the phantom's region convention —
+  so the `import-pet` → `register apply` → `boron apply` → `boron
+  materialize` → tiered-assignment chain is exercisable end-to-end
+  without patient data. Verified on the NF-BNCT-001 frame: SUV ratio
+  4× core/background maps to 16.2 vs 3.2 µg/g with washout, and the
+  materialized assignment feeds `sn solve` tiered materials.
 
 ## [0.2.2] — 2026-09-23
 

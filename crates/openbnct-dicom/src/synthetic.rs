@@ -29,6 +29,11 @@ pub const STUDY_INSTANCE_UID: &str = "2.25.1492145994442451382628737407368454717
 pub const CT_SERIES_INSTANCE_UID: &str = "2.25.337319594251465962942344971245692083782";
 pub const RTSTRUCT_SERIES_INSTANCE_UID: &str = "2.25.50705181539640583496141175374452175263";
 pub const RTSTRUCT_INSTANCE_UID: &str = "2.25.277528316852233615277963392913905893031";
+/// Companion PET series — deliberately NOT part of the frozen
+/// NF-BNCT-001 manifest; it shares the case's frame of reference and
+/// grid so the DICOM-PET→SUV→boron-field chain runs registration-free.
+pub const PET_SERIES_INSTANCE_UID: &str = "2.25.90877258092318217705199097531867115538";
+const PET_SLICE_UID_NAME_PREFIX: &str = "https://nctforge.org/benchmarks/nf-bnct-001/pet-slice-";
 
 pub const COLUMNS: usize = 40;
 pub const ROWS: usize = 40;
@@ -292,6 +297,282 @@ fn write_ct_slice(path: &Path, slice_index: usize, sop_instance_uid: &str) -> Re
     ));
 
     write_file(path, obj)
+}
+
+/// Parameters of the deterministic companion PET series: the declared
+/// administration and the SUV pattern it encodes (in BQML storage with
+/// slope 1, so `import_pet_series` must recover the pattern through the
+/// full SUVbw decay correction — that IS the test).
+#[derive(Debug, Clone, PartialEq)]
+pub struct SyntheticPetSpec {
+    /// Patient weight for SUVbw (kg).
+    pub patient_weight_kg: f64,
+    /// Administered activity at injection time (Bq).
+    pub injected_dose_bq: f64,
+    /// Radionuclide half-life (s); 6586.2 is F-18.
+    pub radionuclide_half_life_s: f64,
+    /// Injection time `HHMMSS` (Radiopharmaceutical Start Time).
+    pub radiopharmaceutical_start_time: String,
+    /// Scan time `HHMMSS` (Acquisition/Series Time).
+    pub acquisition_time: String,
+    /// SUV everywhere outside the CORE box.
+    pub background_suv: f64,
+    /// SUV inside the benchmark CORE ROI box ([-20,20]³ mm).
+    pub core_suv: f64,
+}
+
+impl Default for SyntheticPetSpec {
+    fn default() -> Self {
+        Self {
+            patient_weight_kg: 70.0,
+            injected_dose_bq: 5.0e8,
+            radionuclide_half_life_s: 6586.2,
+            radiopharmaceutical_start_time: "080000".into(),
+            acquisition_time: "090000".into(),
+            background_suv: 1.0,
+            core_suv: 4.0,
+        }
+    }
+}
+
+/// Write a deterministic `SLICES`-slice PET series to `dir` (created,
+/// must not exist) on the NF-BNCT-001 grid and frame of reference.
+/// Returns the written files in slice order.
+pub fn write_pet_series(dir: &Path, spec: &SyntheticPetSpec) -> Result<Vec<PathBuf>> {
+    if dir.exists() {
+        return Err(DicomError::OutputExists(dir.to_path_buf()));
+    }
+    create_dir(dir)?;
+    let mut files = Vec::with_capacity(SLICES);
+    for slice_index in 0..SLICES {
+        let path = dir.join(format!("pet-{slice_index:03}.dcm"));
+        write_pet_slice(&path, slice_index, &pet_slice_uid(slice_index), spec)?;
+        files.push(path);
+    }
+    Ok(files)
+}
+
+/// Deterministically derive the PET slice UID, same scheme as CT.
+#[must_use]
+pub fn pet_slice_uid(slice_index: usize) -> String {
+    let name = format!("{PET_SLICE_UID_NAME_PREFIX}{slice_index:03}");
+    format!(
+        "2.25.{}",
+        Uuid::new_v5(&Uuid::NAMESPACE_URL, name.as_bytes()).as_u128()
+    )
+}
+
+fn write_pet_slice(
+    path: &Path,
+    slice_index: usize,
+    sop_instance_uid: &str,
+    spec: &SyntheticPetSpec,
+) -> Result<()> {
+    let mut obj = InMemDicomObject::new_empty();
+    put_str(&mut obj, tags::SPECIFIC_CHARACTER_SET, VR::CS, "ISO_IR 192");
+    put_str(
+        &mut obj,
+        tags::IMAGE_TYPE,
+        VR::CS,
+        "ORIGINAL\\PRIMARY\\AXIAL",
+    );
+    put_str(&mut obj, tags::IMAGE_LATERALITY, VR::CS, "U");
+    put_str(
+        &mut obj,
+        tags::SOP_CLASS_UID,
+        VR::UI,
+        uids::POSITRON_EMISSION_TOMOGRAPHY_IMAGE_STORAGE,
+    );
+    put_str(&mut obj, tags::SOP_INSTANCE_UID, VR::UI, sop_instance_uid);
+    put_str(&mut obj, tags::STUDY_DATE, VR::DA, FROZEN_DATE);
+    put_str(&mut obj, tags::SERIES_DATE, VR::DA, FROZEN_DATE);
+    put_str(&mut obj, tags::ACQUISITION_DATE, VR::DA, FROZEN_DATE);
+    put_str(&mut obj, tags::CONTENT_DATE, VR::DA, FROZEN_DATE);
+    put_str(&mut obj, tags::STUDY_TIME, VR::TM, FROZEN_TIME);
+    // The scan clock must differ from the injection clock or Δt = 0
+    // and no decay correction is exercised.
+    put_str(&mut obj, tags::SERIES_TIME, VR::TM, &spec.acquisition_time);
+    put_str(
+        &mut obj,
+        tags::ACQUISITION_TIME,
+        VR::TM,
+        &spec.acquisition_time,
+    );
+    put_str(&mut obj, tags::CONTENT_TIME, VR::TM, &spec.acquisition_time);
+    put_str(&mut obj, tags::ACCESSION_NUMBER, VR::SH, "");
+    put_str(&mut obj, tags::MODALITY, VR::CS, "PT");
+    put_str(&mut obj, tags::MANUFACTURER, VR::LO, "Avila Labs");
+    put_str(
+        &mut obj,
+        tags::INSTITUTION_NAME,
+        VR::LO,
+        "NCTForge public benchmark",
+    );
+    put_str(&mut obj, tags::STUDY_DESCRIPTION, VR::LO, CASE_ID);
+    put_str(
+        &mut obj,
+        tags::SERIES_DESCRIPTION,
+        VR::LO,
+        "Synthetic SUVbw PET (companion, not frozen)",
+    );
+    put_str(&mut obj, tags::PATIENT_NAME, VR::PN, "NCTFORGE^SYNTHETIC");
+    put_str(&mut obj, tags::PATIENT_ID, VR::LO, CASE_ID);
+    put_str(&mut obj, tags::PATIENT_BIRTH_DATE, VR::DA, "");
+    put_str(&mut obj, tags::PATIENT_SEX, VR::CS, "");
+    put_str(
+        &mut obj,
+        tags::PATIENT_WEIGHT,
+        VR::DS,
+        &spec.patient_weight_kg.to_string(),
+    );
+    put_str(&mut obj, tags::PATIENT_IDENTITY_REMOVED, VR::CS, "YES");
+    put_str(
+        &mut obj,
+        tags::DEIDENTIFICATION_METHOD,
+        VR::LO,
+        "Synthetic; no patient source",
+    );
+    put_str(&mut obj, tags::SLICE_THICKNESS, VR::DS, "5");
+    put_str(
+        &mut obj,
+        tags::STUDY_INSTANCE_UID,
+        VR::UI,
+        STUDY_INSTANCE_UID,
+    );
+    put_str(
+        &mut obj,
+        tags::SERIES_INSTANCE_UID,
+        VR::UI,
+        PET_SERIES_INSTANCE_UID,
+    );
+    put_str(&mut obj, tags::STUDY_ID, VR::SH, "NFBNCT001");
+    put_str(&mut obj, tags::SERIES_NUMBER, VR::IS, "2");
+    put_str(
+        &mut obj,
+        tags::INSTANCE_NUMBER,
+        VR::IS,
+        &(slice_index + 1).to_string(),
+    );
+    put_str(&mut obj, tags::PATIENT_POSITION, VR::CS, "HFS");
+    put_str(
+        &mut obj,
+        tags::FRAME_OF_REFERENCE_UID,
+        VR::UI,
+        FRAME_OF_REFERENCE_UID,
+    );
+    put_str(
+        &mut obj,
+        tags::IMAGE_POSITION_PATIENT,
+        VR::DS,
+        &format!("-97.5\\-97.5\\{}", slice_center(slice_index)),
+    );
+    put_str(
+        &mut obj,
+        tags::IMAGE_ORIENTATION_PATIENT,
+        VR::DS,
+        "1\\0\\0\\0\\1\\0",
+    );
+    // Quantification tags the SUVbw importer requires.
+    put_str(&mut obj, crate::pet::UNITS, VR::CS, "BQML");
+    put_str(&mut obj, crate::pet::DECAY_CORRECTION, VR::CS, "START");
+    let mut radiopharm = InMemDicomObject::new_empty();
+    put_str(
+        &mut radiopharm,
+        crate::pet::RADIONUCLIDE_TOTAL_DOSE,
+        VR::DS,
+        &spec.injected_dose_bq.to_string(),
+    );
+    put_str(
+        &mut radiopharm,
+        crate::pet::RADIONUCLIDE_HALF_LIFE,
+        VR::DS,
+        &spec.radionuclide_half_life_s.to_string(),
+    );
+    put_str(
+        &mut radiopharm,
+        crate::pet::RADIOPHARMACEUTICAL_START_TIME,
+        VR::TM,
+        &spec.radiopharmaceutical_start_time,
+    );
+    put_sequence(
+        &mut obj,
+        crate::pet::RADIOPHARMACEUTICAL_INFORMATION,
+        vec![radiopharm],
+    );
+    put_u16(&mut obj, tags::SAMPLES_PER_PIXEL, VR::US, 1);
+    put_str(
+        &mut obj,
+        tags::PHOTOMETRIC_INTERPRETATION,
+        VR::CS,
+        "MONOCHROME2",
+    );
+    put_u16(&mut obj, tags::ROWS, VR::US, ROWS as u16);
+    put_u16(&mut obj, tags::COLUMNS, VR::US, COLUMNS as u16);
+    put_str(&mut obj, tags::PIXEL_SPACING, VR::DS, "5\\5");
+    put_u16(&mut obj, tags::BITS_ALLOCATED, VR::US, 16);
+    put_u16(&mut obj, tags::BITS_STORED, VR::US, 16);
+    put_u16(&mut obj, tags::HIGH_BIT, VR::US, 15);
+    put_u16(&mut obj, tags::PIXEL_REPRESENTATION, VR::US, 0);
+    put_str(&mut obj, tags::RESCALE_INTERCEPT, VR::DS, "0");
+    put_str(&mut obj, tags::RESCALE_SLOPE, VR::DS, "1");
+    put_str(&mut obj, tags::RESCALE_TYPE, VR::LO, "US");
+
+    // Stored values ARE the Bq/ml pattern (slope 1): SUV = Bq/ml ·
+    // weight[g] / decayed-dose[Bq]. The CORE box ([-20,20]³ mm, voxel
+    // centers −17.5…17.5 → indices 16..23 in each axis) carries
+    // `core_suv`; everything else `background_suv`.
+    let (scan_s, start_s) = (spec.acquisition_seconds(), spec.injection_seconds());
+    // Midnight crossing, matching the importer's convention.
+    let delta_s = if scan_s >= start_s {
+        scan_s - start_s
+    } else {
+        scan_s + 86_400.0 - start_s
+    };
+    let decayed = spec.injected_dose_bq
+        * (-std::f64::consts::LN_2 * delta_s / spec.radionuclide_half_life_s).exp();
+    let bqml_per_suv = decayed / (spec.patient_weight_kg * 1000.0);
+    let z = slice_center(slice_index);
+    let in_core = |mm: f64| mm.abs() <= 20.0;
+    let mut pixels = vec![0_u16; ROWS * COLUMNS];
+    for row in 0..ROWS {
+        let y = FIRST_CENTER_MM + row as f64 * SPACING_MM;
+        for col in 0..COLUMNS {
+            let x = FIRST_CENTER_MM + col as f64 * SPACING_MM;
+            let suv = if in_core(x) && in_core(y) && in_core(z) {
+                spec.core_suv
+            } else {
+                spec.background_suv
+            };
+            pixels[row * COLUMNS + col] = (suv * bqml_per_suv).round() as u16;
+        }
+    }
+    obj.put(DataElement::new(
+        tags::PIXEL_DATA,
+        VR::OW,
+        PrimitiveValue::U16(pixels.into()),
+    ));
+
+    write_file(path, obj)
+}
+
+impl SyntheticPetSpec {
+    fn injection_seconds(&self) -> f64 {
+        parse_hhmmss(&self.radiopharmaceutical_start_time)
+    }
+    fn acquisition_seconds(&self) -> f64 {
+        parse_hhmmss(&self.acquisition_time)
+    }
+}
+
+fn parse_hhmmss(tm: &str) -> f64 {
+    let digits: String = tm.chars().filter(|c| c.is_ascii_digit()).collect();
+    let part = |i: usize| {
+        digits
+            .get(i..i + 2)
+            .and_then(|c| c.parse::<f64>().ok())
+            .unwrap_or(0.0)
+    };
+    part(0) * 3600.0 + part(2) * 60.0 + part(4)
 }
 
 fn write_rtstruct(path: &Path, slice_uids: &[String]) -> Result<()> {

@@ -1287,7 +1287,16 @@ ordinate-obliquity bias) while the sweep solves only the collided
 remainder — `--no-uncollided-split` exercises the pure boundary-flux
 path. `--periodic x,y` marks faces periodic for infinite-slab problems;
 other faces are vacuum. `--assignment` applies a material-assignment
-heterogeneity. Nonconvergence within the iteration budget is a hard
+heterogeneity. The outer iteration alternates the group-sweep
+direction, which makes the composed map two-step: on
+near-conservative periodic problems it can settle into a stable
+period-2 orbit — the field is correct while the one-step residual
+sits at the oscillation amplitude. Convergence is therefore decided
+on the same-parity (two-step) distance, and a converged cycle emits
+the parity midpoint; `residual_site` on the artifact names the
+(cell, group) limiting the last iterate, and `--allow-unconverged`
+emits a provisional field with `converged: false` for inspection.
+Nonconvergence within the iteration budget is otherwise a hard
 error. Scope is honestly bounded: isotropic (P0) scattering, no fission,
 multigroup data as declared input — a verification solver, not a
 production engine, and its output is research-only.
@@ -1727,6 +1736,19 @@ automatically):
 openbnct dicom import-pet \
   --slices PET-001.dcm PET-002.dcm PET-003.dcm ... \
   --output NEW-PET-SUV.nii.gz
+```
+
+For exercising the chain without patient data, `openbnct dicom
+synth-pet` writes a deterministic BQML series on the NF-BNCT-001 grid
+and frame of reference (a companion volume — not part of the frozen
+case): the benchmark CORE box carries `--core-suv` (default 4.0), the
+background `--background-suv` (default 1.0), with a complete
+radiopharmaceutical record so the import exercises the full SUVbw decay
+correction:
+
+```text
+openbnct dicom synth-pet --output NEW-PET-DIR [--core-suv 4.0 \
+  --background-suv 1.0 --weight-kg 70 --dose-mbq 500]
 ```
 
 `openbnct boron` maps a co-registered PET SUV volume to a per-voxel B-10

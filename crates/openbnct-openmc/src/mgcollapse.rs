@@ -1022,8 +1022,29 @@ fn collapse_material(
             for (gp, val) in row.iter().enumerate() {
                 transfer[g * groups + gp] += n_density * val;
             }
+            let mut row_p1_clamped = vec![0.0_f64; groups];
             for (gp, val) in row_p1.iter().enumerate() {
-                transfer_p1[g * groups + gp] += n_density * val;
+                // Realizability bound: |P1 moment| ≤ P0 for any
+                // positive kernel (|P1(μ)| ≤ 1). Deep-downscatter tail
+                // entries can violate it by quadrature error alone —
+                // both moments are ~1e-20 there and the P0/P1
+                // partitions differ — clamp to the P0 entry exactly as
+                // the l ≥ 2 moments are below. An excess that is not
+                // quadrature-scale (>|bound| by more than a rounding
+                // margin) is a kernel defect — surface it rather than
+                // silently clamping.
+                let bound = row[gp].max(0.0);
+                let excess = val.abs() - bound;
+                if excess > 1e-9 * bound.max(1.0) {
+                    eprintln!(
+                        "collapse warning: P1 realizability excess {excess:.3e} over \
+                         bound {bound:.3e} at transfer {g}->{gp} (nuclide {})",
+                        table.name
+                    );
+                }
+                let clamped = val.clamp(-bound, bound);
+                row_p1_clamped[gp] = clamped;
+                transfer_p1[g * groups + gp] += n_density * clamped;
             }
             for (li, mat) in transfer_pl.iter_mut().enumerate() {
                 for (gp, val) in row_pl[li].iter().enumerate() {
@@ -1051,7 +1072,7 @@ fn collapse_material(
             // Scatter-weighted mean lab cosine: analytic 2/(3A) for
             // free-gas, the TSL P1/P0 ratio when bound-atom applies.
             if tsl.is_some() {
-                mu_num[g] += n_density * row_p1.iter().sum::<f64>();
+                mu_num[g] += n_density * row_p1_clamped.iter().sum::<f64>();
                 mu_den[g] += n_density * row.iter().sum::<f64>();
             } else {
                 let mu = 2.0 / (3.0 * table.mass_number as f64);

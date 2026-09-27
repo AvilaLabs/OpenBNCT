@@ -1695,6 +1695,29 @@ enum DicomCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Emit a deterministic synthetic BQML PET series on the
+    /// NF-BNCT-001 grid and frame of reference — a companion volume
+    /// (not part of the frozen case) for exercising the
+    /// PET→SUV→boron-field chain end to end: CORE box at `core_suv`,
+    /// background elsewhere.
+    SynthPet {
+        /// New output directory for the `pet-NNN.dcm` series; must not
+        /// already exist.
+        #[arg(long)]
+        output: PathBuf,
+        /// SUV inside the CORE ROI box.
+        #[arg(long, default_value_t = 4.0)]
+        core_suv: f64,
+        /// SUV outside the CORE box.
+        #[arg(long, default_value_t = 1.0)]
+        background_suv: f64,
+        /// Patient weight in kg for the SUVbw tags.
+        #[arg(long, default_value_t = 70.0)]
+        weight_kg: f64,
+        /// Administered activity in MBq.
+        #[arg(long, default_value_t = 500.0)]
+        dose_mbq: f64,
+    },
     /// Import a DICOM MR series as a rescaled-intensity volume — NIfTI
     /// float64 on the MR grid, resampleable onto a case via
     /// `register apply`. Intensities are unitless signal, never HU.
@@ -5919,6 +5942,28 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     volume.delta_t_s,
                     volume.radionuclide_half_life_s,
                     volume.clamped_negative_voxels
+                );
+            }
+            DicomCommand::SynthPet {
+                output,
+                core_suv,
+                background_suv,
+                weight_kg,
+                dose_mbq,
+            } => {
+                let spec = openbnct_dicom::synthetic::SyntheticPetSpec {
+                    patient_weight_kg: weight_kg,
+                    injected_dose_bq: dose_mbq * 1e6,
+                    core_suv,
+                    background_suv,
+                    ..Default::default()
+                };
+                let files = openbnct_dicom::synthetic::write_pet_series(&output, &spec)
+                    .map_err(|error| io::Error::other(format!("synth-pet: {error}")))?;
+                println!(
+                    "synth-pet: {} slices (BQML, core SUV {core_suv}, background {background_suv}) -> {}",
+                    files.len(),
+                    output.display()
                 );
             }
             DicomCommand::Calibrate {
@@ -10426,6 +10471,12 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         "warning: solve unconverged (residual {:.3e});                          emitting provisional field with converged=false",
                         flux.residual
                     );
+                    if let Some(site) = flux.residual_site {
+                        eprintln!(
+                            "  limiting site: cell {} (group {}) changed {:.3e}",
+                            site.cell, site.group, site.relative_change
+                        );
+                    }
                 }
                 write_new_json(&output, &flux)?;
                 println!(
