@@ -159,6 +159,12 @@
       "module": "src/lib.rs"
     },
     {
+      "token": "openbnct.boundary-proposal/0.1.0",
+      "constant": "BOUNDARY_PROPOSAL_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/boundaries.rs"
+    },
+    {
       "token": "openbnct.bsa-sweep/0.1.0",
       "constant": "BSA_SWEEP_SCHEMA",
       "crate": "openbnct-transport",
