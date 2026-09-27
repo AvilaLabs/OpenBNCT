@@ -91,11 +91,18 @@ fn importance_density(
 /// Place `groups + 1` edges so each group spans equal importance mass
 /// over lethargy. `response` optionally supplies one non-negative weight
 /// per spectrum bin (a folded response curve on the same binning).
-/// Returns descending edges suitable for `sn collapse --boundaries`.
+/// `uniform_floor` (0..1) blends a flat-per-lethargy share of the total
+/// importance mass into every bin — the anti-starvation guard: an
+/// equilibrium flux spectrum concentrates its mass where flux lives
+/// (thermal) and gives the source/moderation bands too few groups to
+/// transport; the floor reserves `uniform_floor × groups` bins for
+/// uniform-lethargy coverage. Returns descending edges suitable for
+/// `sn collapse --boundaries`.
 pub fn adapt_boundaries(
     spectrum: &EnergyDistribution,
     groups: usize,
     response: Option<&[f64]>,
+    uniform_floor: f64,
 ) -> Result<BoundaryProposal, BoundaryError> {
     if groups == 0 {
         return Err(BoundaryError::NoGroups(groups));
@@ -120,24 +127,43 @@ pub fn adapt_boundaries(
             actual: r.len(),
         });
     }
-    let density = importance_density(edges, weights, response)?;
+    let mut density = importance_density(edges, weights, response)?;
     let n = density.len();
     // Importance MASS per bin = per-lethargy density × lethargy width
     // (equivalently w_i·r_i). Accumulating density alone would treat
     // every bin as equal and degenerate onto the input edges.
     let du: Vec<f64> = edges.windows(2).map(|w| (w[1] / w[0]).ln()).collect();
-    let cum: Vec<f64> = density
+    let mut mass: Vec<f64> = density
         .iter()
         .zip(&du)
-        .scan(0.0, |acc, (d, u)| {
-            *acc += d.max(0.0) * u;
-            Some(*acc)
-        })
+        .map(|(d, u)| d.max(0.0) * u)
         .collect();
-    let total = *cum.last().unwrap_or(&0.0);
+    let mut total: f64 = mass.iter().sum();
     if n < 2 || total <= 0.0 {
         return Err(BoundaryError::DegenerateImportance { groups });
     }
+    // Anti-starvation floor: blend a fraction of the total importance
+    // mass with flat-per-lethargy coverage so the source/moderation
+    // bands keep enough groups to transport the flux that eventually
+    // collects in the importance peak.
+    if uniform_floor > 0.0 {
+        let f = uniform_floor.clamp(0.0, 1.0);
+        let u_total: f64 = du.iter().sum();
+        for (m, u) in mass.iter_mut().zip(&du) {
+            *m = (1.0 - f) * *m / total + f * u / u_total;
+        }
+        total = 1.0;
+        for (d, (m, u)) in density.iter_mut().zip(mass.iter().zip(&du)) {
+            *d = *m / *u;
+        }
+    }
+    let cum: Vec<f64> = mass
+        .iter()
+        .scan(0.0, |acc, m| {
+            *acc += *m;
+            Some(*acc)
+        })
+        .collect();
     // Quantile targets C_k = total·k/groups → interpolated energies.
     // Interpolation is linear in lethargy within the holding bin.
     let mut out = vec![edges[0]];
@@ -187,14 +213,25 @@ pub fn adapt_boundaries(
         shares.push(mass / total);
         widths.push(u_hi - u_lo);
     }
-    let placement = match response {
-        Some(_) => "equal response-weighted importance mass per group (lethargy)",
-        None => "equal importance mass per group (lethargy)",
+    let floor_pct = uniform_floor.clamp(0.0, 1.0) * 100.0;
+    let placement = match (response, uniform_floor > 0.0) {
+        (Some(_), true) => format!(
+            "equal response-weighted importance mass per group (lethargy), \
+             {floor_pct:.0}% uniform-lethargy floor"
+        ),
+        (Some(_), false) => {
+            "equal response-weighted importance mass per group (lethargy)".to_string()
+        }
+        (None, true) => format!(
+            "equal importance mass per group (lethargy), \
+             {floor_pct:.0}% uniform-lethargy floor"
+        ),
+        (None, false) => "equal importance mass per group (lethargy)".to_string(),
     };
     Ok(BoundaryProposal {
         schema_version: BOUNDARY_PROPOSAL_SCHEMA.into(),
         energy_boundaries_ev: proposal_edges,
-        placement: placement.into(),
+        placement,
         group_mass_shares: shares,
         group_lethargy_widths: widths,
         spectrum_sha256: None,
@@ -220,7 +257,7 @@ mod tests {
         let edges: [f64; 7] = [1e-5, 1e-3, 1e-1, 1e1, 1e3, 1e5, 1.7e7];
         // Per-lethargy-flat: each bin's mass is its lethargy span.
         let weights: Vec<f64> = (0..6).map(|i| (edges[i + 1] / edges[i]).ln()).collect();
-        let proposal = adapt_boundaries(&spec(&edges, &weights), 6, None).unwrap();
+        let proposal = adapt_boundaries(&spec(&edges, &weights), 6, None, 0.0).unwrap();
         let b = &proposal.energy_boundaries_ev;
         assert_eq!(b.len(), 7);
         assert!((b[0] - 1.7e7).abs() < 1e-3);
@@ -243,7 +280,7 @@ mod tests {
         // Importance concentrated at low energy → edges densify there.
         let edges = [1e-5, 0.1, 1.0, 1e4, 1.7e7];
         let weights = [9.0, 0.5, 0.4, 0.1];
-        let proposal = adapt_boundaries(&spec(&edges, &weights), 4, None).unwrap();
+        let proposal = adapt_boundaries(&spec(&edges, &weights), 4, None, 0.0).unwrap();
         let b = &proposal.energy_boundaries_ev;
         // 3 of 4 groups should end below ~1 eV given 9/10 of the mass
         // sits in the first bin's lethargy.
@@ -257,9 +294,32 @@ mod tests {
         let edges = [1e-5, 0.5, 1e4, 1.7e7];
         let weights = [1.0, 1.0, 1.0];
         let thermalized =
-            adapt_boundaries(&spec(&edges, &weights), 4, Some(&[9.0, 1.0, 1.0])).unwrap();
-        let raw = adapt_boundaries(&spec(&edges, &weights), 4, None).unwrap();
+            adapt_boundaries(&spec(&edges, &weights), 4, Some(&[9.0, 1.0, 1.0]), 0.0).unwrap();
+        let raw = adapt_boundaries(&spec(&edges, &weights), 4, None, 0.0).unwrap();
         // Response weighting on the thermal bin must pull more edges low.
         assert!(thermalized.group_lethargy_widths[3] < raw.group_lethargy_widths[3]);
+    }
+
+    #[test]
+    fn uniform_floor_keeps_source_bands_alive() {
+        // A thermal-concentrated importance (the water-column flux
+        // failure mode) starves the fast band entirely without a
+        // floor; with a 50% uniform floor the fast bin must keep
+        // structure.
+        let edges = [1e-5, 0.1, 1.0, 1e4, 1.7e7];
+        let weights = [9.0, 0.5, 0.4, 0.1];
+        let starved = adapt_boundaries(&spec(&edges, &weights), 4, None, 0.0).unwrap();
+        let floored = adapt_boundaries(&spec(&edges, &weights), 4, None, 0.5).unwrap();
+        // Edges strictly inside the epi/fast region (> 1 eV, below the
+        // top boundary): the floored proposal must place some there.
+        let interior = |p: &BoundaryProposal| {
+            p.energy_boundaries_ev
+                .iter()
+                .filter(|&&e| e > 1.0 && e < 1.7e7)
+                .count()
+        };
+        assert_eq!(interior(&starved), 0);
+        assert!(interior(&floored) > 0);
+        assert!(floored.placement.contains("uniform-lethargy floor"));
     }
 }

@@ -32,7 +32,7 @@ use std::path::{Path, PathBuf};
 
 use hdf5_pure::File;
 use openbnct_transport::{
-    ContentReference, MaterialDefinition, MultigroupData, MultigroupMaterial,
+    BEAM_KERNEL_NODES, ContentReference, MaterialDefinition, MultigroupData, MultigroupMaterial,
 };
 use thiserror::Error;
 
@@ -807,6 +807,16 @@ fn collapse_material(
     }
 
     let mut sigma_t = vec![0.0; groups];
+    // Sub-bin σ_t nodes for the `uniform_in_bin` uncollided deposit:
+    // BEAM_KERNEL_NODES uniform-in-eV sub-bins per group, each with
+    // weight 1/N and its own mean σ_t — the exponential mixture
+    // preserves the penetrating tail a single group mean removes.
+    let mut sigma_beam_nodes = vec![0.0; groups * 2 * BEAM_KERNEL_NODES];
+    for g in 0..groups {
+        for j in 0..BEAM_KERNEL_NODES {
+            sigma_beam_nodes[g * 2 * BEAM_KERNEL_NODES + 2 * j] = 1.0 / BEAM_KERNEL_NODES as f64;
+        }
+    }
     let mut transfer = vec![0.0; groups * groups];
     let mut transfer_p1 = vec![0.0; groups * groups];
     // l = 2..=5 Legendre transfer moments — the free-gas iso-CM kernel
@@ -1031,6 +1041,13 @@ fn collapse_material(
             // sum over σ_s is absorbed into removal so the solver's
             // row_sum ≤ σ_t invariant holds by construction.
             sigma_t[g] += n_density * (sigma_a + row.iter().sum::<f64>().max(sigma_s));
+            for j in 0..BEAM_KERNEL_NODES {
+                let slo = lo + (hi - lo) * j as f64 / BEAM_KERNEL_NODES as f64;
+                let shi = lo + (hi - lo) * (j + 1) as f64 / BEAM_KERNEL_NODES as f64;
+                let base = g * 2 * BEAM_KERNEL_NODES + 2 * j;
+                sigma_beam_nodes[base + 1] +=
+                    n_density * integrate_grid(e, &total_xs[n_idx], slo, shi) / (shi - slo);
+            }
             // Scatter-weighted mean lab cosine: analytic 2/(3A) for
             // free-gas, the TSL P1/P0 ratio when bound-atom applies.
             if tsl.is_some() {
@@ -1089,6 +1106,7 @@ fn collapse_material(
                 .map(|(&num, &den)| if den > 0.0 { num / den } else { 0.0 })
                 .collect(),
         ),
+        beam_sigma_nodes_per_cm: Some(sigma_beam_nodes),
     })
 }
 

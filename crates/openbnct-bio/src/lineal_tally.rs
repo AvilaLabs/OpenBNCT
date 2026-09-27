@@ -363,6 +363,7 @@ mod tests {
                 scatter_legendre_moments_per_cm: None,
                 dose_response_gy_cm2: BTreeMap::from([("boron".into(), vec![1e-4])]),
                 transport_mu_bar: None,
+                beam_sigma_nodes_per_cm: None,
             }],
         };
         let flux = MultigroupFlux {

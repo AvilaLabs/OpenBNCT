@@ -35,7 +35,32 @@ own versions independent of the crate version.
   emits a `openbnct.boundary-proposal/0.1.0` document carrying
   descending edges plus the placement rationale (per-group mass
   shares and lethargy widths). `sn collapse --boundaries-file`
-  consumes the proposal directly.
+  consumes the proposal directly. `--uniform-floor` (default 0.25)
+  reserves a share of the importance mass for uniform-lethargy
+  coverage — the anti-starvation guard measured on the water-column
+  experiment, where pure flux importance allocated 41/56 groups
+  below 0.5 eV and zero above 10 keV.
+- Multigroup data carries `beam_sigma_nodes_per_cm`: a 4-node
+  uniform-in-eV sub-bin σ_t kernel per group. Under
+  `--source-weighting uniform_in_bin` the uncollided deposit is
+  `Σ_j w_j·e^{−σ_j·s}` — a broad group's penetrating tail survives
+  instead of attenuating at the flux-weighted group σ_t. Neutral in
+  the bisected-56 structure (sub-bin σ_t spread is already small);
+  it matters for coarse or adaptively wide groups.
+
+### Fixed — transport
+
+- `uncollided_beam_flux` deposited the full disk intensity `J/μ̄`
+  into every cell whose CENTER back-rayed into the source disk —
+  cells the beam footprint only partially covers received the whole
+  beam (≈1/coverage overcount at the rim annulus; ~27% systematic
+  overshoot when the disk is inscribed in a periodic cell). The
+  deposit is now the transverse cell-average over an 8×8 point
+  grid — partially covered cells receive the illuminated fraction.
+  Verified by `uncollided_deposit_scales_by_transverse_coverage`
+  (quadrant-coverage known answer) and the water-column experiment,
+  where it removed the coverage component of the near-face
+  overshoot by exactly the predicted factor.
 
 ### Added — interoperability
 
@@ -47,6 +72,9 @@ own versions independent of the crate version.
   (x,y,z) + `Result Rel Error` (sigma/|value| where the bundle carries
   uncertainties, else 0 — not an accuracy claim); axis-aligned grids
   with signed-permutation directions supported, oblique rejected.
+  Verified against the actual OpenPINT `read_mcnp_mesh` parser: all
+  four tallies parse and the values match the source bundle to the
+  5-decimal print precision (≈1.4e-6).
 - `openbnct_mcnp::pint_meshtal` / `meshtal_from_dose_bundle` with
   round-trip coverage through the existing parser.
 

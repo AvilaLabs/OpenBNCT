@@ -3184,6 +3184,12 @@ enum SnCommand {
         /// Number of groups to place.
         #[arg(long, default_value_t = 56)]
         groups: usize,
+        /// Fraction of importance mass reserved for uniform-lethargy
+        /// coverage — an anti-starvation guard so the source and
+        /// moderation bands keep enough groups to transport the flux
+        /// that pools in the importance peak. 0 disables.
+        #[arg(long, default_value_t = 0.25)]
+        uniform_floor: f64,
         /// New output path for the boundary-proposal document.
         #[arg(long)]
         output: PathBuf,
@@ -10752,6 +10758,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 spectrum,
                 response,
                 groups,
+                uniform_floor,
                 output,
             } => {
                 let spectrum_bytes = fs::read(&spectrum)?;
@@ -10809,16 +10816,20 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                             )
                             .into());
                         }
-                        let mut p =
-                            openbnct_transport::adapt_boundaries(&spec, groups, Some(&resp_w))
-                                .map_err(|error| {
-                                    io::Error::other(format!("boundaries: {error}"))
-                                })?;
+                        let mut p = openbnct_transport::adapt_boundaries(
+                            &spec,
+                            groups,
+                            Some(&resp_w),
+                            uniform_floor,
+                        )
+                        .map_err(|error| io::Error::other(format!("boundaries: {error}")))?;
                         p.response_sha256 = Some(openbnct_evidence::sha256_hex(&bytes));
                         p
                     }
-                    None => openbnct_transport::adapt_boundaries(&spec, groups, None)
-                        .map_err(|error| io::Error::other(format!("boundaries: {error}")))?,
+                    None => {
+                        openbnct_transport::adapt_boundaries(&spec, groups, None, uniform_floor)
+                            .map_err(|error| io::Error::other(format!("boundaries: {error}")))?
+                    }
                 };
                 proposal.spectrum_sha256 = Some(openbnct_evidence::sha256_hex(&spectrum_bytes));
                 write_new_json(&output, &proposal)?;

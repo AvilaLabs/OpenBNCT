@@ -100,15 +100,42 @@ real physics or residual multigroup condensation error.
     0.03–0.3× with the free-gas matrix. The phantom's ~10× thermal
     deficit was dominantly the missing upscatter; the remaining
     phantom factor comes through the degraded epithermal feed.
-  - *Epi/fast:* the SN column *over*-deposits the 0.5 eV–100 keV
-    moderation range ~2.2–3× at the entrance and *under*-transports
-    it deep (~0.2–0.5× at 15 cm) — the same flattening signature the
-    phantom shows as the near-field epi deficit + deep fast
-    underproduction. The mechanism is inside the condensed
-    downscatter/σ_t representation, not the sweep: this is exactly
-    the term R17-04's response-weighted boundaries (`sn
-    boundaries` + `sn collapse --boundaries-file`) is built to
-    attack.
+  - *Epi/fast:* after two defects were found and fixed the residual
+    is ~1.5–2× over-deposition of the 0.5 eV–100 keV range near the
+    entrance transitioning to ~0.2–0.5× under-transport deep —
+    the same flattening signature the phantom shows as the
+    near-field epi deficit + deep fast underproduction.
+  - *Fixed in transport, not data:* the uncollided-split deposit
+    applied the full disk intensity `J/μ̄` to every cell whose
+    center back-rayed into the disk — cells the footprint only
+    partially covers got the whole beam (≈1/coverage overcount;
+    ~27% in this column, an annulus error at the phantom's disk
+    rim). `uncollided_beam_flux` now deposits the cell-averaged
+    fluence over an 8×8 transverse point grid — partially covered
+    cells get the illuminated fraction — verified by
+    `uncollided_deposit_scales_by_transverse_coverage` and it
+    removed the near-face overshoot's coverage component
+    (~0.75×) exactly.
+  - *Added: `beam_sigma_nodes_per_cm`.* The collapse now emits a
+    4-node uniform-in-eV sub-bin σ_t kernel per group; under
+    `--source-weighting uniform_in_bin` the uncollided deposit is
+    Σ_j w_j·e^{−σ_j·s} — the penetrating tail survives instead of
+    attenuating at the group's flux-weighted σ_t (which
+    over-removes in broad fast groups). Neutral in the bisected-56
+    structure (sub-bin σ spread is already small); it matters for
+    coarse or adaptive structures spanning strong σ_t curvature.
+  - *Boundary-placement verdict:* two opposite 56g allocations —
+    flux-importance (41 thermal groups) and region budgets
+    (30 epithermal groups) — leave the epi over-production
+    essentially unchanged (identical 2.7–4.4× near-field values
+    within provisional-solve tolerance), while pure flux mass
+    *starves the source bands* (residual worsens to 0.72, fast
+    bins overshoot >400× at the cap). Edge positions are not the
+    mechanism; the remaining term is the condensed transfer
+    density/deposit amplitude itself. `sn boundaries` +
+    `--boundaries-file` stay as documented tooling, with the
+    flux-starvation caveat: equal-importance placement needs a
+    source-band floor to be usable for transport structures.
   - Caveat: the S4 column solve emits a stable field (24- vs
     60-outer agreement to ~0.1%) while its residual metric plateaus
     at ~0.3 — the artifact records `converged: false`; treat the

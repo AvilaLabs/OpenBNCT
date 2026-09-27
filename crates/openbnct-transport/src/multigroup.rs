@@ -94,7 +94,23 @@ pub struct MultigroupMaterial {
     /// correction, the sweep uses σ_t,tr = σ_t − μ̄_g·Σ_s,g.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub transport_mu_bar: Option<Vec<f64>>,
+    /// Uncollided-attenuation kernel nodes for the `uniform_in_bin`
+    /// source convention: `[g][node]` → `(weight, σ_t)` pairs, flattened
+    /// as `nodes[g * 2 * BEAM_KERNEL_NODES + 2*j]` = weight_j,
+    /// `[.. + 2*j + 1]` = σ_t,j cm⁻¹. A uniform-in-eV source population
+    /// does NOT attenuate as a single exponential at the group's mean
+    /// σ_t — the penetrating sub-population survives preferentially, so
+    /// the deposit is Σ_j w_j·e^{−σ_j·s} over sub-bin means. Used only
+    /// for the analytic uncollided deposit; the collided field keeps
+    /// σ_t so the removal/scatter balance stays self-consistent.
+    /// Absent on pre-existing artifacts → the solve falls back to a
+    /// single exponential at σ_t.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub beam_sigma_nodes_per_cm: Option<Vec<f64>>,
 }
+
+/// Sub-bin quadrature count of [`MultigroupMaterial::beam_sigma_nodes_per_cm`].
+pub const BEAM_KERNEL_NODES: usize = 4;
 
 /// `openbnct.multigroup-data/0.1.0` — declared group structure and
 /// per-material data for the deterministic solver.
@@ -196,6 +212,24 @@ impl MultigroupData {
             {
                 return Err(invalid(format!(
                     "material {:?} transport_mu_bar must be {groups} values in [-1,1]",
+                    material.material_id
+                )));
+            }
+            if let Some(nodes) = &material.beam_sigma_nodes_per_cm
+                && (nodes.len() != groups * 2 * BEAM_KERNEL_NODES
+                    || !finite_nonneg(nodes)
+                    || !(0..groups).all(|g| {
+                        ((0..BEAM_KERNEL_NODES)
+                            .map(|j| nodes[g * 2 * BEAM_KERNEL_NODES + 2 * j])
+                            .sum::<f64>()
+                            - 1.0)
+                            .abs()
+                            < 1e-9
+                    }))
+            {
+                return Err(invalid(format!(
+                    "material {:?} beam_sigma_nodes must be {groups} × {BEAM_KERNEL_NODES} \
+                     (weight, σ) pairs with unit-sum weights",
                     material.material_id
                 )));
             }
@@ -1209,11 +1243,17 @@ fn cone_directions(
 }
 
 /// Analytic uncollided-flux ray-trace for an on-face disk source.
-/// For each cell the back-ray to the source-face plane determines disk
-/// coverage; φ_unc(cell, g) = (R/A_disk)·w_g·⟨hit·e^{−Σ_t·s}⟩/μ̄ where
-/// s is the path length from entry to the cell center and the average
-/// is over the angular distribution (a single direction for a
-/// monodirectional beam, the cone solid angle for an isotropic cone).
+/// Each cell's uncollided fluence is the transverse cell-average of the
+/// incident fluence: φ_unc(cell, g) = (R/A_disk)·w_g·⟨e^{−Σ_t·s}⟩_pts/μ̄
+/// where the average runs over an 8×8 point grid on the cell's
+/// transverse face, each point's back-ray hitting the disk or missing
+/// it — cells the footprint covers only partially receive the
+/// illuminated fraction rather than the full intensity. s is the path
+/// length from the source-face entry point to the sample point and the
+/// outer average is over the angular distribution (a single direction
+/// for a monodirectional beam, the cone solid angle for an isotropic
+/// cone). Attenuation uses the target cell's material along the whole
+/// ray — a declared approximation for layered geometries.
 ///
 /// Returns `None` for source shapes/angles that stay on the
 /// boundary-flux path (wide cones, isotropic, off-face sources).
@@ -1285,8 +1325,17 @@ pub fn uncollided_beam_flux(
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
     let r2 = radius_cm * radius_cm;
 
-    // Per-direction solid-angle average of hit·e^{−Σ_t·s}: only sample
-    // directions pointing inward contribute.
+    // Per-direction solid-angle average of the cell-averaged uncollided
+    // fluence. The deposit at each cell is the beam intensity times the
+    // ILLUMINATED FRACTION of its transverse area — sub-sampled on a
+    // transverse point grid — not the center-ray value applied to the
+    // whole cell. Depositing J/μ̄ into every center-hit cell overcounts
+    // cells the footprint only partially covers (a disk inscribed in a
+    // square periodic cell inflates by ~27%; the rim annulus of a beam
+    // covering a wider grid inflates each rim cell by up to
+    // 1/coverage). Only sample directions pointing inward contribute.
+    const TRANSVERSE_POINTS: u32 = 8;
+    let sub = TRANSVERSE_POINTS as f64;
     let mut unc = vec![vec![0.0; groups]; n_cells];
     let mut lit = false;
     for k in 0..nz {
@@ -1300,30 +1349,63 @@ pub fn uncollided_beam_flux(
                 ];
                 let cell = i + nx * j + nx * ny * k;
                 let material = &data.materials[case_material[cell]];
+                // The uncollided population was spread per eV under
+                // `uniform_in_bin` — attenuate it with the artifact's
+                // sub-bin kernel Σ_j w_j·e^{−σ_j·s} (a broad group's
+                // penetrating tail survives; a single mean σ_t
+                // over-removes it). Falls back to the collapsed σ_t
+                // on artifacts without the kernel or for the
+                // collapse-consistent convention.
+                let sigma_t_unc: &[f64] = match (weighting, &material.beam_sigma_nodes_per_cm) {
+                    (SourceWeighting::UniformInBin, Some(nodes)) => nodes.as_slice(),
+                    _ => &[],
+                };
+                let su = geometry.spacing_mm[u] / 10.0;
+                let sv = geometry.spacing_mm[v] / 10.0;
                 for (d_hat, w_dir) in &dirs {
                     let d_axis = d_hat[a];
                     if inward * d_axis <= 0.0 {
                         continue;
                     }
-                    let s = (c[a] - face_cm) / d_axis;
-                    if s <= 0.0 {
-                        continue;
-                    }
-                    let eu = c[u] - d_hat[u] * s;
-                    let ev = c[v] - d_hat[v] * s;
-                    let du = eu - center_uv_cm[0];
-                    let dv = ev - center_uv_cm[1];
-                    if du * du + dv * dv > r2 {
-                        continue;
-                    }
-                    lit = true;
                     let frac = w_dir / omega;
-                    for (g, w) in group_weights.iter().enumerate() {
-                        if *w > 0.0 {
-                            unc[cell][g] += beam_intensity
-                                * w
-                                * frac
-                                * (-material.sigma_total_per_cm[g] * s).exp();
+                    for pu in 0..TRANSVERSE_POINTS {
+                        for pv in 0..TRANSVERSE_POINTS {
+                            let mut p = c;
+                            p[u] += ((pu as f64 + 0.5) / sub - 0.5) * su;
+                            p[v] += ((pv as f64 + 0.5) / sub - 0.5) * sv;
+                            let s = (p[a] - face_cm) / d_axis;
+                            if s <= 0.0 {
+                                continue;
+                            }
+                            let eu = p[u] - d_hat[u] * s;
+                            let ev = p[v] - d_hat[v] * s;
+                            let du = eu - center_uv_cm[0];
+                            let dv = ev - center_uv_cm[1];
+                            if du * du + dv * dv > r2 {
+                                continue;
+                            }
+                            lit = true;
+                            // Cell-mean uncollided fluence: beam
+                            // intensity times the transverse
+                            // illuminated fraction, attenuated along
+                            // the ray to each sample point.
+                            for (g, w) in group_weights.iter().enumerate() {
+                                if *w <= 0.0 {
+                                    continue;
+                                }
+                                let survival = if sigma_t_unc.is_empty() {
+                                    (-material.sigma_total_per_cm[g] * s).exp()
+                                } else {
+                                    let base = g * 2 * BEAM_KERNEL_NODES;
+                                    (0..BEAM_KERNEL_NODES)
+                                        .map(|j| {
+                                            sigma_t_unc[base + 2 * j]
+                                                * (-sigma_t_unc[base + 2 * j + 1] * s).exp()
+                                        })
+                                        .sum()
+                                };
+                                unc[cell][g] += beam_intensity * w * frac / (sub * sub) * survival;
+                            }
                         }
                     }
                 }
@@ -2336,6 +2418,12 @@ fn blend_material(
             .collect::<Option<Vec<_>>>(),
         dose_response_gy_cm2: dose,
         transport_mu_bar: mu_bar,
+        beam_sigma_nodes_per_cm: weighted(
+            signature,
+            materials,
+            |m| m.beam_sigma_nodes_per_cm.as_deref(),
+            groups * 2 * BEAM_KERNEL_NODES,
+        ),
     }
 }
 
@@ -3459,6 +3547,7 @@ pub(crate) mod tests {
                 scatter_legendre_moments_per_cm: None,
                 dose_response_gy_cm2: Default::default(),
                 transport_mu_bar: None,
+                beam_sigma_nodes_per_cm: None,
             }],
         }
     }
@@ -3505,6 +3594,7 @@ pub(crate) mod tests {
                 vec![0.5, 0.9],
             )]),
             transport_mu_bar: Some(vec![0.6, 0.6]),
+            beam_sigma_nodes_per_cm: None,
         });
         d
     }
@@ -3763,6 +3853,49 @@ pub(crate) mod tests {
                 .flatten()
                 .all(|v| v.is_finite() && *v >= 0.0)
         );
+    }
+
+    /// A disk narrower than the cell deposits the cell-AVERAGE fluence,
+    /// not the center-ray value: cells inside the footprint carry
+    /// J/μ̄, so the cell mean is J·(illuminated fraction)/μ̄ — the
+    /// footprint's transverse coverage, sub-sampled on an 8×8 grid.
+    /// Regression for the fixed deposit inflating every center-hit
+    /// cell to full intensity (≈1/coverage overcount at the beam rim).
+    #[test]
+    fn uncollided_deposit_scales_by_transverse_coverage() {
+        let mut case = slab_case();
+        // Disk r = 0.04 cm inscribed inside the 0.1 cm transverse
+        // cells; 8×8 point grid puts 32/64 samples inside r < 0.04.
+        case.source.space = SourceSpatialDistribution::UniformDisk {
+            axis: PlaneAxis::Z,
+            offset_cm: -1.0,
+            center_uv_cm: [0.0, 0.0],
+            radius_cm: 0.04,
+        };
+        let mg = data(&[0.0], vec![0.0]); // σ_t = 0: no attenuation
+        mg.validate().unwrap();
+        let unc = uncollided_beam_flux(
+            &case,
+            &mg,
+            &vec![0usize; case.geometry.voxel_count().unwrap()],
+            SourceWeighting::CollapseConsistent,
+        )
+        .unwrap()
+        .unwrap();
+        let a_disk = std::f64::consts::PI * 0.04 * 0.04;
+        // The disk center sits on the corner shared by cells
+        // (1,1),(2,1),(1,2),(2,2) — each carries a disk quadrant; the
+        // 8×8 grid counts 8/64 points inside r < 0.04 per cell.
+        let expected = (1.0 / a_disk) * (8.0 / 64.0);
+        for cell in [5usize, 6, 9, 10] {
+            let deposit = unc[cell][0];
+            assert!(
+                (deposit - expected).abs() / expected < 1e-9,
+                "cell {cell}: coverage-scaled deposit {deposit} vs expected {expected}"
+            );
+        }
+        // A corner cell away from the beam must carry zero.
+        assert_eq!(unc[0][0], 0.0);
     }
 
     /// Volumetric sources deposit an isotropic emission density into
@@ -4572,6 +4705,7 @@ mod heterogeneous_tests {
                     scatter_legendre_moments_per_cm: None,
                     dose_response_gy_cm2: Default::default(),
                     transport_mu_bar: None,
+                    beam_sigma_nodes_per_cm: None,
                 },
                 MultigroupMaterial {
                     material_id: "insert".into(),
@@ -4581,6 +4715,7 @@ mod heterogeneous_tests {
                     scatter_legendre_moments_per_cm: None,
                     dose_response_gy_cm2: Default::default(),
                     transport_mu_bar: None,
+                    beam_sigma_nodes_per_cm: None,
                 },
             ],
         };
