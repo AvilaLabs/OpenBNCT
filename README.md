@@ -8,10 +8,14 @@
 
 **English** | [日本語](README.ja.md)
 
-OpenBNCT is a research workbench for boron neutron capture therapy (BNCT)
-dosimetry and verification. Every artifact — case, dose bundle, plan,
-comparison — is versioned and SHA-256-bound to its inputs, so a result is
-reproducible by construction rather than by convention.
+OpenBNCT is an open-source research workbench for boron neutron capture
+therapy (BNCT). Calculate component dose, estimate spatial and time-varying
+boron uptake, compare biological models, optimize multi-field research
+plans, and investigate dose uncertainty and prompt-gamma measurements.
+
+It combines a deterministic neutron/photon transport solver with OpenMC
+integration and MCNP/PHITS interchange. The Rust implementation powers the
+CLI, Python bindings, desktop app, and browser workbench.
 
 <p align="left">
   <a href="https://openbnct.avilalabs.org"><img src="https://img.shields.io/badge/open%20in%20browser-openbnct.avilalabs.org-0d9488?style=for-the-badge" alt="Open in browser"></a>
@@ -28,46 +32,65 @@ reproducible by construction rather than by convention.
 > treatment facility, not for clinical decisions. See
 > [DISCLAIMER.md](docs/DISCLAIMER.md).
 
-## What it does
+## What researchers can compute
 
-- **Component dosimetry** — boron, nitrogen, hydrogen, and photon dose as
-  separate fields with per-voxel uncertainty; DVH and region metrics;
-  NIfTI, DICOM, and PET/SUV round-trips; biological interpretation held
-  strictly apart from physical dose.
-- **Transport-neutral execution** — OpenMC as the first backend, a
-  deterministic multigroup S_N solver (discrete-ordinates, P0–P5
-  anisotropy, adjoint solves), MCNP and PHITS deck emitters, and
-  meshtal/tally importers — one interchange contract throughout. The
-  deterministic path needs no external codes: OpenMC, MCNP, and PHITS are
-  optional interop, not prerequisites.
-- **Verification tooling** — gamma analysis, metamorphic oracles,
-  measurement-record comparison, published-beam validation (FiR 1 K63),
-  and a closed-form absorber oracle. Failed checks stay in the record.
-- **Uncertainty propagation** — ENDF MF33 covariances collapsed to
-  multigroup form and folded into an auditable dose-uncertainty budget.
-- **Plan research** — beam-direction sweeps scored by tissue path and
-  adjoint importance, emitted as content-bound candidates; aimed-field
-  solves; non-negative weight optimization against dose-volume and
-  isoeffective objectives.
-- **Prompt-gamma delivery verification** — the 478 keV ¹⁰B(n,α)
-  chain end to end: voxel emission maps, a detector position's full
-  response column in a single adjoint solve, expected-counts folds,
-  and regularized reconstruction (FISTA NNLS with a Tikhonov term)
-  back to a boron-emission field — an open forward/inverse path for
-  in-beam monitoring research.
-- **Cell-level stochastic microdosimetry** — seeded sampling of a
-  declared boron microdistribution: gamma uptake heterogeneity,
-  Poisson captures, compartment-placed isotropic α/⁷Li tracks into a
-  spherical nucleus. Produces the specific-energy distribution P(z),
-  the untouched-cell fraction, and an MKM-consumable nucleus lineal
-  spectrum; an SMK model then integrates survival over the sampled
-  population, compares against the MK mean-field, and folds into
-  voxel dose bundles with `smk_stochastic` semantics.
-- **Biological model families** — component-weight, González & Santa
-  Cruz isoeffective, microdosimetric-kinetic, and stochastic-MK
-  models over one contract, plus BED/EQD2 combination and
-  TCP/NTCP/UTCP endpoints — each emitting versioned artifacts that
-  assert research-only scope.
+The capabilities below describe the current source tree; packaged releases
+can lag development. The [usage reference](docs/USAGE.md) documents command
+options and supported input formats.
+
+| Research task | Implemented capabilities |
+|---|---|
+| **Component dose and dose-volume analysis** | Separate boron, nitrogen, hydrogen, and photon fields; physical totals and available statistical uncertainties; DVHs, D95, Vx, EUD, and region summaries. |
+| **Neutron and photon transport** | In-house multigroup discrete-ordinates (S_N) transport, P0–P5 neutron scattering, coupled photon transport, forward/adjoint solves, and OpenMC execution. CADIS/FW-CADIS weight windows support Monte Carlo variance reduction. The deterministic solver works without an external transport code. |
+| **Imaging and heterogeneous anatomy** | DICOM CT, RT Structure Set, MR, and PET import; NIfTI volumes and labelmaps; rigid registration and resampling; HU-to-material calibration; RT Dose export and static-beam RT Plan import/export. |
+| **PET-derived boron fields** | Voxelwise B-10 estimates from registered SUV images using ratio, calibrated-linear, or uniform uptake models; input-uncertainty propagation, washout correction, and material assignment for transport. These are model-derived estimates. |
+| **Boron kinetics and irradiation timing** | Fit mono-/biexponential concentration curves to samples, model changing tissue:blood ratios, compare irradiation windows under declared organ-dose limits, and emit time-integrated component-dose maps. |
+| **Multi-field and robust plan research** | Beam-direction ranking by tissue path or adjoint importance; objective-driven field selection and iterative weight optimization; spectrum/aperture candidate sweeps and beamlet shaping. Evaluate named uptake, output, and positioning scenarios and optimize weights against their worst-case penalty. |
+| **Uncertainty and sensitivity** | Systematic boron, positioning, and component uncertainties; first-order plan-metric uncertainty; supported ENDF MF33 nuclear-data covariances propagated to integrated dose-response budgets; Morris/Sobol screening of declared transport inputs. |
+| **Biological dose and response models** | CBE/RBE component weighting; González–Santa Cruz photon-isoeffective, microdosimetric-kinetic (MKM), and stochastic-MK models; parameter sweeps and model comparisons; fractionation, BED/EQD2, combined-treatment analysis, and declared TCP/NTCP/UTCP models. |
+| **Cell-level boron microdosimetry** | Compartmental boron localization, cell-to-cell uptake heterogeneity, stochastic captures and alpha/lithium tracks; nucleus specific-energy distributions, untouched-cell fractions, lineal-energy spectra, and population-survival comparisons. |
+| **Prompt-gamma reconstruction research** | 478 keV emission maps, adjoint detector responses with aperture acceptance, expected counts under a declared calibration, and regularized non-negative reconstruction of emission fields. |
+| **Beam and beam-shaping studies** | Published or user-defined beam spectra, beam-quality metrics, a lithium-target accelerator-source model, beam-shaping assembly definitions, and thickness-sweep generation. |
+| **Independent comparison and interchange** | Component-wise dose comparison, gamma analysis, analytic and metamorphic checks, and measurement comparisons; MCNP/PHITS deck export and output import; component NIfTI exchange and CSV/XLSX exposure plans. |
+
+The research layers have explicit limits. Scenario positioning currently
+shifts existing dose fields; it does not re-solve transport through moved
+anatomy. Optimization's `isoeffective` objectives use fixed component
+weights, while full nonlinear biological evaluation is a separate path.
+The uncertainty tools do not yet form a joint end-to-end patient uncertainty
+model, and PK-map uncertainty is not yet propagated. Prompt-gamma
+reconstruction is an imaging research model; synchronized machine-log
+replay and measurement-updated 4-D boron estimation remain future work.
+
+Cases, models, plans, and result artifacts are versioned and SHA-256-bound
+to their inputs. CLI, GUI, and Python surfaces reuse the Rust crates;
+individual features may reach these surfaces at different times.
+
+## Benchmarks and recorded evidence
+
+The repository includes analytic checks, published transport problems,
+Monte Carlo comparisons, measured-phantom comparisons, and model-specific
+research fixtures. These are committed results for their declared inputs
+and solver versions, not a claim that every current configuration passes.
+
+| Case or suite | What the recorded evidence establishes | Scope and remaining work |
+|---|---|---|
+| [NF-BNCT-001](benchmarks/synthetic/nf-bnct-001/SPECIFICATION.md) | A 600M-history OpenMC candidate passes the frozen case's [statistical acceptance gates](benchmarks/synthetic/nf-bnct-001/transport/openmc-acceptance-report-600M.json). | Candidate reference; independent transport reproduction is still required for reference promotion. |
+| [NF-BNCT-003 absorber](benchmarks/synthetic/nf-bnct-003/SPECIFICATION.md) | The [recorded deterministic result](benchmarks/synthetic/nf-bnct-003/transport/analytic-oracle-evaluation-wdd.json) recovers the analytic boron-dose attenuation slope of −0.2308 cm⁻¹ within its declared tolerance. | One-group, near-pure B-10 absorber; a check against a closed-form solution. |
+| [Reed](validation/canonical-reed-problem/README.md), [Azmy](validation/canonical-azmy-problem/README.md), and [Kobayashi](validation/canonical-kobayashi-p1/README.md) | Canonical tests of source deposition, heterogeneity, spatial/angular discretization, and void streaming. Reed and Azmy pass their case-specific checks; Kobayashi passes the graded near-field probes. | Kobayashi also records severe deep-field ray effects; its near-field pass does not qualify the full field. |
+| [Kobayashi MC comparison](validation/intercomparison-kobayashi-p1/README.md) and [layered-head MC comparison](validation/intercomparison-layered-head/README.md) | Shared-case OpenMC comparisons separate transport-method differences from input differences. | The layered-head multigroup/continuous-energy discrepancy investigation remains open, including R17-04 group-boundary work. |
+| FiR 1 K63 [water](validation/fir1-k63-cylindrical-phantom/README.md), [PMMA](validation/fir1-k63-pmma-phantom/README.md), and [borated liquid](validation/fir1-k63-liquid-b-phantom/README.md) | Comparisons with published/digitized phantom profiles under specified beam and material assumptions. | Normalized-profile agreement in selected fixtures does not establish absolute-dose agreement; multigroup results retain documented discrepancies. |
+| [Scenario optimizer oracle](benchmarks/synthetic/scenario-robust-planning/SPECIFICATION.md) and [FiR 1 scenario study](validation/fir1-k63-scenario-budget/SPECIFICATION.md) | A known-answer robust-weight problem and a study of declared uptake/output/position perturbations. | The scenario set is not a calibrated probability distribution or a clinical robustness certificate. |
+| [PK timing study](validation/fir1-k63-pmma-pk-anchors/SPECIFICATION.md) and [cell microdosimetry study](validation/cell-microdosimetry-sato2018/SPECIFICATION.md) | Dose accumulation and cellular-model behavior under declared inputs drawn from published research. | Model checks using declared curves/distributions; not patient validation or independent measurements. |
+| [Prompt-gamma geometry study](validation/pg-benedicte-geometry/SPECIFICATION.md) | A transported forward/inverse experiment showing the effect of collimation on localization. | Uncollimated inversion fails to localize; the collimated example still merges the two vial sources. |
+
+[Conformance suites](conformance/README.md) separately check interchange,
+adapter parsing, biological models, and endpoint calculations. Parser
+fixtures do not establish real-engine MCNP/PHITS agreement.
+[NF-BNCT-002](benchmarks/synthetic/nf-bnct-002/SPECIFICATION.md) supplies a
+frozen heterogeneous deep-penetration case; its transport execution remains
+pending. See [validation](validation/README.md) and the
+[roadmap](docs/ROADMAP.md) for the evidence and remaining milestones.
 
 ## The web build
 
@@ -117,14 +140,13 @@ beam-description with `beam build`. See
 
 ## Status
 
-Early research. The 600M-history OpenMC candidate for the frozen
-`NF-BNCT-001` benchmark passes every statistical acceptance gate; it is
-not promoted to a reference output until an independently implemented
-transport path reproduces it. MCNP/PHITS interop is verified at benchmark
-scale on documented-format bundles; real-engine acceptance remains open.
-The FiR 1 in-phantom comparisons keep their misses in the record —
-that gap is evidence, not a defect to hide. [docs/ROADMAP.md](docs/ROADMAP.md)
-carries the milestone detail.
+Active research development. External reproduction, BNCT-physicist review,
+broader measured-data comparisons, and cross-institution execution remain
+milestones. Current capabilities and acceptance evidence are tracked in
+[docs/ROADMAP.md](docs/ROADMAP.md); the
+[research work handoff](docs/RESEARCH_WORK_HANDOFF.md) details proposed
+extensions for joint uncertainty, delivery replay, and measurement-informed
+boron estimation.
 
 ## Documentation
 
@@ -132,6 +154,9 @@ carries the milestone detail.
 - [`benchmarks/synthetic/nf-bnct-001/SPECIFICATION.md`](benchmarks/synthetic/nf-bnct-001/SPECIFICATION.md)
   — the frozen case and its predeclared gates
 - [`conformance/`](conformance/) — public fixture suites
+- [`validation/`](validation/) — transport and measured-phantom comparisons
+- [`docs/RESEARCH_WORK_HANDOFF.md`](docs/RESEARCH_WORK_HANDOFF.md) — scoped
+  implementation packages and acceptance criteria for the next research work
 - [`docs/adr/`](docs/adr/) — architecture decision records
 - [`docs/research/`](docs/research/) — technical baseline, cross-code recipe
 
