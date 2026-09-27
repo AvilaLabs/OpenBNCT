@@ -378,7 +378,46 @@ pub fn evaluate_endpoint(
     let selected = masked_values(&mask.name, values, &mask.voxels)
         .map_err(|e| BioError::Invalid(format!("dose selection: {e}")))?;
 
-    let (probability, applied_statistic) = match &model.function {
+    let (probability, applied_statistic) =
+        score_endpoint_function(model, &selected, voxel_volume_mm3, unit)?;
+
+    let evaluation = EndpointEvaluation {
+        schema_version: ENDPOINT_EVALUATION_SCHEMA.into(),
+        case_id: case_id.into(),
+        endpoint: match model.endpoint {
+            EndpointKind::Tcp => EvaluatedEndpoint::Tcp,
+            EndpointKind::Ntcp => EvaluatedEndpoint::Ntcp,
+        },
+        region: mask.name.clone(),
+        quantity: quantity.into(),
+        dose_source,
+        dose_statistic: applied_statistic,
+        model: Some(ContentReference {
+            id: model.id.clone(),
+            sha256: format!("{:x}", Sha256::digest(model_bytes)),
+        }),
+        probability,
+        utcp: None,
+        qualification: "synthetic_research_only_not_clinical".into(),
+    };
+    evaluation.validate()?;
+    Ok(evaluation)
+}
+
+/// The probability core of [`evaluate_endpoint`], callable on an
+/// already-selected dose distribution: returns `(probability,
+/// applied_statistic)` where the statistic is `None` for
+/// `voxel_poisson_tcp`. `unit` drives the per-source-particle dose
+/// conversion for the Poisson function and labels the recorded
+/// statistic for the volume-collapsed ones.
+pub fn score_endpoint_function(
+    model: &EndpointModel,
+    selected: &[f64],
+    voxel_volume_mm3: f64,
+    unit: &str,
+) -> Result<(f64, Option<AppliedDoseStatistic>), BioError> {
+    model.validate()?;
+    Ok(match &model.function {
         EndpointFunction::VoxelPoissonTcp {
             clonogen_density_per_mm3,
             alpha,
@@ -410,7 +449,7 @@ pub fn evaluate_endpoint(
             let statistic = model
                 .dose_statistic
                 .expect("validated volume-collapsed functions carry a dose_statistic");
-            let dose = statistic.evaluate(&selected)?;
+            let dose = statistic.evaluate(selected)?;
             let probability = match *function {
                 EndpointFunction::Logistic { d50, gamma50 } => {
                     if dose == 0.0 {
@@ -433,29 +472,7 @@ pub fn evaluate_endpoint(
                 }),
             )
         }
-    };
-
-    let evaluation = EndpointEvaluation {
-        schema_version: ENDPOINT_EVALUATION_SCHEMA.into(),
-        case_id: case_id.into(),
-        endpoint: match model.endpoint {
-            EndpointKind::Tcp => EvaluatedEndpoint::Tcp,
-            EndpointKind::Ntcp => EvaluatedEndpoint::Ntcp,
-        },
-        region: mask.name.clone(),
-        quantity: quantity.into(),
-        dose_source,
-        dose_statistic: applied_statistic,
-        model: Some(ContentReference {
-            id: model.id.clone(),
-            sha256: format!("{:x}", Sha256::digest(model_bytes)),
-        }),
-        probability,
-        utcp: None,
-        qualification: "synthetic_research_only_not_clinical".into(),
-    };
-    evaluation.validate()?;
-    Ok(evaluation)
+    })
 }
 
 /// Combine a TCP and an NTCP evaluation into a UTCP report.

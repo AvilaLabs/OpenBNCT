@@ -155,6 +155,11 @@ pub struct InversePlanObjective {
     /// need the linear weighted sum.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub bio_model: Option<BiologicalModel>,
+    /// Declared post-hoc metrics — DVH quantiles, V-at-bound volumes,
+    /// EUDs, and TCP/NTCP endpoint responses reported on the result
+    /// under [`crate::metrics`]. Reported, never optimized.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<crate::metrics::PlanMetricsSpec>,
     /// Free-text validity note — what the objectives encode and for
     /// which research scenario. Required and non-empty.
     pub validity_domain: String,
@@ -259,6 +264,10 @@ pub struct InversePlanResult {
     /// optimizer.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub certificate: Option<crate::lp::PlanCertificate>,
+    /// Post-hoc DVH/endpoint metrics over the optimized weighted dose —
+    /// present when the objective document declared `metrics`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub metrics: Option<Vec<crate::metrics::RegionPlanMetrics>>,
     pub qualification: String,
     pub provenance_id: String,
 }
@@ -575,6 +584,59 @@ pub(crate) fn objective_view<'a>(
         effective.push(std::borrow::Cow::Owned(eff));
     }
     (std::borrow::Cow::Owned(dose), effective)
+}
+
+/// The optimized weighted dose sum reported for `mask_name` — under
+/// `isoeffective` each region's metrics use that region's own
+/// `region_weights` override (falling back to `component_weights`), so a
+/// declared weighting scheme is reported consistently per region.
+pub(crate) fn dose_view_for_mask<'a>(
+    fields: &'a [BeamDoseField],
+    weights: &[f64],
+    spec: &InversePlanObjective,
+    mask_name: &str,
+    scratch: &'a mut [f64],
+) -> std::borrow::Cow<'a, [f64]> {
+    scratch.iter_mut().for_each(|d| *d = 0.0);
+    if spec.dose_quantity != DoseQuantity::Isoeffective {
+        accumulate(fields, weights, scratch);
+        return std::borrow::Cow::Borrowed(&scratch[..]);
+    }
+    let model = spec.bio_model.as_ref().expect("validated");
+    let weights_map = model
+        .region_weights
+        .get(mask_name)
+        .unwrap_or(&model.component_weights);
+    for (field, &wi) in fields.iter().zip(weights) {
+        let comps = field.components.as_ref().expect("validated");
+        for (name, &wc) in weights_map {
+            for (v, &cd) in comps[name].iter().enumerate() {
+                scratch[v] += wi * wc * cd;
+            }
+        }
+    }
+    std::borrow::Cow::Borrowed(&scratch[..])
+}
+
+/// Compute the declared metrics for the optimized weights, or `None`
+/// when the objective document carries no `metrics` block.
+pub(crate) fn plan_metrics(
+    fields: &[BeamDoseField],
+    weights: &[f64],
+    spec: &InversePlanObjective,
+    masks: &[RegionMask],
+    n_voxels: usize,
+) -> Result<Option<Vec<crate::metrics::RegionPlanMetrics>>, OptimizeError> {
+    if spec.metrics.is_none() {
+        return Ok(None);
+    }
+    let mut scratch = vec![0.0; n_voxels];
+    crate::metrics::evaluate_plan_metrics(
+        spec,
+        |mask_name| dose_view_for_mask(fields, weights, spec, mask_name, &mut scratch).to_vec(),
+        masks,
+    )
+    .map(Some)
 }
 
 /// The composite penalty `Σ_k weight_k·(violation_k/bound_k)²` and its
@@ -1196,6 +1258,7 @@ pub fn optimize_weights(
         converged,
         method: None,
         certificate: None,
+        metrics: plan_metrics(fields, &w, spec, masks, n_voxels)?,
         qualification: INVERSE_PLAN_QUALIFICATION.into(),
         provenance_id: provenance.provenance_id,
     })
@@ -1214,7 +1277,7 @@ pub fn optimize_weights_newton(
     initial: &[f64],
     provenance: ResultProvenance,
 ) -> Result<InversePlanResult, OptimizeError> {
-    let (_n_voxels, mask_voxels) = resolve_inputs(fields, masks, spec, initial)?;
+    let (n_voxels, mask_voxels) = resolve_inputs(fields, masks, spec, initial)?;
     let (w, penalty, iterations, converged) = newton_projected(fields, spec, &mask_voxels, initial);
     Ok(InversePlanResult {
         schema_version: INVERSE_PLAN_RESULT_SCHEMA.into(),
@@ -1236,6 +1299,7 @@ pub fn optimize_weights_newton(
         converged,
         method: Some("gauss_newton".into()),
         certificate: None,
+        metrics: plan_metrics(fields, &w, spec, masks, n_voxels)?,
         qualification: INVERSE_PLAN_QUALIFICATION.into(),
         provenance_id: provenance.provenance_id,
     })
@@ -1257,6 +1321,7 @@ mod tests {
             weight_bound: None,
             weight_regularization: 1e-5,
             bio_model: None,
+            metrics: None,
             validity_domain: "unit test".into(),
             provenance_id: "test".into(),
         }

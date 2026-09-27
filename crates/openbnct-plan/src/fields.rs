@@ -59,6 +59,37 @@ pub struct BeamFieldArtifacts {
     pub residual: f64,
 }
 
+/// The coarse-screening stage record for two-stage field sweeps —
+/// every declared beam gets a cheap scoring solve, only the retained
+/// set receives the full-quality solve and dose bundle.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldScreening {
+    /// The cheap solve options the scoring runs used.
+    pub solver: FieldSweepOptions,
+    /// Scoring quantity: mean `physical_total` over the aim mask.
+    pub metric: String,
+    /// How many declared beams were retained for the fine solve.
+    pub keep_top: usize,
+    /// Per-declared-beam score and retention fate, in sweep order.
+    pub scores: Vec<FieldScreeningScore>,
+}
+
+/// One declared beam's screening outcome.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FieldScreeningScore {
+    /// Beam name from the sweep spec.
+    pub name: String,
+    /// Mean aim-mask `physical_total` under unit weight — the
+    /// target-coverage proxy that ranked the beams.
+    pub score: f64,
+    /// Whether the scoring solve converged inside its budget.
+    pub converged: bool,
+    /// Whether this beam received the full-quality solve.
+    pub retained: bool,
+}
+
 /// A versioned beam-field-set manifest.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -78,6 +109,10 @@ pub struct BeamFieldSet {
     /// Circular aperture radius applied to every aimed source, in cm.
     pub aperture_radius_cm: f64,
     pub solver: FieldSweepOptions,
+    /// Coarse-screening record for two-stage sweeps — `beams` then
+    /// holds only the retained set.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub screening: Option<FieldScreening>,
     pub beams: Vec<BeamFieldArtifacts>,
     pub provenance_id: String,
     /// Research-status qualification; no clinical claim is made.
@@ -117,6 +152,34 @@ impl BeamFieldSet {
             return Err(FieldSetError::Invalid(
                 "at least one beam is required".into(),
             ));
+        }
+        if let Some(screening) = &self.screening {
+            if screening.scores.is_empty() || screening.keep_top == 0 {
+                return Err(FieldSetError::Invalid(
+                    "screening record requires scores and a nonzero keep_top".into(),
+                ));
+            }
+            let retained = screening.scores.iter().filter(|s| s.retained).count();
+            if retained != self.beams.len() {
+                return Err(FieldSetError::Invalid(format!(
+                    "screening retained {retained} beams but the set lists {}",
+                    self.beams.len()
+                )));
+            }
+            for beam in &self.beams {
+                let Some(score) = screening.scores.iter().find(|s| s.name == beam.name) else {
+                    return Err(FieldSetError::Invalid(format!(
+                        "beam {:?} has no screening score",
+                        beam.name
+                    )));
+                };
+                if !score.retained {
+                    return Err(FieldSetError::Invalid(format!(
+                        "beam {:?} is in the set but its screening score is unretained",
+                        beam.name
+                    )));
+                }
+            }
         }
         for (i, beam) in self.beams.iter().enumerate() {
             if beam.name.trim().is_empty() {
@@ -167,6 +230,7 @@ mod tests {
                 anisotropy_order: 0,
                 anderson_depth: 5,
             },
+            screening: None,
             beams: vec![BeamFieldArtifacts {
                 name: "ap".into(),
                 direction_lps: [0.0, 0.0, 1.0],
@@ -195,6 +259,61 @@ mod tests {
     fn empty_beams_rejected() {
         let mut set = set();
         set.beams.clear();
+        assert!(matches!(set.validate(), Err(FieldSetError::Invalid(_))));
+    }
+
+    #[test]
+    fn screened_set_round_trips_and_validates() {
+        let mut set = set();
+        set.screening = Some(FieldScreening {
+            solver: set.solver,
+            metric: "aim_mask_mean_physical_total".into(),
+            keep_top: 1,
+            scores: vec![
+                FieldScreeningScore {
+                    name: "ap".into(),
+                    score: 1.2,
+                    converged: true,
+                    retained: true,
+                },
+                FieldScreeningScore {
+                    name: "lat".into(),
+                    score: 0.4,
+                    converged: true,
+                    retained: false,
+                },
+            ],
+        });
+        set.validate().unwrap();
+        let back: BeamFieldSet =
+            serde_json::from_str(&serde_json::to_string(&set).unwrap()).unwrap();
+        assert_eq!(set, back);
+    }
+
+    #[test]
+    fn screened_set_rejects_unretained_beam() {
+        let mut set = set();
+        set.screening = Some(FieldScreening {
+            solver: set.solver,
+            metric: "aim_mask_mean_physical_total".into(),
+            keep_top: 1,
+            scores: vec![
+                FieldScreeningScore {
+                    name: "ap".into(),
+                    score: 1.2,
+                    converged: true,
+                    retained: true,
+                },
+                FieldScreeningScore {
+                    name: "lat".into(),
+                    score: 0.4,
+                    converged: true,
+                    retained: true,
+                },
+            ],
+        });
+        // One retained score must match the single emitted beam — an
+        // extra retained beam breaks the count invariant.
         assert!(matches!(set.validate(), Err(FieldSetError::Invalid(_))));
     }
 }

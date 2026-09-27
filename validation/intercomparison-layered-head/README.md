@@ -140,6 +140,43 @@ real physics or residual multigroup condensation error.
     60-outer agreement to ~0.1%) while its residual metric plateaus
     at ~0.3 — the artifact records `converged: false`; treat the
     magnitude pattern, not a qualified number.
+  - *Convergence verdict (update):* the plateau is a **period-2
+    orbit** — adjacent-parity iterates differ ~20–40% at the
+    limiting site while same-parity iterates are bit-identical.
+    The mechanism is resolved at the source: the shared periodic
+    wrap buffer made every group's first inner sweep read a
+    *different* group's wrap-face values — a parity-dependent
+    perturbation under the alternating group order that drove the
+    2-cycle. Per-group wrap planes (below
+    `PER_GROUP_WRAP_MAX_BYTES`) removed it: the column now
+    converges one-step at outer 24, no parity path needed. The
+    two-step residual + parity-midpoint machinery stays as the
+    shared-wrap fallback's protection above the byte cap.
+  - *Boundary-condition caveat (update):* every earlier column
+    comparison ran S_N with vacuum transverse boundaries against
+    periodic MC — a leaky 0.8 cm rod vs a column. Periodicity is
+    a solver-side flag (`--periodic x,y`), not part of the case.
+    Corrected periodic-vs-periodic ratios per MC cell flux,
+    56g + TSL + transport correction, source positions
+    0 / 5 / 10 / 15 / 19 cm:
+    total 1.54 / 0.85 / 0.74 / 0.63 / 0.54,
+    thermal 0.78 / 0.62 / 0.61 / 0.56 / 0.51.
+  - *Weighting-spectrum verdict (decisive, negative):* recollapse
+    with `sn spectrum`-extracted problem spectra makes the deep
+    field dramatically **worse** — deep-region and volume-averaged
+    weightings give nearly identical 2.9× deep overshoot (epi
+    12–35×), and survival weighting at the dose-relevant depth
+    (z = 10 cm) overshoots the same way under P1 (epi 38.9×).
+    All flux- or survival-weighted condensations push σ_t toward
+    the penetrating in-group tail while thinning the moderation
+    chain — none is a remedy for the deep residual.
+  - *Anisotropy verdict:* the deep epi pileup is dominantly a
+    **P0 isotropic-kernel artifact** — under `--p1` the mid-column
+    epi excess collapses 4.78×→1.16× and the pileup nearly vanishes
+    (deep 3.49×→0.41×); P3 does not move it further. The residual
+    under full anisotropy is a ~2–3× deep under-transport of the
+    whole collided cascade (0.30–0.40× at 15–19 cm) — energy
+    condensation of the moderation path, not angular error.
 - Caveat noted in code: `openmc.stats.Tabular(interpolation=
   "histogram")` takes pdf *heights* — passing declared bin
   probabilities emits a ~98%-fast spectrum.

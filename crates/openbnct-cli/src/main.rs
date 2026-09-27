@@ -2587,6 +2587,13 @@ enum PlanCommand {
         /// `plan validate`/`plan export` and the GUI Plan workspace).
         #[arg(long)]
         emit_plan: Option<PathBuf>,
+        /// Monitor-unit convention for the emitted exposure plan: each
+        /// exposure's `duration_s` is its optimized weight × this many
+        /// seconds — the declared beam-on time at the dose bundle's
+        /// simulated normalization (`source_strength_scaling` basis).
+        /// Requires `--emit-plan`.
+        #[arg(long, requires = "emit_plan")]
+        seconds_per_weight: Option<f64>,
         /// `openbnct.scenario-set/0.1.0` JSON — when supplied, optimize
         /// against the worst-case penalty across the declared
         /// perturbations (plus the nominal), not the nominal alone.
@@ -3101,6 +3108,23 @@ enum PlanCommand {
         /// `sn solve --anderson`).
         #[arg(long, default_value_t = 0)]
         anderson: usize,
+        /// Coarse screening stage: run every declared beam at this
+        /// quadrature order, score its mean aim-mask `physical_total`,
+        /// then run the full-quality solve only on the `--keep-top`
+        /// best. The manifest records all scores and retention.
+        #[arg(long)]
+        screen_order: Option<u32>,
+        /// Screening-stage outer convergence target.
+        #[arg(long, default_value = "1e-2")]
+        screen_convergence: f64,
+        #[arg(long, default_value = "20")]
+        screen_max_inner: u32,
+        #[arg(long, default_value = "80")]
+        screen_max_outer: u32,
+        /// Beams retained for the full-quality solve; required with
+        /// `--screen-order`, must not exceed the declared beam count.
+        #[arg(long)]
+        keep_top: Option<usize>,
         /// Output directory for per-beam artifacts and the manifest;
         /// created if absent, must not already contain files.
         #[arg(long)]
@@ -11675,6 +11699,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 provenance_id,
                 output,
                 emit_plan,
+                seconds_per_weight,
                 scenario_set,
                 fraction_scales,
                 solver,
@@ -11891,6 +11916,29 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         if o.satisfied { "satisfied" } else { "VIOLATED" }
                     );
                 }
+                if let Some(metrics) = &result.metrics {
+                    for region in metrics {
+                        println!(
+                            "  metrics {}: n={}, mean {:.6e}, range {:.3e}..{:.3e}",
+                            region.mask, region.voxel_count, region.mean, region.min, region.max
+                        );
+                        for q in &region.dose_at_volume {
+                            println!("    D({:.3}) = {:.6e}", q.volume_fraction, q.dose);
+                        }
+                        for v in &region.volume_at_dose {
+                            println!("    V({:.6e}) = {:.2}%", v.dose, 100.0 * v.volume_fraction);
+                        }
+                        for e in &region.eud {
+                            println!("    EUD(a={:.3}) = {:.6e}", e.a, e.value);
+                        }
+                        for ep in &region.endpoints {
+                            println!(
+                                "    {:?} ({}): {:.4}",
+                                ep.endpoint, ep.model_id, ep.probability
+                            );
+                        }
+                    }
+                }
                 println!("result: {}", output.display());
                 if let Some(plan_path) = emit_plan {
                     let exposures: Vec<openbnct_core::Exposure> = result
@@ -11913,7 +11961,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                                 },
                                 weight: w.weight,
                                 weight_basis: openbnct_core::WeightBasis::SourceStrengthScaling,
-                                duration_s: None,
+                                duration_s: seconds_per_weight.map(|s| s * w.weight),
                                 boron_assumption: None,
                             })
                         })
@@ -14228,11 +14276,16 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 p1,
                 anisotropy,
                 anderson,
+                screen_order,
+                screen_convergence,
+                screen_max_inner,
+                screen_max_outer,
+                keep_top,
                 output_dir,
             } => {
                 use openbnct_plan::fields::{
                     BEAM_FIELD_SET_QUALIFICATION, BEAM_FIELD_SET_SCHEMA, BeamFieldArtifacts,
-                    BeamFieldSet, FieldSweepOptions,
+                    BeamFieldSet, FieldScreening, FieldScreeningScore, FieldSweepOptions,
                 };
                 let case_bytes = fs::read(&case)?;
                 let transport_case: TransportCase = serde_json::from_slice(&case_bytes)?;
@@ -14307,6 +14360,22 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     theta_repair: true,
                     source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
+                match (screen_order, keep_top) {
+                    (Some(_), None) => {
+                        return Err(io::Error::other("--screen-order requires --keep-top").into());
+                    }
+                    (None, Some(_)) => {
+                        return Err(io::Error::other("--keep-top requires --screen-order").into());
+                    }
+                    (Some(_), Some(k)) if k == 0 || k > beams.len() => {
+                        return Err(io::Error::other(format!(
+                            "--keep-top {k} out of range for {} declared beams",
+                            beams.len()
+                        ))
+                        .into());
+                    }
+                    _ => {}
+                }
                 let profile = mg_data.component_profile.clone().ok_or_else(|| {
                     io::Error::other(
                         "plan fields requires the multigroup data to declare component_profile",
@@ -14325,7 +14394,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 }
                 fs::create_dir_all(&output_dir)?;
 
-                let mut artifacts = Vec::with_capacity(beams.len());
+                // Aim every declared beam once — the screening solves
+                // and the retained fine solves share the aimed cases.
+                let mut aimed_beams = Vec::with_capacity(beams.len());
                 for (name, direction) in &beams {
                     let (positioned, mut report) = openbnct_transport::aim_disk_source_at_centroid(
                         &transport_case.source,
@@ -14339,18 +14410,130 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     let mut aimed = transport_case.clone();
                     aimed.case_id = report.case_id.clone();
                     aimed.source = positioned;
+                    aimed_beams.push((name.clone(), *direction, aimed, report));
+                }
 
+                // Coarse screening stage: every declared beam gets a
+                // cheap solve; the mean aim-mask physical total under
+                // unit weight ranks them for retention.
+                let screening = if let Some(screen_order) = screen_order {
+                    let screen_opts = openbnct_transport::SnOptions {
+                        quadrature_order: screen_order,
+                        convergence: screen_convergence,
+                        max_inner_iterations: screen_max_inner,
+                        max_outer_iterations: screen_max_outer,
+                        assignment: options.assignment.clone(),
+                        ..options
+                    };
+                    let keep = keep_top.unwrap_or(beams.len());
+                    let mut scores = Vec::with_capacity(aimed_beams.len());
+                    for (name, _, aimed, _) in &aimed_beams {
+                        let screen_case_bytes = serde_json::to_vec(aimed)?;
+                        let screen_case_ref = openbnct_core::ContentReference {
+                            id: aimed.case_id.clone(),
+                            sha256: openbnct_evidence::sha256_hex(&screen_case_bytes),
+                        };
+                        let flux = openbnct_transport::solve_multigroup(
+                            aimed,
+                            &mg_data,
+                            &screen_opts,
+                            data_ref.clone(),
+                            screen_case_ref,
+                        )
+                        .map_err(|error| {
+                            io::Error::other(format!("{name}: screening solve: {error}"))
+                        })?;
+                        let bundle = openbnct_transport::fold_multigroup_dose(
+                            aimed,
+                            &mg_data,
+                            &flux,
+                            assignment_model.as_ref(),
+                            profile.clone(),
+                            data_ref.clone(),
+                        )
+                        .map_err(|error| {
+                            io::Error::other(format!("{name}: screening dose fold: {error}"))
+                        })?;
+                        let included = mask.included_voxel_count();
+                        let score = bundle
+                            .physical_total
+                            .values
+                            .iter()
+                            .zip(mask.voxels.iter())
+                            .filter(|(_, on)| **on)
+                            .map(|(v, _)| *v)
+                            .sum::<f64>()
+                            / included.max(1) as f64;
+                        println!(
+                            "{name}: screening score {:.4e} ({}, residual {:.2e})",
+                            score,
+                            if flux.converged {
+                                "converged"
+                            } else {
+                                "unconverged"
+                            },
+                            flux.residual
+                        );
+                        scores.push(FieldScreeningScore {
+                            name: name.clone(),
+                            score,
+                            converged: flux.converged,
+                            retained: false,
+                        });
+                    }
+                    // Rank by score descending; stable order keeps the
+                    // declaration order among equal scores.
+                    let mut ranked: Vec<usize> = (0..scores.len()).collect();
+                    ranked.sort_by(|&a, &b| {
+                        scores[b]
+                            .score
+                            .partial_cmp(&scores[a].score)
+                            .unwrap_or(std::cmp::Ordering::Equal)
+                    });
+                    for &i in ranked.iter().take(keep) {
+                        scores[i].retained = true;
+                    }
+                    Some(FieldScreening {
+                        solver: FieldSweepOptions {
+                            quadrature_order: screen_opts.quadrature_order,
+                            convergence: screen_opts.convergence,
+                            max_inner_iterations: screen_opts.max_inner_iterations,
+                            max_outer_iterations: screen_opts.max_outer_iterations,
+                            periodic: screen_opts.periodic,
+                            beam_uncollided_split: screen_opts.beam_uncollided_split,
+                            transport_correction: screen_opts.transport_correction,
+                            p1_anisotropic: screen_opts.p1_anisotropic,
+                            anisotropy_order: screen_opts.anisotropy_order,
+                            anderson_depth: screen_opts.anderson_depth,
+                        },
+                        metric: "aim_mask_mean_physical_total".into(),
+                        keep_top: keep,
+                        scores,
+                    })
+                } else {
+                    None
+                };
+
+                let mut artifacts = Vec::with_capacity(beams.len());
+                for (name, direction, aimed, report) in &aimed_beams {
+                    if let Some(screening) = &screening
+                        && let Some(score) = screening.scores.iter().find(|s| s.name == *name)
+                        && !score.retained
+                    {
+                        println!("{name}: screened out (score {:.4e})", score.score);
+                        continue;
+                    }
                     let case_path = output_dir.join(format!("{name}.case.json"));
-                    write_new_json(&case_path, &aimed)?;
+                    write_new_json(&case_path, aimed)?;
                     let case_bytes = fs::read(&case_path)?;
                     let report_path = output_dir.join(format!("{name}.position-report.json"));
-                    write_new_json(&report_path, &report)?;
+                    write_new_json(&report_path, report)?;
                     let case_ref = openbnct_core::ContentReference {
                         id: aimed.case_id.clone(),
                         sha256: openbnct_evidence::sha256_hex(&case_bytes),
                     };
                     let flux = openbnct_transport::solve_multigroup(
-                        &aimed,
+                        aimed,
                         &mg_data,
                         &options,
                         data_ref.clone(),
@@ -14365,7 +14548,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         .into());
                     }
                     let bundle = openbnct_transport::fold_multigroup_dose(
-                        &aimed,
+                        aimed,
                         &mg_data,
                         &flux,
                         assignment_model.as_ref(),
@@ -14434,6 +14617,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         anisotropy_order: anisotropy,
                         anderson_depth: anderson,
                     },
+                    screening,
                     beams: artifacts,
                     provenance_id: format!(
                         "plan-fields:{}",

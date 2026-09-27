@@ -41,6 +41,7 @@ pub mod directions;
 pub mod fields;
 pub mod fractions;
 pub mod lp;
+pub mod metrics;
 pub mod openpint;
 pub mod optimize;
 pub mod robustness;

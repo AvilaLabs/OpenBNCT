@@ -1538,7 +1538,31 @@ the parity midpoint; `residual_site` on the artifact names the
 (cell, group) limiting the last iterate, and `--allow-unconverged`
 emits a provisional field with `converged: false` for inspection.
 Nonconvergence within the iteration budget is otherwise a hard
-error. Scope is honestly bounded: isotropic (P0) scattering, no fission,
+error. Periodic transverse boundaries are a solver-side choice —
+`--periodic x,y` — not part of the case document; comparisons against
+an infinite-column MC tally need both sides periodic.
+
+`sn collapse` emits the multigroup-data artifact itself from the
+processed ENDF HDF5 library (`--library`), a material definition
+(`--material`), and a group structure (`--boundaries` or
+`--boundaries-file`), with optional TSL tapes (`--tsl H1=...`),
+heterogeneous self-shielding (`--self-shielding`), a measured or
+fine-solve spectrum (`--weighting-spectrum`), and survival weighting
+(`--attenuation-depth Z` — multiplies every collapse weight by
+exp(−σ_t(E)·z) so the group constants bias toward the in-group
+penetrating tail). Alongside the flux-weighted σ_t and P0 scatter
+matrix it emits `transport_mu_bar`, the P1 transfer matrix, higher
+Legendre moments (for `--p1`/`--anisotropy` solves), and
+`beam_sigma_nodes_per_cm` — a 4-node sub-bin σ_t kernel so a
+`uniform_in_bin` beam source attenuates as an exponential mixture
+rather than a single group mean. `sn boundaries` proposes group-edge
+placements for a spectrum or importance document and
+`sn spectrum` extracts a flux histogram from a solved field —
+both consumable by `sn collapse`'s `--boundaries-file` and
+`--weighting-spectrum`.
+
+Scope is honestly bounded: isotropic (P0) scattering by default
+(P1+ available on data carrying the moments), no fission,
 multigroup data as declared input — a verification solver, not a
 production engine, and its output is research-only.
 
@@ -1665,7 +1689,7 @@ openbnct plan optimize \
   --dose BEAM-AP-DOSE.json --dose BEAM-PA-DOSE.json \
   --mask TUMOR-MASK.json --mask OAR-MASK.json \
   [--initial 1.0 --initial 1.0] \
-  [--emit-plan NEW-EXPOSURE-PLAN.json] \
+  [--emit-plan NEW-EXPOSURE-PLAN.json --seconds-per-weight 60] \
   --output NEW-RESULT.json
 ```
 
@@ -1693,6 +1717,25 @@ linear in the beam weights so every metric gradient stays analytic.
 refused (non-linear — not expressible as component weights), a
 `bio_model` on a physical quantity is rejected, and every
 `region_weights` key must resolve to a supplied mask.
+
+The objective document's optional `metrics` block evaluates the plan
+the solver produced — per region it reports the voxel count and
+mean/min/max under the optimized weighted dose, `dose_at_volume`
+quantiles (D95-style), `volume_at_dose` at declared bounds,
+generalized-EUD values for declared exponents, and `endpoint`
+probabilities scored by `openbnct-bio` endpoint models (logistic,
+probit, Poisson TCP). Metrics are *reported*, never optimized, and
+isoeffective quantities honor `region_weights` so each mask is scored
+with its declared component weighting. The CLI prints the table; the
+result document carries `metrics` as `RegionPlanMetrics`; the GUI's
+inverse-plan view renders it alongside the outcomes.
+
+`--seconds-per-weight` on `--emit-plan` converts each optimized weight
+to `duration_s` on the emitted exposures — beam-on seconds per unit
+optimizer weight under the source-strength-scaling convention declared
+in the plan contract (the S_N solves are normalized per unit source
+rate, so weight × seconds-per-weight is the declared irradiation
+time).
 
 `plan directions` enumerates which beams are worth solving at all:
 an azimuth×elevation grid of propagation vectors converging on the
@@ -1728,6 +1771,8 @@ openbnct plan fields \
   --aim-mask TARGET-MASK.json \
   --beam ap,0,0,1 --beam pa,0,0,-1 \
   --radius-cm 1.0 [--order 8 --anderson 5 …sn-solve options] \
+  [--screen-order 2 --screen-convergence 1e-2 --keep-top K \
+   --screen-max-inner 20 --screen-max-outer 80] \
   --output-dir NEW-DIR/
 # → NEW-DIR/{beam}.{case,position-report,dose}.json + fields.json
 openbnct plan optimize \
@@ -1741,6 +1786,17 @@ solver's boundary-flux and uncollided-split paths currently accept (the
 rectangular `position aim` plane is not consumable by `sn solve`). A
 beam that fails to converge aborts the sweep rather than emitting a
 non-converged field.
+
+`--screen-order` turns the sweep two-stage: every declared beam first
+gets a cheap scoring solve at the screening options, the mean
+`physical_total` dose inside the aim mask ranks the candidates, and
+only the `--keep-top` best receive the full-quality solve and dose
+bundle. The manifest's `screening` block records the screening solver
+options, every declared beam's score, convergence flag, and retention —
+`beams` then lists the retained set only. This is the intended path
+when a large candidate list (from `plan directions`) is expensive at
+fine fidelity: the coarse ranking is separable work, the fine solves
+spend effort where the objective will actually draw weight.
 
 `plan robustness` answers the follow-up question a weight vector leaves
 open: under declared systematic σ on each beam's component dose, how

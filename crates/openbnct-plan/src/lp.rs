@@ -544,22 +544,24 @@ pub(crate) fn solve_qp(
     ))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn lp_result(
     fields: &[BeamDoseField],
     w: &[f64],
     spec: &InversePlanObjective,
+    masks: &[RegionMask],
     mask_voxels: &[Vec<usize>],
     provenance: ResultProvenance,
     method: &str,
     certificate: PlanCertificate,
-) -> InversePlanResult {
+) -> Result<InversePlanResult, OptimizeError> {
     let n_voxels = fields.first().map(|f| f.values.len()).unwrap_or(0);
     let mut dose = vec![0.0; n_voxels];
     // The recorded penalty and outcomes are the *literal* metrics at
     // the optimized weights — not the CVaR surrogates the solver
     // enforced — so the result stays comparable with pgd runs.
     let (penalty, _) = penalty_and_gradient(fields, w, spec, mask_voxels, &mut dose);
-    InversePlanResult {
+    Ok(InversePlanResult {
         schema_version: crate::optimize::INVERSE_PLAN_RESULT_SCHEMA.into(),
         id: provenance.id,
         case_id: spec.case_id.clone(),
@@ -579,9 +581,10 @@ fn lp_result(
         converged: matches!(certificate.status.as_str(), "solved" | "almostsolved"),
         method: Some(method.into()),
         certificate: Some(certificate),
+        metrics: crate::optimize::plan_metrics(fields, w, spec, masks, n_voxels)?,
         qualification: crate::optimize::INVERSE_PLAN_QUALIFICATION.into(),
         provenance_id: provenance.provenance_id,
-    }
+    })
 }
 
 /// Solve the nominal objective document with the certified QP solver.
@@ -597,10 +600,11 @@ pub fn optimize_weights_lp(
     let initial = vec![0.0; fields.len()];
     let (_n_voxels, mask_voxels) = resolve_inputs(fields, masks, spec, &initial)?;
     let (w, certificate) = solve_qp(spec, &mask_voxels, &[fields.to_vec()], mode)?;
-    Ok(lp_result(
+    lp_result(
         fields,
         &w,
         spec,
+        masks,
         &mask_voxels,
         provenance,
         match mode {
@@ -608,7 +612,7 @@ pub fn optimize_weights_lp(
             LpMode::Strict => "lp_strict",
         },
         certificate,
-    ))
+    )
 }
 
 /// Solve against a scenario set's per-objective worst case — each
@@ -655,10 +659,11 @@ pub fn optimize_weights_scenarios_lp(
         );
     }
     let (w, certificate) = solve_qp(spec, &mask_voxels, &field_sets, mode)?;
-    Ok(lp_result(
+    lp_result(
         fields,
         &w,
         spec,
+        masks,
         &mask_voxels,
         provenance,
         match mode {
@@ -666,7 +671,7 @@ pub fn optimize_weights_scenarios_lp(
             LpMode::Strict => "lp_strict_worst_case_scenario",
         },
         certificate,
-    ))
+    )
 }
 
 #[cfg(test)]
@@ -687,6 +692,7 @@ mod tests {
             weight_bound: None,
             weight_regularization: 1e-5,
             bio_model: None,
+            metrics: None,
             validity_domain: "unit test".into(),
             provenance_id: "test".into(),
         }

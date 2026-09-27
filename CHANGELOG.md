@@ -31,6 +31,33 @@ own versions independent of the crate version.
   The artifact also carries `residual_site` — the (cell, group) pair
   with the largest last-iterate relative change — so a stalled solve
   is diagnosable from the file alone.
+- `sn solve`: per-group periodic wrap planes (below an internal byte
+  cap, shared set above) — each group's inner sweeps and successive
+  outers now read that group's own wrap-around face values instead of
+  whichever group swept last. The shared buffer's cross-group inflow
+  contamination was the period-2 limit cycle's source on periodic
+  TSL problems: same-group planes removed it — the S4 water column
+  now converges one-step at 24 outer iterations where it previously
+  sat in a stable orbit caught only by the parity-midpoint path.
+- `openbnct.beam-field-set/0.1.0` `screening` block and `plan fields
+  --screen-order/--keep-top` (with `--screen-convergence`,
+  `--screen-max-inner`, `--screen-max-outer`): two-stage field sweeps
+  score every declared beam at a cheap quadrature/convergence, rank
+  by mean aim-mask `physical_total`, and run the full-quality solve
+  only on the retained beams. The manifest records every score and
+  its retention fate; `beams` lists the retained set.
+- `plan optimize`: `metrics` on the objective document reports
+  post-hoc plan quality — per-region voxel counts, mean/min/max,
+  `dose_at_volume` quantiles, `volume_at_dose` at bounds,
+  generalized EUD, and endpoint (TCP/NTCP) probabilities — on the
+  `InversePlanResult` artifact, the CLI output, and the GUI
+  inverse-plan table. Reported, never optimized; isoeffective
+  quantities honor `region_weights`.
+- `plan optimize --emit-plan --seconds-per-weight S`: writes
+  `duration_s = weight·S` on emitted exposures — beam-on seconds
+  under the declared source-strength-scaling convention.
+- Python `MultigroupFlux` gains `residual_site` and `scattering_order`
+  getters.
 - `sn boundaries`: adaptive group-boundary placement by equal
   importance mass over lethargy (R17-04). Reads an `EnergyDistribution`
   histogram (`sn spectrum` extraction, measured beam, or fine-group
@@ -38,11 +65,11 @@ own versions independent of the crate version.
   emits a `openbnct.boundary-proposal/0.1.0` document carrying
   descending edges plus the placement rationale (per-group mass
   shares and lethargy widths). `sn collapse --boundaries-file`
-  consumes the proposal directly. `--uniform-floor` (default 0.25)
-  reserves a share of the importance mass for uniform-lethargy
-  coverage — the anti-starvation guard measured on the water-column
-  experiment, where pure flux importance allocated 41/56 groups
-  below 0.5 eV and zero above 10 keV.
+  consumes the proposal directly. `sn boundaries --uniform-floor`
+  (default 0.25) reserves a share of the importance mass for
+  uniform-lethargy coverage — the anti-starvation guard measured on
+  the water-column experiment, where pure flux importance allocated
+  41/56 groups below 0.5 eV and zero above 10 keV.
 - Multigroup data carries `beam_sigma_nodes_per_cm`: a 4-node
   uniform-in-eV sub-bin σ_t kernel per group. Under
   `--source-weighting uniform_in_bin` the uncollided deposit is

@@ -7429,6 +7429,69 @@ fn show_plan_workspace(
                         ui.end_row();
                     }
                 });
+            if let Some(metrics) = &result.metrics {
+                ui.add_space(6.0);
+                egui::Grid::new("plan-metrics")
+                    .striped(true)
+                    .show(ui, |ui| {
+                        for header in [
+                            "mask",
+                            "voxels",
+                            "mean",
+                            "min",
+                            "max",
+                            "D(v)",
+                            "V(d)",
+                            "EUD",
+                            "endpoints",
+                        ] {
+                            ui.strong(header);
+                        }
+                        ui.end_row();
+                        for region in metrics {
+                            ui.monospace(&region.mask);
+                            ui.monospace(region.voxel_count.to_string());
+                            ui.monospace(format!("{:.4e}", region.mean));
+                            ui.monospace(format!("{:.4e}", region.min));
+                            ui.monospace(format!("{:.4e}", region.max));
+                            ui.monospace(
+                                region
+                                    .dose_at_volume
+                                    .iter()
+                                    .map(|q| format!("{:.2}:{:.3e}", q.volume_fraction, q.dose))
+                                    .collect::<Vec<_>>()
+                                    .join("  "),
+                            );
+                            ui.monospace(
+                                region
+                                    .volume_at_dose
+                                    .iter()
+                                    .map(|v| {
+                                        format!("{:.3e}:{:.1}%", v.dose, 100.0 * v.volume_fraction)
+                                    })
+                                    .collect::<Vec<_>>()
+                                    .join("  "),
+                            );
+                            ui.monospace(
+                                region
+                                    .eud
+                                    .iter()
+                                    .map(|e| format!("a={:.1}:{:.3e}", e.a, e.value))
+                                    .collect::<Vec<_>>()
+                                    .join("  "),
+                            );
+                            ui.monospace(
+                                region
+                                    .endpoints
+                                    .iter()
+                                    .map(|e| format!("{:?}={:.3}", e.endpoint, e.probability))
+                                    .collect::<Vec<_>>()
+                                    .join("  "),
+                            );
+                            ui.end_row();
+                        }
+                    });
+            }
         });
 
         ui.add_space(6.0);

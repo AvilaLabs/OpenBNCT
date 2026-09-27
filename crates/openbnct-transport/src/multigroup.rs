@@ -735,6 +735,10 @@ pub(crate) type BoundarySource =
 /// Slack for a source disk that exactly touches the grid face boundary, cm.
 const FACE_FIT_TOLERANCE_CM: f64 = 1.0e-9;
 
+/// Byte cap on per-group periodic wrap planes — above it the solver
+/// shares one plane set across groups (the historical storage bound).
+const PER_GROUP_WRAP_MAX_BYTES: usize = 64 << 20;
+
 /// Reject an on-face disk that extends past the grid face. The injected
 /// strength of an overhanging disk is undefined — the uncollided split
 /// normalizes by the nominal πr² while the boundary-flux mapping spreads
@@ -1560,11 +1564,13 @@ fn kernel_eigenbasis(quadrature: &[([f64; 3], f64)], l: u32) -> Vec<(f64, Vec<f6
     pairs
 }
 
-/// Periodic-wrap inflow planes per direction: `wrap[d][a]` holds the
-/// previous iterate's cell-average ψ̄ over the far a-plane (index
-/// `u + n_u·v` over the other two axes), empty when axis `a` is
-/// non-periodic. Only these face cells are ever read — the full
-/// `[direction][cell]` previous-iterate buffer is never materialized.
+/// Periodic-wrap inflow planes for one group, per direction:
+/// `wrap[d][a]` holds the previous iterate's cell-average ψ̄ over the
+/// far a-plane (index `u + n_u·v` over the other two axes), empty when
+/// axis `a` is non-periodic. Only these face cells are ever read — the
+/// full `[direction][cell]` previous-iterate buffer is never
+/// materialized. The solver holds one such set per group when it fits
+/// under [`PER_GROUP_WRAP_MAX_BYTES`], otherwise shares a single set.
 type WrapPlanes = Vec<[Vec<f64>; 3]>;
 
 /// Per-cell angular reduction accumulators: `scalar` collects
@@ -2751,9 +2757,29 @@ pub(crate) fn solve_sn_problem(
     // `[direction][cell]` field — directions fold into `cell_acc` as
     // they complete, and periodic inflow reads only the wrap planes in
     // `wrap_prev`/`wrap_next` (face storage, ~O(n^(2/3)) not O(n)).
+    // The planes are indexed per group when they fit under
+    // `PER_GROUP_WRAP_MAX_BYTES`: a group's inner iterations chain on
+    // its own wrap values and each outer inherits that group's
+    // previous-outer planes, so no sweep ever reads another group's
+    // angular face values. The shared single set made every group's
+    // first inner sweep read the previously-swept group's wrap — a
+    // parity-dependent perturbation under the alternating group order
+    // that produced a stable period-2 orbit on near-conservative
+    // periodic problems; same-group planes remove it. Above the cap
+    // the shared set keeps the historical memory bound (and the
+    // parity-midpoint machinery below still absorbs the cycle).
+    let periodic_any = options.periodic.iter().any(|&p| p);
+    let [sx, sy, sz] = geometry.shape.map(|d| d as usize);
+    let face_cells_max = [sx * sy, sx * sz, sy * sz].into_iter().max().unwrap_or(0);
+    let wrap_depth =
+        if periodic_any && (groups * n_dirs * 3 * face_cells_max * 8) <= PER_GROUP_WRAP_MAX_BYTES {
+            groups
+        } else {
+            1
+        };
     let empty_wrap = || -> WrapPlanes { (0..n_dirs).map(|_| Default::default()).collect() };
-    let mut wrap_prev = empty_wrap();
-    let mut wrap_next = empty_wrap();
+    let mut wrap_prev: Vec<WrapPlanes> = (0..wrap_depth).map(|_| empty_wrap()).collect();
+    let mut wrap_next: Vec<WrapPlanes> = (0..wrap_depth).map(|_| empty_wrap()).collect();
     let mut cell_acc: Vec<CellAccum> = (0..n_cells)
         .map(|_| CellAccum {
             scalar: 0.0,
@@ -2825,15 +2851,18 @@ pub(crate) fn solve_sn_problem(
             .sum::<f64>()
             / omega_sum.max(1e-30)
     });
-    // Two-iterate history for the parity test: the alternating sweep
-    // direction plus the lagged periodic-wrap inflow make the composed
-    // operator a two-step map — on near-conservative problems it can
-    // settle into a stable period-2 orbit that pins the one-step
-    // residual while same-parity iterates converge exactly. The
-    // convergence decision therefore measures the two-step distance
-    // `|x_n − x_{n−2}|`; when that is under tolerance but the one-step
-    // residual is not, the emitted field is the parity midpoint, which
-    // halves the cycle's systematic error relative to either endpoint.
+    // Two-iterate history for the parity test, kept as the shared-wrap
+    // fallback's protection: when the wrap planes are shared across
+    // groups (memory above the per-group cap) each group's first inner
+    // sweep reads a different group's wrap values — a parity-dependent
+    // perturbation under the alternating group order that on
+    // near-conservative periodic problems settles into a stable
+    // period-2 orbit pinning the one-step residual while same-parity
+    // iterates converge exactly. The convergence decision therefore
+    // also measures the two-step distance `|x_n − x_{n−2}|`; when that
+    // is under tolerance but the one-step residual is not, the emitted
+    // field is the parity midpoint, which halves the cycle's
+    // systematic error relative to either endpoint.
     let mut two_back: Option<Vec<Vec<f64>>> = None;
     for outer in 0..options.max_outer_iterations {
         let previous = flux.clone();
@@ -2921,7 +2950,8 @@ pub(crate) fn solve_sn_problem(
                 } else {
                     None
                 };
-                std::mem::swap(&mut wrap_prev, &mut wrap_next);
+                let wg = if wrap_depth > 1 { g } else { 0 };
+                std::mem::swap(&mut wrap_prev[wg], &mut wrap_next[wg]);
                 cell_acc.par_iter_mut().for_each(|acc| {
                     acc.scalar = 0.0;
                     acc.current = [0.0; 3];
@@ -2937,8 +2967,8 @@ pub(crate) fn solve_sn_problem(
                     &flux,
                     fixed_source,
                     source_weights,
-                    &wrap_prev,
-                    &mut wrap_next,
+                    &wrap_prev[wg],
+                    &mut wrap_next[wg],
                     &mut cell_acc,
                     case_material,
                     &sigma_eff,

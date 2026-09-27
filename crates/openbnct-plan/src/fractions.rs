@@ -217,6 +217,7 @@ mod tests {
             weight_bound: None,
             weight_regularization: 1e-5,
             bio_model: Some(model),
+            metrics: None,
             validity_domain: "unit test".into(),
             provenance_id: "test".into(),
         }

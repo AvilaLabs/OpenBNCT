@@ -804,6 +804,7 @@ pub fn optimize_weights_scenarios(
         converged,
         method: Some("worst_case_scenario".into()),
         certificate: None,
+        metrics: crate::optimize::plan_metrics(fields, &w, spec, masks, n_voxels)?,
         qualification: crate::optimize::INVERSE_PLAN_QUALIFICATION.into(),
         provenance_id: provenance.provenance_id,
     })
@@ -862,6 +863,7 @@ mod tests {
             weight_bound: None,
             weight_regularization: 0.0,
             bio_model: None,
+            metrics: None,
             validity_domain: "test".into(),
             provenance_id: "test".into(),
         }
@@ -887,6 +889,7 @@ mod tests {
             converged: true,
             method: None,
             certificate: None,
+            metrics: None,
             qualification: "test".into(),
             provenance_id: "test".into(),
         }

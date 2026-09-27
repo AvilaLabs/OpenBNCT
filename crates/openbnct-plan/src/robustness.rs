@@ -720,6 +720,7 @@ mod tests {
             weight_bound: None,
             weight_regularization: 0.0,
             bio_model: Some(bio_model()),
+            metrics: None,
             validity_domain: "test".into(),
             provenance_id: "test".into(),
         }
@@ -749,6 +750,7 @@ mod tests {
             converged: true,
             method: None,
             certificate: None,
+            metrics: None,
             qualification: "test".into(),
             provenance_id: "test".into(),
         }

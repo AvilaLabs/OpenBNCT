@@ -3842,6 +3842,22 @@ impl PyMultigroupFlux {
         self.inner.residual
     }
 
+    /// `(cell, group, relative_change)` of the largest outer-iterate
+    /// change — present on unconverged artifacts, `None` otherwise.
+    #[getter]
+    fn residual_site(&self) -> Option<(u32, u32, f64)> {
+        self.inner
+            .residual_site
+            .map(|s| (s.cell, s.group, s.relative_change))
+    }
+
+    /// Scattering treatment: `p0`, `p0_transport_corrected`, `p1`, or
+    /// `pN` for higher orders. Older artifacts resolve to `p0`.
+    #[getter]
+    fn scattering_order(&self) -> &str {
+        self.inner.scattering_order()
+    }
+
     #[getter]
     fn converged(&self) -> bool {
         self.inner.converged

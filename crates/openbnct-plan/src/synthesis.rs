@@ -503,6 +503,7 @@ mod tests {
             weight_bound: Some(10.0),
             weight_regularization: 0.0,
             bio_model: None,
+            metrics: None,
             validity_domain: "test".into(),
             provenance_id: "prov".into(),
         }

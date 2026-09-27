@@ -51,6 +51,7 @@ pub use endpoint::{
     AppliedDoseStatistic, DoseStatistic, ENDPOINT_EVALUATION_SCHEMA, ENDPOINT_MODEL_SCHEMA,
     EndpointEvaluation, EndpointFunction, EndpointKind, EndpointModel, EvaluatedEndpoint,
     UtcpCombination, UtcpComponents, combine_utcp, combine_utcp_multi, evaluate_endpoint,
+    score_endpoint_function,
 };
 pub use evidence::{
     Applicability, BIO_EVIDENCE_LIBRARY_SCHEMA, BioEvidenceLibrary, ContextQuery,
