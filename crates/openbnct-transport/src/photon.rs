@@ -542,6 +542,7 @@ mod tests {
             coarse_rebalance: true,
             inner_convergence: None,
             theta_repair: true,
+            exp_source: true,
             source_weighting: crate::multigroup::SourceWeighting::CollapseConsistent,
         }
     }

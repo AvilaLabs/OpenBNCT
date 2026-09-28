@@ -105,7 +105,8 @@ voxel grid) the comparison shows:
   deep field is inverted relative to MC.
 - **P0 arm (transport correction OFF): SN/MC thermal rises to ~2.8× at
   z≈13** on the 1 cm mesh. Excess is uniform in radius (axis ≈ rim), so
-  not a rasterisation edge effect.
+  not a rasterisation edge effect. **RESOLVED by the exponential-source
+  closure** — see the third fix below: deep thermal now ≈ 0.96–1.10.
 - **Confound discovered**: `transport_correction` defaults ON under P0
   (`p0_transport_corrected`) — it strips the forward scatter lobe from
   σ_t, deepening penetration. Arms run under `OPENBNCT_NO_THETA_REPAIR`
@@ -195,6 +196,85 @@ feeds it) — confirming the two anomalies were always separate.
 Residual ~0.75–0.85 thermal-only deficit at z ≤ 2 is the collided
 sweep's boundary-layer truncation documented in the findings.
 
+**Third fix — exponential within-cell source reconstruction
+(`exp_source`, default ON, kill-switch `OPENBNCT_NO_EXP_SOURCE`).**
+A controlled 1-D probe (`thick_cell_conservative_column_probe`,
+single group σ_t = 3/cm σ_s = 2.85/cm, periodic transverse, 1 cm vs
+1 mm cells) isolates the mechanism with all other modelling removed:
+plain θ-WDD is *exact* for flat-source cells, so any deep-tail error
+there is purely the within-cell source-flatness approximation. The
+probe reproduces the pathology at full strength — the coarse/fine
+deep-tail ratio runs away as ~1.47× per cell to **5.7e3 at z = 23**
+(perfect-mixer cells: in the thick near-conservative limit the θ
+closure transmits the cell mean toward the outflow edge, so a
+declining field's transport is governed by cell size rather than
+mfp) — and reproduces the near-face deficit signature too (entry
+cell ratio 0.96).
+
+The closure is repaired by reconstructing the direction-free source
+q = fixed + in-scatter as a *direction-specific exponential* toward
+each outflow edge (per-axis log-slopes of the cell-source triplet,
+monotone-sign limited so extrema/discontinuities collapse back to
+plain θ-WDD identically, rate capped at e^{±4} per cell, gated to
+cells with σ_t·Δ > 1 — thin cells transport a flat source
+essentially exactly, and an ordinate-independent gate keeps the
+method uniform under h-refinement). The outflow becomes the
+flat-source formula at the *edge* equilibrium q(edge)/σ_eff with
+σ_eff = σ + μλ, applied as a ratio on the θ closure's source share
+so the multi-axis coupling and λ → 0 limits are exact. Probe result:
+entry ratio 1.0165, deep tail **flat at ~1.315** — the runaway is
+gone; the residual is a bounded boundary-layer amplitude offset,
+not a per-cell rate error. The test asserts both directions: the
+corrected band [0.5, 2.0] and the legacy runaway > 50×.
+
+Iteration cost measured on this case: λ lagged inside the inner
+sweep map degraded contraction ~5–8× (nonlinear term inside source
+iteration) — mitigated by rebuilding λ once per inner-iteration
+series and freezing it (the inner map is then affine; fixed point
+unchanged — probe ratios identical). A second effect appeared at
+the outer level: the λ↔φ lag sustains a period-2 oscillation that
+pins the residual plateau (~0.99×/outer). Freezing λ permanently
+after a warmup (λ is a shape parameter — the tail's exponential
+rate settles within the first ~dozen outers) restored the plain
+map's contraction entirely: the frozen arm converged in **97
+outers** vs the depfix baseline's 92.
+
+**P0 1 cm same-data result (`target/mg-p0-linsrc-1cm.json`, 97
+outers, residual 7.05e-5) — the pileup is eliminated:** mid-depth
+thermal z = 4–11 SN/MC ≈ 1.00–1.02 (was ~1.05–1.2 climbing toward
+the excess); deep thermal z = 12–21 ≈ 0.96–1.10 (was ~2.5–2.8 at
+peak). Only the two trailing slabs (z = 22–23: 1.29, 1.88, where
+MC rel-std reaches 0.32–0.43) keep a residual excess — boundary-
+edge behaviour plus statistically weak bins. Near-face thermal
+0.88–0.99 at z ≤ 3 — the collided boundary-layer deficit is
+unchanged, as expected: this fix addresses thick-cell transport,
+not the entry layer's first-scatter truncation. Epi mid-depth
+~1.02 (was 1.3–1.4 — same truncation family, now quiet); fast
+band unchanged ~1.0 (thin cells, gate off). Phantom-integrated
+flux-volume SN/MC = 0.957; absorbed fraction 0.272 → 0.282 toward
+MC's 0.304 — the over-transported population now absorbs instead
+of piling into the tail.
+
+**P1 1 cm arm (`target/mg-p1-linsrc-1cm.json`, 88 outers — faster
+than the baseline P1's 122): substantial but not complete.** Deep
+thermal pileup 3.3 → ~1.4 (z ≈ 12–16 now 1.24–1.44 vs 2.7–3.3),
+epi mid-depth hump 1.89 → 1.49, near-face thermal 0.79–0.94 →
+0.90–1.15. The ~40 % residual under P1 (vs ~0 under P0) is a
+genuine limitation: the scalar λ reconstruction cannot represent
+the anisotropic source's *directional* spatial structure — under
+P1 the forward-peaked in-scatter varies per direction, and a
+single direction-free rate per face under-fits it. Extending the
+fit per-direction (or to the P1 current-weighted source) is the
+identified next step, not h-refinement.
+Dose fold on the corrected P1 field (independent NumPy fold vs
+MC-P1's own tally): all-cell median **1.0184**, beam axis 0.93–1.12
+through z ≤ 16 — at parity with the depfix fold; the dose metric
+is near-field-dominated so the deep-tail improvement shows in the
+spread, not the median. The thermal-weighted dose components
+(boron, nitrogen, photon — the responses that map the pileup)
+dropped from ~2.3× MC under depfix to ~1.33× — now tracking the
+residual ~1.4 flux excess rather than the ~3.3 pileup.
+
 **Dose consequence** (`dose_fold_check.py`, independent NumPy fold):
 the fold itself refolds the committed bundle to 1e-16 exactly, so the
 dose pipeline is clean — differences live in transport. Folding the
@@ -213,9 +293,11 @@ responses, consistent with the flux-level finding.
 | deep-thermal P1/P0 gain (2 cm slab, μ̄ = 0.7) | 1.02 | 1.82 | — |
 | phantom P1/P0 deep-thermal ratio, z ≈ 12–15 | 0.69–0.75 (inverted) | 2.27–2.30 | ≈ 2.5 |
 | epi mid-depth hump (S_N P1/P0, z ≈ 6) | 1.55 | 3.17 | 2.36 |
-| near-face thermal SN/MC, z ≤ 3 | 0.65–0.73 | 0.79–0.94 | 1.0 |
-| same-data dose median vs MC-P1 | 0.876 | 1.019 | 1.0 |
-| beam-axis dose z = 0–5 vs MC-P1 | 0.68–1.03 | 1.00–1.03 | 1.0 |
+| near-face thermal SN/MC, z ≤ 3 | 0.65–0.73 | 0.88–1.15 | 1.0 |
+| **P0 deep thermal SN/MC, z = 12–21** | ~2.5–2.8 pileup | **0.96–1.10** | 1.0 |
+| **P1 deep thermal SN/MC, z = 12–16** | ~2.7–3.3 pileup | **1.24–1.44** | 1.0 |
+| same-data dose median vs MC-P1 | 0.876 | 1.018 | 1.0 |
+| beam-axis dose z = 0–5 vs MC-P1 | 0.68–1.03 | 0.98–1.12 | 1.0 |
 
 Outputs land in `target/` — they are working artifacts, not frozen
 evidence; committed comparison results go in this directory only once

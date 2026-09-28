@@ -8,6 +8,27 @@ own versions independent of the crate version.
 
 ### Added — transport
 
+- Exponential within-cell source reconstruction (`SnOptions.exp_source`,
+  default on; `OPENBNCT_NO_EXP_SOURCE` A/B kill-switch): in optically
+  thick cells (σ_t·Δ > 1) the direction-free source is fit per axis as
+  q ∝ e^{λx} toward each outflow edge, and the edge flux takes the
+  exact exponential-source value q(edge)/σ_eff with σ_eff = σ + μλ —
+  applied as a ratio on the θ-WDD source share so multi-axis coupling
+  and the λ → 0 limit are exact, and non-monotone source triplets fall
+  back to θ-WDD identically. Fixes DD's asymptotic-preservation
+  failure (thick near-conservative cells mix the whole inflow to the
+  cell mean and over-transport a declining tail — ~1.47×/cell runaway
+  in the controlled probe). On the FiR-1 same-data P0 arm the deep-
+  thermal S_N/OpenMC pileup is eliminated (2.5–2.8× → 0.96–1.10 at
+  z = 12–21); under P1 it halves (3.3× → ~1.4, residual being the
+  directional source structure a scalar λ cannot represent). The
+  reconstruction is rebuilt per inner-iteration series (inner map
+  stays affine) and frozen after a 16-outer warmup — a λ↔φ lag
+  otherwise sustains a period-2 oscillation that stalls the slow
+  thermal mode; the frozen arm converges at the baseline rate.
+  New regression `thick_cell_conservative_column_probe` pins both
+  directions (corrected tail bounded in [0.5, 2.0], legacy runaway
+  > 50×).
 - Declared source-spectrum interpolation: `sn solve --source-weighting
   {collapse_consistent|uniform_in_bin}` selects the within-bin spread
   of a `TabulatedHistogram` source — Maxwellian-below-0.5 eV / 1/E

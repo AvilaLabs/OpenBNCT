@@ -9786,6 +9786,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    exp_source: true,
                     source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let data_ref = openbnct_core::ContentReference {
@@ -10994,6 +10995,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence,
                     theta_repair: true,
+                    exp_source: true,
                     source_weighting: match source_weighting.as_str() {
                         "collapse_consistent" => {
                             openbnct_transport::SourceWeighting::CollapseConsistent
@@ -11582,6 +11584,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    exp_source: true,
                     source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let data_ref = openbnct_core::ContentReference {
@@ -13133,6 +13136,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     quadrature_order: order,
                     assignment: assignment_doc.clone(),
                     theta_repair: !signed,
+                    exp_source: true,
                     ..Default::default()
                 };
                 let adjoint = openbnct_transport::solve_multigroup_adjoint(
@@ -14018,6 +14022,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     quadrature_order: order,
                     assignment: assignment_doc.clone(),
                     theta_repair: !signed,
+                    exp_source: true,
                     ..Default::default()
                 };
                 let data_ref = openbnct_core::ContentReference {
@@ -14358,6 +14363,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    exp_source: true,
                     source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 match (screen_order, keep_top) {
@@ -15944,6 +15950,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    exp_source: true,
                     source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let nominal_flux =
@@ -16088,6 +16095,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    exp_source: true,
                     source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let report = openbnct_transport::run_screening(
@@ -17117,6 +17125,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     coarse_rebalance: true,
                     inner_convergence: None,
                     theta_repair: true,
+                    exp_source: true,
                     source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let forward = forward_flux
