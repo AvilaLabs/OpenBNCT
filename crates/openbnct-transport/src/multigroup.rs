@@ -694,6 +694,13 @@ pub struct MultigroupFlux {
     /// Absent on converged artifacts and pre-existing files.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub residual_site: Option<ResidualSite>,
+    /// How convergence was declared: absent = the one-step residual
+    /// fell below tolerance; `parity_midpoint` = a converged period-2
+    /// orbit whose emitted field is the same-parity midpoint — a
+    /// projection, not a sweep endpoint, so it is recorded rather
+    /// than implied. Absent on pre-existing artifacts.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub convergence_mode: Option<String>,
     pub qualification: String,
     pub provenance_id: String,
 }
@@ -1294,6 +1301,26 @@ pub fn uncollided_beam_flux(
     case_material: &[usize],
     weighting: SourceWeighting,
 ) -> Result<Option<Vec<Vec<f64>>>, MultigroupError> {
+    Ok(uncollided_beam_moments(case, data, case_material, weighting)?.map(|(flux, _current)| flux))
+}
+
+/// `(scalar_fluence, directional_moment)` per `[cell][group]` — the
+/// uncollided beam's zeroth and first angular moments.
+type UncollidedMoments = (Vec<Vec<f64>>, Vec<Vec<[f64; 3]>>);
+
+/// The uncollided beam's scalar fluence AND its first angular moment
+/// per cell: `J_a[cell][g] = Σ_d Ω_{d,a}·φ_d[cell][g]` where the sum
+/// runs over the source distribution's discrete directions. The
+/// directional component is what the P1 in-scatter source needs —
+/// `3·Σ_gp σ_s1(gp→g)·(Ω·J_unc,gp)` is the anisotropic half of the
+/// first-collision source and was previously dropped, isotropizing
+/// the beam's first scatter under `uncollided_split`.
+pub(crate) fn uncollided_beam_moments(
+    case: &TransportCase,
+    data: &MultigroupData,
+    case_material: &[usize],
+    weighting: SourceWeighting,
+) -> Result<Option<UncollidedMoments>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
     let SourceSpatialDistribution::UniformDisk {
@@ -1364,6 +1391,7 @@ pub fn uncollided_beam_flux(
     const TRANSVERSE_POINTS: u32 = 8;
     let sub = TRANSVERSE_POINTS as f64;
     let mut unc = vec![vec![0.0; groups]; n_cells];
+    let mut unc_current = vec![vec![[0.0_f64; 3]; groups]; n_cells];
     let mut lit = false;
     for k in 0..nz {
         for j in 0..ny {
@@ -1431,7 +1459,12 @@ pub fn uncollided_beam_flux(
                                         })
                                         .sum()
                                 };
-                                unc[cell][g] += beam_intensity * w * frac / (sub * sub) * survival;
+                                let deposit = beam_intensity * w * frac / (sub * sub) * survival;
+                                unc[cell][g] += deposit;
+                                let j = &mut unc_current[cell][g];
+                                j[0] += deposit * d_hat[0];
+                                j[1] += deposit * d_hat[1];
+                                j[2] += deposit * d_hat[2];
                             }
                         }
                     }
@@ -1444,7 +1477,7 @@ pub fn uncollided_beam_flux(
             "uncollided beam illuminates no cell centers — check disk placement".into(),
         ));
     }
-    Ok(Some(unc))
+    Ok(Some((unc, unc_current)))
 }
 
 /// Legendre polynomial P_l(x) by the three-term recurrence.
@@ -2039,7 +2072,7 @@ pub(crate) fn solve_multigroup_unchecked(
     );
     // Uncollided beam split or the discrete boundary-flux path.
     let uncollided = if options.beam_uncollided_split && !volume_source {
-        uncollided_beam_flux(case, data, &case_material, options.source_weighting)?
+        uncollided_beam_moments(case, data, &case_material, options.source_weighting)?
     } else {
         None
     };
@@ -2054,7 +2087,7 @@ pub(crate) fn solve_multigroup_unchecked(
         map_volume_source(case, data, options.source_weighting)?
     } else {
         match &uncollided {
-            Some(unc) => (0..n_cells)
+            Some((unc, _)) => (0..n_cells)
                 .map(|cell| {
                     let material = &data.materials[case_material[cell]];
                     (0..groups)
@@ -2080,13 +2113,14 @@ pub(crate) fn solve_multigroup_unchecked(
         &quadrature,
         &boundary,
         &fixed_source,
+        uncollided.as_ref().map(|(_, j)| j.as_slice()),
         None,
         data_ref,
         case_ref,
     )?;
 
     // Total flux = collided solve + analytic uncollided component.
-    if let Some(unc) = &uncollided {
+    if let Some((unc, _)) = &uncollided {
         for (row, unc_row) in result.flux.iter_mut().zip(unc.iter()) {
             for (f, u) in row.iter_mut().zip(unc_row.iter()) {
                 *f += u;
@@ -2204,6 +2238,7 @@ pub fn solve_multigroup_adjoint(
         &quadrature,
         &BoundarySource::new(),
         adjoint_source,
+        None,
         adjoint_source_weights,
         data_ref,
         case_ref,
@@ -2576,7 +2611,12 @@ pub fn material_composition_map(
 
 /// Shared iteration core for the forward and adjoint solves: source
 /// iteration over `fixed_source` (volumetric or first-collision) plus
-/// `boundary` incident flux on the case grid.
+/// `boundary` incident flux on the case grid. `uncollided_current` is
+/// the split beam's directional moment J_a[cell][group]; under P1 it
+/// supplies the anisotropic half of the first-collision source,
+/// `3·Σ_gp σ_s1(gp→g)·(Ω·J_unc,gp)` — without it the beam's first
+/// scatter is isotropized while the collided field keeps its full
+/// anisotropic kernel.
 #[allow(clippy::too_many_arguments)]
 pub(crate) fn solve_sn_problem(
     case: &TransportCase,
@@ -2586,6 +2626,7 @@ pub(crate) fn solve_sn_problem(
     quadrature: &[([f64; 3], f64)],
     boundary: &BoundarySource,
     fixed_source: &[Vec<f64>],
+    uncollided_current: Option<&[Vec<[f64; 3]>]>,
     source_weights: Option<&[f64]>,
     data_ref: ContentReference,
     case_ref: ContentReference,
@@ -2597,6 +2638,13 @@ pub(crate) fn solve_sn_problem(
     let n_dirs = quadrature.len();
     if fixed_source.len() != n_cells || fixed_source.iter().any(|row| row.len() != groups) {
         return Err(invalid("fixed source must be [cells][groups]".into()));
+    }
+    if let Some(j) = uncollided_current
+        && (j.len() != n_cells || j.iter().any(|row| row.len() != groups))
+    {
+        return Err(invalid(
+            "uncollided current must be [cells][groups][3]".into(),
+        ));
     }
     if let Some(w) = source_weights
         && (w.len() != n_dirs || w.iter().any(|x| !x.is_finite() || *x < 0.0))
@@ -2790,6 +2838,7 @@ pub(crate) fn solve_sn_problem(
     let mut converged = false;
     let mut residual = f64::MAX;
     let mut outer_done = 0;
+    let mut parity_midpoint = false;
     let mut last_residual_site: Option<ResidualSite> = None;
     let mut anderson =
         (options.anderson_depth > 0).then(|| AndersonState::new(options.anderson_depth));
@@ -2880,18 +2929,23 @@ pub(crate) fn solve_sn_problem(
             // Within-group Jacobi iteration on the scatter source.
             for inner_iter in 0..options.max_inner_iterations {
                 // P1 anisotropic source into group g:
-                // S_a(cell) = Σ_gp Σ_s1(gp→g)·J_{a,gp}(cell).
+                // S_a(cell) = Σ_gp Σ_s1(gp→g)·J_{a,gp}(cell), with J
+                // the total current — the collided iterate plus the
+                // split beam's fixed uncollided current, which carries
+                // the beam's first-scatter forward bias.
                 let p1_source: Option<Vec<[f64; 3]>> = if p1 {
                     let mut src = vec![[0.0_f64; 3]; n_cells];
                     for cell in 0..n_cells {
                         let mi = case_material[cell];
                         if let Some(m) = &data.materials[mi].scatter_p1_matrix_per_cm {
+                            let ju = uncollided_current.map(|u| &u[cell]);
                             for gp in 0..groups {
                                 let s = m[gp * groups + g];
                                 let j = &current[cell][gp];
-                                src[cell][0] += s * j[0];
-                                src[cell][1] += s * j[1];
-                                src[cell][2] += s * j[2];
+                                let ju = ju.map(|u| u[gp]).unwrap_or([0.0; 3]);
+                                src[cell][0] += s * (j[0] + ju[0]);
+                                src[cell][1] += s * (j[1] + ju[1]);
+                                src[cell][2] += s * (j[2] + ju[2]);
                             }
                         }
                     }
@@ -3375,6 +3429,7 @@ pub(crate) fn solve_sn_problem(
                 }
             }
             residual = residual_two_step;
+            parity_midpoint = true;
             converged = true;
             break;
         }
@@ -3437,6 +3492,7 @@ pub(crate) fn solve_sn_problem(
         converged,
         balance_absorbed_fraction: None,
         residual_site: (!converged).then_some(last_residual_site).flatten(),
+        convergence_mode: parity_midpoint.then(|| "parity_midpoint".to_string()),
         qualification: "research-only: deterministic multigroup flux, not a clinical quantity"
             .into(),
         provenance_id: format!("sn-s{}-{}", options.quadrature_order, case.case_id),
@@ -4037,6 +4093,45 @@ pub(crate) mod tests {
         assert_eq!(unc[0][0], 0.0);
     }
 
+    /// A monodirectional beam's uncollided field carries all of its
+    /// angular moment along the beam direction: J = φ·Ω̂. The moment is
+    /// what the P1 first-scatter source consumes — a zero or isotropic
+    /// moment would isotropize the beam's first collision.
+    #[test]
+    fn uncollided_moments_track_beam_direction() {
+        let mut case = slab_case();
+        case.source.space = SourceSpatialDistribution::UniformDisk {
+            axis: PlaneAxis::Z,
+            offset_cm: -1.0,
+            center_uv_cm: [0.0, 0.0],
+            radius_cm: 0.04,
+        };
+        let mg = data(&[0.0], vec![0.0]); // σ_t = 0: no attenuation
+        mg.validate().unwrap();
+        let (unc, current) = uncollided_beam_moments(
+            &case,
+            &mg,
+            &vec![0usize; case.geometry.voxel_count().unwrap()],
+            SourceWeighting::CollapseConsistent,
+        )
+        .unwrap()
+        .unwrap();
+        let mut lit = 0usize;
+        for cell in 0..unc.len() {
+            let phi = unc[cell][0];
+            let j = current[cell][0];
+            if phi == 0.0 {
+                assert_eq!(j, [0.0; 3], "cell {cell}: unlit cell carries a moment");
+                continue;
+            }
+            lit += 1;
+            assert_eq!(j[0], 0.0, "cell {cell}: transverse x moment must vanish");
+            assert_eq!(j[1], 0.0, "cell {cell}: transverse y moment must vanish");
+            assert_eq!(j[2], phi, "cell {cell}: J_z = φ for the +z beam");
+        }
+        assert!(lit > 0, "beam must illuminate at least one cell");
+    }
+
     /// Volumetric sources deposit an isotropic emission density into
     /// the fixed source. A periodic, uniformly covered, pure absorber
     /// is an infinite medium — every cell must carry exactly S/σ_t and
@@ -4174,6 +4269,406 @@ pub(crate) mod tests {
         // A monodirectional volume source is rejected — emission from
         // a volume is only meaningful isotropic.
         case.source.validate().unwrap_err();
+    }
+
+    /// Method-of-manufactured-solutions rig for the sweep: solves the
+    /// transport problem whose exact angular flux is
+    /// `ψ_d(z) = e^{κz}` on z ∈ [0, L] — an exponential so the required
+    /// source is separable, `S_d(z) = e^{κz}·(κμ_{z,d} + σ_t − σ_s)`,
+    /// expressible as `fixed_source[cell] = ⟨e^{κz}⟩_cell` times
+    /// `source_weights[d] = κμ_{z,d} + σ_t − σ_s` (the in-scatter term
+    /// uses the normalized scalar flux `φ = (1/4π)Σ_d ω_d ψ_d`, which
+    /// is `e^{κz}` for this family). Boundary inflow is the
+    /// manufactured value on the z faces; the transverse faces are
+    /// periodic and ψ is transverse-uniform, so the wrap is consistent
+    /// identically. Returns (L2, L∞) of `φ − ⟨e^{κz}⟩` over cells.
+    fn mms_exponential_column(
+        n_z: usize,
+        len_cm: f64,
+        sigma_t: f64,
+        sigma_s: f64,
+        kappa: f64,
+        mut options: SnOptions,
+    ) -> (f64, f64) {
+        let h = len_cm / n_z as f64;
+        let mut case = slab_case();
+        case.geometry = GridGeometry {
+            shape: [1, 1, n_z as u32],
+            spacing_mm: [10.0 * h; 3],
+            origin_mm: [5.0 * h, 5.0 * h, 5.0 * h],
+            direction: IDENTITY,
+        };
+        let quadrature = level_symmetric_quadrature(options.quadrature_order).unwrap();
+        // Manufactured per-direction source weight. Positive for all
+        // ordinates when κ < σ_t − σ_s.
+        let w: Vec<f64> = quadrature
+            .iter()
+            .map(|(dir, _)| kappa * dir[2] + sigma_t - sigma_s)
+            .collect();
+        assert!(
+            w.iter().all(|&x| x > 0.0),
+            "MMS weights must stay positive: {w:?}"
+        );
+        // Cell-average of e^{κz} on [k·h, (k+1)·h].
+        let cellavg = |k: usize| {
+            (kappa * h * (k + 1) as f64).exp() - (kappa * h * k as f64).exp()
+        } / (kappa * h);
+        let fixed_source: Vec<Vec<f64>> = (0..n_z).map(|k| vec![cellavg(k)]).collect();
+        // Manufactured inflow: ψ = 1 on z = 0 (μ_z > 0 dirs), e^{κL}
+        // on z = L (μ_z < 0 dirs). Faces are 2·axis + !positive.
+        let mut boundary = BoundarySource::new();
+        for (d, (dir, _)) in quadrature.iter().enumerate() {
+            let (face, psi) = if dir[2] > 0.0 {
+                (4u8, 1.0)
+            } else {
+                (5u8, (kappa * len_cm).exp())
+            };
+            boundary
+                .entry((face, 0u32, 0u32))
+                .or_default()
+                .push((d, 0usize, psi));
+        }
+        options.periodic = [true, true, false];
+        options.transport_correction = false;
+        options.theta_repair = true;
+        options.coarse_rebalance = false;
+        options.anderson_depth = 0;
+        options.inner_convergence = Some(1e-12);
+        options.convergence = 1e-10;
+        options.max_inner_iterations = 400;
+        options.max_outer_iterations = 50;
+        let case_material = vec![0usize; n_z];
+        let data = data(&[sigma_t], vec![sigma_s]);
+        let flux = solve_sn_problem(
+            &case,
+            &data,
+            &options,
+            &case_material,
+            &quadrature,
+            &boundary,
+            &fixed_source,
+            None,
+            Some(&w),
+            cref("mms-data"),
+            cref("mms-case"),
+        )
+        .unwrap();
+        assert!(flux.converged, "MMS solve did not converge");
+        let mut l2 = 0.0_f64;
+        let mut linf = 0.0_f64;
+        for (k, row) in flux.flux.iter().enumerate() {
+            let err = (row[0] - cellavg(k)).abs();
+            l2 += err * err;
+            linf = linf.max(err);
+        }
+        ((l2 / n_z as f64).sqrt(), linf)
+    }
+
+    /// MMS verification of the sweep's spatial discretization: an
+    /// exponential manufactured field, refined h → h/2 four times.
+    /// θ-WDD is 2nd-order on thin cells and steps toward the step
+    /// closure on thick ones, so the measured order must climb to ≈2
+    /// — anything materially under (~1) would indicate a discrete
+    /// error no physical benchmark would expose.
+    #[test]
+    fn mms_sweep_converges_at_design_order() {
+        let (sigma_t, sigma_s, kappa, len) = (2.0_f64, 0.1_f64, 0.3_f64, 4.0_f64);
+        let mut rows = Vec::new();
+        for n_z in [8usize, 16, 32, 64, 128] {
+            let (l2, linf) = mms_exponential_column(n_z, len, sigma_t, sigma_s, kappa, options());
+            rows.push((n_z, l2, linf));
+        }
+        if std::env::var_os("SN_MMS_TABLE").is_some() {
+            for w in rows.windows(2) {
+                eprintln!(
+                    "[mms] N={} L2={:.3e} Linf={:.3e} | rate={:.3}",
+                    w[0].0,
+                    w[0].1,
+                    w[0].2,
+                    (w[0].1 / w[1].1).log2()
+                );
+            }
+            let last = rows.last().unwrap();
+            eprintln!("[mms] N={} L2={:.3e} Linf={:.3e}", last.0, last.1, last.2);
+        }
+        let mut finest_rate = 0.0_f64;
+        for pair in rows.windows(2) {
+            // h halves per level: error ~ h^p → e1/e2 = 2^p.
+            finest_rate = (pair[0].1 / pair[1].1).log2();
+        }
+        // Monotone decrease and the asymptotic rate ≥ ~1.7 (climbing
+        // to 2 — coarse cells start nearer the step regime).
+        assert!(
+            rows.windows(2).all(|w| w[1].1 < w[0].1),
+            "MMS error not monotone under refinement: {rows:?}"
+        );
+        assert!(
+            finest_rate >= 1.7,
+            "MMS observed order {finest_rate:.2} below the DD design rate: {rows:?}"
+        );
+    }
+
+    /// Option-matrix audit — infinite-medium oracle: a uniform
+    /// volumetric source in an all-periodic box has the closed-form
+    /// fixed point `σ_t·φ = S + Σ_s·φ`, which every solver flag must
+    /// reproduce identically (Anderson/CMR preserve fixed points; the
+    /// transport correction cancels exactly in the homogeneous limit;
+    /// the P1 anisotropic source is proportional to the current, which
+    /// is zero here). Any divergence is a flag-interaction defect —
+    /// exactly the class that produced the wrap-plane contamination
+    /// and coverage-deposit bugs.
+    #[test]
+    fn option_matrix_infinite_medium_oracle() {
+        // 2-group data with upscatter so the outer iteration is real:
+        // σ_t = [1.0, 0.5], σ(gp→g) = [[0.2, 0.05], [0.1, 0.15]].
+        // Analytic: 0.35·φ1 = 0.05·φ0 → φ1 = φ0/7; φ0 = S/0.785714.
+        let mut mg = data(&[1.0, 0.5], vec![0.2, 0.05, 0.1, 0.15]);
+        mg.materials[0].transport_mu_bar = Some(vec![0.4, 0.4]);
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(vec![0.12, 0.03, 0.06, 0.09]);
+        let mut case = slab_case();
+        case.source.space = SourceSpatialDistribution::UniformBox {
+            x_range_cm: [-0.2, 0.2],
+            y_range_cm: [-0.2, 0.2],
+            z_range_cm: [-1.0, 1.0],
+            interval_convention: IntervalConvention::HalfOpen,
+        };
+        case.source.angle = AngularDistribution::IsotropicCone {
+            axis_unit_vector: [0.0, 0.0, 1.0],
+            half_angle_rad: std::f64::consts::PI,
+        };
+        // Monoenergetic in group 0 → S = (S, 0); density = 1/0.32.
+        // Expected fixed point per flag class: the transport
+        // correction is an *approximation*, not an identity — σ_a is
+        // preserved exactly (balance audit below) but the corrected
+        // equation's fixed point differs legitimately. Compute the
+        // corrected-equation analytic solution the same way the
+        // solver applies it: σ_s,tr = σ_s − max(P1,0) elementwise,
+        // σ_t,tr = σ_t − Σ_gt min(max(P1,0), σ_s) over the row.
+        let density = 1.0 / 0.32;
+        let sigma_s: [f64; 4] = [0.2, 0.05, 0.1, 0.15];
+        let p1m: [f64; 4] = [0.12, 0.03, 0.06, 0.09];
+        let analytic = |tc: bool| {
+            let (st, ss) = if tc {
+                let rem_g = |g: usize| {
+                    (0..2)
+                        .map(|gp| p1m[g * 2 + gp].max(0.0).min(sigma_s[g * 2 + gp]))
+                        .sum::<f64>()
+                };
+                let st = vec![1.0 - rem_g(0), 0.5 - rem_g(1)];
+                let ss: Vec<f64> = (0..4)
+                    .map(|i| (sigma_s[i] - p1m[i].max(0.0)).max(0.0))
+                    .collect();
+                (st, ss)
+            } else {
+                (vec![1.0, 0.5], sigma_s.to_vec())
+            };
+            // σ_t·φ = S + Σ_s·φ per group, 2×2:
+            //   a·φ0 − ss(1→0)·φ1 = S ;  −ss(0→1)·φ0 + b·φ1 = 0
+            let a = st[0] - ss[0];
+            let b = st[1] - ss[3];
+            let phi1_factor = ss[1] / b;
+            let phi0 = density / (a - ss[2] * phi1_factor);
+            [phi0, phi0 * phi1_factor]
+        };
+
+        let mut combos = 0usize;
+        for anderson in [0usize, 3] {
+            for cmr in [false, true] {
+                for theta in [false, true] {
+                    for tc in [false, true] {
+                        for p1 in [false, true] {
+                            // P1 supersedes the correction — declaring
+                            // both must be a no-op on tc, not a
+                            // double-counted forward lobe.
+                            let expected = analytic(tc && !p1);
+                            let mut o = options();
+                            o.periodic = [true, true, true];
+                            o.anderson_depth = anderson;
+                            o.coarse_rebalance = cmr;
+                            o.theta_repair = theta;
+                            o.transport_correction = tc;
+                            o.p1_anisotropic = p1;
+                            o.max_outer_iterations = 100;
+                            let flux = solve_multigroup(&case, &mg, &o, cref("mg"), cref("case"))
+                                .unwrap_or_else(|e| {
+                                    panic!(
+                                        "combo a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1}: {e}"
+                                    )
+                                });
+                            assert!(
+                                flux.converged,
+                                "combo a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1} unconverged"
+                            );
+                            for (cell, row) in flux.flux.iter().enumerate() {
+                                for g in 0..2 {
+                                    assert!(
+                                        (row[g] - expected[g]).abs() / expected[g] < 1e-8,
+                                        "combo a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1}: \
+                                         cell {cell} g{g} = {} vs analytic {}",
+                                        row[g],
+                                        expected[g]
+                                    );
+                                }
+                            }
+                            let absorbed = flux.balance_absorbed_fraction.unwrap();
+                            assert!(
+                                (absorbed - 1.0).abs() < 1e-8,
+                                "combo a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1}: \
+                                 balance {absorbed}"
+                            );
+                            combos += 1;
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(combos, 32, "expected 32 flag combinations exercised");
+    }
+
+    /// Option-matrix audit — leaky beam slab: flag combinations may
+    /// legitimately change the field (transport correction and P1
+    /// change the *equation*; θ-repair and the boundary-vs-split
+    /// source path change the discrete system), but the invariants
+    /// never move: convergence, positivity, and the balance audit
+    /// must close (absorbed fraction ≤ 1 — a defect-fabricating map
+    /// would exceed it). Within one physics class the fixed-point-
+    /// preserving flags (Anderson depth, CMR) must agree with the
+    /// bare iteration to the convergence floor.
+    #[test]
+    fn option_matrix_leaky_beam_invariants() {
+        let mut mg = data(&[1.0, 0.5], vec![0.2, 0.05, 0.1, 0.15]);
+        mg.materials[0].transport_mu_bar = Some(vec![0.4, 0.4]);
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(vec![0.12, 0.03, 0.06, 0.09]);
+        let case = slab_case();
+        let mut base = options();
+        base.max_outer_iterations = 200;
+
+        // (theta, tc, p1, split) physics class → (a0, cmr-false)
+        // reference field for that class.
+        let mut class_refs: std::collections::BTreeMap<(bool, bool, bool, bool), Vec<Vec<f64>>> =
+            Default::default();
+        let mut combos = 0usize;
+        for theta in [false, true] {
+            for tc in [false, true] {
+                for p1 in [false, true] {
+                    for split in [false, true] {
+                        for anderson in [0usize, 3] {
+                            for cmr in [false, true] {
+                                let mut o = base.clone();
+                                o.anderson_depth = anderson;
+                                o.coarse_rebalance = cmr;
+                                o.theta_repair = theta;
+                                o.transport_correction = tc;
+                                o.p1_anisotropic = p1;
+                                o.beam_uncollided_split = split;
+                                let flux =
+                                    solve_multigroup(&case, &mg, &o, cref("mg"), cref("case"))
+                                        .unwrap();
+                                let label = format!(
+                                    "a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1} sp{split}"
+                                );
+                                assert!(flux.converged, "{label}: unconverged");
+                                for (cell, row) in flux.flux.iter().enumerate() {
+                                    assert!(
+                                        row.iter().all(|f| *f >= 0.0),
+                                        "{label}: negative flux at cell {cell}"
+                                    );
+                                }
+                                let absorbed = flux.balance_absorbed_fraction.unwrap();
+                                assert!(
+                                    absorbed <= 1.0 + 1e-6,
+                                    "{label}: balance audit {absorbed} fabricates particles"
+                                );
+                                // The declared correction is
+                                // suppressed under P1 — a p1+tc combo
+                                // belongs to the p1-only physics
+                                // class, so its reference is shared.
+                                let key = (theta, tc && !p1, p1, split);
+                                match class_refs.get(&key) {
+                                    None => {
+                                        debug_assert!(anderson == 0 && !cmr);
+                                        class_refs.insert(key, flux.flux.clone());
+                                    }
+                                    Some(reference) => {
+                                        // Same discrete physics, only
+                                        // the iteration accelerator
+                                        // differs — fixed points must
+                                        // agree to the floor.
+                                        let worst = flux
+                                            .flux
+                                            .iter()
+                                            .zip(reference.iter())
+                                            .flat_map(|(a, b)| {
+                                                a.iter().zip(b.iter()).map(|(x, y)| {
+                                                    (x - y).abs() / y.abs().max(1e-12)
+                                                })
+                                            })
+                                            .fold(0.0, f64::max);
+                                        assert!(
+                                            worst < 1e-3,
+                                            "{label}: fixed point drifted {worst:.2e} within class"
+                                        );
+                                    }
+                                }
+                                combos += 1;
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        assert_eq!(combos, 64, "expected 64 flag combinations exercised");
+    }
+
+    /// Regression — shared-wrap cross-group contamination: under a
+    /// single wrap-plane set shared by all groups, each group's first
+    /// inner sweep read the previously-swept group's wrap values, a
+    /// parity-dependent perturbation that sustained a stable period-2
+    /// orbit on near-conservative periodic problems (observed: the
+    /// 56-group water column plateauing at a one-step residual of
+    /// ~0.29). Per-group wrap planes restore ordinary one-step
+    /// convergence — on this problem class the parity path must not
+    /// fire, and the artifact must say so.
+    #[test]
+    fn periodic_near_conservative_converges_one_step() {
+        // σ_a = 0.05 in both groups with strong upscatter — the slow
+        // eigenmode that amplified the contamination.
+        let mg = data(&[1.0, 1.0], vec![0.45, 0.5, 0.4, 0.55]);
+        let mut case = slab_case();
+        case.source.angle = AngularDistribution::IsotropicCone {
+            axis_unit_vector: [0.0, 0.0, 1.0],
+            half_angle_rad: std::f64::consts::PI,
+        };
+        case.source.space = SourceSpatialDistribution::UniformBox {
+            x_range_cm: [-0.2, 0.2],
+            y_range_cm: [-0.2, 0.2],
+            z_range_cm: [-1.0, 1.0],
+            interval_convention: IntervalConvention::HalfOpen,
+        };
+        let mut o = options();
+        o.periodic = [true, true, true];
+        o.convergence = 1e-4;
+        o.max_outer_iterations = 300;
+        let flux = solve_multigroup(&case, &mg, &o, cref("mg"), cref("case")).unwrap();
+        assert!(
+            flux.converged,
+            "near-conservative periodic solve did not converge in {} outers",
+            flux.outer_iterations
+        );
+        assert_eq!(
+            flux.convergence_mode.as_deref(),
+            None,
+            "converged via the parity-midpoint path — the wrap-cycle \
+             class is live again"
+        );
+        let absorbed = flux.balance_absorbed_fraction.unwrap();
+        // Iterates climb toward the fixed point; stopping at the 1e-4
+        // residual leaves a floor error ~ residual·c/(1−c) ≈ 0.6% for
+        // this near-conservative (c ≈ 0.95) problem.
+        assert!(
+            absorbed > 0.99 && absorbed <= 1.0 + 1e-9,
+            "all-periodic closed system must absorb ~everything: {absorbed}"
+        );
     }
 
     #[test]
@@ -4442,6 +4937,45 @@ pub(crate) mod tests {
             "P1 deep epi {} !> P0 {}",
             p1f.flux[deep][0],
             p0f.flux[deep][0]
+        );
+    }
+
+    /// Under `uncollided_split` the beam's first-scatter P1 source must
+    /// still see its forward current `J_unc = φ_unc·Ω̂` — without it the
+    /// beam's first collision is isotropized and a forward-peaked P1
+    /// kernel would deepen penetration only via the (weak) collided
+    /// field. With the uncollided-current contribution the forward bias
+    /// lands on the dominant channel: the P1 deep field must exceed the
+    /// uncorrected-P0 field by a large factor, far more than the
+    /// collided-current-only term alone delivers.
+    #[test]
+    fn p1_uncollided_split_keeps_beam_anisotropy() {
+        let case = slab_case();
+        let scatter = vec![0.10, 0.80, 0.0, 0.30];
+        let p1: Vec<f64> = scatter.iter().map(|s| s * 0.7).collect();
+        let mut mg = data(&[1.0, 0.5], scatter);
+        mg.materials[0].scatter_p1_matrix_per_cm = Some(p1);
+        mg.validate().unwrap();
+        let mut p1_opts = options();
+        p1_opts.p1_anisotropic = true;
+        let mut p0_opts = options();
+        p0_opts.transport_correction = false;
+        let p1f = solve_multigroup(&case, &mg, &p1_opts, cref("mg"), cref("case")).unwrap();
+        let p0f = solve_multigroup(&case, &mg, &p0_opts, cref("mg"), cref("case")).unwrap();
+        assert!(p1f.converged && p0f.converged);
+        // Beam first-scatter forward bias: the μ̄ = 0.7 kernel on the
+        // beam's forward current is the dominant anisotropic source on
+        // this thin slab — with the term the deep thermal gain is
+        // ~1.8×; with it removed the same solve gives ~1.02 (the weak
+        // collided-field current alone). A threshold of 1.5 separates
+        // the two by a wide margin.
+        let deep = 5 + 16 * 17;
+        let ratio = p1f.flux[deep][1] / p0f.flux[deep][1];
+        assert!(
+            ratio > 1.5,
+            "P1 deep thermal {} vs P0 {} — beam-anisotropy gain {ratio} too small",
+            p1f.flux[deep][1],
+            p0f.flux[deep][1]
         );
     }
 
@@ -5070,6 +5604,7 @@ mod artifact_tests {
             &quadrature,
             &BoundarySource::new(),
             &q_fwd,
+            None,
             None,
             crate::multigroup::tests::cref("d"),
             crate::multigroup::tests::cref("c"),

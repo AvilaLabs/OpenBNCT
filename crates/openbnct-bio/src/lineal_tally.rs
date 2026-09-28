@@ -382,6 +382,7 @@ mod tests {
             outer_iterations: 1,
             balance_absorbed_fraction: None,
             residual_site: None,
+            convergence_mode: None,
             qualification: "test".into(),
             provenance_id: "lt-flux".into(),
             flux: vec![vec![1.0], vec![1.0]],

@@ -1,0 +1,249 @@
+{
+ "schema_version": "nctforge.measurement-record/0.1.0",
+ "id": "nctforge.measurement.ra6-epithermal-free-beam.v1",
+ "subject": null,
+ "measurements": [
+  {
+   "id": "epithermal-fluence-rate-cnea-adjusted",
+   "metric": "epithermal_fluence_rate_cm2_s",
+   "method": {
+    "kind": "activation_foil",
+    "material": "Mn, Au, Cu, In foils (bare and Cd-covered) + Sc, Ag, In pure foils; NMF-90 unfolding against IRDF-90/NMG-G"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 3.2e8,
+    "absolute_uncertainty_1sigma": 2.88e7
+   },
+   "unit": "cm^-2 s^-1",
+   "position": {
+    "frame": "port_plane",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "Calzetta Larrieu et al., TECDOC-1223 Table I: (0.32 +/- 9%) x 10^9 n/cm2 s over 0.5 eV..10 keV, from the NMF-90-adjusted spectrum at the beam centre. Reactor power for this normalization is not restated beside the table; RA-6 nominal power is 500 kW."
+  },
+  {
+   "id": "epithermal-fluence-rate-ineel-direct",
+   "metric": "epithermal_fluence_rate_cm2_s",
+   "method": {
+    "kind": "activation_foil",
+    "material": "Au, In, Cu foils (Cd-covered) + bare Au; In(n,n') in B sphere; SPECTRE direct matrix unfolding of 47-group BUGLE-80 a-priori"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 7.22e8,
+    "absolute_uncertainty_1sigma": 3.971e7
+   },
+   "unit": "cm^-2 s^-1",
+   "position": {
+    "frame": "port_plane",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "Nigg et al., INEEL/EXT-01-00204 Table 3 'Direct Unfolding' column at 360 kW: integrated epithermal flux over 0.414 eV..10 keV = 7.22e8 n/cm2 s, propagated 1-sigma 5.5%. The lower cutoff (0.414 eV) is the BUGLE-80 thermal/epithermal boundary used by the unfolding, not the TECDOC 0.5 eV convention."
+  },
+  {
+   "id": "epithermal-fluence-rate-ineel-iterative",
+   "metric": "epithermal_fluence_rate_cm2_s",
+   "method": {
+    "kind": "activation_foil",
+    "material": "same foil set; Draper/SAND-II-style iterative adjustment of the 47-group a-priori spectrum"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 6.98e8,
+    "absolute_uncertainty_1sigma": null
+   },
+   "unit": "cm^-2 s^-1",
+   "position": {
+    "frame": "port_plane",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "Nigg et al., INEEL/EXT-01-00204 Table 3 'Iterative Adjustment' column at 360 kW: 6.98e8 n/cm2 s, ~3.5% below the direct-unfolding value and inside its 1-sigma. No separate uncertainty is stated for the iterative column."
+  },
+  {
+   "id": "fast-fluence-rate-ineel-direct",
+   "metric": "fast_fluence_rate_cm2_s",
+   "method": {
+    "kind": "activation_foil",
+    "material": "same foil set; SPECTRE direct unfolding"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 5.62e7,
+    "absolute_uncertainty_1sigma": 2.866e6
+   },
+   "unit": "cm^-2 s^-1",
+   "position": {
+    "frame": "port_plane",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "Nigg et al., INEEL/EXT-01-00204 Table 3 'Direct Unfolding' at 360 kW: fast flux (E > 10 keV) 5.62e7 n/cm2 s, 5.1%. A-priori MCNP column: 4.58e7; iterative adjustment: 4.87e7."
+  },
+  {
+   "id": "fast-neutron-dose-rate-ineel",
+   "metric": "fast_dose_rate_cgy_min",
+   "method": {
+    "kind": "other",
+    "description": "BUGLE-80 File 27 tissue KERMA factors folded over the unfolded free-beam spectrum (fast component of the in-air neutron dose rate)"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 3.44,
+    "absolute_uncertainty_1sigma": null
+   },
+   "unit": "cGy/min",
+   "position": {
+    "frame": "port_plane",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "Nigg et al., INEEL/EXT-01-00204 Table 3 'Neutron Dose Rate' row at 360 kW: measured (direct unfolding) 3.44 cGy/min vs a-priori 2.86 — the ~20% measurement-over-calculation excess the paper flags as consistent with CNEA's earlier in-phantom findings."
+  },
+  {
+   "id": "neutron-kerma-per-epithermal-flu-ineel",
+   "metric": "neutron_kerma_per_epithermal_fluence",
+   "method": {
+    "kind": "other",
+    "description": "free-beam neutron KERMA rate integrated above thermal, divided by useful epithermal flux; BUGLE-80 File 27 broad-group KERMA factors"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 7.94e-11,
+    "absolute_uncertainty_1sigma": 5.56e-12
+   },
+   "unit": "cGy cm^2",
+   "position": {
+    "frame": "port_plane",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "Nigg et al., INEEL/EXT-01-00204 Table 3 'Neutron KERMA' row: measured 7.94e-11 cGy per epithermal n/cm2 (~7% estimated 1-sigma), vs a-priori 6.52e-11 and iterative 7.61e-11. ~91% of the background neutron dose is proton recoil. Non-canonical metric name — no beam-quality field resolves it yet; it anchors the fast-dose-per-epi-flux quality factor."
+  },
+  {
+   "id": "fast-dose-per-epithermal-fluence-cnea",
+   "metric": "fast_dose_per_epithermal_fluence",
+   "method": {
+    "kind": "other",
+    "description": "group-calculated tissue KERMA factors folded over the NMF-90-adjusted free-beam spectrum"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 1.13e-12,
+    "absolute_uncertainty_1sigma": 1.808e-13
+   },
+   "unit": "Gy cm^2",
+   "position": {
+    "frame": "port_plane",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "Calzetta Larrieu et al., TECDOC-1223 Table I: fast neutron dose (>10 keV) per epithermal fluence (11.3 +/- 16%) x 10^-13 Gy cm^2 — i.e. 1.13e-12 Gy cm^2 = 1.13e-11 cGy cm^2, consistent in scale with the INEEL measured 7.94e-11 cGy cm^2 total-neutron KERMA (which includes below-fast components)."
+  },
+  {
+   "id": "photon-dose-per-epithermal-fluence-cnea",
+   "metric": "photon_dose_per_epithermal_fluence",
+   "method": {
+    "kind": "other",
+    "description": "TLD-700 + paired ionization chambers at beam centre; ICRP-21 flux-to-dose conversion for calculated check"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 7.5e-13,
+    "absolute_uncertainty_1sigma": 9.75e-14
+   },
+   "unit": "Gy cm^2",
+   "position": {
+    "frame": "port_plane",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "Calzetta Larrieu et al., TECDOC-1223 Table I: photon dose per epithermal fluence (7.5 +/- 13%) x 10^-13 Gy cm^2. Non-canonical metric; recorded so a future RA-6 beam model can compare."
+  },
+  {
+   "id": "thermal-to-epithermal-ratio-cnea",
+   "metric": "thermal_to_epithermal_fluence_ratio",
+   "method": {
+    "kind": "activation_foil",
+    "material": "Cd-difference on the foil set feeding the NMF-90 adjustment"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 0.07,
+    "absolute_uncertainty_1sigma": 0.0154
+   },
+   "unit": "dimensionless",
+   "position": {
+    "frame": "port_plane",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "Calzetta Larrieu et al., TECDOC-1223 Table I: thermal flux (<0.5 eV) / epithermal flux = 0.07 +/- 22%."
+  },
+  {
+   "id": "advantage-depth-rbe",
+   "metric": "advantage_depth_cm",
+   "method": {
+    "kind": "other",
+    "description": "paired ionization chambers (gamma+fast) and bare/Cd-covered Au foils (thermal); N14 and B10 doses from measured thermal flux x KERMA; RBE factors gamma=1, fast=3.2, N14=3.2, B10 tumor=3.8, B10 healthy=1.3; 30 ppm B-10 tumour, 8.6 ppm healthy"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 6.8,
+    "absolute_uncertainty_1sigma": null
+   },
+   "unit": "cm",
+   "position": {
+    "frame": "phantom_axis",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "TECDOC-1223 section 2 / FIG. 4 caption values on the 17.3 cm diameter x 20.5 cm cylindrical water phantom: AD = 6.8 cm, AR = 2.8, ADDR = 16.25 cGy/min. The underlying depth profiles exist only as FIG. 3 (absorbed dose) and FIG. 4 (RBE dose) — figure-only, not transcribed here; digitizing them is recorded as pending work in validation/same-data-fir1-mg/README.md-style provenance before use."
+  },
+  {
+   "id": "advantage-ratio-rbe",
+   "metric": "advantage_ratio",
+   "method": {
+    "kind": "other",
+    "description": "same composite RBE-dose construction as advantage-depth-rbe"
+   },
+   "value": {
+    "kind": "scalar",
+    "value": 2.8,
+    "absolute_uncertainty_1sigma": null
+   },
+   "unit": "dimensionless",
+   "position": {
+    "frame": "phantom_axis",
+    "point_cm": [0.0, 0.0, 0.0],
+    "depth_cm": null
+   },
+   "note": "TECDOC-1223: AR = 2.8 (FIG. 4 axis annotation reads AR=3.1 — the tabled value 2.8 is transcribed; the figure annotation is noted as inconsistent). ADDR = 16.25 cGy/min recorded in the advantage-depth note."
+  }
+ ],
+ "provenance": {
+  "kind": "digitized_literature",
+  "citations": [
+   {
+    "authors": "Calzetta Larrieu, O.; Blaumann, H.R.; Longhino, J.M.; Albornoz, A.F.",
+    "title": "BNCT facility at the RA-6 reactor",
+    "venue": "IAEA-TECDOC-1223, Current status of neutron capture therapy, Annex 2, pp. 71-80",
+    "year": 2001,
+    "doi": null,
+    "url": "https://www.iaea.org/publications/6131/current-status-of-neutron-capture-therapy"
+   },
+   {
+    "authors": "Nigg, D.W.; Blaumann, H.; Calzetta Larrieu, O.; Longhino, J.; Wemple, C.A.; Ribeiro, S.",
+    "title": "Collaborative neutronic performance characterization of the CNEA epithermal-neutron beam facility for BNCT",
+    "venue": "INEEL BNCT Research Program Annual Report CY-2000, INEEL/EXT-01-00204, pp. 70-83",
+    "year": 2001,
+    "doi": "10.2172/911030",
+    "url": "https://www.osti.gov/biblio/911030"
+   }
+  ],
+  "derivation_note": "Scalar values transcribed verbatim from public tables: TECDOC-1223 Table I (CNEA NMF-90-adjusted free beam; relative uncertainties expanded to absolute 1-sigma) and INEEL/EXT-01-00204 Tables 2-3 (activation rates + integral flux parameters at 360 kW). In-phantom dose profiles exist only as figures (TECDOC FIG. 3/4) and are NOT transcribed — the second-facility depth anchor remains a digitization task; this record anchors RA-6 free-beam quality only. RA-6 has no encoded beam description yet, so subject is null."
+ }
+}

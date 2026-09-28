@@ -619,6 +619,7 @@ mod tests {
             &BoundarySource::new(),
             &q_fwd,
             None,
+            None,
             cref("d"),
             cref("c"),
         )

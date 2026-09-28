@@ -1,5 +1,9 @@
 # Validation directories
 
+**See [`VALIDATION.md`](VALIDATION.md) for the verification dossier —
+the claim→evidence→status→limitation matrix, per-commit verification
+layers, and the honest open-items register.**
+
 In-phantom evidence for the FiR 1 K63 epithermal beam
 (`beams/fir1-k63.json`), all under the research-only qualification —
 these are cross-checks against published/digitized measurements, not

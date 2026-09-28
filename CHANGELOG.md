@@ -80,6 +80,19 @@ own versions independent of the crate version.
 
 ### Fixed — transport
 
+- P1 `uncollided_split` dropped the beam's first-scatter anisotropy:
+  the collided solve's first-collision source carried only
+  `Σ_gp σ_s0(gp→g)·φ_unc(gp)` while `current[cell]` accumulated the
+  collided iterate's moments alone — the anisotropic term
+  `3·Ω·Σ_gp σ_s1(gp→g)·J_unc(gp)` never entered `p1_source`, so a
+  forward-directed beam had its first collision isotropized under P1.
+  The uncollided ray-trace now also deposits the directional moment
+  `J_unc[cell][g][a] = Σ_d Ω_{d,a}·φ_d` (monodirectional ⇒ J = φ·Ω̂
+  exactly, pinned by `uncollided_moments_track_beam_direction`), and
+  the P1 source fold consumes the total current `J_collided + J_unc`.
+  On the 2-cm μ̄ = 0.7 slab regression
+  (`p1_uncollided_split_keeps_beam_anisotropy`) the deep-thermal P1/P0
+  gain moves 1.02 → 1.82 with the term.
 - Period-2 limit cycle in the outer iteration: the alternating
   group-sweep direction plus lagged periodic-wrap inflow make the
   composed operator a two-step map, and on near-conservative

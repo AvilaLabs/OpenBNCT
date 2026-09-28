@@ -26,6 +26,15 @@ jobs:
         run: cargo clippy --workspace --all-targets -- -D warnings
       - name: Test
         run: cargo test --workspace --all-targets
+      - name: Verify frozen benchmark evidence
+        # Read-only: re-hashes every declared artifact and checks every
+        # catalogue claim's references; exits nonzero on broken bindings.
+        run: |
+          cargo run --bin openbnct -- bench verify \
+            --catalogue benchmark-catalogue.json --root .
+          cargo run --bin openbnct -- qual verify \
+            --record qualification-record.json \
+            --catalogue benchmark-catalogue.json
       - name: Check wasm32 targets (GUI + in-browser plan solver)
         run: |
           rustup target add wasm32-unknown-unknown

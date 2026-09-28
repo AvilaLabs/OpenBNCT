@@ -244,4 +244,29 @@ mod tests {
         let v = s.at(0.01265);
         assert!((v - 20.25).abs() < 0.05, "got {v}");
     }
+
+    #[test]
+    fn mutation_corpus_never_panics_and_empty_tape_errors() {
+        let seed = format!(
+            "{}\n{}\n{}\n{}\n{}\n{}\n",
+            " 1.001000+3 1.008665+0          0          0          0          01001 1451    1",
+            " 1.001000+3 1.008665+0          0          0          0          01001 3  2    2",
+            " 0.000000+0 1.000000+0          0          0          1          41001 3  2    3",
+            "          4          2                                  1001 3  2    4",
+            " 1.000000-5 2.000000+1 2.530000-2 2.050000+1 1.000000+4 1.000000+11001 3  2    5",
+            " 1.000000+5 1.000000+0                                            1001 3  2    6",
+        );
+        // The reader is intentionally forgiving — bad fields parse as
+        // 0.0 and short lines are skipped — so the contract is only
+        // no-panic plus "no fabricated sections".
+        assert!(parse_endf("").is_err());
+        assert!(parse_endf("   \n  \n").is_err());
+        assert!(parse_endf(&seed[..80]).is_err()); // HEAD alone: no MF3
+        let mut corrupted = seed.clone();
+        corrupted.replace_range(300..330, "@@@@@@@@@@@@@@@@@@@@@@@@@@@@@@");
+        // Corrupted data fields: either an error or a degenerate
+        // section — never a panic.
+        let _ = parse_endf(&corrupted);
+        let _ = parse_endf(&seed[..seed.len() / 2]);
+    }
 }

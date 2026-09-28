@@ -399,6 +399,7 @@ pub fn solve_photon(
             &boundary_empty(),
             &fixed_source,
             None,
+            None,
             data_ref.clone(),
             case_ref.clone(),
         )?;
@@ -581,6 +582,7 @@ mod tests {
             &boundary_empty(),
             &fixed,
             None,
+            None,
             ContentReference {
                 id: "data".into(),
                 sha256: "0".repeat(64),
@@ -736,6 +738,7 @@ mod tests {
             &boundary_empty(),
             &fixed,
             None,
+            None,
             d,
             c,
         )
@@ -832,6 +835,7 @@ mod tests {
             &boundary_empty(),
             &fixed,
             None,
+            None,
             refs.0.clone(),
             refs.1.clone(),
         )
@@ -850,6 +854,7 @@ mod tests {
             &boundary_empty(),
             &fixed,
             None,
+            None,
             refs.0.clone(),
             refs.1.clone(),
         )
@@ -864,6 +869,7 @@ mod tests {
             &quadrature,
             &boundary_empty(),
             &fixed,
+            None,
             None,
             refs.0.clone(),
             refs.1.clone(),
@@ -889,6 +895,7 @@ mod tests {
             &quadrature,
             &boundary_empty(),
             &fixed,
+            None,
             None,
             refs.0,
             refs.1,
