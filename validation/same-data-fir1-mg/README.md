@@ -259,13 +259,29 @@ of piling into the tail.
 than the baseline P1's 122): substantial but not complete.** Deep
 thermal pileup 3.3 → ~1.4 (z ≈ 12–16 now 1.24–1.44 vs 2.7–3.3),
 epi mid-depth hump 1.89 → 1.49, near-face thermal 0.79–0.94 →
-0.90–1.15. The ~40 % residual under P1 (vs ~0 under P0) is a
-genuine limitation: the scalar λ reconstruction cannot represent
-the anisotropic source's *directional* spatial structure — under
-P1 the forward-peaked in-scatter varies per direction, and a
-single direction-free rate per face under-fits it. Extending the
-fit per-direction (or to the P1 current-weighted source) is the
-identified next step, not h-refinement.
+0.90–1.15.
+
+**Direction-aware λ follow-up (P1 arm 2,
+`target/mg-p1-dirlam-1cm.json`, 88 outers, residual 9.55e-5): the
+fix landed, the residual did not.** The reconstruction now fits
+the source *per direction per component* — the isotropic part uses
+the direction-free rate while the dipole (3Ω·p1) and kernel (l ≥
+2) parts get their own per-direction rates fit on their own
+(signed) fields, applied as a per-component sum of exponential
+shares (`OPENBNCT_NO_DIR_LAMBDA` A/Bs it). The P1 column probe
+confirms the mechanism engages: the direction-free fit drifts
+~2.7 %/cell (tail ratio ~1.8) while the directional fit holds
+~1.4 %/cell (~1.46). But the phantom field is unchanged — deep
+thermal still ~1.24–1.44, epi hump still ~1.5 — because the
+residual is *not* in the within-cell reconstruction. The excess
+sits in the epi band's mid-depth hump (z ≈ 4–9, cells at σ_t·Δ ≈
+0.5–1.5, at or below the thickness gate) and the thermal tail
+inherits it through the in-scatter source — an upstream error
+that no downstream closure can remove. Candidate mechanisms for
+that hump: flat-source error surviving in sub-gate-thickness
+epithermal cells, or a genuine model difference between the S_N
+deterministic dipole source and OpenMC's sampled-P1 kernel.
+Unresolved; documented as the current top P1 investigation.
 Dose fold on the corrected P1 field (independent NumPy fold vs
 MC-P1's own tally): all-cell median **1.0184**, beam axis 0.93–1.12
 through z ≤ 16 — at parity with the depfix fold; the dose metric

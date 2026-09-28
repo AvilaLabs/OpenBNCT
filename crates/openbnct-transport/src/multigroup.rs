@@ -462,19 +462,26 @@ pub struct SnOptions {
     /// disables it (A/B diagnostics vs the legacy clamp).
     pub theta_repair: bool,
     /// Within-cell exponential source: reconstruct the per-axis rate of
-    /// the direction-free source q(x) = q_c·exp(λ_a·(x − c_a)) toward
-    /// each outflow edge and uses the exact exponential-source edge
-    /// flux q(edge)/σ_eff, σ_eff = σ + μλ. In the thick limit this
-    /// drives the edge to the *local* equilibrium instead of the
-    /// cell-mean equilibrium — the fix for DD's asymptotic-preservation
-    /// failure (thick near-conservative cells mixing the whole inflow
-    /// to the mean and over-transporting a declining tail). Engages
-    /// only in optically thick cells (σ_t·Δ > 1); the λ → 0 /
-    /// non-monotone-source limits recover θ-WDD identically, and the
-    /// per-axis log-slope limiter refuses the correction at source
-    /// extrema or discontinuities. See `build_source_lambda` for the
-    /// fit and `sweep_group` for the edge-consistent application.
-    /// `OPENBNCT_NO_EXP_SOURCE` disables it (A/B diagnostics).
+    /// each source component toward each outflow edge and uses the
+    /// exact exponential-source edge flux q(edge)/σ_eff, σ_eff =
+    /// σ + μλ, summed over components. In the thick limit this drives
+    /// the edge to the *local* equilibrium instead of the cell-mean
+    /// equilibrium — the fix for DD's asymptotic-preservation failure
+    /// (thick near-conservative cells mixing the whole inflow to the
+    /// mean and over-transporting a declining tail). Engages only in
+    /// optically thick cells (σ_t·Δ > 1); the λ → 0 / non-monotone-
+    /// source limits recover θ-WDD identically, and the per-axis
+    /// log-slope limiter refuses the correction at source extrema or
+    /// discontinuities. Under a directional source (P1 dipole or an
+    /// l ≥ 2 kernel) each direction transports q = q_iso + 3Ω·p1 +
+    /// kernel — a sum of exponentials — so the iso part uses the
+    /// direction-free fit while the directional components get
+    /// per-direction rates fit on their own (signed) fields.
+    /// See `build_source_lambda` for the fit and `sweep_group` for the
+    /// edge-consistent application. `OPENBNCT_NO_EXP_SOURCE` disables
+    /// the correction entirely; `OPENBNCT_NO_DIR_LAMBDA` disables only
+    /// the directional fits, keeping the isotropic rate (A/B
+    /// diagnostics).
     pub exp_source: bool,
     /// Within-bin interpolation convention for a `TabulatedHistogram`
     /// source spectrum — see [`SourceWeighting`]. Recorded on the
@@ -1656,6 +1663,23 @@ struct CellAccum {
     kernel: Vec<f64>,
 }
 
+/// Within-cell exponential-source reconstruction for group `g`.
+/// `lambda[cell][a | a+3]` carries the rate toward the +a / −a edge
+/// fit on the direction-free source q0(cell) = fixed·w̄ +
+/// Σ_gp σ_s(gp→g)·φ(gp) — the isotropic component's rate, used
+/// under every scattering model. `dir_p1` / `dir_kernel` carry the
+/// per-direction rates of the directional components' own fields
+/// (3Ω_d·p1 and the l ≥ 2 kernel) — a sum of exponentials is not
+/// an exponential, so each component's rate is fit separately.
+/// NaN marks a degenerate triplet: the sweep gives that component
+/// its flat share.
+#[derive(Clone)]
+struct SourceRecon {
+    lambda: Vec<[f64; 6]>,
+    dir_p1: Option<Vec<[f64; 3]>>,
+    dir_kernel: Option<Vec<[f64; 3]>>,
+}
+
 /// Within-cell exponential-source rates for group `g`: the
 /// direction-free source q(cell) = fixed·w̄ + Σ_gp σ_s(gp→g)·φ(gp)
 /// is fit per axis to q ∝ e^{λx} toward each face — `[a]` carries
@@ -1667,6 +1691,16 @@ struct CellAccum {
 /// exponential, so this model is asymptotically consistent where
 /// flat-source DD fails hardest. Frozen per inner-iteration series
 /// so the inner map stays affine.
+/// When a directional source is present each direction transports
+/// q_d = q_iso + 3Ω_d·p1 + kernel_d — a sum of exponentials, not an
+/// exponential — so the dipole and kernel components get their own
+/// per-direction rates fit on their own (signed) fields; the
+/// isotropic part shares the direction-free fit — exact when
+/// `source_weights` is uniform, otherwise a documented approximation
+/// (w_d − w̄ shifts the fixed/in-scatter mix, hence the rate, where
+/// the fixed source dominates). Built here (once per inner series) rather
+/// than in the sweep — a per-inner-iteration refit re-pays the
+/// O(dirs·cells·axes) triplet cost every inner pass.
 #[allow(clippy::too_many_arguments)]
 fn build_source_lambda(
     g: usize,
@@ -1675,10 +1709,13 @@ fn build_source_lambda(
     source_weights: Option<&[f64]>,
     case_material: &[usize],
     scatter_eff: &[Vec<f64>],
+    p1_source: Option<&[[f64; 3]]>,
+    kernel_source: Option<&[Vec<f64>]>,
+    quadrature: &[([f64; 3], f64)],
     data: &MultigroupData,
     geometry: &GridGeometry,
     periodic: [bool; 3],
-) -> Vec<[f64; 6]> {
+) -> SourceRecon {
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
     let groups = data.group_count();
     let dx = [
@@ -1772,7 +1809,102 @@ fn build_source_lambda(
             }
         }
     }
-    lambda
+    // Directional components get their own per-direction rate field:
+    // the dipole source 3Ω_d·p1 and the kernel source can be signed
+    // and decline at rates independent of the isotropic part, so the
+    // sum q_d is a sum of exponentials — fit each component's own
+    // log-slopes. Signed fields use same-sign ratios; a sign change
+    // between neighbors is not exponential-representable and marks
+    // the triplet degenerate (NaN → the component's flat share in
+    // the sweep). Built once per inner series so the sweep only
+    // indexes.
+    let fit_dir_field = |qd: &[f64], dir: [f64; 3]| -> Vec<[f64; 3]> {
+        let mut row = vec![[f64::NAN; 3]; n_cells];
+        for k in 0..nz {
+            for j in 0..ny {
+                for i in 0..nx {
+                    let cell = i + nx * j + nx * ny * k;
+                    let coord = [i, j, k];
+                    let qc = qd[cell];
+                    for a in 0..3 {
+                        let stride = [1usize, nx, nx * ny][a];
+                        let lo_nb = if coord[a] > 0 {
+                            Some(cell - stride)
+                        } else if periodic[a] {
+                            Some(cell + stride * (shape[a] - 1))
+                        } else {
+                            None
+                        };
+                        let hi_nb = if coord[a] + 1 < shape[a] {
+                            Some(cell + stride)
+                        } else if periodic[a] {
+                            Some(cell - stride * (shape[a] - 1))
+                        } else {
+                            None
+                        };
+                        if let (Some(lo), Some(hi)) = (lo_nb, hi_nb)
+                            && qc != 0.0
+                        {
+                            let (ql, qh) = (qd[lo], qd[hi]);
+                            // Signed fields: a same-sign ratio
+                            // has a valid log-slope; opposite
+                            // signs mean the field crosses zero —
+                            // not representable as one rate.
+                            let l_dn = if qh / qc > 0.0 {
+                                (qh / qc).ln()
+                            } else {
+                                f64::NAN
+                            };
+                            let l_up = if ql / qc > 0.0 {
+                                (ql / qc).ln()
+                            } else {
+                                f64::NAN
+                            };
+                            if l_dn.is_finite()
+                                && l_up.is_finite()
+                                && l_dn.signum() != l_up.signum()
+                            {
+                                let cap = 4.0 / dx[a];
+                                let m = if dir[a] > 0.0 { l_dn } else { l_up };
+                                row[cell][a] = (m / dx[a]).clamp(-cap, cap);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+        row
+    };
+    let n_dirs = quadrature.len();
+    let dir_p1 = p1_source.map(|p1| {
+        let mut dl = vec![[f64::NAN; 3]; n_dirs * n_cells];
+        let mut qd = vec![0.0_f64; n_cells];
+        for d in 0..n_dirs {
+            let dir = quadrature[d].0;
+            for (cell, q) in qd.iter_mut().enumerate() {
+                *q = 3.0 * (dir[0] * p1[cell][0] + dir[1] * p1[cell][1] + dir[2] * p1[cell][2]);
+            }
+            dl[d * n_cells..(d + 1) * n_cells].copy_from_slice(&fit_dir_field(&qd, dir));
+        }
+        dl
+    });
+    let dir_kernel = kernel_source.map(|ker| {
+        let mut dl = vec![[f64::NAN; 3]; n_dirs * n_cells];
+        let mut qd = vec![0.0_f64; n_cells];
+        for d in 0..n_dirs {
+            let dir = quadrature[d].0;
+            qd.iter_mut()
+                .enumerate()
+                .for_each(|(cell, q)| *q = ker[cell][d]);
+            dl[d * n_cells..(d + 1) * n_cells].copy_from_slice(&fit_dir_field(&qd, dir));
+        }
+        dl
+    });
+    SourceRecon {
+        lambda,
+        dir_p1,
+        dir_kernel,
+    }
 }
 
 /// One diamond-difference sweep of group `g`: folds each direction's
@@ -1794,11 +1926,13 @@ fn build_source_lambda(
 /// `kernel_source[cell][dir]` is the higher-Legendre in-scatter
 /// (Σ_{l≥2}(2l+1)Σ_gp σ_l(gp→g)·Σ_k u_k(d)M_k) when `anisotropy_order
 /// ≥ 2` is active — `None` otherwise.
-/// `source_lambda[cell][a | a+3]` carries the reconstructed within-cell
-/// exponential rate of the direction-free source for group `g` — the
-/// rate toward the +a / −a edge respectively — or `None` to run plain
-/// θ-WDD. Computed once per inner-iteration series (frozen within it,
-/// keeping the inner map affine); see `build_source_lambda`.
+/// `source_lambda` carries the reconstructed within-cell exponential
+/// rates for group `g` — or `None` to run plain θ-WDD. Under P0 the
+/// direction-free rate is applied per axis; when a directional source
+/// is present (P1 dipole or l ≥ 2 kernel) each component's share uses
+/// its own rate — the anisotropic parts carry per-direction fits on
+/// their own fields. Computed once per inner-iteration series (frozen
+/// within it, keeping the inner map affine); see `build_source_lambda`.
 /// When `face_current` is `Some`, it is filled with per-cell partial
 /// currents: `[f]` = Σ_{d: outflow f} w_d |μ_{d,a}| ψ_out (this cell's
 /// outflow across face f, index 2a+s) and `[f+6]` = the inflow across
@@ -1834,7 +1968,7 @@ fn sweep_group(
     eigen: &[Vec<(f64, Vec<f64>)>],
     face_current: Option<&mut Vec<[f64; 13]>>,
     theta_repair: bool,
-    source_lambda: Option<&Vec<[f64; 6]>>,
+    source_lambda: Option<&SourceRecon>,
 ) {
     let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
     let groups = data.group_count();
@@ -1937,15 +2071,20 @@ fn sweep_group(
                     // Scatter source into g from the current iterate plus
                     // the fixed (first-collision or volumetric) source.
                     // The P1 term adds 3·Σ_a Ω_{d,a}·S_a(cell) — the
-                    // anisotropic part of the scattering source.
-                    let q: f64 = fixed_source[cell][g] * source_weights.map_or(1.0, |w| w[d])
+                    // anisotropic part of the scattering source. The
+                    // components are kept separate: the within-cell
+                    // source model transports each with its own
+                    // exponential rate — a sum of exponentials is not
+                    // itself an exponential.
+                    let q_iso: f64 = fixed_source[cell][g] * source_weights.map_or(1.0, |w| w[d])
                         + (0..groups)
                             .map(|gp| scatter_eff[mi][gp * groups + g] * flux[cell][gp])
-                            .sum::<f64>()
-                        + p1_source.map_or(0.0, |s| {
-                            3.0 * (dir[0] * s[cell][0] + dir[1] * s[cell][1] + dir[2] * s[cell][2])
-                        })
-                        + kernel_source.map_or(0.0, |s| s[cell][d]);
+                            .sum::<f64>();
+                    let q_p1 = p1_source.map_or(0.0, |s| {
+                        3.0 * (dir[0] * s[cell][0] + dir[1] * s[cell][1] + dir[2] * s[cell][2])
+                    });
+                    let q_k = kernel_source.map_or(0.0, |s| s[cell][d]);
+                    let q: f64 = q_iso + q_p1 + q_k;
                     let (ax, ay, az) = (
                         dir[0].abs() * face_area[0],
                         dir[1].abs() * face_area[1],
@@ -2045,11 +2184,10 @@ fn sweep_group(
                     // limit the edge reaches the LOCAL equilibrium
                     // q(edge)/σ instead of the cell-mean value (DD's
                     // perfect-mixer defect).
-                    let lambda3 = source_lambda.map(|s| s[cell]);
                     let mut psi_out_ideal = [0.0_f64; 3];
                     for a in 0..3 {
                         let mut o = (psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a];
-                        if let Some(lm) = lambda3 {
+                        if let Some(recon) = source_lambda {
                             let mu = dir[a].abs().max(1e-30);
                             let tau = st * dx[a] / mu;
                             // Only engage where the flat-source defect
@@ -2060,33 +2198,68 @@ fn sweep_group(
                             // varying with quadrature angle (which
                             // would break uniform h-refinement).
                             if st * dx[a] > 1.0 && q > 0.0 && st > 0.0 {
-                                // Exponential source model: q along
-                                // the ray ∝ e^{λ_r·x}, λ_r = ±λ_a.
-                                // The characteristic outflow is the
+                                // Exponential source model, applied
+                                // per component: the characteristic
+                                // outflow of q_c ∝ e^{λ_c·x} is the
                                 // flat-source formula at the EDGE
-                                // source q_e = q̄·x/(1−e^{−x}) with
-                                // effective removal σ+μλ_r — here as
-                                // a multiplicative ratio on the θ-
+                                // source q_c,e = q_c·x/(1−e^{−x})
+                                // with effective removal σ+μλ_c —
+                                // summed over components (iso, dipole,
+                                // kernel) since each declines at its
+                                // own rate. The sum is applied as a
+                                // multiplicative ratio on the θ-
                                 // closure's source share, so multi-
                                 // axis inflow coupling is untouched
-                                // and λ=0 returns θ-WDD exactly.
-                                let lam_r = if dir[a] > 0.0 { lm[a] } else { lm[a + 3] };
-                                let xl = lam_r * dx[a];
-                                let q_edge = if xl.abs() < 1e-8 {
-                                    q
-                                } else {
-                                    q * xl / (-(-xl).exp_m1())
-                                };
-                                let rho = st + mu * lam_r;
-                                let x_rho = rho * dx[a] / mu;
-                                let trans = if x_rho.abs() < 1e-8 {
-                                    1.0
-                                } else {
-                                    -(-x_rho).exp_m1() / x_rho
-                                };
-                                let src_exp = q_edge * dx[a] / mu * trans;
+                                // and all-zero λ returns θ-WDD
+                                // exactly. A degenerate rate (NaN —
+                                // edge cell, non-monotone or sign-
+                                // changing leg, or ρ ≤ 0) contributes
+                                // the component's flat share.
                                 let t_a = (-tau.min(700.0)).exp();
-                                let src_flat = (q / st) * (1.0 - t_a);
+                                let flat = |qc: f64| qc / st * (1.0 - t_a);
+                                let comp_share = |qc: f64, lam_c: f64| -> f64 {
+                                    let xl = lam_c * dx[a];
+                                    if !lam_c.is_finite() || xl.abs() < 1e-8 {
+                                        return flat(qc);
+                                    }
+                                    let q_edge = qc * xl / (-(-xl).exp_m1());
+                                    let rho = st + mu * lam_c;
+                                    if rho <= 0.0 {
+                                        return flat(qc);
+                                    }
+                                    let x_rho = rho * dx[a] / mu;
+                                    let trans = if x_rho.abs() < 1e-8 {
+                                        1.0
+                                    } else {
+                                        -(-x_rho).exp_m1() / x_rho
+                                    };
+                                    q_edge * dx[a] / mu * trans
+                                };
+                                // The isotropic component shares the
+                                // direction-free rate (exact for a
+                                // uniform source weight; see
+                                // build_source_lambda); the dipole and
+                                // kernel components carry per-
+                                // direction rates fit on their own
+                                // fields — NaN marks a degenerate
+                                // triplet → flat share.
+                                let lam_iso = if dir[a] > 0.0 {
+                                    recon.lambda[cell][a]
+                                } else {
+                                    recon.lambda[cell][a + 3]
+                                };
+                                let lam_p1 = recon
+                                    .dir_p1
+                                    .as_ref()
+                                    .map_or(f64::NAN, |f| f[d * n_cells + cell][a]);
+                                let lam_k = recon
+                                    .dir_kernel
+                                    .as_ref()
+                                    .map_or(f64::NAN, |f| f[d * n_cells + cell][a]);
+                                let src_exp = comp_share(q_iso, lam_iso)
+                                    + comp_share(q_p1, lam_p1)
+                                    + comp_share(q_k, lam_k);
+                                let src_flat = flat(q);
                                 let src_part = o - t_a * psi_in[a];
                                 if src_flat > 1e-30 && src_part > 0.0 {
                                     o = t_a * psi_in[a] + src_part * (src_exp / src_flat);
@@ -2100,7 +2273,7 @@ fn sweep_group(
                     // remain balance-consistent with the corrected
                     // edges. With zero λ the recomputed balance
                     // returns the θ-mean identically.
-                    let (psi_avg, psi_avg_ideal) = if lambda3.is_some() {
+                    let (psi_avg, psi_avg_ideal) = if source_lambda.is_some() {
                         let mut rhs = q * volume;
                         for a in 0..3 {
                             rhs += dir[a].abs() * face_area[a] * (psi_in[a] - psi_out_ideal[a]);
@@ -3121,6 +3294,7 @@ pub(crate) fn solve_sn_problem(
     let theta_repair =
         options.theta_repair && std::env::var_os("OPENBNCT_NO_THETA_REPAIR").is_none();
     let exp_source = options.exp_source && std::env::var_os("OPENBNCT_NO_EXP_SOURCE").is_none();
+    let dir_lambda = std::env::var_os("OPENBNCT_NO_DIR_LAMBDA").is_none();
     let mut cmr_best = f64::MAX;
     let mut cmr_stall = 0usize;
     // The outer residual cannot descend far below the inner sweep's
@@ -3154,7 +3328,7 @@ pub(crate) fn solve_sn_problem(
     // Per-group exponential-source rates, rebuilt on each group's
     // first inner pass of an outer and frozen inside the inner
     // iteration — see `build_source_lambda`.
-    let mut source_lambda_cache: Vec<Option<Vec<[f64; 6]>>> = vec![None; groups];
+    let mut source_lambda_cache: Vec<Option<SourceRecon>> = vec![None; groups];
     for outer in 0..options.max_outer_iterations {
         let previous = flux.clone();
         if anderson.is_some() && outer % 2 == 0 {
@@ -3267,6 +3441,17 @@ pub(crate) fn solve_sn_problem(
                         source_weights,
                         case_material,
                         &scatter_eff,
+                        if dir_lambda {
+                            p1_source.as_deref()
+                        } else {
+                            None
+                        },
+                        if dir_lambda {
+                            kernel_source.as_deref()
+                        } else {
+                            None
+                        },
+                        quadrature,
                         data,
                         geometry,
                         options.periodic,
@@ -4441,6 +4626,82 @@ pub(crate) mod tests {
         assert!(
             off[23] / on[23] > 20.0,
             "exp_source A/B margin collapsed: on={on:?} off={off:?}"
+        );
+    }
+
+    /// The same column under P1 (forward-peaked scatter μ̄ = 0.7):
+    /// the source a direction transports is q_iso + 3Ω·p1 — the
+    /// dipole part declines at its own rate and is signed per
+    /// direction — so the correction refits each component's rate on
+    /// its own field per direction, not a shared isotropic fit. The
+    /// corrected P1 tail stays bounded like the P0 case; with
+    /// `exp_source` off the mixer defect compounds on top of the
+    /// forward-deepened gradient and the runaway is sharper.
+    #[test]
+    fn thick_cell_conservative_column_probe_p1() {
+        let solve_column = |dx_mm: f64, nz: u32, lin: bool| -> Vec<f64> {
+            let mut case = slab_case();
+            case.geometry.shape = [2, 2, nz];
+            case.geometry.spacing_mm = [dx_mm, dx_mm, dx_mm];
+            let half = dx_mm * nz as f64 / 2.0;
+            case.geometry.origin_mm = [-dx_mm / 2.0, -dx_mm / 2.0, -half + dx_mm / 2.0];
+            case.source.space = SourceSpatialDistribution::UniformDisk {
+                axis: PlaneAxis::Z,
+                offset_cm: -half / 10.0,
+                center_uv_cm: [0.0, 0.0],
+                radius_cm: 2.0,
+            };
+            let mut opts = options();
+            opts.max_outer_iterations = 100;
+            opts.max_inner_iterations = 300;
+            opts.convergence = 1e-8;
+            opts.exp_source = lin;
+            opts.p1_anisotropic = true;
+            let mut mg = data(&[3.0], vec![2.85]);
+            mg.materials[0].scatter_p1_matrix_per_cm = Some(vec![0.7 * 2.85]);
+            mg.validate().unwrap();
+            let flux = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap();
+            assert!(flux.converged);
+            (0..nz as usize).map(|k| flux.flux[4 * k][0]).collect()
+        };
+        let fine = solve_column(1.0, 240, true);
+        let binned: Vec<f64> = (0..24)
+            .map(|k| (0..10).map(|i| fine[10 * k + i]).sum::<f64>() / 10.0)
+            .collect();
+        let run_ratios = |lin: bool| -> Vec<f64> {
+            let coarse = solve_column(10.0, 24, lin);
+            (0..24).map(|k| coarse[k] / binned[k]).collect()
+        };
+        let on = run_ratios(true);
+        eprintln!("  z_cm   ratio(exp_source P1)");
+        for (k, r) in on.iter().enumerate() {
+            eprintln!("  z={k:3}  {r:.4}");
+        }
+        // The direction- and component-refit tail is bounded but
+        // drifts ~1.4%/cell — a measured improvement over the
+        // direction-free fit (~2.7%/cell, reaching ~1.8) but not the
+        // full closure. The residual is not a rate-splitting
+        // deficiency (fitting each component's own rate did not move
+        // it); the remaining within-cell source curvature is a
+        // documented limit of the single-exponential-per-component
+        // model. Still an order of magnitude better than the legacy
+        // closure.
+        assert!(
+            on.iter().all(|&r| (0.5..2.0).contains(&r)),
+            "P1 exponential-source closure lost the column: {on:?}"
+        );
+        let off = run_ratios(false);
+        // Under P1 the DD runaway compounds slower relative to the
+        // forward-deepened baseline (observed ~13.5x at z = 23, still
+        // growing) — a lower bound well below that still guards the
+        // A/B direction.
+        assert!(
+            off[23] > 8.0,
+            "P1 legacy closure no longer shows the diagnosed runaway: {off:?}"
+        );
+        assert!(
+            off[23] / on[23] > 5.0,
+            "P1 exp_source A/B margin collapsed: on={on:?} off={off:?}"
         );
     }
 

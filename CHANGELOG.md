@@ -20,15 +20,22 @@ own versions independent of the crate version.
   cell mean and over-transport a declining tail — ~1.47×/cell runaway
   in the controlled probe). On the FiR-1 same-data P0 arm the deep-
   thermal S_N/OpenMC pileup is eliminated (2.5–2.8× → 0.96–1.10 at
-  z = 12–21); under P1 it halves (3.3× → ~1.4, residual being the
-  directional source structure a scalar λ cannot represent). The
-  reconstruction is rebuilt per inner-iteration series (inner map
-  stays affine) and frozen after a 16-outer warmup — a λ↔φ lag
-  otherwise sustains a period-2 oscillation that stalls the slow
-  thermal mode; the frozen arm converges at the baseline rate.
-  New regression `thick_cell_conservative_column_probe` pins both
-  directions (corrected tail bounded in [0.5, 2.0], legacy runaway
-  > 50×).
+  z = 12–21); under P1 it halves (3.3× → ~1.4). Under a directional
+  source (P1 dipole or l ≥ 2 kernel) the reconstruction fits each
+  direction's source *per component* — the dipole and kernel fields
+  carry their own per-direction rates (`OPENBNCT_NO_DIR_LAMBDA`
+  A/Bs them): in the P1 probe column the tail drift halves
+  (~2.7 %/cell → ~1.4 %/cell). The phantom residual is unchanged —
+  it is sourced by the epithermal mid-depth hump below the σ_t·Δ
+  gate, not by the deep-cell closure. The reconstruction is rebuilt
+  per inner-iteration series (inner map stays affine) and frozen
+  after a 16-outer warmup — a λ↔φ lag otherwise sustains a period-2
+  oscillation that stalls the slow thermal mode; the frozen arm
+  converges at the baseline rate.
+  New regressions `thick_cell_conservative_column_probe` and
+  `thick_cell_conservative_column_probe_p1` pin both directions
+  (corrected tail bounded in [0.5, 2.0], legacy runaway > 50× /
+  > 8× under P0 / P1).
 - Declared source-spectrum interpolation: `sn solve --source-weighting
   {collapse_consistent|uniform_in_bin}` selects the within-bin spread
   of a `TabulatedHistogram` source — Maxwellian-below-0.5 eV / 1/E
