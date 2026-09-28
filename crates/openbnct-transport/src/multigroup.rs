@@ -1277,17 +1277,19 @@ fn cone_directions(
 }
 
 /// Analytic uncollided-flux ray-trace for an on-face disk source.
-/// Each cell's uncollided fluence is the transverse cell-average of the
-/// incident fluence: φ_unc(cell, g) = (R/A_disk)·w_g·⟨e^{−Σ_t·s}⟩_pts/μ̄
-/// where the average runs over an 8×8 point grid on the cell's
-/// transverse face, each point's back-ray hitting the disk or missing
-/// it — cells the footprint covers only partially receive the
-/// illuminated fraction rather than the full intensity. s is the path
-/// length from the source-face entry point to the sample point and the
-/// outer average is over the angular distribution (a single direction
-/// for a monodirectional beam, the cone solid angle for an isotropic
-/// cone). Attenuation uses the target cell's material along the whole
-/// ray — a declared approximation for layered geometries.
+/// Each cell's uncollided fluence is the cell average of the incident
+/// fluence: φ_unc(cell, g) = (R/A_disk)·w_g·⟨e^{−Σ_t·s}⟩/μ̄ where the
+/// average runs over an 8×8 transverse point grid on the cell's face
+/// AND along each point's in-cell ray segment — s is linear in the
+/// axial coordinate, so the segment mean of e^{−Σ_t·s} is closed form
+/// (the centre-point value under-counts it by ~(Σ_t·chord)²/24, tens
+/// of per cent in optically thick cells). Transverse points whose
+/// back-ray misses the disk contribute nothing — partially covered
+/// cells receive the illuminated fraction. The outer average is over
+/// the angular distribution (a single direction for a monodirectional
+/// beam, the cone solid angle for an isotropic cone). Attenuation uses
+/// the target cell's material along the whole ray — a declared
+/// approximation for layered geometries.
 ///
 /// Returns `None` for source shapes/angles that stay on the
 /// boundary-flux path (wide cones, isotropic, off-face sources).
@@ -1417,12 +1419,17 @@ pub(crate) fn uncollided_beam_moments(
                 };
                 let su = geometry.spacing_mm[u] / 10.0;
                 let sv = geometry.spacing_mm[v] / 10.0;
+                let sa = geometry.spacing_mm[a] / 10.0;
                 for (d_hat, w_dir) in &dirs {
                     let d_axis = d_hat[a];
                     if inward * d_axis <= 0.0 {
                         continue;
                     }
                     let frac = w_dir / omega;
+                    // Ray chord through the cell along the beam axis:
+                    // s varies linearly across the cell, so the
+                    // segment-average of e^{−σs} is closed form.
+                    let chord = sa / d_axis.abs();
                     for pu in 0..TRANSVERSE_POINTS {
                         for pv in 0..TRANSVERSE_POINTS {
                             let mut p = c;
@@ -1432,6 +1439,10 @@ pub(crate) fn uncollided_beam_moments(
                             if s <= 0.0 {
                                 continue;
                             }
+                            // In-medium portion of the in-cell segment:
+                            // [s_lo, s_lo + span], clipped at the face.
+                            let s_lo = (s - chord / 2.0).max(0.0);
+                            let span = (s + chord / 2.0) - s_lo;
                             let eu = p[u] - d_hat[u] * s;
                             let ev = p[v] - d_hat[v] * s;
                             let du = eu - center_uv_cm[0];
@@ -1442,20 +1453,33 @@ pub(crate) fn uncollided_beam_moments(
                             lit = true;
                             // Cell-mean uncollided fluence: beam
                             // intensity times the transverse
-                            // illuminated fraction, attenuated along
-                            // the ray to each sample point.
+                            // illuminated fraction, with e^{−σs}
+                            // averaged over the in-cell ray segment
+                            // (e^{−σs_lo}(1−e^{−σ·span})/(σ·span)) —
+                            // the center-point value under-counts the
+                            // cell mean by ~ (σ·chord)²/24, which is
+                            // 20–60% in optically thick groups.
+                            let seg_mean = |sigma: f64| -> f64 {
+                                let x = sigma * span;
+                                (-sigma * s_lo).exp()
+                                    * if x > 1e-8 {
+                                        (1.0 - (-x).exp()) / x
+                                    } else {
+                                        1.0
+                                    }
+                            };
                             for (g, w) in group_weights.iter().enumerate() {
                                 if *w <= 0.0 {
                                     continue;
                                 }
                                 let survival = if sigma_t_unc.is_empty() {
-                                    (-material.sigma_total_per_cm[g] * s).exp()
+                                    seg_mean(material.sigma_total_per_cm[g])
                                 } else {
                                     let base = g * 2 * BEAM_KERNEL_NODES;
                                     (0..BEAM_KERNEL_NODES)
                                         .map(|j| {
                                             sigma_t_unc[base + 2 * j]
-                                                * (-sigma_t_unc[base + 2 * j + 1] * s).exp()
+                                                * seg_mean(sigma_t_unc[base + 2 * j + 1])
                                         })
                                         .sum()
                                 };
@@ -4091,6 +4115,50 @@ pub(crate) mod tests {
         }
         // A corner cell away from the beam must carry zero.
         assert_eq!(unc[0][0], 0.0);
+    }
+
+    /// In an optically thick cell the deposit must be the cell-MEAN of
+    /// e^{−σs} along the ray segment, not the center-point value — the
+    /// center under-counts by e^{−σΔ/2}/[(1−e^{−σΔ})/(σΔ)], which is a
+    /// ~30% first-scatter under-source at σΔ = 3. Regression for the
+    /// near-face collided deficit seen against same-data OpenMC runs.
+    #[test]
+    fn uncollided_deposit_is_axial_cell_mean() {
+        let case = slab_case(); // 1 mm cells, full-face beam
+        let sigma = 30.0; // σΔ = 3 per cell
+        let mg = data(&[sigma], vec![0.0]);
+        mg.validate().unwrap();
+        let (unc, _) = uncollided_beam_moments(
+            &case,
+            &mg,
+            &vec![0usize; case.geometry.voxel_count().unwrap()],
+            SourceWeighting::CollapseConsistent,
+        )
+        .unwrap()
+        .unwrap();
+        let intensity = 1.0 / (std::f64::consts::PI * 0.25 * 0.25);
+        let d = 0.1_f64; // axial spacing, cm
+        // origin_mm[2] = −0.95 cm is the cell-0 CENTER: layer k sits at
+        // z_c = −0.95 + 0.1k → s_c = 0.05 + 0.1k, segment
+        // [0.1k, 0.1(k+1)]. Mean of e^{−σs} over it is
+        // e^{−σ·0.1k}(1−e^{−σΔ})/(σΔ); the center value e^{−σ·s_c}
+        // under-counts ~30% at σΔ = 3.
+        // Fully-lit transverse cells (well inside the r = 0.25 disk).
+        for (i, j, k) in [(1usize, 1usize, 0usize), (2, 2, 0), (1, 2, 5), (2, 1, 8)] {
+            let cell = i + 4 * j + 16 * k;
+            let got = unc[cell][0];
+            let s_lo = d * k as f64;
+            let want = intensity * (-sigma * s_lo).exp() * (1.0 - (-sigma * d).exp()) / (sigma * d);
+            assert!(
+                (got - want).abs() / want < 1e-9,
+                "cell {cell}: deposit {got} vs segment-mean {want}"
+            );
+            let center_val = intensity * (-sigma * (s_lo + d / 2.0)).exp();
+            assert!(
+                (got - center_val).abs() / center_val > 0.2,
+                "cell {cell}: deposit should differ from the center value by ~30%"
+            );
+        }
     }
 
     /// A monodirectional beam's uncollided field carries all of its

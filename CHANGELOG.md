@@ -93,6 +93,19 @@ own versions independent of the crate version.
   On the 2-cm μ̄ = 0.7 slab regression
   (`p1_uncollided_split_keeps_beam_anisotropy`) the deep-thermal P1/P0
   gain moves 1.02 → 1.82 with the term.
+- `uncollided_beam_flux` attenuated to each transverse sample point at
+  the cell's AXIAL centre only — depositing `e^{−σ·s_c}` instead of the
+  cell mean along the in-cell ray segment. The centre value
+  under-counts the mean by ~(σΔ)²/24 — 9% at σΔ = 1.5, 30% at 3, 64%
+  at σ_t·Δ = 5.4 — under-sourcing first collisions in optically thick
+  groups and under-reporting the uncollided field itself. The deposit
+  is now the closed-form segment mean
+  `e^{−σ·s_lo}(1−e^{−σ·span})/(σ·span)` over the face-clipped in-cell
+  ray segment (per-node for `beam_sigma_nodes` kernels). Pinned by
+  `uncollided_deposit_is_axial_cell_mean` (exact mean at σΔ = 3,
+  ~30% distinct from the centre value); on the FiR-1 same-data
+  comparison the near-face thermal SN/MC improved 0.65–0.73 →
+  0.79–0.94 at z ≤ 3.
 - Period-2 limit cycle in the outer iteration: the alternating
   group-sweep direction plus lagged periodic-wrap inflow make the
   composed operator a two-step map, and on near-conservative

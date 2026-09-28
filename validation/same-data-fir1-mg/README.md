@@ -73,9 +73,31 @@ voxel grid) the comparison shows:
 
 - **Fast groups (g0–g23) under P0: SN/MC ≈ 1.00–1.07** at every depth —
   beam normalisation, uncollided transport, and attenuation are right.
-- **Near-face collided deficit ~0.7 under both P0 and P1, unchanged by
-  h-refinement** (P1: 0.73/0.68 at z≤3 on both meshes) — a collided-field
-  or source-coupling effect, not spatial truncation.
+- **Near-face thermal deficit — partially explained and partially
+  fixed.** Two stacked defects shared the symptom. (a) *Uncollided
+  deposit under-sampling (fixed)*: the uncollided ray-trace evaluated
+  e^{−σs} at the cell's axial centre instead of the cell mean along
+  the in-cell ray segment — under-depositing by
+  `e^{−σΔ/2}·(σΔ)/(1−e^{−σΔ})`: −1% at σΔ = 0.5, −9% at 1.5, −30% at
+  3, −64% at σ_t·Δ = 5.4 (deepest thermal group at 1 cm). The
+  segment-mean is now closed-form (`uncollided_beam_flux`), with the
+  `uncollided_deposit_is_axial_cell_mean` regression test asserting
+  the exact mean at σΔ = 3. Post-fix P0 1 cm arm: near-face thermal
+  SN/MC 0.70 → **0.80/0.75/0.82/0.92** at z = 0–3 (all radial bins
+  inside the beam improved ~8–15%); epi band near-face is *not*
+  deficient (0.97–1.17, mid-depth hump 1.3–1.4 as before).
+  (b) *Collided boundary-layer truncation (open)*: a thermal-specific
+  residual ~0.75–0.85 persists at z ≤ 2 — the collided sweep's
+  first-cell treatment of the steep face-weighted first-scatter
+  source (flat in-cell source + DD closure), h-convergent like the
+  deep-thermal pileup (the 5 mm arm, where the deposit error was
+  already negligible, sits at ~0.85). Not noise: MC rel-std ≈ 0.4%.
+- **`boundary_flux` is a null reference for this beam**: a P0 arm run
+  with the beam inside the collided solve (95 outers) collapses the
+  thermal band to SN/MC ≈ 0.06–0.23 — the 8.5° cone smeared over S8
+  ordinates cannot reproduce a narrow beam's penetration (the
+  uncollided split exists precisely for this reason). Documented as a
+  mode limitation, not a comparator.
 - **Deep thermal (g24–27): the anomaly.** MC's own P1/P0 ratio reaches
   ~2.5× at z≈12 (forward-peaked scatter penetrates deeper — correct
   physics). S_N instead produces *more* deep thermal under P0 than P1
@@ -156,26 +178,44 @@ and `p1_uncollided_split_keeps_beam_anisotropy` (deep-thermal gain
 at z ≈ 15 (fixed/old ≈ 3.3) and now *exceeds* the P0 arm by ~2.2–2.4×,
 matching the direction and scale of MC's own P1/P0 ≈ 2.5 — the sign
 inversion is resolved. What remains is the h-convergent thermal pileup
-shared with the P0 arm and an unexplained near-face collided deficit
-(~0.7) common to all beam-model arms.
+shared with the P0 arm and a partly-explained near-face collided
+deficit (see the near-face entry in the findings above).
+
+**Second fix — uncollided deposit is now the axial cell mean.** The
+ray-trace deposited e^{−σs} evaluated at the cell's axial centre; the
+cell-mean along the ray segment is
+`e^{−σ·s_lo}(1−e^{−σ·span})/(σ·span)` (closed form, face-clipped) —
+the centre value under-counts by ~`(σΔ)²/24`, i.e. 9% at σΔ = 1.5,
+30% at 3, 64% at 5.4. The fix covers the `beam_sigma_nodes` kernel
+path identically (per-node segment means). Same-data effect (P0 1 cm):
+near-face thermal SN/MC 0.70 → 0.80–0.92 at z ≤ 3, all radial bins
+inside the beam improving ~8–15%; fast and epi bands unchanged; the
+deep pileup is untouched (grows to ~3.1 as the now-correct source
+feeds it) — confirming the two anomalies were always separate.
+Residual ~0.75–0.85 thermal-only deficit at z ≤ 2 is the collided
+sweep's boundary-layer truncation documented in the findings.
 
 **Dose consequence** (`dose_fold_check.py`, independent NumPy fold):
 the fold itself refolds the committed bundle to 1e-16 exactly, so the
 dose pipeline is clean — differences live in transport. Folding the
 MC-P1 flux and comparing per-cell total dose: the committed (pre-fix)
 P1 flux under-delivered deep dose (axis ratio SN/MC ~0.68–0.85 for
-z ≥ 12; all-cell median 0.876). The fixed solve moves the all-cell
-median to **1.016** and the beam axis to ~0.95–1.11 through z = 0–16.
-Beyond z ≈ 17 the ratio dips to ~0.72–0.83 where MC statistics are
-rel-std ≈ 0.3–0.6 and the residual truncation effect is largest.
+z ≥ 12; all-cell median 0.876). With both fixes the all-cell median
+is **1.019** and the beam axis runs ~1.00–1.03 at z ≤ 5, drifting to
+~0.79–0.93 at z = 6–16. Beyond z ≈ 17 the ratio dips to ~0.58–0.75
+where MC statistics are rel-std ≈ 0.3–0.6 and the residual truncation
+effect is largest. The boron/photon dose components (thermal-driven)
+sit at ~2.3× MC — the deep-thermal pileup mapped through the dose
+responses, consistent with the flux-level finding.
 
-| metric | before fix | after fix | MC reference |
+| metric | before fixes | after fixes | MC reference |
 |---|---|---|---|
 | deep-thermal P1/P0 gain (2 cm slab, μ̄ = 0.7) | 1.02 | 1.82 | — |
 | phantom P1/P0 deep-thermal ratio, z ≈ 12–15 | 0.69–0.75 (inverted) | 2.27–2.30 | ≈ 2.5 |
 | epi mid-depth hump (S_N P1/P0, z ≈ 6) | 1.55 | 3.17 | 2.36 |
-| same-data dose median vs MC-P1 | 0.876 | 1.016 | 1.0 |
-| beam-axis dose z = 0–16 vs MC-P1 | 0.68–1.03 | 0.95–1.11 | 1.0 |
+| near-face thermal SN/MC, z ≤ 3 | 0.65–0.73 | 0.79–0.94 | 1.0 |
+| same-data dose median vs MC-P1 | 0.876 | 1.019 | 1.0 |
+| beam-axis dose z = 0–5 vs MC-P1 | 0.68–1.03 | 1.00–1.03 | 1.0 |
 
 Outputs land in `target/` — they are working artifacts, not frozen
 evidence; committed comparison results go in this directory only once
