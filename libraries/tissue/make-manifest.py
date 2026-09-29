@@ -62,7 +62,7 @@ ntb = {
         "id": "openbnct.tissue-library.multigroup-28g-tsl.v1",
         "file": "multigroup-data-28g-tsl.json",
         "sha256": sha("multigroup-data-28g-tsl.json"),
-        "note": ("Default. Hydrogen in every material carries the ENDF/B-VIII.1 H-in-H2O thermal-scattering "
+        "note": ("Default; both multigroup files re-collapsed after the redundant-reaction fix in sn collapse (4d477ca). Hydrogen in every material carries the ENDF/B-VIII.1 H-in-H2O thermal-scattering "
                  "law (293.6 K), giving thermal upscatter. multigroup-data-28g.json (id "
                  "openbnct.tissue-library.multigroup-28g.v1, free-gas kernel) is retained for provenance only."),
         "free_gas_predecessor": {"id": "openbnct.tissue-library.multigroup-28g.v1",

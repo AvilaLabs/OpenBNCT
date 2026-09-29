@@ -297,6 +297,8 @@ struct TransportSection {
     order: u32,
     #[serde(default = "default_max_outer")]
     max_outer: u32,
+    #[serde(default = "default_anderson")]
+    anderson: u32,
     #[serde(default)]
     allow_unconverged: bool,
 }
@@ -307,6 +309,7 @@ impl Default for TransportSection {
             engine: default_engine(),
             order: default_order(),
             max_outer: default_max_outer(),
+            anderson: default_anderson(),
             allow_unconverged: false,
         }
     }
@@ -319,7 +322,10 @@ fn default_order() -> u32 {
     8
 }
 fn default_max_outer() -> u32 {
-    64
+    128
+}
+fn default_anderson() -> u32 {
+    3
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -586,7 +592,8 @@ fn init_project(
          [transport]\n\
          engine = \"sn\"\n\
          order = 8\n\
-         max_outer = 64\n\
+         max_outer = 128\n\
+         anderson = 3    # Anderson acceleration depth; thermal-scattering data need it to converge\n\
          allow_unconverged = false    # true only for demos/tests; the report then says PROVISIONAL if it did not converge\n\
          \n\
          [boron]\n\
@@ -1092,6 +1099,7 @@ fn plan_step(
         3 => {
             let order = config.transport.order.to_string();
             let max_outer = config.transport.max_outer.to_string();
+            let anderson = config.transport.anderson.to_string();
             let mut command = argv(&[
                 "sn",
                 "solve",
@@ -1105,6 +1113,8 @@ fn plan_step(
                 &order,
                 "--max-outer",
                 &max_outer,
+                "--anderson",
+                &anderson,
             ]);
             if config.transport.allow_unconverged {
                 command.push("--allow-unconverged".into());
@@ -1765,7 +1775,8 @@ mod tests {
     fn minimal_config_parses_with_defaults() {
         let config = ProjectConfig::parse(MINIMAL).unwrap();
         assert_eq!(config.transport.order, 8);
-        assert_eq!(config.transport.max_outer, 64);
+        assert_eq!(config.transport.max_outer, 128);
+        assert_eq!(config.transport.anderson, 3);
         assert!(!config.transport.allow_unconverged);
         assert_eq!(config.beam.approach, "+x");
         config.validate_rois(&rois()).unwrap();

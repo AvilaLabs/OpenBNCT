@@ -54,7 +54,8 @@ approach = "+x"                            # +x -x +y -y +z -z
 [transport]
 engine = "sn"
 order = 8
-max_outer = 64
+max_outer = 128
+anderson = 3                               # Anderson depth (passed to sn solve --anderson)
 allow_unconverged = false                  # demos/tests only; the report is then marked PROVISIONAL if it did not converge
 
 [boron]
@@ -636,12 +637,13 @@ sha256 and its source):
 - `multigroup-data-28g-tsl.json` (default; `builtin:tissue/multigroup-data-28g-tsl`)
   — 28-group collapse of all library materials with the ENDF/B-VIII.1
   H-in-H2O thermal-scattering law on hydrogen (thermal upscatter), free-gas
-  kernel elsewhere, no self-shielding, bound to the local-kerma component
+  kernel elsewhere, no self-shielding, re-collapsed after the
+  redundant-reaction fix (`4d477ca`), bound to the local-kerma component
   profile, with `boron_unit_response_gy_cm2_per_ug_g`. Regenerate with
   `libraries/tissue/collapse-28g.sh` (about 1.5 minutes, under 100 MB RAM;
   needs the external nuclear-data store).
 - `multigroup-data-28g.json` (`builtin:tissue/multigroup-data-28g`) — the
-  earlier free-gas-only collapse, kept for provenance and reproducibility.
+  earlier free-gas-only collapse (also re-collapsed after the fix; `FREE_GAS=1 collapse-28g.sh`), kept for provenance.
 
 End to end, on the synthetic NF-BNCT-001 study (research demonstration only):
 

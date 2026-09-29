@@ -77,7 +77,7 @@ fn init_run_resume_and_invalidate() {
     let text = std::fs::read_to_string(&toml_path).unwrap();
     let edited = text
         .replace("order = 8", "order = 4")
-        .replace("max_outer = 64", "max_outer = 2")
+        .replace("max_outer = 128", "max_outer = 2")
         .replace("allow_unconverged = false", "allow_unconverged = true");
     assert_ne!(text, edited);
     std::fs::write(&toml_path, edited).unwrap();

@@ -2,8 +2,9 @@
 # Collapse the standard tissue library to 28-group neutron data with the
 # H-in-H2O thermal-scattering law (ENDF/B-VIII.1 tsl_H(H2O)_0001) on every
 # hydrogen. The earlier free-gas-only collapse (multigroup-data-28g.json,
-# id ...multigroup-28g-tsl.v1) is kept for provenance; regenerate it by dropping
-# the --tsl argument and using its id/output.
+# id ...multigroup-28g.v1) is kept for provenance; regenerate it with FREE_GAS=1
+# (drops --tsl, uses its id and output file). Both files were re-collapsed after
+# the redundant-reaction fix in sn collapse (4d477ca).
 #
 # Same recipe as benchmarks/synthetic/layered-head-phantom/collapse-v2.sh
 # (28-group grid, Maxwellian+1/E default weighting, free-gas elastic kernel,
@@ -43,13 +44,26 @@ done
 MAT_ARGS=()
 for m in $MATERIALS; do MAT_ARGS+=(--material "$ROOT/materials/$m.json"); done
 
+FIX="re-collapsed after the redundant-reaction fix (4d477ca)"
+BASE="Standard tissue library (PNNL-15870 Rev. 1 compositions); H/C/N/O/Fe56/B10 from 294K HDF5, Na/Mg/P/S/Cl/K/Ca from NJOY 293.6K PENDF (ENDF/B-VIII.1)"
+if [ "${FREE_GAS:-0}" = 1 ]; then
+  TSL_ARGS=()
+  ID=openbnct.tissue-library.multigroup-28g.v1
+  OUT="${OUT_FREE_GAS:-$ROOT/multigroup-data-28g.json}"
+  NOTE="$BASE; free-gas elastic kernel, no S(alpha,beta), no self-shielding; recipe of layered-head-phantom collapse-v2.sh; $FIX; provenance only, superseded by the TSL file"
+else
+  TSL_ARGS=(--tsl "H1=$TSL_H")
+  ID=openbnct.tissue-library.multigroup-28g-tsl.v1
+  NOTE="$BASE; H-in-H2O S(alpha,beta) (ENDF/B-VIII.1 tsl_H(H2O)_0001, 293.6 K) on all hydrogen with free-gas elsewhere, no self-shielding; recipe of layered-head-phantom collapse-v2.sh; $FIX"
+fi
+
 "$OPENBNCT" sn collapse \
   --library "$LIB" \
   "${ENDF_ARGS[@]}" \
-  --tsl "H1=$TSL_H" \
+  "${TSL_ARGS[@]}" \
   "${MAT_ARGS[@]}" \
   --boundaries "$BOUNDS" \
-  --id openbnct.tissue-library.multigroup-28g-tsl.v1 \
+  --id "$ID" \
   --component-profile "$PROFILE" \
-  --note "Standard tissue library (PNNL-15870 Rev. 1 compositions); H/C/N/O/Fe56/B10 from 294K HDF5, Na/Mg/P/S/Cl/K/Ca from NJOY 293.6K PENDF (ENDF/B-VIII.1); H-in-H2O S(alpha,beta) (ENDF/B-VIII.1 tsl_H(H2O)_0001, 293.6 K) on all hydrogen with free-gas elsewhere, no self-shielding; recipe of layered-head-phantom collapse-v2.sh" \
+  --note "$NOTE" \
   --output "$OUT"

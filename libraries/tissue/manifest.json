@@ -400,12 +400,12 @@
  "multigroup_data": {
   "id": "openbnct.tissue-library.multigroup-28g-tsl.v1",
   "file": "multigroup-data-28g-tsl.json",
-  "sha256": "8f91da4ad7893b26a3a33580d6086a424c1c08928258f08a84eda439f4930d99",
-  "note": "Default. Hydrogen in every material carries the ENDF/B-VIII.1 H-in-H2O thermal-scattering law (293.6 K), giving thermal upscatter. multigroup-data-28g.json (id openbnct.tissue-library.multigroup-28g.v1, free-gas kernel) is retained for provenance only.",
+  "sha256": "c664332337cdacfe28f4141e916fcc400c61155b027adccea54053c8b709e490",
+  "note": "Default; both multigroup files re-collapsed after the redundant-reaction fix in sn collapse (4d477ca). Hydrogen in every material carries the ENDF/B-VIII.1 H-in-H2O thermal-scattering law (293.6 K), giving thermal upscatter. multigroup-data-28g.json (id openbnct.tissue-library.multigroup-28g.v1, free-gas kernel) is retained for provenance only.",
   "free_gas_predecessor": {
    "id": "openbnct.tissue-library.multigroup-28g.v1",
    "file": "multigroup-data-28g.json",
-   "sha256": "2ce6cb175be37a2be674025d6b4c383f8c5b02b61b81622ab090d4dd0e0701c4"
+   "sha256": "2c68b0c4de9002b6ea037e67bd2a202130da9ad4dc0110a6fd3ada5018464a40"
   },
   "recipe": "collapse-28g.sh (recipe of benchmarks/synthetic/layered-head-phantom/collapse-v2.sh)",
   "nuclear_data": "ENDF/B-VIII.1: H/C/N/O/Fe56/B10 from 294 K OpenMC-HDF5; Na/Mg/P/S/Cl/K/Ca from NJOY 293.6 K PENDF; H-in-H2O S(alpha,beta) tsl_H(H2O)_0001 on hydrogen",
@@ -413,7 +413,7 @@
  },
  "generators": {
   "generate.py": "7e95a54fc8798a58803890334a3118348a6569d61bd2334a5428d205e37b76c0",
-  "collapse-28g.sh": "6fd1da964d5f0b298c9e9d69491de3d127e5363d81020ada0208b355e65f4b57",
-  "make-manifest.py": "7daa5b253cd7d03c1c7179c2bcbe7abd53cb9b47e7962b15e85f28ec23a2c01e"
+  "collapse-28g.sh": "e43480a5bad49cef5e13598f86e346d6f0d9c4a97609770e30caaacef63d4c31",
+  "make-manifest.py": "9f5578b5408a6a350a093634fdf29a756b65975c00543af28b4c94e6bc48ab78"
  }
 }
