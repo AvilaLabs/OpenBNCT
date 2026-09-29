@@ -213,6 +213,83 @@ pub fn import_study_from_paths(paths: &[PathBuf]) -> Result<ImportedStudy, Dicom
     import_study_from_files(&files)
 }
 
+/// A CT series with optional contours, hash-bound per member. Unlike
+/// [`ImportedStudy`], an RT Structure Set is not required.
+#[derive(Debug, Clone)]
+pub struct CtContourImport {
+    pub ct: CtVolume,
+    /// `Some` when exactly one RT Structure Set was present.
+    pub structures: Option<StructureSet>,
+    /// `(file name, sha256)` of every accepted member, sorted by name.
+    pub members: Vec<(String, String)>,
+    /// Members skipped by bucketing (not Part-10, other modality).
+    pub ignored: Vec<String>,
+}
+
+/// Import one CT series plus an optional RT Structure Set from a pile of
+/// files. Multiple CT series or multiple structure sets are refused, never
+/// merged.
+pub fn import_ct_contours_from_paths(paths: &[PathBuf]) -> Result<CtContourImport, DicomError> {
+    let mut ct_series: BTreeMap<String, Vec<(String, Vec<u8>)>> = BTreeMap::new();
+    let mut rtstruct: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut ignored: Vec<String> = Vec::new();
+    for path in paths {
+        let bytes = std::fs::read(path).map_err(|source| DicomError::Io {
+            path: path.to_path_buf(),
+            source,
+        })?;
+        let name = path.to_string_lossy().into_owned();
+        match sniff_member(&name, &bytes)? {
+            Some((sop, series)) if sop == uids::CT_IMAGE_STORAGE => {
+                ct_series.entry(series).or_default().push((name, bytes));
+            }
+            Some((sop, _)) if sop == uids::RT_STRUCTURE_SET_STORAGE => {
+                rtstruct.push((name, bytes));
+            }
+            _ => ignored.push(name),
+        }
+    }
+    if ct_series.is_empty() {
+        return Err(study_error("no CT Image Storage series found"));
+    }
+    if ct_series.len() > 1 {
+        let detail = ct_series
+            .iter()
+            .map(|(uid, members)| format!("{uid} ({} slices)", members.len()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return Err(study_error(format!(
+            "multiple CT series present — import one at a time: {detail}"
+        )));
+    }
+    if rtstruct.len() > 1 {
+        return Err(study_error(format!(
+            "multiple RT Structure Sets present ({}) — import one at a time",
+            rtstruct.len()
+        )));
+    }
+    let (ct_uid, ct_files) = ct_series.into_iter().next().expect("checked non-empty");
+    let ct = import_ct_series_from_bytes(&ct_files)
+        .map_err(|error| study_error(format!("CT series {ct_uid}: {error}")))?;
+    let mut members: Vec<(String, String)> = ct_files
+        .iter()
+        .chain(rtstruct.iter())
+        .map(|(name, bytes)| (name.clone(), sha256_hex(bytes)))
+        .collect();
+    members.sort();
+    let structures = rtstruct
+        .into_iter()
+        .next()
+        .map(|(_, bytes)| import_rtstruct_bytes(&bytes, &ct))
+        .transpose()?;
+    Ok(CtContourImport {
+        ct,
+        structures,
+        members,
+        ignored,
+    })
+}
+
 /// Collect candidate members under `root` (recursive) without parsing —
 /// Part-10 magic is checked inside the importer itself.
 pub fn collect_study_paths(root: &Path) -> Vec<PathBuf> {

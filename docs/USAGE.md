@@ -452,6 +452,27 @@ openbnct dicom export-rtplan --plan-label RESEARCH-1 --fractions 2 \
 Both directions are research interop, not commissioned treatment
 planning.
 
+### CT series to transport case
+
+`openbnct dicom import-ct` builds the transport-grid inputs from a CT series
+(and optional RT Structure Set): a scaffold `openbnct.transport-case` with a
+**placeholder** source, the HU volume on the case grid, per-ROI masks, and a
+`*.import-record.json` hash-binding all inputs and outputs. HU is
+volume-averaged (overlap-weighted box mean) onto the coarser grid; ROI
+membership is at least 50 % volume coverage by contour-interior CT voxels.
+The grid is built in the CT's own patient frame; nothing is reoriented.
+
+```text
+openbnct dicom import-ct --series DICOM-DIR \
+  --spacing-mm 5 --case-id mylab.patient.v1 \
+  --base-material void.json \
+  --case-output NEW-CASE.json --hu-output NEW-HU.nii \
+  [--rtstruct RTSTRUCT.dcm] [--masks-dir NEW-MASKS-DIR]
+```
+
+Feed the output to the calibration below with `--hu-nifti NEW-HU.nii --case
+NEW-CASE.json`, then bind a real beam (`beam bind`).
+
 ### HU-to-material calibration
 
 `openbnct dicom calibrate` closes the imaging→phantom hop: it applies an

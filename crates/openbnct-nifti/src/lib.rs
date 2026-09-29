@@ -234,6 +234,121 @@ pub fn resample_to_grid(
     out
 }
 
+/// Grid that covers `source` with voxels of `spacing_mm`, sharing the
+/// source's direction cosines (no reorientation). Along each axis the new
+/// grid starts at the source's outer voxel face and has
+/// `ceil(extent / spacing)` voxels, so it always covers the source (the last
+/// voxel may extend past it). `origin_mm` is the center of voxel (0,0,0).
+pub fn covering_grid(source: &GridGeometry, spacing_mm: [f64; 3]) -> GridGeometry {
+    let mut shape = [0_u32; 3];
+    let mut local = [0.0_f64; 3];
+    for axis in 0..3 {
+        let extent = f64::from(source.shape[axis]) * source.spacing_mm[axis];
+        // Tolerance keeps exact integer ratios (e.g. 200 mm / 5 mm) exact.
+        shape[axis] = ((extent / spacing_mm[axis]) - 1.0e-9).ceil().max(1.0) as u32;
+        local[axis] = -0.5 * source.spacing_mm[axis] + 0.5 * spacing_mm[axis];
+    }
+    let d = &source.direction;
+    let origin_mm = [
+        source.origin_mm[0] + d[0] * local[0] + d[1] * local[1] + d[2] * local[2],
+        source.origin_mm[1] + d[3] * local[0] + d[4] * local[1] + d[5] * local[2],
+        source.origin_mm[2] + d[6] * local[0] + d[7] * local[1] + d[8] * local[2],
+    ];
+    GridGeometry {
+        shape,
+        spacing_mm,
+        origin_mm,
+        direction: source.direction,
+    }
+}
+
+/// Volume-weighted (box / partial-volume) average of `values` on `source`
+/// onto `target`.
+///
+/// `target` must share `source`'s direction and be axis-aligned with it
+/// (build it with [`covering_grid`]); otherwise `None`. Each target voxel
+/// receives the mean of the source voxels it overlaps, weighted by the
+/// overlapping volume (product of per-axis overlap lengths). Parts of a
+/// target voxel outside the source are excluded from the average, so a
+/// uniform source stays exactly uniform; a target voxel with no overlap
+/// gets 0.0. This is the correct downsampling for HU (unlike nearest or
+/// trilinear point sampling, which alias thin structures).
+pub fn box_average_to_grid(
+    values: &[f64],
+    source: &GridGeometry,
+    target: &GridGeometry,
+) -> Option<Vec<f64>> {
+    let aligned = source
+        .direction
+        .iter()
+        .zip(&target.direction)
+        .all(|(a, b)| (a - b).abs() < 1.0e-9);
+    let sn = source.shape.map(|d| d as usize);
+    let tn = target.shape.map(|d| d as usize);
+    if !aligned || values.len() != sn[0] * sn[1] * sn[2] {
+        return None;
+    }
+    // Per-axis overlap tables in the shared lattice frame, source voxel 0's
+    // center at coordinate 0.
+    let mut tables: Vec<Vec<Vec<(usize, f64)>>> = Vec::with_capacity(3);
+    for axis in 0..3 {
+        let d = &source.direction;
+        let column = [d[axis], d[3 + axis], d[6 + axis]];
+        let delta = [
+            target.origin_mm[0] - source.origin_mm[0],
+            target.origin_mm[1] - source.origin_mm[1],
+            target.origin_mm[2] - source.origin_mm[2],
+        ];
+        // Project the origin offset on the axis (direction columns are
+        // orthonormal for valid geometries).
+        let offset: f64 = (0..3).map(|r| column[r] * delta[r]).sum();
+        let (ss, ts) = (source.spacing_mm[axis], target.spacing_mm[axis]);
+        let mut rows = Vec::with_capacity(tn[axis]);
+        for t in 0..tn[axis] {
+            let lo = offset + (t as f64 - 0.5) * ts;
+            let hi = lo + ts;
+            let first = ((lo / ss) + 0.5).floor().max(0.0) as usize;
+            let mut row = Vec::new();
+            let mut s = first;
+            while s < sn[axis] {
+                let s_lo = (s as f64 - 0.5) * ss;
+                let s_hi = s_lo + ss;
+                if s_lo >= hi {
+                    break;
+                }
+                let overlap = hi.min(s_hi) - lo.max(s_lo);
+                if overlap > 1.0e-9 * ss {
+                    row.push((s, overlap));
+                }
+                s += 1;
+            }
+            rows.push(row);
+        }
+        tables.push(rows);
+    }
+    let mut out = vec![0.0; tn[0] * tn[1] * tn[2]];
+    for tk in 0..tn[2] {
+        for tj in 0..tn[1] {
+            for ti in 0..tn[0] {
+                let (mut sum, mut weight) = (0.0, 0.0);
+                for &(sk, wk) in &tables[2][tk] {
+                    for &(sj, wj) in &tables[1][tj] {
+                        for &(si, wi) in &tables[0][ti] {
+                            let w = wi * wj * wk;
+                            sum += w * values[si + sn[0] * sj + sn[0] * sn[1] * sk];
+                            weight += w;
+                        }
+                    }
+                }
+                if weight > 0.0 {
+                    out[ti + tn[0] * tj + tn[0] * tn[1] * tk] = sum / weight;
+                }
+            }
+        }
+    }
+    Some(out)
+}
+
 /// Resolve a resample target grid from a transport case
 /// (`openbnct.transport-case/*` — the CT-aligned grid) or a dose bundle
 /// (`openbnct.physical-dose-bundle/*`, `openbnct.biological-dose-bundle/*`).
@@ -842,6 +957,53 @@ pub fn export_component_niftis(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn box_average_is_exact_and_covers_the_source() {
+        let source = GridGeometry {
+            shape: [4, 2, 2],
+            spacing_mm: [1.0, 1.0, 2.0],
+            origin_mm: [10.0, 20.0, 30.0],
+            direction: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        };
+        let target = covering_grid(&source, [2.0, 2.0, 4.0]);
+        assert_eq!(target.shape, [2, 1, 1]);
+        assert!((target.origin_mm[0] - 10.5).abs() < 1e-12);
+        assert!((target.origin_mm[2] - 31.0).abs() < 1e-12);
+
+        let uniform = vec![7.5; 16];
+        let out = box_average_to_grid(&uniform, &source, &target).unwrap();
+        assert!(out.iter().all(|v| (v - 7.5).abs() < 1e-12));
+
+        // x < 2 holds 0, x >= 2 holds 100: each target voxel is uniform.
+        let split: Vec<f64> = (0..16)
+            .map(|i| if i % 4 < 2 { 0.0 } else { 100.0 })
+            .collect();
+        let out = box_average_to_grid(&split, &source, &target).unwrap();
+        assert_eq!(out, vec![0.0, 100.0]);
+
+        // 3 mm target over 4 mm source: second voxel covers x in [3,6),
+        // only 1 mm inside the source; it averages just that part.
+        let odd = covering_grid(&source, [3.0, 2.0, 4.0]);
+        assert_eq!(odd.shape, [2, 1, 1]);
+        let out = box_average_to_grid(&split, &source, &odd).unwrap();
+        // first voxel: 2 mm of 0 and 1 mm of 100 -> 100/3
+        assert!((out[0] - 100.0 / 3.0).abs() < 1e-9);
+        assert!((out[1] - 100.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn box_average_rejects_mismatched_direction() {
+        let source = GridGeometry {
+            shape: [2, 2, 2],
+            spacing_mm: [1.0; 3],
+            origin_mm: [0.0; 3],
+            direction: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        };
+        let mut target = covering_grid(&source, [1.0; 3]);
+        target.direction = [0.0, 1.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0];
+        assert!(box_average_to_grid(&[0.0; 8], &source, &target).is_none());
+    }
+
     use super::*;
 
     fn identity_direction() -> [f64; 9] {

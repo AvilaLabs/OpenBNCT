@@ -30,5 +30,6 @@ pub use rtplan::{
 };
 pub use rtstruct::{RoiMask, StructureSet, import_rtstruct, import_rtstruct_bytes};
 pub use study::{
-    ImportedStudy, collect_study_paths, import_study_from_files, import_study_from_paths,
+    CtContourImport, ImportedStudy, collect_study_paths, import_ct_contours_from_paths,
+    import_study_from_files, import_study_from_paths,
 };

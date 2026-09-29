@@ -19,8 +19,8 @@ use openbnct_core::{ExposurePlan, PhysicalDoseBundle, ResampleMethod};
 use openbnct_dicom::synthetic::generate_nf_bnct_001;
 use openbnct_dicom::{load_nf_bnct_001, verify_nf_bnct_001};
 use openbnct_nifti::{
-    DT_FLOAT64, Interpolation, NiftiImage, read_nifti_file, read_target_geometry, resample_to_grid,
-    write_nifti,
+    DT_FLOAT64, Interpolation, NiftiImage, box_average_to_grid, covering_grid, read_nifti_file,
+    read_target_geometry, resample_to_grid, write_nifti,
 };
 use openbnct_njoy::{
     DEFAULT_CAPTURE_ENERGY_BALANCE_RELATIVE_TOLERANCE,
@@ -479,7 +479,7 @@ enum PkCommand {
     },
     /// Emit the PK-integrated dose map for one beam-on window as a
     /// real `openbnct.physical-dose-bundle` in Gray — directly
-    /// consumable by `bio apply`, `dvh`, and `report`.
+    /// consumable by `bio apply` and `dvh`.
     Dose {
         /// Physical dose bundle JSON (per-source-particle rates).
         #[arg(long)]
@@ -1987,6 +1987,46 @@ enum DicomCommand {
         /// Output `.nii` or `.nii.gz` path for the intensity volume.
         #[arg(long)]
         output: PathBuf,
+    },
+    /// Build a transport-case scaffold, an HU volume and ROI masks from a
+    /// CT series (+ optional RT Structure Set). The CT is volume-averaged
+    /// (box / partial-volume mean) onto a coarser transport grid that
+    /// covers it in the CT's own patient frame; nothing is reoriented.
+    /// The scaffold source is a placeholder — bind a real beam with
+    /// `beam bind`. Research import, not a clinical workflow.
+    ImportCt {
+        /// Directory searched recursively for CT (+ RTSTRUCT) `.dcm`
+        /// files. Mutually exclusive with `--slices`.
+        #[arg(long)]
+        series: Option<PathBuf>,
+        /// Explicit CT slice files. Mutually exclusive with `--series`.
+        #[arg(long, num_args = 1..)]
+        slices: Vec<PathBuf>,
+        /// RT Structure Set file (also picked up from `--series`).
+        #[arg(long)]
+        rtstruct: Option<PathBuf>,
+        /// Transport voxel size in mm: one value (isotropic) or `x,y,z`.
+        /// Default keeps the native CT spacing.
+        #[arg(long, value_delimiter = ',')]
+        spacing_mm: Vec<f64>,
+        /// Case id recorded in the scaffold case.
+        #[arg(long)]
+        case_id: String,
+        /// `openbnct.material-definition` JSON used as the case's base
+        /// material (e.g. void/air).
+        #[arg(long)]
+        base_material: PathBuf,
+        /// New output path for the scaffold `openbnct.transport-case`.
+        #[arg(long)]
+        case_output: PathBuf,
+        /// New output path for the HU volume (`.nii`) on the case grid,
+        /// for `dicom calibrate --hu-nifti`.
+        #[arg(long)]
+        hu_output: PathBuf,
+        /// New directory receiving one RegionMask JSON per ROI on the
+        /// case grid plus `index.json`.
+        #[arg(long)]
+        masks_dir: Option<PathBuf>,
     },
     /// Apply an `openbnct.hu-calibration` anchor table to a CT HU
     /// volume, emitting an `openbnct.material-assignment` whose
@@ -6363,6 +6403,29 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     files.len(),
                     output.display()
                 );
+            }
+            DicomCommand::ImportCt {
+                series,
+                slices,
+                rtstruct,
+                spacing_mm,
+                case_id,
+                base_material,
+                case_output,
+                hu_output,
+                masks_dir,
+            } => {
+                cmd_dicom_import_ct(
+                    series,
+                    slices,
+                    rtstruct,
+                    &spacing_mm,
+                    case_id,
+                    &base_material,
+                    &case_output,
+                    &hu_output,
+                    masks_dir.as_deref(),
+                )?;
             }
             DicomCommand::Calibrate {
                 calibration,
@@ -18308,6 +18371,191 @@ fn cmd_import_labelmap(
     Ok(())
 }
 
+/// `dicom import-ct`: CT series → covering transport grid, box-averaged HU
+/// volume, scaffold case, optional per-ROI masks, and an import record
+/// binding every input and output by SHA-256.
+#[allow(clippy::too_many_arguments)]
+fn cmd_dicom_import_ct(
+    series: Option<PathBuf>,
+    slices: Vec<PathBuf>,
+    rtstruct: Option<PathBuf>,
+    spacing_mm: &[f64],
+    case_id: String,
+    base_material: &Path,
+    case_output: &Path,
+    hu_output: &Path,
+    masks_dir: Option<&Path>,
+) -> Result<(), io::Error> {
+    if series.is_some() != slices.is_empty() {
+        return Err(io::Error::other(
+            "exactly one of --series or --slices is required",
+        ));
+    }
+    let mut paths = match &series {
+        Some(dir) => openbnct_dicom::collect_study_paths(dir),
+        None => slices,
+    };
+    if let Some(file) = &rtstruct
+        && !paths.contains(file)
+    {
+        paths.push(file.clone());
+    }
+    let record_path = case_output.with_extension("import-record.json");
+    for output in [case_output, hu_output, record_path.as_path()] {
+        if output.exists() {
+            return Err(io::Error::other(format!(
+                "{} already exists; outputs are never overwritten",
+                output.display()
+            )));
+        }
+    }
+    if let Some(dir) = masks_dir
+        && dir.exists()
+    {
+        return Err(io::Error::other(format!(
+            "{} already exists; outputs are never overwritten",
+            dir.display()
+        )));
+    }
+    let base: MaterialDefinition = serde_json::from_slice(&fs::read(base_material)?)
+        .map_err(|error| io::Error::other(format!("base material JSON: {error}")))?;
+
+    let import = openbnct_dicom::import_ct_contours_from_paths(&paths)
+        .map_err(|error| io::Error::other(format!("ct import: {error}")))?;
+    let ct = &import.ct;
+    if masks_dir.is_some() && import.structures.is_none() {
+        return Err(io::Error::other(
+            "--masks-dir requested but no RT Structure Set was found",
+        ));
+    }
+    let native = ct.geometry.spacing_mm;
+    let target_spacing = match spacing_mm {
+        [] => native,
+        [s] => [*s; 3],
+        [x, y, z] => [*x, *y, *z],
+        _ => {
+            return Err(io::Error::other(
+                "--spacing-mm takes one value or three (x,y,z)",
+            ));
+        }
+    };
+    if target_spacing.iter().any(|v| !v.is_finite() || *v <= 0.0) {
+        return Err(io::Error::other("--spacing-mm must be positive and finite"));
+    }
+    let grid = covering_grid(&ct.geometry, target_spacing);
+    grid.voxel_count().map_err(io::Error::other)?;
+    let ct_hu: Vec<f64> = ct
+        .stored_pixels
+        .iter()
+        .map(|&px| ct.modality_value(px))
+        .collect();
+    let hu = box_average_to_grid(&ct_hu, &ct.geometry, &grid)
+        .ok_or_else(|| io::Error::other("internal: grid does not align with the CT lattice"))?;
+
+    write_nifti(
+        &NiftiImage {
+            geometry: grid.clone(),
+            values: hu,
+            datatype: DT_FLOAT64,
+            transform_source: "sform",
+            description: format!("openbnct HU box-mean {}", ct.series_instance_uid),
+            intent_name: String::new(),
+            units_declared_mm: true,
+        },
+        hu_output,
+    )?;
+
+    let scaffold = scaffold_case_from_geometry(&grid, &base, &case_id);
+    write_new_json(case_output, &scaffold)?;
+
+    let mut mask_records = Vec::new();
+    if let (Some(dir), Some(structures)) = (masks_dir, &import.structures) {
+        fs::create_dir_all(dir)?;
+        for roi in &structures.rois {
+            let fractions = box_average_to_grid(
+                &roi.voxels
+                    .iter()
+                    .map(|&v| if v { 1.0 } else { 0.0 })
+                    .collect::<Vec<_>>(),
+                &ct.geometry,
+                &grid,
+            )
+            .ok_or_else(|| io::Error::other("internal: mask grid misaligned"))?;
+            let mask = openbnct_core::RegionMask {
+                name: roi.name.clone(),
+                voxels: fractions.iter().map(|f| *f >= 0.5).collect(),
+            };
+            let safe: String = roi
+                .name
+                .chars()
+                .map(|c| {
+                    if c.is_ascii_alphanumeric() || c == '-' || c == '_' {
+                        c
+                    } else {
+                        '_'
+                    }
+                })
+                .collect();
+            let file = format!("{:03}-{safe}.json", roi.number);
+            let path = dir.join(&file);
+            write_new_json(&path, &mask)?;
+            mask_records.push(serde_json::json!({
+                "roi_number": roi.number,
+                "name": roi.name,
+                "file": file,
+                "sha256": openbnct_evidence::sha256_file(&path)?,
+                "ct_voxels": roi.voxel_count(),
+                "grid_voxels": mask.included_voxel_count(),
+            }));
+        }
+        write_new_json(
+            &dir.join("index.json"),
+            &serde_json::json!({
+                "schema_version": "openbnct.roi-mask-index/0.1.0",
+                "case_id": case_id,
+                "membership": "voxel is in the ROI when >= 50% of its volume is covered by CT voxels whose centers lie inside the contour polygon",
+                "masks": mask_records,
+            }),
+        )?;
+    }
+
+    let record = serde_json::json!({
+        "schema_version": "openbnct.ct-import-record/0.1.0",
+        "case_id": case_id,
+        "ct_series_instance_uid": ct.series_instance_uid,
+        "frame_of_reference_uid": ct.frame_of_reference_uid,
+        "ct_geometry": ct.geometry,
+        "case_geometry": grid,
+        "resampling": "hu: volume-weighted box mean of overlapping CT voxels (outside-CT parts excluded); masks: >= 50% volume fraction of CT-grid ROI voxels; no reorientation",
+        "inputs": import.members.iter()
+            .map(|(name, sha)| serde_json::json!({"file": name, "sha256": sha}))
+            .collect::<Vec<_>>(),
+        "ignored_inputs": import.ignored,
+        "base_material_sha256": openbnct_evidence::sha256_file(base_material)?,
+        "outputs": {
+            "case": {"file": case_output, "sha256": openbnct_evidence::sha256_file(case_output)?},
+            "hu": {"file": hu_output, "sha256": openbnct_evidence::sha256_file(hu_output)?},
+        },
+        "masks": mask_records,
+    });
+    write_new_json(&record_path, &record)?;
+
+    println!(
+        "ct: {:?} @ {:?} mm -> case grid {:?} @ {:?} mm",
+        ct.geometry.shape, native, grid.shape, grid.spacing_mm
+    );
+    println!("case: {}", case_output.display());
+    println!("hu: {}", hu_output.display());
+    if let Some(dir) = masks_dir {
+        println!("masks: {} ({} ROIs)", dir.display(), mask_records.len());
+    }
+    println!("record: {}", record_path.display());
+    println!(
+        "note: the scaffold source is a placeholder — bind a real beam with `openbnct beam bind`"
+    );
+    Ok(())
+}
+
 /// Scaffold transport case for `import labelmap`: labelmap grid, the
 /// label-0 material as base, and a mono-thermal disk source on the -z
 /// face. The source is an explicit placeholder — users replace it with a
@@ -18317,19 +18565,31 @@ fn scaffold_case_from_labelmap(
     assignment: &openbnct_transport::MaterialAssignment,
     case_id: &str,
 ) -> Result<openbnct_transport::TransportCase, io::Error> {
+    Ok(scaffold_case_from_geometry(
+        &image.geometry,
+        &assignment.base_material,
+        case_id,
+    ))
+}
+
+/// Shared scaffold builder: grid, base material, placeholder source.
+fn scaffold_case_from_geometry(
+    geometry: &openbnct_core::GridGeometry,
+    base_material: &MaterialDefinition,
+    case_id: &str,
+) -> openbnct_transport::TransportCase {
     use openbnct_transport::{
         AngularDistribution, EnergyDistribution, FixedSourceDefinition, SourceSpatialDistribution,
         TransportCase,
     };
-    let geometry = &image.geometry;
     let radius_cm = 0.05
         * (geometry.shape[0] as f64 * geometry.spacing_mm[0])
             .min(geometry.shape[1] as f64 * geometry.spacing_mm[1]);
-    Ok(TransportCase {
+    TransportCase {
         schema_version: "openbnct.transport-case/0.1.0".into(),
         case_id: case_id.into(),
         geometry: geometry.clone(),
-        material: assignment.base_material.clone(),
+        material: base_material.clone(),
         source: FixedSourceDefinition {
             schema_version: "openbnct.fixed-source-definition/0.1.0".into(),
             id: format!("{case_id}.scaffold-source"),
@@ -18349,7 +18609,7 @@ fn scaffold_case_from_labelmap(
             energy: EnergyDistribution::Monoenergetic { energy_ev: 0.0253 },
         },
         requested_histories: 1,
-    })
+    }
 }
 
 #[cfg(test)]

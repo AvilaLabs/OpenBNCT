@@ -51,16 +51,45 @@ material comes from the case).
 
 ## From DICOM
 
-A CT series is the first-class path:
+A CT series (with an optional RT Structure Set) is the first-class path.
+`dicom import-ct` resamples it onto a transport grid, writes the HU volume on
+that grid, a scaffold case, and (with `--masks-dir`) one mask per ROI:
 
 ```text
-openbnct dicom import-ct --series /path/to/ct --output case.json
-openbnct dicom calibrate --case case.json --output assignment.json
+openbnct dicom import-ct --series /path/to/dicom-dir \
+  --spacing-mm 5 --case-id mylab.patient.v1 \
+  --base-material void.json \
+  --case-output case.json --hu-output hu.nii \
+  --masks-dir masks
+
+openbnct dicom calibrate --calibration hu-calibration.json \
+  --hu-nifti hu.nii --case case.json --output assignment.json
 ```
 
-RTSTRUCT masks become named regions; HU values become per-voxel
-materials via the calibration curve. PET/SUV uptake layers on top via
-`dicom import-pet`. See `docs/USAGE.md` for the full chain.
+- `--series DIR` is searched recursively; use `--slices f1 f2 ...` and
+  `--rtstruct FILE` to name files explicitly. Exactly one CT series and at
+  most one RT Structure Set are accepted; anything else is refused.
+- `--spacing-mm` is the transport voxel size: one value (isotropic) or
+  `x,y,z`. Without it the native CT spacing is kept.
+- HU is **volume-averaged**, not point-sampled: each transport voxel gets the
+  mean HU of the CT voxels it overlaps, weighted by overlap volume (parts of
+  a transport voxel outside the CT are left out of the mean). The grid uses
+  the CT's own patient frame and direction cosines, so nothing is reoriented,
+  and it covers the CT (the last voxel per axis may extend past it).
+- ROI masks are rasterized on the CT grid by the RTSTRUCT importer (a CT
+  voxel is inside when its center lies inside the contour polygon), then a
+  transport voxel is in the ROI when at least 50 % of its volume is covered
+  by such CT voxels. `masks/index.json` lists each mask with its sha256.
+- `--base-material` is the `openbnct.material-definition` used as the case's
+  background material (for example `void.json`).
+- The scaffold source is a **placeholder** (as in `import labelmap`); replace
+  it with your real beam via `beam build` + `beam bind` below.
+- Every input file and every output is hash-bound in
+  `case.import-record.json` (next to `--case-output`). Existing outputs are
+  never overwritten.
+
+HU values become per-voxel materials via the calibration curve. PET/SUV uptake
+layers on top via `dicom import-pet`. See `docs/USAGE.md` for the full chain.
 
 ## From a measured or digitized spectrum
 
