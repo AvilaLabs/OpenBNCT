@@ -460,4 +460,29 @@ mod tests {
             Err(RealizationError::MixedTemperatures(..))
         ));
     }
+
+    #[test]
+    fn hu_calibrated_layered_head_realizes_to_the_ground_truth_materials() {
+        // The committed HU round trip (every voxel an exact anchor hit,
+        // expressed as unit-fraction mixtures) must realize voxel-for-voxel
+        // to the same materials as the phantom's own assignment.
+        const TRUTH: &str =
+            include_str!("../../../benchmarks/synthetic/layered-head-phantom/assignment.json");
+        const CALIBRATED: &str = include_str!(
+            "../../../benchmarks/synthetic/layered-head-phantom/planning/hu-demo/assignment-calibrated.json"
+        );
+        let truth: MaterialAssignment = serde_json::from_str(TRUTH).unwrap();
+        let calibrated: MaterialAssignment = serde_json::from_str(CALIBRATED).unwrap();
+        let shape = [25, 25, 25];
+        let a = realize(&truth, shape, 20).unwrap();
+        let b = realize(&calibrated, shape, 20).unwrap();
+        assert!(!a.has_mixtures() && !b.has_mixtures());
+        for voxel in 0..a.voxel_material.len() {
+            assert_eq!(
+                a.materials[a.voxel_material[voxel]], b.materials[b.voxel_material[voxel]],
+                "voxel {voxel}"
+            );
+        }
+        assert_eq!(a.record.materials.len(), 4);
+    }
 }

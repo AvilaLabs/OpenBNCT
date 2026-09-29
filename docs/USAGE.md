@@ -618,22 +618,96 @@ Assignments containing any `voxel_set` region instead emit a rectilinear
 material lattice spanning the whole grid — one universe per distinct
 material, one lattice element per voxel — so arbitrary masks assign
 materials exactly. Both paths require an axis-aligned (identity-direction)
-grid. Generation gates keep the
-result scientifically meaningful — the assignment's base material must equal
-the bound material artifact byte-for-byte, region density and temperature
-must match (collection still assumes one voxel mass), regions may not
-introduce nuclides absent from the base material, and only nuclides covered
-by `njoy_partial_kerma_fluence_fold` component estimators may change
-fraction; uncovered nuclides must match the base exactly so the residual
-response tables stay valid.
+grid. Under the base-material profile, generation gates keep the result
+scientifically meaningful — the assignment's base material must equal the
+bound material artifact byte-for-byte, region temperature must match the
+base (the cross sections are bound to it), regions may not introduce
+nuclides absent from the base material, and only nuclides covered by
+`njoy_partial_kerma_fluence_fold` component estimators may change fraction;
+uncovered nuclides must match the base exactly so the residual response
+tables stay valid. Region *density* may differ: collection normalizes native
+heating by the per-voxel mass. `voxel_fractions` mixture regions are refused
+under this profile (use the unit-mass-fraction profile below).
 
-At collection the folded-response tallies still encode the base material's
-atom densities, so `openmc collect` applies a per-voxel region/base
-mass-fraction ratio to each covered component's values and 1-sigma
-uncertainties, leaving residual, photon, and native-heating components
-untouched. The emitted assignment and component profile are copied into the
-deck directory and hash-verified against the manifest before any correction
-is applied.
+The folded responses are mass KERMA (Gy cm^2 per unit fluence), which does
+not depend on density at fixed composition, so `openmc collect` applies only
+a per-voxel region/base mass-fraction ratio to each covered component's
+values and 1-sigma uncertainties (no density factor), leaving residual,
+photon, and native-heating components untouched. The emitted assignment and
+component profile are copied into the deck directory and hash-verified
+against the manifest before any correction is applied.
+
+#### Multi-tissue decks: the unit-mass-fraction profile
+
+A HU-calibrated head (skin, brain, bone, air) differs from any one base
+material in every nuclide, which the profile above cannot represent. The
+component profile
+`examples/openmc-multimaterial/component-profile-unit-mass-fraction.json`
+(`unit_mass_fraction_kerma_fold` for B10 and N14,
+`native_heating_residual` for hydrogen, `coupled_photon_heating` for photon)
+removes the single-base-material gate:
+
+- boron(v) = `w_B10(v)` × fold(v), nitrogen(v) = `w_N14(v)` × fold(v), where
+  fold(v) is the flux ⊗ HEATR partial-KERMA curve **per unit mass fraction**
+  divided by the voxel volume and `w` is the mass fraction of the material
+  actually realized in that voxel;
+- hydrogen(v) = native neutron `heating` per voxel mass − boron(v) −
+  nitrogen(v), the same residual definition the base-material profile uses
+  (total KERMA minus the two partials). Both terms come from the same
+  tracks, so the reported sigma adds them in quadrature, which overstates
+  it (conservative). Collection refuses a voxel whose residual is negative
+  beyond round-off: that would mean the library's total heating is below
+  the partial KERMA it contains;
+- photon(v) and the physical total are the same native tallies as before.
+
+The unit curves are not a new NJOY product: they are the reviewed response
+set's B10 and N14 curves divided by the set's own source-material mass
+fractions. Generation therefore takes the three artifacts the response set
+is bound to (`--unit-source-component-profile`, `--unit-source-material`,
+`--unit-source-nuclear-data-manifest`), re-verifies those bindings, and
+requires the deck's manifest to select the identical B10 and N14
+evaluations. The deck's own manifest must list every nuclide of the base and
+all region materials (and their photon elements); a nuclide missing from it
+is refused. A material assignment is required, region temperatures must
+match the base, and acceptance contracts are not yet supported under this
+profile.
+
+`voxel_fractions` mixtures (for example the two-anchor mixtures
+`dicom calibrate` emits between HU anchors) are realized by quantizing each
+voxel's volume fractions to `--mixture-levels` levels (default 20;
+largest-remainder rounding, so quantized fractions always sum to one). Every
+distinct quantized mixture becomes one OpenMC material (volume-weighted
+density; mass fractions from the volume-weighted partial densities) and one
+lattice universe, and collection uses the *realized* composition and
+density, not the declared one. The manifest records the rule, the level
+count, every realized material with its component level counts and voxel
+count, the number of mixture voxels, and the largest quantization error in
+any volume fraction. Mixtures may not combine materials with different
+temperatures or boron microdistributions.
+
+```text
+openbnct openmc generate \
+  --case CASE.json \
+  --component-profile examples/openmc-multimaterial/component-profile-unit-mass-fraction.json \
+  --material BASE-MATERIAL.json --source SOURCE.json \
+  --response-set benchmarks/synthetic/nf-bnct-001/transport/provenance/neutron-response-set.json \
+  --nuclear-data-manifest CASE-SCOPED-MANIFEST-COVERING-ALL-TISSUES.json \
+  --execution-profile benchmarks/synthetic/nf-bnct-001/transport/openmc-smoke-profile.json \
+  --nuclear-data-root PATH-TO-SELECTED-ENDFB81-HDF5-ROOT \
+  --assignment HU-CALIBRATED-ASSIGNMENT.json \
+  --unit-source-component-profile benchmarks/synthetic/nf-bnct-001/transport/component-profile.json \
+  --unit-source-material benchmarks/synthetic/nf-bnct-001/transport/material.json \
+  --unit-source-nuclear-data-manifest benchmarks/synthetic/nf-bnct-001/transport/provenance/openmc-endfb81-processed-data-manifest.json \
+  --mixture-levels 20 \
+  --output NEW-DECK-DIRECTORY
+```
+
+`openbnct openmc collect --boron-unit-dose-output NEW-UNIT-DOSE.json`
+additionally writes the tissue-independent `openbnct.boron-unit-dose/0.1.0`
+artifact (Gy per source particle per µg/g of B-10 — the boron fold per unit
+mass fraction times 1e-6, with its 1-sigma) for decks generated under this
+profile. `openmc run` accepts the same `--unit-source-*` and
+`--mixture-levels` flags.
 
 ### Candidate-reference runs and acceptance evaluation
 

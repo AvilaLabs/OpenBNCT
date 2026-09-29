@@ -6,6 +6,30 @@ own versions independent of the crate version.
 
 ## [Unreleased]
 
+### Fixed — OpenMC collection
+
+- `openmc collect` no longer multiplies folded neutron components by the
+  region/base density ratio. The folded responses are mass KERMA (Gy cm^2),
+  which is density-free at fixed composition, so a denser same-composition
+  region was over-reported in proportion to its density. Only the
+  covered-nuclide mass-fraction ratio remains. Committed OpenMC evidence is
+  unaffected (its only assigned region has the base density).
+
+### Added — OpenMC multi-material decks
+
+- Component profile with `unit_mass_fraction_kerma_fold` and
+  `native_heating_residual` estimators lets `openmc generate` accept a
+  HU-calibrated multi-tissue assignment: B10/N14 unit-mass-fraction folds
+  scaled per voxel by the realized mass fraction, hydrogen from native
+  neutron heating minus the two folds. New flags on `openmc generate` and
+  `openmc run`: `--unit-source-component-profile`, `--unit-source-material`,
+  `--unit-source-nuclear-data-manifest`, `--mixture-levels`.
+- `voxel_fractions` mixtures are realized by level quantization (recorded in
+  the input manifest) instead of being ignored; the base-material profile
+  now refuses them.
+- `openmc collect --boron-unit-dose-output` writes an
+  `openbnct.boron-unit-dose/0.1.0` artifact for such decks.
+
 ### Added — post-hoc boron
 
 - `sn collapse` emits an optional `boron_unit_response_gy_cm2_per_ug_g`

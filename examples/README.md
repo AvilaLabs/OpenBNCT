@@ -37,6 +37,13 @@ All are `openbnct.endpoint-model/0.1.0` artifacts with illustrative
 synthetic parameters; they carry no clinical claim and are not part of the
 frozen NF-BNCT-001 benchmark outputs.
 
+## `openmc-multimaterial/`
+
+- `component-profile-unit-mass-fraction.json` — the component profile that
+  lets `openbnct openmc generate` take a multi-tissue material assignment
+  (unit-mass-fraction B10/N14 folds, native-heating hydrogen residual). See
+  "Multi-tissue decks" in `docs/USAGE.md`.
+
 ## `python/`
 
 - `workflow.py` — the Python parity surface end to end: case generate /
