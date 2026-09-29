@@ -6,6 +6,20 @@ own versions independent of the crate version.
 
 ## [Unreleased]
 
+### Added — Python: NumPy arrays and `sn_solve`
+
+- Voxel fields in the Python package return C-order `np.ndarray`s of shape
+  `(nz, ny, nx)` through `as_array()` / `uncertainty_array()` (multigroup
+  flux: `(groups, nz, ny, nx)`), with geometry attributes; the list-returning
+  accessors are unchanged. `numpy` is now a package dependency.
+- `openbnct.sn_solve(...)` runs the deterministic S_N solve, dose fold and
+  boron unit-dose fold from Python through the same library functions as
+  `openbnct sn solve`, releasing the GIL. New wrappers: `TransportCase`,
+  `SnSolution`, `BoronUnitDose`, `BoronField`; `boron_dose` accepts loaded
+  objects as well as paths.
+- `OpenBnctError` is the primary exception; `NctForgeError` remains as an
+  alias of the same class.
+
 ### Fixed — OpenMC collection
 
 - `openmc collect` no longer multiplies folded neutron components by the

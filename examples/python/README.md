@@ -10,8 +10,15 @@ Rust engines the CLI calls, driven through `import openbnct`:
   `compute_metrics` → `apply_model` → `compare_dose_bundles`, all on the
   committed 2-voxel conformance bundle and its matching mask/model.
 
-The transport run itself is external (OpenMC or a licensed engine) and is
-not part of the example; everything else runs against committed
+- **Solve and NumPy** — `sn_solve` on the tiny `nf-bnct-003` slab fixture,
+  the flux and dose as `(nz, ny, nx)` NumPy arrays, a NumPy region mean,
+  and `boron_dose`. The fixture has no collapsed 10B unit response, so the
+  example attaches an illustrative one: a mechanics demo, not a physical
+  prediction. `python examples/python/workflow.py --layered-head` also
+  solves the layered head phantom (minutes in a debug wheel).
+
+Monte Carlo transport (OpenMC or a licensed engine) is external and not
+part of the example; everything else runs against committed
 artifacts. All outputs live under a temporary directory.
 
 ```text

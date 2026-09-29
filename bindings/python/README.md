@@ -44,10 +44,58 @@ oracle evaluations, boron microdistribution models and corrections,
 RTPLAN summaries (`load_rtplan_summary`, `summarize_rtplan`), and
 component-NIfTI export manifests. Every load
 runs the same Rust `validate()` as the CLI, every rejection raises
-`NctForgeError`, and adapter provenance binds the generated interchange
-document's SHA-256 exactly as the CLI does. Transport actions stay
-unavailable until the Rust capability and evidence gates pass;
+`OpenBnctError` (`NctForgeError` remains as an alias for the very same
+class), and adapter provenance binds the generated interchange
+document's SHA-256 exactly as the CLI does. Monte Carlo transport actions
+stay unavailable until the Rust capability and evidence gates pass;
 `backends()` reports those flags honestly.
+
+## NumPy arrays and axis order
+
+`numpy` is a package dependency. Every voxel field (`DoseVolume`,
+`ExternalDoseBundle`, `BedBundle`, `CombinedDoseBundle`, `BoronUnitDose`,
+`BoronField`, `Structure` masks via `VerifiedCase.structure_mask_array`)
+has an `as_array()` accessor (and `uncertainty_array()` where a one-sigma
+exists) returning a C-order `np.ndarray` of shape **`(nz, ny, nx)`**, so
+`array[k, j, i]` is column `i`, row `j`, slice `k`. This is the repo's
+flat voxel order (`i + nx*j + nx*ny*k`, x fastest) reshaped without any
+transposition, so `as_array().ravel()` equals the list-returning
+`values`, which stay for backward compatibility. Multigroup flux adds a
+leading group axis, `(groups, nz, ny, nx)`, with groups in
+`energy_boundaries_ev` order (descending energy). Geometry rides along as
+`geometry`, `array_shape`, `spacing_mm`, `origin_mm` and `direction`
+(`Geometry.shape`, spacing, origin and direction keep x, y, z order;
+`Geometry.array_shape` is the NumPy shape). A `MultigroupFlux` loaded from
+JSON carries no grid; bind one with `flux.with_geometry(geometry)`.
+DVH curves offer `dose_edges_array()` and friends.
+
+## Solving from Python
+
+```python
+import numpy as np, openbnct
+
+solution = openbnct.sn_solve("case.json", "multigroup-data.json", order=4)
+flux = solution.flux.as_array()                       # (groups, nz, ny, nx)
+dose = solution.dose.physical_total.as_array()        # (nz, ny, nx)
+print(dose[: dose.shape[0] // 2].mean())
+```
+
+`sn_solve(case, data, assignment=None, *, order=4, max_outer=32,
+convergence=1e-6, allow_unconverged=False, anderson=0, p1=False,
+anisotropy=0, dose=True, boron_unit=False)` calls the same Rust library
+functions as `openbnct sn solve` (`solve_multigroup`, `fold_multigroup_dose`,
+`fold_boron_unit_dose`) and releases the GIL while solving; it adds no
+transport logic in Python (ADR 0015). `case` is a path or a `TransportCase`
+(`load_transport_case`), `data` a path or `MultigroupData`. It returns an
+`SnSolution` with `.flux`, `.dose` (a `PhysicalDoseBundle`, needs data that
+declares a component profile) and `.boron_unit_dose` (a `BoronUnitDose`,
+needs a collapsed `boron_unit_response_gy_cm2_per_ug_g`), which
+`boron_dose` accepts directly. An unconverged solve raises
+`OpenBnctError` unless `allow_unconverged=True`, which returns the
+provisional field with `converged == False` and a `RuntimeWarning`.
+`examples/python/workflow.py` runs the whole chain on the tiny
+`nf-bnct-003` fixture (well under a second); `--layered-head` also solves
+the layered head phantom, which takes minutes in a debug-built wheel.
 
 Local development:
 

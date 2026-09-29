@@ -7,10 +7,21 @@ serialization produced by the Rust ``serde`` implementation.
 
 from os import PathLike
 
+import numpy as np
+from numpy.typing import NDArray
+
 __version__: str
 
-class NctForgeError(Exception):
-    """An NCTForge contract, verification, or evidence check failed."""
+# Array axis order (all voxel fields): C-order ``(nz, ny, nx)``, i.e.
+# ``array[k, j, i]`` is column ``i``, row ``j``, slice ``k``. The flat
+# ``values`` lists use the same memory order (``i + nx*j + nx*ny*k``).
+# Multigroup flux adds a leading group axis: ``(groups, nz, ny, nx)``.
+
+class OpenBnctError(Exception):
+    """An OpenBNCT contract, verification, or evidence check failed."""
+
+NctForgeError = OpenBnctError
+"""Deprecated alias: the very same class object as ``OpenBnctError``."""
 
 class Backend:
     """Transport-backend descriptor with current capability flags."""
@@ -66,7 +77,11 @@ class Geometry:
     """Validated CT lattice geometry in the DICOM LPS patient frame."""
 
     @property
-    def shape(self) -> tuple[int, int, int]: ...
+    def shape(self) -> tuple[int, int, int]:
+        """``(nx, ny, nz)``; spacing/origin/direction use x, y, z order."""
+    @property
+    def array_shape(self) -> tuple[int, int, int]:
+        """``(nz, ny, nx)``: the shape of every voxel array on this grid."""
     @property
     def spacing_mm(self) -> tuple[float, float, float]: ...
     @property
@@ -91,7 +106,9 @@ class VerifiedCase:
     def ct_value(self, column: int, row: int, slice: int) -> float:
         """Modality value at voxel [column, row, slice], after rescale."""
     def structure_mask(self, name: str) -> list[bool]:
-        """Boolean mask for the named structure, columns fastest then rows, slices."""
+        """Flat boolean mask, x fastest, then y, then z."""
+    def structure_mask_array(self, name: str) -> NDArray[np.bool_]:
+        """The mask as an ``(nz, ny, nx)`` boolean array."""
 
 class GeneratedCase:
     """Summary of a generated ``NF-BNCT-001`` case directory."""
@@ -277,9 +294,24 @@ class DoseVolume:
     @property
     def unit(self) -> str: ...
     @property
-    def values(self) -> list[float]: ...
+    def values(self) -> list[float]:
+        """Flat values, x fastest (``i + nx*j + nx*ny*k``)."""
     @property
     def absolute_standard_uncertainty(self) -> list[float] | None: ...
+    def as_array(self) -> NDArray[np.float64]:
+        """Values as a C-order ``(nz, ny, nx)`` array."""
+    def uncertainty_array(self) -> NDArray[np.float64] | None:
+        """One-sigma uncertainty as an ``(nz, ny, nx)`` array, or ``None``."""
+    @property
+    def geometry(self) -> Geometry: ...
+    @property
+    def array_shape(self) -> tuple[int, int, int]: ...
+    @property
+    def spacing_mm(self) -> tuple[float, float, float]: ...
+    @property
+    def origin_mm(self) -> tuple[float, float, float]: ...
+    @property
+    def direction(self) -> tuple[float, ...]: ...
 
 class PhysicalDoseBundle:
     """A validated ``openbnct.physical-dose-bundle/0.2.0`` artifact."""
@@ -435,6 +467,10 @@ class DoseVolumeHistogram:
     @property
     def cumulative_volume_fraction(self) -> list[float]:
         """V(d): fraction of the region receiving at least each edge dose."""
+    def dose_edges_array(self) -> NDArray[np.float64]: ...
+    def differential_volume_fraction_array(self) -> NDArray[np.float64]: ...
+    def cumulative_volume_fraction_array(self) -> NDArray[np.float64]:
+        """1-D array aligned with ``dose_edges_array()``."""
     @property
     def region_voxel_count(self) -> int: ...
     @property
@@ -551,12 +587,12 @@ class SensitivitySweep:
 def load_physical_dose_bundle(path: str | PathLike[str]) -> PhysicalDoseBundle: ...
 def boron_dose(
     physical_bundle: PhysicalDoseBundle,
-    unit_dose: str | PathLike[str],
+    unit_dose: BoronUnitDose | str | PathLike[str],
     blood_ug_g: float | None = None,
     ratios: dict[str, float] | None = None,
     masks: list[tuple[str, str | PathLike[str]]] | None = None,
     default_ratio: float = 1.0,
-    boron_field: str | PathLike[str] | None = None,
+    boron_field: BoronField | str | PathLike[str] | None = None,
     output: str | PathLike[str] | None = None,
 ) -> PhysicalDoseBundle:
     """Apply a 10B concentration to an ``openbnct.boron-unit-dose/0.1.0``
@@ -804,6 +840,12 @@ class ExternalDoseBundle:
     def values(self) -> list[float]: ...
     @property
     def absolute_standard_uncertainty(self) -> list[float] | None: ...
+    def as_array(self) -> NDArray[np.float64]:
+        """Values as a C-order ``(nz, ny, nx)`` array."""
+    def uncertainty_array(self) -> NDArray[np.float64] | None:
+        """One-sigma uncertainty as an ``(nz, ny, nx)`` array, or ``None``."""
+    @property
+    def array_shape(self) -> tuple[int, int, int]: ...
     @property
     def geometry(self) -> Geometry: ...
     @property
@@ -832,6 +874,12 @@ class BedBundle:
     def values(self) -> list[float]: ...
     @property
     def absolute_standard_uncertainty(self) -> list[float] | None: ...
+    def as_array(self) -> NDArray[np.float64]:
+        """Values as a C-order ``(nz, ny, nx)`` array."""
+    def uncertainty_array(self) -> NDArray[np.float64] | None:
+        """One-sigma uncertainty as an ``(nz, ny, nx)`` array, or ``None``."""
+    @property
+    def array_shape(self) -> tuple[int, int, int]: ...
     @property
     def geometry(self) -> Geometry: ...
     @property
@@ -852,6 +900,14 @@ class CombinedDoseBundle:
     def values(self) -> list[float]: ...
     @property
     def absolute_standard_uncertainty(self) -> list[float] | None: ...
+    def as_array(self) -> NDArray[np.float64]:
+        """Values as a C-order ``(nz, ny, nx)`` array."""
+    def uncertainty_array(self) -> NDArray[np.float64] | None:
+        """One-sigma uncertainty as an ``(nz, ny, nx)`` array, or ``None``."""
+    @property
+    def array_shape(self) -> tuple[int, int, int]: ...
+    @property
+    def geometry(self) -> Geometry: ...
     @property
     def inputs(self) -> list[tuple[str, str, str, str]]:
         """``(role, id, sha256, provenance_id)`` for each consumed input."""
@@ -968,7 +1024,122 @@ class MultigroupFlux:
     def voxel_count(self) -> int: ...
     def flux(self) -> list[list[float]]:
         """``[voxel][group]`` scalar flux, cm⁻²s⁻¹ per unit source rate."""
+    @property
+    def energy_boundaries_ev(self) -> list[float]: ...
+    def energy_boundaries_array(self) -> NDArray[np.float64]: ...
+    @property
+    def geometry(self) -> Geometry | None:
+        """Set on ``sn_solve`` results and after ``with_geometry``."""
+    def with_geometry(self, geometry: Geometry) -> MultigroupFlux:
+        """A copy bound to ``geometry`` (voxel count must match)."""
+    def as_array(self, geometry: Geometry | None = None) -> NDArray[np.float64]:
+        """Flux as a C-order ``(groups, nz, ny, nx)`` array; groups follow
+        ``energy_boundaries_ev`` (descending energy)."""
     def to_json(self) -> str: ...
+    def write(self, output: str | PathLike[str]) -> None: ...
+
+class TransportCase:
+    """A validated ``openbnct.transport-case`` (grid, base material, source)."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def case_id(self) -> str: ...
+    @property
+    def geometry(self) -> Geometry: ...
+    @property
+    def requested_histories(self) -> int: ...
+    def to_json(self) -> str: ...
+
+class BoronUnitDose:
+    """Gy per source particle per ug/g of 10B, folded from a converged flux."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    @property
+    def case_id(self) -> str: ...
+    @property
+    def unit(self) -> str: ...
+    @property
+    def geometry(self) -> Geometry: ...
+    @property
+    def values(self) -> list[float]: ...
+    @property
+    def absolute_standard_uncertainty(self) -> list[float] | None: ...
+    def as_array(self) -> NDArray[np.float64]: ...
+    def uncertainty_array(self) -> NDArray[np.float64] | None: ...
+    @property
+    def array_shape(self) -> tuple[int, int, int]: ...
+    @property
+    def assumptions(self) -> str: ...
+    @property
+    def qualification(self) -> str: ...
+    @property
+    def provenance_id(self) -> str: ...
+    def to_json(self) -> str: ...
+    def write(self, output: str | PathLike[str]) -> None: ...
+
+class BoronField:
+    """A per-voxel 10B concentration field in ug/g."""
+    @property
+    def schema_version(self) -> str: ...
+    @property
+    def id(self) -> str: ...
+    @property
+    def case_id(self) -> str: ...
+    @property
+    def geometry(self) -> Geometry: ...
+    @property
+    def values(self) -> list[float]: ...
+    @property
+    def uncertainty_1sigma(self) -> list[float]: ...
+    def as_array(self) -> NDArray[np.float64]: ...
+    def uncertainty_array(self) -> NDArray[np.float64]: ...
+    @property
+    def array_shape(self) -> tuple[int, int, int]: ...
+    @property
+    def clamped_negative_voxels(self) -> int: ...
+    @property
+    def qualification(self) -> str: ...
+    @property
+    def provenance_id(self) -> str: ...
+    def to_json(self) -> str: ...
+
+class SnSolution:
+    """Result of ``sn_solve``: flux plus optional folded dose artifacts."""
+    @property
+    def flux(self) -> MultigroupFlux: ...
+    @property
+    def dose(self) -> PhysicalDoseBundle | None: ...
+    @property
+    def boron_unit_dose(self) -> BoronUnitDose | None: ...
+    @property
+    def converged(self) -> bool: ...
+
+def load_transport_case(path: str | PathLike[str]) -> TransportCase: ...
+def load_boron_unit_dose(path: str | PathLike[str]) -> BoronUnitDose: ...
+def load_boron_field(path: str | PathLike[str]) -> BoronField: ...
+def sn_solve(
+    case: TransportCase | str | PathLike[str],
+    data: MultigroupData | str | PathLike[str],
+    assignment: str | PathLike[str] | None = None,
+    *,
+    order: int = 4,
+    max_outer: int = 32,
+    convergence: float = 1e-6,
+    allow_unconverged: bool = False,
+    anderson: int = 0,
+    p1: bool = False,
+    anisotropy: int = 0,
+    dose: bool = True,
+    boron_unit: bool = False,
+) -> SnSolution:
+    """Run the deterministic S_N multigroup solve (the library path behind
+    ``openbnct sn solve``), releasing the GIL. ``dose=True`` needs data that
+    declares a component profile; ``boron_unit=True`` needs data carrying a
+    ``boron_unit_response_gy_cm2_per_ug_g`` vector. An unconverged solve
+    raises ``OpenBnctError`` unless ``allow_unconverged=True`` (then a
+    ``RuntimeWarning`` is issued and ``converged`` is ``False``)."""
 
 class MultigroupCovariance:
     """A validated declared-uncertainty artifact over multigroup parameters."""

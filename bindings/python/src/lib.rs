@@ -12,6 +12,7 @@ use std::fmt::Display;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+use numpy::{PyArray1, PyArray3, PyArray4, PyArrayMethods};
 use openbnct_bio::{
     AppliedFractionation, BiologicalDoseBundle, BiologicalModel, IsoeffectiveModel, LinealSpectrum,
     LinealTallySpec, MicrodosimetricModel, RegionMask, SpectrumInput, apply_biological_model,
@@ -44,13 +45,61 @@ use serde::de::DeserializeOwned;
 
 create_exception!(
     openbnct,
-    NctForgeError,
+    OpenBnctError,
     PyException,
-    "An NCTForge contract, verification, or evidence check failed."
+    "An OpenBNCT contract, verification, or evidence check failed."
 );
 
 fn reject(error: impl Display) -> PyErr {
-    NctForgeError::new_err(error.to_string())
+    OpenBnctError::new_err(error.to_string())
+}
+
+/// NumPy shape of a voxel field on `geometry`: `(nz, ny, nx)`.
+///
+/// The repo's flat voxel index is x-fastest (`i + nx*j + nx*ny*k`), which is
+/// exactly C order for an array indexed `[k, j, i]`, so a flat field
+/// reshapes without any transposition.
+fn array_shape_of(geometry: &openbnct_core::GridGeometry) -> (usize, usize, usize) {
+    let [nx, ny, nz] = geometry.shape;
+    (nz as usize, ny as usize, nx as usize)
+}
+
+/// Copy a flat x-fastest voxel field into a C-order `(nz, ny, nx)` array.
+fn grid_array<'py>(
+    py: Python<'py>,
+    geometry: &openbnct_core::GridGeometry,
+    values: &[f64],
+) -> PyResult<Bound<'py, PyArray3<f64>>> {
+    let (nz, ny, nx) = array_shape_of(geometry);
+    if values.len() != nz * ny * nx {
+        return Err(reject(format!(
+            "field has {} values but the grid holds {} voxels",
+            values.len(),
+            nz * ny * nx
+        )));
+    }
+    PyArray1::from_slice(py, values)
+        .reshape([nz, ny, nx])
+        .map_err(reject)
+}
+
+/// Boolean counterpart of [`grid_array`].
+fn grid_mask_array<'py>(
+    py: Python<'py>,
+    geometry: &openbnct_core::GridGeometry,
+    values: &[bool],
+) -> PyResult<Bound<'py, PyArray3<bool>>> {
+    let (nz, ny, nx) = array_shape_of(geometry);
+    if values.len() != nz * ny * nx {
+        return Err(reject(format!(
+            "mask has {} values but the grid holds {} voxels",
+            values.len(),
+            nz * ny * nx
+        )));
+    }
+    PyArray1::from_slice(py, values)
+        .reshape([nz, ny, nx])
+        .map_err(reject)
 }
 
 /// Write `contract` as pretty JSON, refusing to overwrite an existing file.
@@ -159,6 +208,21 @@ contract_check!(
     MultigroupData,
     validate,
     openbnct_transport::MultigroupError
+);
+contract_check!(
+    TransportCase,
+    validate,
+    openbnct_transport::TransportModelError
+);
+contract_check!(
+    openbnct_transport::BoronUnitDose,
+    validate,
+    openbnct_transport::BoronUnitError
+);
+contract_check!(
+    openbnct_boron::BoronField,
+    validate,
+    openbnct_boron::BoronError
 );
 contract_check!(MultigroupCovariance, validate, openbnct_transport::UqError);
 contract_check!(DoseUncertaintyBudget, validate, openbnct_transport::UqError);
@@ -518,13 +582,29 @@ impl PyVerifiedCase {
             .modality_value(self.inner.ct.stored_pixels[index]))
     }
 
-    /// Boolean mask for the named structure, columns fastest then rows, slices.
+    /// Boolean mask for the named structure as a flat list, x (columns)
+    /// fastest, then y (rows), then z (slices).
     fn structure_mask(&self, name: &str) -> PyResult<Vec<bool>> {
         self.inner
             .structures
             .roi(name)
             .map(|roi| roi.voxels.clone())
             .ok_or_else(|| reject(format!("unknown structure {name:?}")))
+    }
+
+    /// Boolean mask for the named structure as an `np.ndarray` of shape
+    /// `(nz, ny, nx)` (C order).
+    fn structure_mask_array<'py>(
+        &self,
+        py: Python<'py>,
+        name: &str,
+    ) -> PyResult<Bound<'py, PyArray3<bool>>> {
+        let roi = self
+            .inner
+            .structures
+            .roi(name)
+            .ok_or_else(|| reject(format!("unknown structure {name:?}")))?;
+        grid_mask_array(py, &self.inner.ct.geometry, &roi.voxels)
     }
 }
 
@@ -536,10 +616,18 @@ struct PyGeometry {
 
 #[pymethods]
 impl PyGeometry {
-    /// [columns, rows, slices]
+    /// `(nx, ny, nz)` = (columns, rows, slices). `spacing_mm`, `origin_mm`
+    /// and `direction` use the same x, y, z ordering.
     #[getter]
     fn shape(&self) -> (u32, u32, u32) {
         self.inner.shape.into()
+    }
+
+    /// NumPy array shape of a voxel field on this grid: `(nz, ny, nx)`
+    /// (C order; x varies fastest in memory).
+    #[getter]
+    fn array_shape(&self) -> (usize, usize, usize) {
+        array_shape_of(&self.inner)
     }
 
     #[getter]
@@ -1078,6 +1166,7 @@ struct PyDoseVolume {
     unit: String,
     values: Vec<f64>,
     absolute_standard_uncertainty: Option<Vec<f64>>,
+    geometry: openbnct_core::GridGeometry,
 }
 
 #[pymethods]
@@ -1092,16 +1181,67 @@ impl PyDoseVolume {
         &self.unit
     }
 
-    /// Per-voxel values in row-major `[column, row, slice]` grid order.
+    /// Flat per-voxel values, x (column) fastest, then y (row), then z
+    /// (slice): index `i + nx*j + nx*ny*k`. Prefer [`as_array`] for analysis.
     #[getter]
     fn values(&self) -> Vec<f64> {
         self.values.clone()
     }
 
-    /// Per-voxel one-sigma absolute uncertainty, when present.
+    /// Flat per-voxel one-sigma absolute uncertainty, when present.
     #[getter]
     fn absolute_standard_uncertainty(&self) -> Option<Vec<f64>> {
         self.absolute_standard_uncertainty.clone()
+    }
+
+    /// The values as an `np.ndarray` of shape `(nz, ny, nx)` (C order):
+    /// `array[k, j, i]` is the voxel in column `i`, row `j`, slice `k`.
+    fn as_array<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        grid_array(py, &self.geometry, &self.values)
+    }
+
+    /// One-sigma absolute uncertainty as an `np.ndarray` of shape
+    /// `(nz, ny, nx)`, or `None` when the volume carries none.
+    fn uncertainty_array<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Option<Bound<'py, PyArray3<f64>>>> {
+        self.absolute_standard_uncertainty
+            .as_deref()
+            .map(|sigma| grid_array(py, &self.geometry, sigma))
+            .transpose()
+    }
+
+    /// Grid geometry shared by every volume of the bundle.
+    #[getter]
+    fn geometry(&self) -> PyGeometry {
+        PyGeometry {
+            inner: self.geometry.clone(),
+        }
+    }
+
+    /// NumPy shape `(nz, ny, nx)` of `as_array()`.
+    #[getter]
+    fn array_shape(&self) -> (usize, usize, usize) {
+        array_shape_of(&self.geometry)
+    }
+
+    /// Voxel spacing `(dx, dy, dz)` in millimetres.
+    #[getter]
+    fn spacing_mm(&self) -> (f64, f64, f64) {
+        self.geometry.spacing_mm.into()
+    }
+
+    /// LPS position of the first voxel's origin `(x, y, z)` in millimetres.
+    #[getter]
+    fn origin_mm(&self) -> (f64, f64, f64) {
+        self.geometry.origin_mm.into()
+    }
+
+    /// Row-major 3x3 direction cosines (nine values).
+    #[getter]
+    fn direction(&self) -> (f64, f64, f64, f64, f64, f64, f64, f64, f64) {
+        self.geometry.direction.into()
     }
 
     fn __repr__(&self) -> String {
@@ -1169,6 +1309,7 @@ impl PyPhysicalDoseBundle {
                 unit: dose_unit_name(volume.unit),
                 values: volume.values.clone(),
                 absolute_standard_uncertainty: volume.absolute_standard_uncertainty.clone(),
+                geometry: self.inner.geometry.clone(),
             })
             .collect()
     }
@@ -1185,6 +1326,7 @@ impl PyPhysicalDoseBundle {
                 .physical_total
                 .absolute_standard_uncertainty
                 .clone(),
+            geometry: self.inner.geometry.clone(),
         }
     }
 
@@ -1206,6 +1348,217 @@ fn load_physical_dose_bundle(path: PathBuf) -> PyResult<PyPhysicalDoseBundle> {
     })
 }
 
+/// A unit-concentration boron dose given as a loaded object or a file path.
+#[derive(FromPyObject)]
+enum UnitDoseInput {
+    Loaded(Py<PyBoronUnitDose>),
+    Path(PathBuf),
+}
+
+/// A boron concentration field given as a loaded object or a file path.
+#[derive(FromPyObject)]
+enum BoronFieldInput {
+    Loaded(Py<PyBoronField>),
+    Path(PathBuf),
+}
+
+/// Pretty JSON plus a trailing newline: the bytes `write()` puts on disk
+/// and the CLI's `write_new_json` emits, so a hash of them names the file.
+fn pretty_json_bytes(contract: &impl serde::Serialize) -> PyResult<Vec<u8>> {
+    let mut bytes = serde_json::to_vec_pretty(contract).map_err(reject)?;
+    bytes.push(b'\n');
+    Ok(bytes)
+}
+
+/// A unit-concentration boron dose: Gy per source particle per ug/g of 10B,
+/// folded from a converged flux. `boron_dose` scales it by a 10B field.
+#[pyclass(frozen, name = "BoronUnitDose")]
+struct PyBoronUnitDose {
+    inner: openbnct_transport::BoronUnitDose,
+}
+
+#[pymethods]
+impl PyBoronUnitDose {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    #[getter]
+    fn case_id(&self) -> &str {
+        &self.inner.case_id
+    }
+
+    #[getter]
+    fn unit(&self) -> &str {
+        &self.inner.unit
+    }
+
+    #[getter]
+    fn geometry(&self) -> PyGeometry {
+        PyGeometry {
+            inner: self.inner.geometry.clone(),
+        }
+    }
+
+    /// Flat values, x fastest (`i + nx*j + nx*ny*k`).
+    #[getter]
+    fn values(&self) -> Vec<f64> {
+        self.inner.values.clone()
+    }
+
+    #[getter]
+    fn absolute_standard_uncertainty(&self) -> Option<Vec<f64>> {
+        self.inner.absolute_standard_uncertainty.clone()
+    }
+
+    /// The values as an `np.ndarray` of shape `(nz, ny, nx)` (C order).
+    fn as_array<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        grid_array(py, &self.inner.geometry, &self.inner.values)
+    }
+
+    /// One-sigma uncertainty as an `(nz, ny, nx)` array, or `None`.
+    fn uncertainty_array<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Option<Bound<'py, PyArray3<f64>>>> {
+        self.inner
+            .absolute_standard_uncertainty
+            .as_deref()
+            .map(|sigma| grid_array(py, &self.inner.geometry, sigma))
+            .transpose()
+    }
+
+    /// NumPy shape `(nz, ny, nx)` of `as_array()`.
+    #[getter]
+    fn array_shape(&self) -> (usize, usize, usize) {
+        array_shape_of(&self.inner.geometry)
+    }
+
+    #[getter]
+    fn assumptions(&self) -> &str {
+        &self.inner.assumptions
+    }
+
+    #[getter]
+    fn qualification(&self) -> &str {
+        &self.inner.qualification
+    }
+
+    #[getter]
+    fn provenance_id(&self) -> &str {
+        &self.inner.provenance_id
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+
+    /// Write the JSON; refuses to overwrite an existing file.
+    fn write(&self, output: PathBuf) -> PyResult<()> {
+        write_json_new(&output, &self.inner)
+    }
+}
+
+/// Load and validate an `openbnct.boron-unit-dose` artifact.
+#[pyfunction]
+fn load_boron_unit_dose(path: PathBuf) -> PyResult<PyBoronUnitDose> {
+    Ok(PyBoronUnitDose {
+        inner: load_contract(path)?,
+    })
+}
+
+/// A per-voxel 10B concentration field in ug/g (`openbnct.boron-field`).
+#[pyclass(frozen, name = "BoronField")]
+struct PyBoronField {
+    inner: openbnct_boron::BoronField,
+}
+
+#[pymethods]
+impl PyBoronField {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn id(&self) -> &str {
+        &self.inner.id
+    }
+
+    #[getter]
+    fn case_id(&self) -> &str {
+        &self.inner.case_id
+    }
+
+    #[getter]
+    fn geometry(&self) -> PyGeometry {
+        PyGeometry {
+            inner: self.inner.geometry.clone(),
+        }
+    }
+
+    /// Flat 10B concentration in ug/g, x fastest.
+    #[getter]
+    fn values(&self) -> Vec<f64> {
+        self.inner.values.clone()
+    }
+
+    /// Flat propagated one-sigma (ug/g), same order as `values`.
+    #[getter]
+    fn uncertainty_1sigma(&self) -> Vec<f64> {
+        self.inner.uncertainty_1sigma.clone()
+    }
+
+    /// Concentration as an `np.ndarray` of shape `(nz, ny, nx)` (C order).
+    fn as_array<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        grid_array(py, &self.inner.geometry, &self.inner.values)
+    }
+
+    /// One-sigma as an `(nz, ny, nx)` array.
+    fn uncertainty_array<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        grid_array(py, &self.inner.geometry, &self.inner.uncertainty_1sigma)
+    }
+
+    /// NumPy shape `(nz, ny, nx)` of `as_array()`.
+    #[getter]
+    fn array_shape(&self) -> (usize, usize, usize) {
+        array_shape_of(&self.inner.geometry)
+    }
+
+    #[getter]
+    fn clamped_negative_voxels(&self) -> u64 {
+        self.inner.clamped_negative_voxels
+    }
+
+    #[getter]
+    fn qualification(&self) -> &str {
+        &self.inner.qualification
+    }
+
+    #[getter]
+    fn provenance_id(&self) -> &str {
+        &self.inner.provenance_id
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+}
+
+/// Load and validate an `openbnct.boron-field` artifact.
+#[pyfunction]
+fn load_boron_field(path: PathBuf) -> PyResult<PyBoronField> {
+    Ok(PyBoronField {
+        inner: load_contract(path)?,
+    })
+}
+
 /// Apply a 10B concentration to a unit-concentration boron dose and re-total
 /// a physical dose bundle (same path as `openbnct boron dose`; trace-10B
 /// approximation: the applied boron does not perturb the flux).
@@ -1216,21 +1569,29 @@ fn load_physical_dose_bundle(path: PathBuf) -> PyResult<PyPhysicalDoseBundle> {
 /// `default_ratio`) or `boron_field` (an `openbnct.boron-field/0.1.0` path
 /// whose 1-sigma propagates). `output`, when given, is a new file path that
 /// receives the bundle JSON.
+///
+/// `unit_dose` is a `BoronUnitDose` (e.g. from `sn_solve(...,
+/// boron_unit=True)`) or a path to an `openbnct.boron-unit-dose` file;
+/// `boron_field` is likewise a `BoronField` or a path.
 #[pyfunction]
 #[pyo3(signature = (physical_bundle, unit_dose, blood_ug_g=None, ratios=None, masks=None, default_ratio=1.0, boron_field=None, output=None))]
 #[allow(clippy::too_many_arguments)]
 fn boron_dose(
     physical_bundle: &PyPhysicalDoseBundle,
-    unit_dose: PathBuf,
+    unit_dose: UnitDoseInput,
     blood_ug_g: Option<f64>,
     ratios: Option<HashMap<String, f64>>,
     masks: Option<Vec<(String, PathBuf)>>,
     default_ratio: f64,
-    boron_field: Option<PathBuf>,
+    boron_field: Option<BoronFieldInput>,
     output: Option<PathBuf>,
 ) -> PyResult<PyPhysicalDoseBundle> {
-    let unit: openbnct_transport::BoronUnitDose =
-        serde_json::from_slice(&fs::read(&unit_dose).map_err(reject)?).map_err(reject)?;
+    let unit: openbnct_transport::BoronUnitDose = match &unit_dose {
+        UnitDoseInput::Loaded(loaded) => loaded.get().inner.clone(),
+        UnitDoseInput::Path(path) => {
+            serde_json::from_slice(&fs::read(path).map_err(reject)?).map_err(reject)?
+        }
+    };
     unit.validate().map_err(reject)?;
     let n = unit.geometry.voxel_count().map_err(reject)?;
     let ratios: BTreeMap<String, f64> = ratios.unwrap_or_default().into_iter().collect();
@@ -1268,13 +1629,22 @@ fn boron_dose(
             );
             (conc, None, spec)
         }
-        (None, Some(path)) => {
+        (None, Some(input)) => {
             if !ratios.is_empty() || !masks.is_empty() {
                 return Err(reject("ratios/masks apply to blood_ug_g, not boron_field"));
             }
-            let field_bytes = fs::read(path).map_err(reject)?;
-            let field: openbnct_boron::BoronField =
-                serde_json::from_slice(&field_bytes).map_err(reject)?;
+            let (field, field_bytes): (openbnct_boron::BoronField, Vec<u8>) = match input {
+                BoronFieldInput::Loaded(loaded) => {
+                    let field = loaded.get().inner.clone();
+                    let bytes = pretty_json_bytes(&field)?;
+                    (field, bytes)
+                }
+                BoronFieldInput::Path(path) => {
+                    let bytes = fs::read(path).map_err(reject)?;
+                    let field = serde_json::from_slice(&bytes).map_err(reject)?;
+                    (field, bytes)
+                }
+            };
             field.validate().map_err(reject)?;
             if field.case_id != unit.case_id || field.geometry != unit.geometry {
                 return Err(reject(
@@ -1782,6 +2152,29 @@ impl PyExternalDoseBundle {
         self.inner.absolute_standard_uncertainty.clone()
     }
 
+    /// The values as an `np.ndarray` of shape `(nz, ny, nx)` (C order).
+    fn as_array<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        grid_array(py, &self.inner.geometry, &self.inner.values)
+    }
+
+    /// One-sigma uncertainty as an `(nz, ny, nx)` array, or `None`.
+    fn uncertainty_array<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Option<Bound<'py, PyArray3<f64>>>> {
+        self.inner
+            .absolute_standard_uncertainty
+            .as_deref()
+            .map(|sigma| grid_array(py, &self.inner.geometry, sigma))
+            .transpose()
+    }
+
+    /// NumPy shape `(nz, ny, nx)` of `as_array()`.
+    #[getter]
+    fn array_shape(&self) -> (usize, usize, usize) {
+        array_shape_of(&self.inner.geometry)
+    }
+
     #[getter]
     fn geometry(&self) -> PyGeometry {
         PyGeometry {
@@ -1878,6 +2271,29 @@ impl PyBedBundle {
     #[getter]
     fn absolute_standard_uncertainty(&self) -> Option<Vec<f64>> {
         self.inner.absolute_standard_uncertainty.clone()
+    }
+
+    /// The values as an `np.ndarray` of shape `(nz, ny, nx)` (C order).
+    fn as_array<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        grid_array(py, &self.inner.geometry, &self.inner.values)
+    }
+
+    /// One-sigma uncertainty as an `(nz, ny, nx)` array, or `None`.
+    fn uncertainty_array<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Option<Bound<'py, PyArray3<f64>>>> {
+        self.inner
+            .absolute_standard_uncertainty
+            .as_deref()
+            .map(|sigma| grid_array(py, &self.inner.geometry, sigma))
+            .transpose()
+    }
+
+    /// NumPy shape `(nz, ny, nx)` of `as_array()`.
+    #[getter]
+    fn array_shape(&self) -> (usize, usize, usize) {
+        array_shape_of(&self.inner.geometry)
     }
 
     #[getter]
@@ -1980,6 +2396,36 @@ impl PyCombinedDoseBundle {
     #[getter]
     fn absolute_standard_uncertainty(&self) -> Option<Vec<f64>> {
         self.inner.absolute_standard_uncertainty.clone()
+    }
+
+    /// The values as an `np.ndarray` of shape `(nz, ny, nx)` (C order).
+    fn as_array<'py>(&self, py: Python<'py>) -> PyResult<Bound<'py, PyArray3<f64>>> {
+        grid_array(py, &self.inner.geometry, &self.inner.values)
+    }
+
+    /// One-sigma uncertainty as an `(nz, ny, nx)` array, or `None`.
+    fn uncertainty_array<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> PyResult<Option<Bound<'py, PyArray3<f64>>>> {
+        self.inner
+            .absolute_standard_uncertainty
+            .as_deref()
+            .map(|sigma| grid_array(py, &self.inner.geometry, sigma))
+            .transpose()
+    }
+
+    /// NumPy shape `(nz, ny, nx)` of `as_array()`.
+    #[getter]
+    fn array_shape(&self) -> (usize, usize, usize) {
+        array_shape_of(&self.inner.geometry)
+    }
+
+    #[getter]
+    fn geometry(&self) -> PyGeometry {
+        PyGeometry {
+            inner: self.inner.geometry.clone(),
+        }
     }
 
     /// `(role, id, sha256, provenance_id)` for each consumed input.
@@ -2755,6 +3201,7 @@ impl PyBiologicalDoseBundle {
                 unit: volume.unit.clone(),
                 values: volume.values.clone(),
                 absolute_standard_uncertainty: volume.absolute_standard_uncertainty.clone(),
+                geometry: self.inner.geometry.clone(),
             })
             .collect()
     }
@@ -2767,6 +3214,7 @@ impl PyBiologicalDoseBundle {
             unit: self.inner.total.unit.clone(),
             values: self.inner.total.values.clone(),
             absolute_standard_uncertainty: self.inner.total.absolute_standard_uncertainty.clone(),
+            geometry: self.inner.geometry.clone(),
         }
     }
 
@@ -3042,6 +3490,25 @@ impl PyDoseVolumeHistogram {
     #[getter]
     fn cumulative_volume_fraction(&self) -> Vec<f64> {
         self.inner.cumulative_volume_fraction.clone()
+    }
+
+    /// `dose_edges` as a 1-D `np.ndarray`.
+    fn dose_edges_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, &self.inner.dose_edges)
+    }
+
+    /// `differential_volume_fraction` as a 1-D `np.ndarray`.
+    fn differential_volume_fraction_array<'py>(
+        &self,
+        py: Python<'py>,
+    ) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, &self.inner.differential_volume_fraction)
+    }
+
+    /// `cumulative_volume_fraction` as a 1-D `np.ndarray`, aligned with
+    /// `dose_edges_array()`.
+    fn cumulative_volume_fraction_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, &self.inner.cumulative_volume_fraction)
     }
 
     #[getter]
@@ -3914,6 +4381,9 @@ contract_wrapper!(
 #[pyclass(frozen, name = "MultigroupFlux")]
 struct PyMultigroupFlux {
     inner: MultigroupFlux,
+    /// Grid the flat `[voxel]` axis lives on: known for a solve result,
+    /// absent for a bare loaded artifact (the JSON carries no geometry).
+    geometry: Option<openbnct_core::GridGeometry>,
 }
 
 #[pymethods]
@@ -3988,9 +4458,90 @@ impl PyMultigroupFlux {
         self.inner.flux.clone()
     }
 
+    /// Group boundaries in eV, descending (`group_count + 1` values).
+    #[getter]
+    fn energy_boundaries_ev(&self) -> Vec<f64> {
+        self.inner.energy_boundaries_ev.clone()
+    }
+
+    /// `energy_boundaries_ev` as a 1-D `np.ndarray`.
+    fn energy_boundaries_array<'py>(&self, py: Python<'py>) -> Bound<'py, PyArray1<f64>> {
+        PyArray1::from_slice(py, &self.inner.energy_boundaries_ev)
+    }
+
+    /// The grid this flux lives on: set on a `sn_solve` result and after
+    /// `with_geometry`, `None` for a bare loaded artifact.
+    #[getter]
+    fn geometry(&self) -> Option<PyGeometry> {
+        self.geometry.clone().map(|inner| PyGeometry { inner })
+    }
+
+    /// A copy bound to `geometry` (whose voxel count must match), so
+    /// `as_array()` works on a flux loaded from JSON.
+    fn with_geometry(&self, geometry: &PyGeometry) -> PyResult<PyMultigroupFlux> {
+        let n = geometry.inner.voxel_count().map_err(reject)?;
+        if n != self.inner.flux.len() {
+            return Err(reject(format!(
+                "geometry holds {n} voxels but the flux has {}",
+                self.inner.flux.len()
+            )));
+        }
+        Ok(PyMultigroupFlux {
+            inner: self.inner.clone(),
+            geometry: Some(geometry.inner.clone()),
+        })
+    }
+
+    /// The scalar flux as an `np.ndarray` of shape `(groups, nz, ny, nx)`
+    /// (C order): `array[g, k, j, i]` is group `g` (energy-descending, as
+    /// in `energy_boundaries_ev`) in voxel column `i`, row `j`, slice `k`.
+    /// Uses the bound geometry unless `geometry` is given.
+    #[pyo3(signature = (geometry=None))]
+    fn as_array<'py>(
+        &self,
+        py: Python<'py>,
+        geometry: Option<&PyGeometry>,
+    ) -> PyResult<Bound<'py, PyArray4<f64>>> {
+        let geometry = match (geometry, &self.geometry) {
+            (Some(given), _) => &given.inner,
+            (None, Some(bound)) => bound,
+            (None, None) => {
+                return Err(reject(
+                    "flux carries no geometry; pass geometry=... or use with_geometry()",
+                ));
+            }
+        };
+        let (nz, ny, nx) = array_shape_of(geometry);
+        let voxels = nz * ny * nx;
+        let groups = self.group_count();
+        if self.inner.flux.len() != voxels {
+            return Err(reject(format!(
+                "geometry holds {voxels} voxels but the flux has {}",
+                self.inner.flux.len()
+            )));
+        }
+        let mut out = vec![0.0; groups * voxels];
+        for (voxel, row) in self.inner.flux.iter().enumerate() {
+            if row.len() != groups {
+                return Err(reject("flux row length does not match the group count"));
+            }
+            for (group, value) in row.iter().enumerate() {
+                out[group * voxels + voxel] = *value;
+            }
+        }
+        PyArray1::from_vec(py, out)
+            .reshape([groups, nz, ny, nx])
+            .map_err(reject)
+    }
+
     /// Canonical JSON bytes as produced by the Rust contract, as text.
     fn to_json(&self) -> PyResult<String> {
         serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+
+    /// Write the JSON; refuses to overwrite an existing file.
+    fn write(&self, output: PathBuf) -> PyResult<()> {
+        write_json_new(&output, &self.inner)
     }
 }
 
@@ -4121,6 +4672,305 @@ fn load_multigroup_data(path: PathBuf) -> PyResult<PyMultigroupData> {
 fn load_multigroup_flux(path: PathBuf) -> PyResult<PyMultigroupFlux> {
     Ok(PyMultigroupFlux {
         inner: load_contract(path)?,
+        geometry: None,
+    })
+}
+
+/// A validated `openbnct.transport-case` (grid, base material, source).
+#[pyclass(frozen, name = "TransportCase")]
+struct PyTransportCase {
+    inner: TransportCase,
+}
+
+#[pymethods]
+impl PyTransportCase {
+    #[getter]
+    fn schema_version(&self) -> &str {
+        &self.inner.schema_version
+    }
+
+    #[getter]
+    fn case_id(&self) -> &str {
+        &self.inner.case_id
+    }
+
+    #[getter]
+    fn geometry(&self) -> PyGeometry {
+        PyGeometry {
+            inner: self.inner.geometry.clone(),
+        }
+    }
+
+    #[getter]
+    fn requested_histories(&self) -> u64 {
+        self.inner.requested_histories
+    }
+
+    fn to_json(&self) -> PyResult<String> {
+        serde_json::to_string_pretty(&self.inner).map_err(reject)
+    }
+}
+
+/// Load and validate an `openbnct.transport-case` JSON file.
+#[pyfunction]
+fn load_transport_case(path: PathBuf) -> PyResult<PyTransportCase> {
+    Ok(PyTransportCase {
+        inner: load_contract(path)?,
+    })
+}
+
+/// A transport case given as a loaded object or a file path.
+#[derive(FromPyObject)]
+enum CaseInput {
+    Loaded(Py<PyTransportCase>),
+    Path(PathBuf),
+}
+
+/// Multigroup data given as a loaded object or a file path.
+#[derive(FromPyObject)]
+enum DataInput {
+    Loaded(Py<PyMultigroupData>),
+    Path(PathBuf),
+}
+
+/// Result of [`sn_solve`]: the flux plus the optional folded artifacts.
+#[pyclass(frozen, name = "SnSolution")]
+struct PySnSolution {
+    flux: Py<PyMultigroupFlux>,
+    dose: Option<Py<PyPhysicalDoseBundle>>,
+    boron_unit_dose: Option<Py<PyBoronUnitDose>>,
+}
+
+#[pymethods]
+impl PySnSolution {
+    /// The multigroup scalar flux (bound to the case geometry, so
+    /// `flux.as_array()` works directly).
+    #[getter]
+    fn flux(&self, py: Python<'_>) -> Py<PyMultigroupFlux> {
+        self.flux.clone_ref(py)
+    }
+
+    /// The physical dose bundle folded from the flux (`dose=True`).
+    #[getter]
+    fn dose(&self, py: Python<'_>) -> Option<Py<PyPhysicalDoseBundle>> {
+        self.dose.as_ref().map(|dose| dose.clone_ref(py))
+    }
+
+    /// The unit-concentration boron dose (`boron_unit=True`), for
+    /// `boron_dose`.
+    #[getter]
+    fn boron_unit_dose(&self, py: Python<'_>) -> Option<Py<PyBoronUnitDose>> {
+        self.boron_unit_dose.as_ref().map(|unit| unit.clone_ref(py))
+    }
+
+    /// Whether the outer iteration met the convergence target.
+    #[getter]
+    fn converged(&self) -> bool {
+        self.flux.get().inner.converged
+    }
+
+    fn __repr__(&self) -> String {
+        let flux = &self.flux.get().inner;
+        format!(
+            "SnSolution(converged={}, residual={:.3e}, outer_iterations={}, dose={}, boron_unit_dose={})",
+            if flux.converged { "True" } else { "False" },
+            flux.residual,
+            flux.outer_iterations,
+            self.dose.is_some(),
+            self.boron_unit_dose.is_some()
+        )
+    }
+}
+
+type SnOutputs = (
+    MultigroupFlux,
+    Option<PhysicalDoseBundle>,
+    Option<openbnct_transport::BoronUnitDose>,
+);
+
+/// The GIL-free body of [`sn_solve`]: the same library calls, in the same
+/// order, as the CLI's `sn solve`.
+#[allow(clippy::too_many_arguments)]
+fn run_sn_solve(
+    case: &TransportCase,
+    data: &MultigroupData,
+    options: &openbnct_transport::SnOptions,
+    case_bytes: &[u8],
+    data_bytes: &[u8],
+    assignment: Option<&MaterialAssignment>,
+    allow_unconverged: bool,
+    dose: bool,
+    boron_unit: bool,
+) -> Result<SnOutputs, String> {
+    let data_ref = ContentReference {
+        id: data.id.clone(),
+        sha256: openbnct_evidence::sha256_hex(data_bytes),
+    };
+    let case_ref = ContentReference {
+        id: case.case_id.clone(),
+        sha256: openbnct_evidence::sha256_hex(case_bytes),
+    };
+    let flux =
+        openbnct_transport::solve_multigroup(case, data, options, data_ref.clone(), case_ref)
+            .map_err(|error| format!("multigroup: {error}"))?;
+    if !flux.converged && !allow_unconverged {
+        return Err(format!(
+            "multigroup solve did not converge (residual {:.3e} after {} outer iterations); \
+             raise max_outer or pass allow_unconverged=True for the provisional field",
+            flux.residual, flux.outer_iterations
+        ));
+    }
+    let bundle = if dose {
+        let profile = data.component_profile.clone().ok_or_else(|| {
+            "dose=True requires the multigroup data to declare component_profile \
+             (pass dose=False for the flux alone)"
+                .to_string()
+        })?;
+        Some(
+            openbnct_transport::fold_multigroup_dose(
+                case,
+                data,
+                &flux,
+                assignment,
+                profile,
+                data_ref.clone(),
+            )
+            .map_err(|error| format!("dose fold: {error}"))?,
+        )
+    } else {
+        None
+    };
+    let unit = if boron_unit {
+        // The flux reference binds the bytes `flux.write()` would put on disk.
+        let mut flux_bytes = serde_json::to_vec_pretty(&flux).map_err(|e| e.to_string())?;
+        flux_bytes.push(b'\n');
+        let flux_ref = ContentReference {
+            id: flux.provenance_id.clone(),
+            sha256: openbnct_evidence::sha256_hex(&flux_bytes),
+        };
+        Some(
+            openbnct_transport::fold_boron_unit_dose(
+                case, data, &flux, assignment, data_ref, flux_ref,
+            )
+            .map_err(|error| format!("boron unit dose: {error}"))?,
+        )
+    } else {
+        None
+    };
+    Ok((flux, bundle, unit))
+}
+
+/// Solve a declared multigroup problem with the deterministic S_N solver
+/// (the same Rust library path as `openbnct sn solve`) and return the flux
+/// plus, optionally, the folded physical dose and the unit boron dose.
+///
+/// `case` is a `TransportCase` or a path; `data` is `MultigroupData` or a
+/// path; `assignment` is an optional material-assignment path. The GIL is
+/// released for the whole solve. An unconverged solve raises
+/// `OpenBnctError` unless `allow_unconverged=True`, in which case the
+/// provisional field is returned with `converged == False` and a
+/// `RuntimeWarning` is issued. Object inputs are content-bound by the
+/// SHA-256 of their pretty-printed JSON; path inputs by the file bytes.
+#[pyfunction]
+#[pyo3(signature = (case, data, assignment=None, *, order=4, max_outer=32, convergence=1e-6, allow_unconverged=false, anderson=0, p1=false, anisotropy=0, dose=true, boron_unit=false))]
+#[allow(clippy::too_many_arguments)]
+fn sn_solve(
+    py: Python<'_>,
+    case: CaseInput,
+    data: DataInput,
+    assignment: Option<PathBuf>,
+    order: u32,
+    max_outer: u32,
+    convergence: f64,
+    allow_unconverged: bool,
+    anderson: usize,
+    p1: bool,
+    anisotropy: u32,
+    dose: bool,
+    boron_unit: bool,
+) -> PyResult<PySnSolution> {
+    let (transport_case, case_bytes): (TransportCase, Vec<u8>) = match &case {
+        CaseInput::Loaded(loaded) => {
+            let case = loaded.get().inner.clone();
+            let bytes = pretty_json_bytes(&case)?;
+            (case, bytes)
+        }
+        CaseInput::Path(path) => {
+            let bytes = fs::read(path).map_err(reject)?;
+            (serde_json::from_slice(&bytes).map_err(reject)?, bytes)
+        }
+    };
+    let (mg_data, data_bytes): (MultigroupData, Vec<u8>) = match &data {
+        DataInput::Loaded(loaded) => {
+            let data = loaded.get().inner.clone();
+            let bytes = pretty_json_bytes(&data)?;
+            (data, bytes)
+        }
+        DataInput::Path(path) => {
+            let bytes = fs::read(path).map_err(reject)?;
+            (serde_json::from_slice(&bytes).map_err(reject)?, bytes)
+        }
+    };
+    let assignment_model = assignment
+        .map(|path| {
+            fs::read(&path).map_err(reject).and_then(|bytes| {
+                serde_json::from_slice::<MaterialAssignment>(&bytes).map_err(reject)
+            })
+        })
+        .transpose()?;
+    let options = openbnct_transport::SnOptions {
+        quadrature_order: order,
+        convergence,
+        max_outer_iterations: max_outer,
+        assignment: assignment_model.clone(),
+        p1_anisotropic: p1,
+        anisotropy_order: anisotropy,
+        anderson_depth: anderson,
+        ..openbnct_transport::SnOptions::default()
+    };
+    let (flux, bundle, unit) = py
+        .detach(|| {
+            run_sn_solve(
+                &transport_case,
+                &mg_data,
+                &options,
+                &case_bytes,
+                &data_bytes,
+                assignment_model.as_ref(),
+                allow_unconverged,
+                dose,
+                boron_unit,
+            )
+        })
+        .map_err(reject)?;
+    if !flux.converged {
+        let message = std::ffi::CString::new(format!(
+            "sn_solve did not converge (residual {:.3e} after {} outer iterations); \
+             the returned field is provisional",
+            flux.residual, flux.outer_iterations
+        ))
+        .map_err(reject)?;
+        PyErr::warn(
+            py,
+            &py.get_type::<pyo3::exceptions::PyRuntimeWarning>(),
+            &message,
+            1,
+        )?;
+    }
+    Ok(PySnSolution {
+        flux: Py::new(
+            py,
+            PyMultigroupFlux {
+                inner: flux,
+                geometry: Some(transport_case.geometry.clone()),
+            },
+        )?,
+        dose: bundle
+            .map(|inner| Py::new(py, PyPhysicalDoseBundle { inner }))
+            .transpose()?,
+        boron_unit_dose: unit
+            .map(|inner| Py::new(py, PyBoronUnitDose { inner }))
+            .transpose()?,
     })
 }
 
@@ -4485,7 +5335,9 @@ fn avify_load_certificate(certificate: PathBuf) -> PyResult<String> {
 #[pymodule]
 fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add("__version__", env!("CARGO_PKG_VERSION"))?;
-    m.add("NctForgeError", m.py().get_type::<NctForgeError>())?;
+    m.add("OpenBnctError", m.py().get_type::<OpenBnctError>())?;
+    // Backward-compatible alias: the very same class object.
+    m.add("NctForgeError", m.py().get_type::<OpenBnctError>())?;
     m.add_class::<PyBackend>()?;
     m.add_class::<PyStructure>()?;
     m.add_class::<PyCaseVerification>()?;
@@ -4522,6 +5374,10 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_class::<PyPositionReport>()?;
     m.add_class::<PyMultigroupData>()?;
     m.add_class::<PyMultigroupFlux>()?;
+    m.add_class::<PyTransportCase>()?;
+    m.add_class::<PySnSolution>()?;
+    m.add_class::<PyBoronUnitDose>()?;
+    m.add_class::<PyBoronField>()?;
     m.add_class::<PyMultigroupCovariance>()?;
     m.add_class::<PyDoseUncertaintyBudget>()?;
     m.add_class::<PySensitivitySpec>()?;
@@ -4597,6 +5453,10 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(sweep_biological_model, m)?)?;
     m.add_function(wrap_pyfunction!(load_multigroup_data, m)?)?;
     m.add_function(wrap_pyfunction!(load_multigroup_flux, m)?)?;
+    m.add_function(wrap_pyfunction!(load_transport_case, m)?)?;
+    m.add_function(wrap_pyfunction!(load_boron_unit_dose, m)?)?;
+    m.add_function(wrap_pyfunction!(load_boron_field, m)?)?;
+    m.add_function(wrap_pyfunction!(sn_solve, m)?)?;
     m.add_function(wrap_pyfunction!(load_multigroup_covariance, m)?)?;
     m.add_function(wrap_pyfunction!(load_dose_uncertainty_budget, m)?)?;
     m.add_function(wrap_pyfunction!(load_sensitivity_spec, m)?)?;

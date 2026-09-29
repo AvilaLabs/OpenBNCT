@@ -45,7 +45,8 @@ The first surface is read-oriented and adds no transport capability:
   its still-disabled capability flags;
 - `file_sha256` and `to_json()` expose the identical hash and canonical
   pretty-printed serialization produced by the Rust evidence path;
-- every rejection surfaces as a single `NctForgeError`.
+- every rejection surfaces as a single `OpenBnctError` (`NctForgeError` is kept as an alias of the
+  same class).
 
 The package ships `py.typed` and a checked `_openbnct.pyi` stub. Version
 `0.1.0` matches the workspace; no PyPI release is claimed.
@@ -55,7 +56,7 @@ The package ships `py.typed` and a checked `_openbnct.pyi` stub. Version
 `bindings/python/tests` runs 12 cross-language checks against the built wheel:
 generation, verification, and loading of the frozen case reproduce the Rust
 oracle's exact shape, spacing, origin, ROI volumes, and centroids; corrupted
-and absent artifacts fail with `NctForgeError`; manifest artifact hashes equal
+and absent artifacts fail with `OpenBnctError`; manifest artifact hashes equal
 independently computed file digests; frozen material, source, profile, and
 method contracts load with their declared identifiers; mutated and
 unknown-field documents are rejected; an unreviewed response set loads but

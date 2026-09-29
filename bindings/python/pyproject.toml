@@ -10,6 +10,7 @@ version = "0.2.2"
 description = "Transport-neutral BNCT research verification workbench (research software, not a dose calculator)"
 readme = "README.md"
 requires-python = ">=3.10"
+dependencies = ["numpy>=1.24"]
 # PEP 639 (maturin >=1.9): plain SPDX expression plus explicit license-file
 # globs, resolved relative to this pyproject.toml. Neither file lives in
 # this directory in git — the release workflow copies LICENSE in and

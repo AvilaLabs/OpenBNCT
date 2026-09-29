@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 import openbnct
-from openbnct import NctForgeError
+from openbnct import OpenBnctError
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
 TRANSPORT_DIR = REPO_ROOT / "benchmarks" / "synthetic" / "nf-bnct-001" / "transport"
@@ -96,7 +96,7 @@ class CaseLifecycleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp) / "nf-bnct-001"
             openbnct.generate_case(root)
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.generate_case(root)
 
     def test_verify_rejects_corrupted_artifact(self) -> None:
@@ -107,14 +107,14 @@ class CaseLifecycleTest(unittest.TestCase):
             payload = bytearray(target.read_bytes())
             payload[-1] ^= 0xFF
             target.write_bytes(payload)
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.verify_case(root)
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.load_case(root)
 
     def test_verify_rejects_missing_case(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.verify_case(Path(tmp) / "absent")
 
 
@@ -153,7 +153,7 @@ class ManifestTest(unittest.TestCase):
             payload = bytearray(target.read_bytes())
             payload[-1] ^= 0xFF
             target.write_bytes(payload)
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 manifest.verify_artifacts(root)
 
 
@@ -192,7 +192,7 @@ class ContractTest(unittest.TestCase):
             )
             document["nuclides"][0]["mass_fraction"] += 1.0
             broken = _write(tmp, "material.json", json.dumps(document))
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.load_material(broken)
 
             document = json.loads(
@@ -200,7 +200,7 @@ class ContractTest(unittest.TestCase):
             )
             document["unexpected"] = True
             denied = _write(tmp, "material-denied.json", json.dumps(document))
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.load_material(denied)
 
 
@@ -224,7 +224,7 @@ class ResponseSetGateTest(unittest.TestCase):
                 "response-set.json",
                 _response_set_json("independently_reviewed", False),
             )
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.load_response_set(missing)
 
             reviewed = _write(
@@ -335,7 +335,7 @@ class PositioningTest(unittest.TestCase):
             self.assertEqual(
                 openbnct.load_fixed_source(moved).to_json(), rotated.to_json()
             )
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.rotate_source(positioned, "x", (0.0, 0.0, 0.0), 45.0)
             with self.assertRaises(ValueError):
                 openbnct.rotate_source(positioned, "w", (0.0, 0.0, 0.0), 90.0)
@@ -421,7 +421,7 @@ class DoseBundleTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             document = json.loads(_physical_bundle_json())
             document["components"][0]["values"] = [1.0]
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.load_physical_dose_bundle(
                     _write(tmp, "bad.json", json.dumps(document))
                 )
@@ -502,7 +502,7 @@ class BoronDoseTest(unittest.TestCase):
             openbnct.boron_dose(bundle, unit, blood_ug_g=10.0, output=written)
             again = openbnct.load_physical_dose_bundle(written)
             self.assertEqual(again.case_id, "synthetic-case")
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.boron_dose(bundle, unit, blood_ug_g=10.0, output=written)
 
     def test_refusals(self) -> None:
@@ -511,22 +511,22 @@ class BoronDoseTest(unittest.TestCase):
             mask = _write(
                 tmp, "tumor.json", json.dumps({"name": "tumor", "voxels": [True, False]})
             )
-            with self.assertRaises(NctForgeError):  # ratio without mask
+            with self.assertRaises(OpenBnctError):  # ratio without mask
                 openbnct.boron_dose(bundle, unit, blood_ug_g=10.0, ratios={"tumor": 2.0})
-            with self.assertRaises(NctForgeError):  # mask without ratio
+            with self.assertRaises(OpenBnctError):  # mask without ratio
                 openbnct.boron_dose(
                     bundle, unit, blood_ug_g=10.0, masks=[("tumor", mask)]
                 )
-            with self.assertRaises(NctForgeError):  # no concentration source
+            with self.assertRaises(OpenBnctError):  # no concentration source
                 openbnct.boron_dose(bundle, unit)
-            with self.assertRaises(NctForgeError):  # negative blood
+            with self.assertRaises(OpenBnctError):  # negative blood
                 openbnct.boron_dose(bundle, unit, blood_ug_g=-1.0)
         with tempfile.TemporaryDirectory() as tmp:
             bundle = openbnct.load_physical_dose_bundle(
                 _write(tmp, "dose.json", _physical_bundle_json())
             )
             moved = _write(tmp, "moved.json", _boron_unit_dose_json(origin_x=0.5))
-            with self.assertRaises(NctForgeError):  # grid mismatch
+            with self.assertRaises(OpenBnctError):  # grid mismatch
                 openbnct.boron_dose(bundle, moved, blood_ug_g=10.0)
 
 
@@ -586,7 +586,7 @@ class BiologicalLayerTest(unittest.TestCase):
                 "mask.json",
                 json.dumps({"name": "other", "voxels": [True, False]}),
             )
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.apply_model(model, bundle, [("core", mask)])
 
     def test_sweep_biological_model_component_weight(self) -> None:
@@ -620,11 +620,11 @@ class BiologicalLayerTest(unittest.TestCase):
             reloaded = json.loads(out.read_text())
             self.assertEqual(reloaded["case_id"], "synthetic-case")
 
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.sweep_biological_model(
                     model, bundle, [("all", mask_path)], "all", "bogus", [1.0]
                 )
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.sweep_biological_model(
                     model,
                     bundle,
@@ -661,7 +661,7 @@ class BiologicalLayerTest(unittest.TestCase):
             )
             self.assertEqual(boron.values, [5.0e-12, 5.0e-12])
             # A model failing the shared validate() rejects identically.
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.make_biological_model(
                     {
                         "schema_version": "openbnct.biological-model/0.2.0",
@@ -797,7 +797,7 @@ class BiologicalLayerTest(unittest.TestCase):
             model_document = json.loads(_model_json())
             model_document["weight_semantics"] = "photon_isoeffective"
             model_document["component_weights"]["photon"] = 1.4
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.load_biological_model(
                     _write(tmp, "model.json", json.dumps(model_document))
                 )
@@ -890,7 +890,7 @@ class MetricsAndEndpointTest(unittest.TestCase):
             )
 
             # Two TCP evaluations cannot be combined.
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.combine_utcp(tcp, tcp, "p_plus")
 
 
@@ -971,7 +971,7 @@ class ExposurePlanTest(unittest.TestCase):
             # empty id, negative weight, malformed sha256 — all reported.
             self.assertEqual(len(issues), 3)
             # The strict loader still refuses the same document.
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.load_exposure_plan(path)
 
 
@@ -1008,7 +1008,7 @@ class InterchangeTest(unittest.TestCase):
             )
             doc["components"].pop()  # drop photon — a required component
             path = _write(tmp, "broken.json", json.dumps(doc))
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.import_component_dose(path)
 
 
@@ -1154,13 +1154,13 @@ class ExternalDoseTest(unittest.TestCase):
             path = _write(tmp, "ext.json", json.dumps(self._external_doc()))
             dose = openbnct.import_external_dose(path)
             bed = openbnct.bed_from_external_dose(dose, alpha_beta=3.0, quantity="bed")
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.combine_biological_doses(
                     self._bnct_eqd2_bundle(), bed, assumption="x"
                 )
             # Empty assumption is never accepted.
             eqd2 = openbnct.bed_from_external_dose(dose, alpha_beta=3.0)
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.combine_biological_doses(self._bnct_eqd2_bundle(), eqd2)
 
     def test_combine_rejects_uncovered_grid_without_resample(self) -> None:
@@ -1169,7 +1169,7 @@ class ExternalDoseTest(unittest.TestCase):
             path = _write(tmp, "ext-big.json", json.dumps(doc))
             dose = openbnct.import_external_dose(path)
             eqd2 = openbnct.bed_from_external_dose(dose, alpha_beta=3.0)
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.combine_biological_doses(
                     self._bnct_eqd2_bundle(), eqd2, assumption="x"
                 )
@@ -1204,7 +1204,7 @@ class DoseComparisonTest(unittest.TestCase):
             other = openbnct.import_component_dose(
                 _write(tmp, "other.json", json.dumps(doc))
             )
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.compare_dose_bundles(bundle, other)
 
 
@@ -1238,7 +1238,7 @@ class GammaEvaluationTest(unittest.TestCase):
             other = openbnct.import_component_dose(
                 _write(tmp, "other.json", json.dumps(doc))
             )
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.evaluate_gamma(bundle, other)
 
 
@@ -1298,19 +1298,19 @@ class ExternalAdapterTest(unittest.TestCase):
             self.assertIn("rand seed=42", deck)
             self.assertIn("sha256:", deck)
             # No overwrite of an existing deck.
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.export_mcnp_deck(case, out, xs_suffix="80c")
 
     def test_adapters_reject_bad_specs(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             path = _write(tmp, "meshtal", MESHTAL_FIXTURE)
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.import_mcnp_meshtal(
                     {"boron": (path, 99), "nitrogen": (path, 4),
                      "hydrogen": (path, 4), "photon": (path, 4)},
                     "c", "gray_per_source_particle", "x",
                 )
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.import_phits(
                     {"boron": path, "nitrogen": path,
                      "hydrogen": path, "photon": path},
@@ -1345,7 +1345,7 @@ class EvidenceBundleTest(unittest.TestCase):
             case_id, count = openbnct.verify_evidence_bundle(root)
             self.assertEqual((case_id, count), ("synthetic-case", 1))
             payload.write_text('{"ok": false}')
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.verify_evidence_bundle(root)
 
 
@@ -1413,11 +1413,11 @@ class NiftiImportTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             f = _nifti_volume(tmp, "a.nii", [1.0] * 4)
             comps = {"boron": f, "nitrogen": f, "hydrogen": f, "photon": f}
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.import_nifti(
                     comps, "c", "gray_per_source_particle", "x", " "
                 )
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.import_nifti(
                     {"boron": f}, "c", "gray_per_source_particle", "x", "openpint"
                 )
@@ -1535,11 +1535,11 @@ class R8R9ArtifactTest(unittest.TestCase):
         )
 
     def test_wrong_schema_rejected(self) -> None:
-        with self.assertRaises(NctForgeError):
+        with self.assertRaises(OpenBnctError):
             openbnct.load_multigroup_data(TRANSPORT_DIR / "material.json")
-        with self.assertRaises(NctForgeError):
+        with self.assertRaises(OpenBnctError):
             openbnct.load_multigroup_flux(TRANSPORT_DIR / "material.json")
-        with self.assertRaises(NctForgeError):
+        with self.assertRaises(OpenBnctError):
             openbnct.load_measurement_record(
                 self.TRANSPORT_003 / "multigroup-data.json"
             )
@@ -1582,7 +1582,7 @@ class AvifyConnectorTest(unittest.TestCase):
         spec["roi_classes"] = {"brain": "brain"}
         with tempfile.TemporaryDirectory() as tmp:
             fixed = _write(tmp, "spec.json", json.dumps(spec))
-            with self.assertRaises(NctForgeError):
+            with self.assertRaises(OpenBnctError):
                 openbnct.avify_export_plan(
                     self.CASE, self.ASSIGNMENT, fixed, Path(tmp) / "plan"
                 )
@@ -1880,6 +1880,198 @@ class ResearchSurfaceParityTest(unittest.TestCase):
             record, str(REPO_ROOT / "benchmark-catalogue.json"),
         ))
         self.assertEqual(outcome["findings"], [])
+
+
+NF003 = REPO_ROOT / "benchmarks" / "synthetic" / "nf-bnct-003" / "transport"
+BIO_CASES = REPO_ROOT / "conformance" / "bio" / "0.2.0" / "cases"
+
+
+class ExceptionAliasTest(unittest.TestCase):
+    def test_legacy_name_is_the_same_class(self) -> None:
+        self.assertIs(openbnct.NctForgeError, openbnct.OpenBnctError)
+        self.assertEqual(openbnct.OpenBnctError.__name__, "OpenBnctError")
+        self.assertTrue(issubclass(openbnct.OpenBnctError, Exception))
+        with self.assertRaises(openbnct.NctForgeError):
+            openbnct.load_material("/nonexistent/openbnct-material.json")
+        with self.assertRaises(openbnct.OpenBnctError):
+            openbnct.load_material("/nonexistent/openbnct-material.json")
+
+
+class NumpyAccessorTest(unittest.TestCase):
+    def test_dose_volume_array_matches_list_and_axis_order(self) -> None:
+        import numpy as np
+
+        bundle = openbnct.load_physical_dose_bundle(BIO_CASES / "physical-bundle.json")
+        volume = bundle.physical_total
+        nx, ny, nz = volume.geometry.shape
+        array = volume.as_array()
+        self.assertIsInstance(array, np.ndarray)
+        self.assertEqual(array.dtype, np.float64)
+        self.assertEqual(array.shape, (nz, ny, nx))
+        self.assertEqual(volume.array_shape, (nz, ny, nx))
+        self.assertEqual(volume.geometry.array_shape, (nz, ny, nx))
+        np.testing.assert_array_equal(array, np.array(volume.values).reshape(nz, ny, nx))
+        self.assertEqual(volume.spacing_mm, volume.geometry.spacing_mm)
+        self.assertEqual(volume.origin_mm, volume.geometry.origin_mm)
+        self.assertEqual(volume.direction, volume.geometry.direction)
+        sigma = volume.uncertainty_array()
+        if volume.absolute_standard_uncertainty is None:
+            self.assertIsNone(sigma)
+        else:
+            np.testing.assert_array_equal(
+                sigma,
+                np.array(volume.absolute_standard_uncertainty).reshape(nz, ny, nx),
+            )
+
+    def test_structure_mask_array_is_c_order_zyx(self) -> None:
+        import numpy as np
+
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp) / "nf-bnct-001"
+            openbnct.generate_case(root)
+            case = openbnct.load_case(root)
+        nx, ny, nz = case.geometry.shape
+        self.assertEqual(case.geometry.array_shape, (nz, ny, nx))
+        flat = case.structure_mask("CORE")
+        mask = case.structure_mask_array("CORE")
+        self.assertEqual(mask.shape, (nz, ny, nx))
+        self.assertEqual(mask.dtype, np.bool_)
+        self.assertGreater(sum(flat), 0)
+        # Known voxels: flat index i + nx*j + nx*ny*k <-> array[k, j, i].
+        for k, j, i in [(0, 0, 0), (nz // 2, ny // 2, nx // 2), (nz - 1, 1, 2), (3, ny - 1, nx - 1)]:
+            self.assertEqual(bool(mask[k, j, i]), flat[i + nx * j + nx * ny * k])
+        np.testing.assert_array_equal(mask.ravel(), np.array(flat))
+
+    def test_dvh_arrays(self) -> None:
+        import numpy as np
+
+        bundle = openbnct.load_physical_dose_bundle(BIO_CASES / "physical-bundle.json")
+        voxels = json.loads((BIO_CASES / "mask-core.json").read_text())["voxels"]
+        dvh = openbnct.compute_dvh(bundle, "physical_total", "core", voxels, bins=4)
+        np.testing.assert_array_equal(dvh.dose_edges_array(), np.array(dvh.dose_edges))
+        np.testing.assert_array_equal(
+            dvh.cumulative_volume_fraction_array(),
+            np.array(dvh.cumulative_volume_fraction),
+        )
+        np.testing.assert_array_equal(
+            dvh.differential_volume_fraction_array(),
+            np.array(dvh.differential_volume_fraction),
+        )
+
+
+class SnSolveTest(unittest.TestCase):
+    """The nf-bnct-003 slab is 4 x 4 x 40 voxels and one group: tiny."""
+
+    @classmethod
+    def setUpClass(cls) -> None:
+        cls.solution = openbnct.sn_solve(NF003 / "case.json", NF003 / "multigroup-data.json")
+
+    def test_flux_is_finite_and_shaped(self) -> None:
+        import numpy as np
+
+        solution = self.solution
+        self.assertTrue(solution.converged)
+        flux = solution.flux
+        self.assertEqual(flux.geometry.shape, (4, 4, 40))
+        array = flux.as_array()
+        self.assertEqual(array.shape, (flux.group_count, 40, 4, 4))
+        self.assertTrue(np.isfinite(array).all())
+        self.assertGreater(array.max(), 0.0)
+        # Known voxel: [group][voxel] list layout vs (g, k, j, i) array.
+        lists = flux.flux()
+        for k, j, i in [(0, 0, 0), (5, 2, 3), (39, 3, 1), (17, 1, 0)]:
+            for group in range(flux.group_count):
+                self.assertEqual(
+                    array[group, k, j, i], lists[i + 4 * j + 16 * k][group]
+                )
+        self.assertEqual(flux.energy_boundaries_array().shape, (flux.group_count + 1,))
+        # The slab is uniform in x/y: attenuation is along z only.
+        np.testing.assert_allclose(array[0, :, 0, 0], array[0, :, 3, 3], rtol=1e-6)
+
+    def test_dose_bundle_arrays(self) -> None:
+        import numpy as np
+
+        dose = self.solution.dose
+        self.assertIsNotNone(dose)
+        self.assertIsNone(self.solution.boron_unit_dose)
+        total = dose.physical_total
+        array = total.as_array()
+        self.assertEqual(array.shape, (40, 4, 4))
+        self.assertEqual(total.spacing_mm, (5.0, 5.0, 5.0))
+        self.assertTrue(np.isfinite(array).all())
+        np.testing.assert_array_equal(array.ravel(), np.array(total.values))
+        for component in dose.components:
+            self.assertEqual(component.as_array().shape, (40, 4, 4))
+
+    def test_loaded_inputs_match_paths(self) -> None:
+        import numpy as np
+
+        case = openbnct.load_transport_case(NF003 / "case.json")
+        data = openbnct.load_multigroup_data(NF003 / "multigroup-data.json")
+        loaded = openbnct.sn_solve(case, data, dose=False)
+        self.assertIsNone(loaded.dose)
+        np.testing.assert_array_equal(
+            loaded.flux.as_array(), self.solution.flux.as_array()
+        )
+
+    def test_flux_geometry_binding_for_loaded_artifact(self) -> None:
+        flux = openbnct.load_multigroup_flux(NF003 / "multigroup-flux.json")
+        with self.assertRaises(OpenBnctError):
+            flux.as_array()
+        geometry = openbnct.load_transport_case(NF003 / "case.json").geometry
+        self.assertEqual(flux.with_geometry(geometry).as_array().shape[1:], (40, 4, 4))
+        with self.assertRaises(OpenBnctError):
+            flux.with_geometry(openbnct.load_physical_dose_bundle(
+                BIO_CASES / "physical-bundle.json"
+            ).geometry)
+
+    def test_boron_unit_dose_feeds_boron_dose(self) -> None:
+        import numpy as np
+
+        data = json.loads((NF003 / "multigroup-data.json").read_text())
+        data["boron_unit_response_gy_cm2_per_ug_g"] = [1.0e-10]
+        with tempfile.TemporaryDirectory() as tmp:
+            data_file = Path(tmp) / "data.json"
+            data_file.write_text(json.dumps(data))
+            solution = openbnct.sn_solve(
+                NF003 / "case.json", data_file, boron_unit=True
+            )
+            unit = solution.boron_unit_dose
+            self.assertEqual(unit.as_array().shape, (40, 4, 4))
+            mask = Path(tmp) / "mask.json"
+            mask.write_text(json.dumps({"name": "all", "voxels": [True] * 640}))
+            applied = openbnct.boron_dose(
+                solution.dose, unit, blood_ug_g=10.0,
+                ratios={"all": 2.0}, masks=[("all", mask)],
+            )
+            # boron dose = C * unit dose; the fixture has only a boron component.
+            np.testing.assert_allclose(
+                applied.physical_total.as_array(), 20.0 * unit.as_array(), rtol=1e-12
+            )
+            # A file round trip is accepted as well as the loaded object.
+            unit_file = Path(tmp) / "unit.json"
+            unit.write(unit_file)
+            again = openbnct.boron_dose(
+                solution.dose, unit_file, blood_ug_g=10.0,
+                ratios={"all": 2.0}, masks=[("all", mask)],
+            )
+            np.testing.assert_array_equal(
+                again.physical_total.as_array(), applied.physical_total.as_array()
+            )
+            # Data without the unit vector is refused, not defaulted.
+            with self.assertRaises(OpenBnctError):
+                openbnct.sn_solve(
+                    NF003 / "case.json", NF003 / "multigroup-data.json",
+                    boron_unit=True,
+                )
+
+    def test_bad_inputs_are_rejected(self) -> None:
+        case = NF003 / "case.json"
+        data = NF003 / "multigroup-data.json"
+        with self.assertRaises(OpenBnctError):
+            openbnct.sn_solve(case, data, order=3)  # odd order is rejected
+        with self.assertRaises(OpenBnctError):
+            openbnct.sn_solve("/nonexistent/case.json", data)
 
 
 if __name__ == "__main__":

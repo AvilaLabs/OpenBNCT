@@ -1,12 +1,16 @@
-"""NCTForge — transport-neutral BNCT research verification workbench.
+"""OpenBNCT — transport-neutral BNCT research verification workbench.
 
 Research software only: not a medical device, not commissioned for any
 facility, and not a dose calculator. All validation, geometry, contract, and
 evidence behavior below is executed by the authoritative Rust implementation;
 this package adds no scientific logic of its own.
 
-Transport actions remain unavailable until the Rust capability and evidence
-gates pass; :func:`backends` reports those flags honestly.
+:func:`sn_solve` runs the deterministic S_N multigroup solver from Python.
+Voxel fields expose ``as_array()`` NumPy accessors with C-order shape
+``(nz, ny, nx)`` (multigroup flux: ``(groups, nz, ny, nx)``); the flat
+``values`` lists keep the repo's x-fastest order (``i + nx*j + nx*ny*k``).
+Monte Carlo transport actions remain unavailable until the Rust capability
+and evidence gates pass; :func:`backends` reports those flags honestly.
 """
 
 from openbnct._openbnct import (
@@ -28,7 +32,9 @@ from openbnct._openbnct import (
     BeamDescription,
     BeamQualityReport,
     BeamShapingAssembly,
+    BoronField,
     BoronMicrodistribution,
+    BoronUnitDose,
     BsaSweepRecord,
     CombinedDoseBundle,
     ComponentNiftiManifest,
@@ -58,7 +64,7 @@ from openbnct._openbnct import (
     MultigroupCovariance,
     MultigroupData,
     MultigroupFlux,
-    NctForgeError,
+    OpenBnctError,
     PhysicalDoseBundle,
     PositionReport,
     RegionDoseMetrics,
@@ -68,7 +74,9 @@ from openbnct._openbnct import (
     RtPlanSummary,
     SensitivityScreening,
     SensitivitySpec,
+    SnSolution,
     Structure,
+    TransportCase,
     VerifiedCase,
     accumulate_exposures,
     aim_source,
@@ -115,7 +123,9 @@ from openbnct._openbnct import (
     load_bio_evidence_library,
     load_bio_model_comparison,
     load_biological_model,
+    load_boron_field,
     load_boron_microdistribution,
+    load_boron_unit_dose,
     load_isoeffective_model,
     load_bsa_sweep,
     load_case,
@@ -145,6 +155,7 @@ from openbnct._openbnct import (
     load_rtplan_summary,
     load_sensitivity_screening,
     load_sensitivity_spec,
+    load_transport_case,
     load_weight_windows,
     make_biological_model,
     make_isoeffective_model,
@@ -164,10 +175,14 @@ from openbnct._openbnct import (
     summarize_rtplan,
     verify_case,
     verify_evidence_bundle,
+    sn_solve,
 )
 from openbnct._openbnct import __version__ as _extension_version
 
 __version__ = _extension_version
+
+# Backward-compatible alias: the very same class object as OpenBnctError.
+NctForgeError = OpenBnctError
 
 __all__ = [
     "AcceleratorSource",
@@ -186,7 +201,9 @@ __all__ = [
     "IsoeffectiveModel",
     "BioEvidenceLibrary",
     "BioModelComparison",
+    "BoronField",
     "BoronMicrodistribution",
+    "BoronUnitDose",
     "BsaSweepRecord",
     "CaseManifest",
     "CaseVerification",
@@ -219,6 +236,7 @@ __all__ = [
     "MultigroupData",
     "MultigroupFlux",
     "NctForgeError",
+    "OpenBnctError",
     "PhysicalDoseBundle",
     "PositionReport",
     "RegionDoseMetrics",
@@ -228,7 +246,9 @@ __all__ = [
     "RtPlanSummary",
     "SensitivityScreening",
     "SensitivitySpec",
+    "SnSolution",
     "Structure",
+    "TransportCase",
     "VerifiedCase",
     "__version__",
     "accumulate_exposures",
@@ -276,7 +296,9 @@ __all__ = [
     "load_bio_evidence_library",
     "load_bio_model_comparison",
     "load_biological_model",
+    "load_boron_field",
     "load_boron_microdistribution",
+    "load_boron_unit_dose",
     "load_isoeffective_model",
     "load_bsa_sweep",
     "load_case",
@@ -306,6 +328,7 @@ __all__ = [
     "load_rtplan_summary",
     "load_sensitivity_screening",
     "load_sensitivity_spec",
+    "load_transport_case",
     "load_weight_windows",
     "make_biological_model",
     "make_isoeffective_model",
@@ -315,6 +338,7 @@ __all__ = [
     "read_manifest",
     "rotate_source",
     "search_bio_evidence",
+    "sn_solve",
     "summarize_rtplan",
     "uq_voi_evaluate",
     "boron_infer",
