@@ -2556,6 +2556,25 @@ fn sweep_group(
 /// rate. Source iteration is Jacobi across the full group structure;
 /// upscatter is handled by the outer re-sweep until the relative scalar-
 /// flux change falls under `options.convergence`.
+/// In-group transport-correction removal for group `g`: the forward
+/// lobe μ̄·Σ_s (from the collapsed P1 row sum Σ_g' σ_s1(g→g') when the
+/// data carries it, else the declared μ̄_g), capped at the within-group
+/// element σ_s(g→g). Taking it from σ_t and from the diagonal alike
+/// keeps σ_a,eff ≡ σ_a and leaves every energy transfer untouched.
+fn transport_correction_removal(
+    m: &MultigroupMaterial,
+    mu: &[f64],
+    g: usize,
+    groups: usize,
+) -> f64 {
+    let row = &m.scatter_matrix_per_cm[g * groups..(g + 1) * groups];
+    let lobe = match &m.scatter_p1_matrix_per_cm {
+        Some(p1m) => p1m[g * groups..(g + 1) * groups].iter().sum::<f64>(),
+        None => mu[g] * row.iter().sum::<f64>(),
+    };
+    lobe.min(row[g]).max(0.0)
+}
+
 pub fn solve_multigroup(
     case: &TransportCase,
     data: &MultigroupData,
@@ -3268,23 +3287,10 @@ pub(crate) fn solve_sn_problem(
                             let ss: f64 = (0..groups)
                                 .map(|gp| m.scatter_matrix_per_cm[g * groups + gp])
                                 .sum();
-                            // The same total forward-lobe content
-                            // scatter_eff removes from the row —
-                            // elementwise sigma_s1 where declared, the
-                            // diagonal-capped fallback otherwise — so
-                            // sigma_a,eff stays exactly sigma_a.
-                            let rem = match &m.scatter_p1_matrix_per_cm {
-                                Some(p1m) => (0..groups)
-                                    .map(|gp| {
-                                        p1m[g * groups + gp]
-                                            .max(0.0)
-                                            .min(m.scatter_matrix_per_cm[g * groups + gp])
-                                    })
-                                    .sum::<f64>(),
-                                None => (mu[g] * ss)
-                                    .min(m.scatter_matrix_per_cm[g * groups + g])
-                                    .max(0.0),
-                            };
+                            // The same in-group removal scatter_eff
+                            // takes from the diagonal, so sigma_a,eff
+                            // stays exactly sigma_a.
+                            let rem = transport_correction_removal(m, mu, g, groups);
                             (st - rem).max(st - ss).max(1e-12)
                         }
                         _ => st,
@@ -3304,24 +3310,18 @@ pub(crate) fn solve_sn_problem(
                 // sigma_t,tr − sum sigma_s,eff drifts below the
                 // declared absorption and every cell quietly
                 // fabricates particles (the 56-group phantom absorbed
-                // ~42x its source that way). The lobe's true shape is
-                // the collapsed P1 moment: subtracting sigma_s1(g->g')
-                // elementwise removes exactly the forward-weighted
-                // content and keeps sigma_a,eff == sigma_a. Data
-                // without a P1 matrix falls back to the in-group
-                // diagonal — the only place a direction-conserving
-                // lobe can live in P0 data — capped so it can never
-                // exceed the available element.
-                if let Some(p1m) = &m.scatter_p1_matrix_per_cm {
-                    for i in 0..groups * groups {
-                        row[i] = (row[i] - p1m[i].max(0.0)).max(0.0);
-                    }
-                } else {
-                    for g in 0..groups {
-                        let ss: f64 = (0..groups).map(|gp| row[g * groups + gp]).sum();
-                        let rem = (mu[g] * ss).min(row[g * groups + g]).max(0.0);
-                        row[g * groups + g] -= rem;
-                    }
+                // ~42x its source that way). It may only leave the
+                // WITHIN-GROUP element: removing sigma_s1(g->g') from
+                // downscatter transfers (tried in 550c7d3) treats
+                // energy-losing forward collisions as uncollided flight
+                // in group g, which throttles slowing-down even in an
+                // infinite medium — where a transport correction must
+                // leave the scalar flux untouched. On H-bearing tissue
+                // it overstated the epithermal flux ~1.8x and starved
+                // the thermal field.
+                for g in 0..groups {
+                    let rem = transport_correction_removal(m, mu, g, groups);
+                    row[g * groups + g] -= rem;
                 }
             }
             row
@@ -5229,37 +5229,22 @@ pub(crate) mod tests {
             half_angle_rad: std::f64::consts::PI,
         };
         // Monoenergetic in group 0 → S = (S, 0); density = 1/0.32.
-        // Expected fixed point per flag class: the transport
-        // correction is an *approximation*, not an identity — σ_a is
-        // preserved exactly (balance audit below) but the corrected
-        // equation's fixed point differs legitimately. Compute the
-        // corrected-equation analytic solution the same way the
-        // solver applies it: σ_s,tr = σ_s − max(P1,0) elementwise,
-        // σ_t,tr = σ_t − Σ_gt min(max(P1,0), σ_s) over the row.
+        // In an infinite homogeneous medium the scalar flux does not
+        // depend on the angular treatment, so every combination —
+        // transport correction and P1 included — must reproduce the
+        // plain P0 fixed point. A correction that moves it (e.g. by
+        // stripping σ_s1 from downscatter transfers) is changing the
+        // energy balance, not the angular approximation.
         let density = 1.0 / 0.32;
         let sigma_s: [f64; 4] = [0.2, 0.05, 0.1, 0.15];
-        let p1m: [f64; 4] = [0.12, 0.03, 0.06, 0.09];
-        let analytic = |tc: bool| {
-            let (st, ss) = if tc {
-                let rem_g = |g: usize| {
-                    (0..2)
-                        .map(|gp| p1m[g * 2 + gp].max(0.0).min(sigma_s[g * 2 + gp]))
-                        .sum::<f64>()
-                };
-                let st = vec![1.0 - rem_g(0), 0.5 - rem_g(1)];
-                let ss: Vec<f64> = (0..4)
-                    .map(|i| (sigma_s[i] - p1m[i].max(0.0)).max(0.0))
-                    .collect();
-                (st, ss)
-            } else {
-                (vec![1.0, 0.5], sigma_s.to_vec())
-            };
+        let analytic = || {
+            let st = [1.0, 0.5];
             // σ_t·φ = S + Σ_s·φ per group, 2×2:
             //   a·φ0 − ss(1→0)·φ1 = S ;  −ss(0→1)·φ0 + b·φ1 = 0
-            let a = st[0] - ss[0];
-            let b = st[1] - ss[3];
-            let phi1_factor = ss[1] / b;
-            let phi0 = density / (a - ss[2] * phi1_factor);
+            let a = st[0] - sigma_s[0];
+            let b = st[1] - sigma_s[3];
+            let phi1_factor = sigma_s[1] / b;
+            let phi0 = density / (a - sigma_s[2] * phi1_factor);
             [phi0, phi0 * phi1_factor]
         };
 
@@ -5269,10 +5254,7 @@ pub(crate) mod tests {
                 for theta in [false, true] {
                     for tc in [false, true] {
                         for p1 in [false, true] {
-                            // P1 supersedes the correction — declaring
-                            // both must be a no-op on tc, not a
-                            // double-counted forward lobe.
-                            let expected = analytic(tc && !p1);
+                            let expected = analytic();
                             let mut o = options();
                             o.periodic = [true, true, true];
                             o.anderson_depth = anderson;

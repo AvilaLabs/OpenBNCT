@@ -277,6 +277,17 @@ fn load_nuclide(library_dir: &Path, name: &str) -> Result<NuclideTable, Collapse
             .attrs()
             .map_err(|e| CollapseError::Hdf5(format!("{name}/{rname} attrs: {e}")))?;
         let mt = read_attr_i64(&attrs, "mt");
+        // Summation and production cross sections (MT 4, 101, 203–207, …)
+        // are flagged `redundant`: they repeat partials stored alongside
+        // them (H1's MT 204 deuteron production IS its (n,γ)), so adding
+        // them to `other` double-counts removal in σ_t. The lumped
+        // channels 102–107 are kept (MT 103–107 are themselves
+        // `redundant` sums of their 600–849 levels, which this
+        // loader never reads).
+        let redundant = read_attr_i64(&attrs, "redundant") > 0;
+        if redundant && !matches!(mt, 2 | 102..=107) {
+            continue;
+        }
         if !(3..=299).contains(&mt) && mt != 2 {
             continue; // energy-release pseudo-reactions and unlabeled groups
         }
@@ -323,6 +334,22 @@ fn load_nuclide(library_dir: &Path, name: &str) -> Result<NuclideTable, Collapse
     })
 }
 
+/// ENDF-6 MF3 sections that must not be summed into removal because
+/// they repeat other sections (ENDF-102 §3.4.4 redundancy rules) or are
+/// not cross sections at all: MT 3 and 27 (sums), MT 4 when discrete/
+/// continuum inelastic levels 51–91 are present, MT 18 when its chance
+/// partials 19–21/38 are present, MT 101 (disappearance = Σ 102–117),
+/// MT 201–207 (particle production — H1's MT 204 equals its (n,γ)),
+/// and MT 251–253 (μ̄, ξ, γ scattering parameters, not barns).
+fn endf_mt_is_redundant(mt: u32, has: impl Fn(u32) -> bool) -> bool {
+    match mt {
+        3 | 27 | 101 | 201..=207 | 251..=253 => true,
+        4 => (51..=91).any(&has),
+        18 => [19, 20, 21, 38].into_iter().any(&has),
+        _ => false,
+    }
+}
+
 /// Load a nuclide from an ENDF-6 tape (raw evaluation or NJOY PENDF).
 /// Every MF3 section's energy points go into a shared union grid; each
 /// section is evaluated on it with its own interpolation law. Q values
@@ -358,7 +385,10 @@ fn load_nuclide_endf(path: &Path, name: &str) -> Result<NuclideTable, CollapseEr
     let na = eval(107);
     let mut other = vec![0.0; n];
     for (mt, s) in &tape.sections {
-        if matches!(*mt, 2 | 102 | 103 | 107) || !(3..=299).contains(mt) {
+        if matches!(*mt, 2 | 102 | 103 | 107)
+            || !(3..=299).contains(mt)
+            || endf_mt_is_redundant(*mt, |m| tape.sections.contains_key(&m))
+        {
             continue;
         }
         for (a, &e) in other.iter_mut().zip(energy.iter()) {
@@ -1189,6 +1219,20 @@ fn collapse_material(
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn redundant_endf_sections_are_not_counted_as_removal() {
+        let has = |m: u32| matches!(m, 51 | 52 | 91 | 102);
+        for mt in [3, 27, 101, 203, 204, 207, 251, 252, 253] {
+            assert!(super::endf_mt_is_redundant(mt, has), "MT {mt}");
+        }
+        // MT 4 repeats levels 51–91 only when they are present.
+        assert!(super::endf_mt_is_redundant(4, has));
+        assert!(!super::endf_mt_is_redundant(4, |_| false));
+        for mt in [5, 16, 22, 28, 51, 91, 104, 111] {
+            assert!(!super::endf_mt_is_redundant(mt, has), "MT {mt}");
+        }
+    }
+
     use super::*;
 
     /// Log-spaced descending boundaries spanning `groups` decades of

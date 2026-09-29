@@ -4,6 +4,35 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
+
+## Unreleased — deterministic-transport accuracy fixes (2026-09-29)
+
+- **Collapse double-counted redundant reactions in σ_t.** `sn collapse` summed every
+  MT 3–299 section into removal, including OpenMC-HDF5 reactions flagged `redundant`
+  and ENDF summation/production MTs (4 with levels present, 101, 201–207, 251–253).
+  H-1's MT 204 (deuteron production) equals its (n,γ), so hydrogen capture — the
+  dominant thermal absorber in tissue — was counted twice: collapsed thermal
+  absorption ~2× too high and the thermal flux ~2× too low even in an infinite
+  medium. Redundant sections are now skipped (the lumped 102–107 channels are
+  kept). Dose-response vectors are unchanged; σ_t drops by up to ~20% in thermal
+  groups for H-bearing tissue. Multigroup data collapsed before this fix should be
+  re-collapsed.
+- **Transport correction broke slowing-down.** Since 550c7d3 the P1-matrix path
+  subtracted σ_s1(g→g') from every downscatter transfer, treating energy-losing
+  forward collisions as uncollided flight in group g. The correction must be an
+  identity on the scalar flux in an infinite medium; this one overstated the
+  epithermal flux ~1.8× in tissue and starved the thermal field (layered-head
+  absorption fell from ~0.6 to ~0.07 per source neutron). The correction now removes
+  the forward lobe from the within-group element only, capped at σ_s(g→g), which
+  keeps σ_a,eff ≡ σ_a (no fabrication). The infinite-medium oracle test now requires
+  every option combination to reproduce the uncorrected fixed point.
+- Infinite homogeneous brain (28 groups, H(H2O) S(α,β)) vs continuous-energy OpenMC
+  after both fixes: thermal 0.97×, epithermal 1.04×, fast 0.89×. The layered-head
+  phantom remains ~0.13× the OpenMC thermal-component reference and is under
+  investigation (finite-geometry deficit; uncollided-beam attenuation through void
+  uses the destination tissue's σ_t). Treat deterministic absolute doses as
+  unvalidated until that closes.
+
 ## [Unreleased]
 
 ### Added — `openbnct project`
