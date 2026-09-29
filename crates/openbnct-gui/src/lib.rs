@@ -6,6 +6,7 @@ mod brand;
 mod help;
 mod i18n;
 mod io;
+mod project_ws;
 mod run;
 #[cfg(target_arch = "wasm32")]
 mod web;
@@ -109,10 +110,11 @@ enum WorkspaceTab {
     Dose,
     Evidence,
     Avify,
+    Project,
 }
 
 impl WorkspaceTab {
-    const ALL: [Self; 7] = [
+    const ALL: [Self; 8] = [
         Self::Overview,
         Self::Geometry,
         Self::Transport,
@@ -120,6 +122,7 @@ impl WorkspaceTab {
         Self::Dose,
         Self::Evidence,
         Self::Avify,
+        Self::Project,
     ];
 
     const fn label(self) -> &'static str {
@@ -131,6 +134,7 @@ impl WorkspaceTab {
             Self::Dose => "Dose components",
             Self::Evidence => "Evidence",
             Self::Avify => "Avify (Experimental)",
+            Self::Project => "Project",
         }
     }
 
@@ -143,6 +147,7 @@ impl WorkspaceTab {
             Self::Dose => "線量成分",
             Self::Evidence => "エビデンス",
             Self::Avify => "Avify（実験的）",
+            Self::Project => "プロジェクト",
         }
     }
 
@@ -157,6 +162,7 @@ impl WorkspaceTab {
                 Self::Dose => "Componenti dose",
                 Self::Evidence => "Evidenza",
                 Self::Avify => "Avify (Sperimentale)",
+                Self::Project => "Progetto",
             },
             Language::ChineseSimplified => match self {
                 Self::Overview => "概览",
@@ -166,6 +172,7 @@ impl WorkspaceTab {
                 Self::Dose => "剂量成分",
                 Self::Evidence => "证据",
                 Self::Avify => "Avify（实验性）",
+                Self::Project => "项目",
             },
             Language::Spanish => match self {
                 Self::Overview => "Resumen",
@@ -175,6 +182,7 @@ impl WorkspaceTab {
                 Self::Dose => "Componentes de dosis",
                 Self::Evidence => "Evidencia",
                 Self::Avify => "Avify (Experimental)",
+                Self::Project => "Proyecto",
             },
             Language::English => self.label(),
         }
@@ -189,6 +197,7 @@ impl WorkspaceTab {
             Self::Dose => "05",
             Self::Evidence => "06",
             Self::Avify => "07",
+            Self::Project => "08",
         }
     }
 }
@@ -203,6 +212,8 @@ impl From<WorkspaceTab> for HelpWorkspace {
             WorkspaceTab::Dose => Self::Dose,
             WorkspaceTab::Evidence => Self::Evidence,
             WorkspaceTab::Avify => Self::Avify,
+            // No dedicated help page yet: Transport is the closest topic.
+            WorkspaceTab::Project => Self::Transport,
         }
     }
 }
@@ -2166,6 +2177,7 @@ struct WorkbenchPanels {
     position: PositionPanel,
     spectrum: SpectrumView,
     run: RunPanel,
+    project: project_ws::ProjectPanel,
 }
 
 /// Source-spectrum inspector state: the parsed source definition and the
@@ -3137,6 +3149,28 @@ impl OpenBnctApp {
         });
     }
 
+    /// Hand results from the Project workspace to the panels it cannot
+    /// reach: the dose bundle to the Dose workspace, the imported study to
+    /// the active case.
+    fn apply_project_requests(&mut self) {
+        if let Some(path) = self.panels.project.take_dose_request() {
+            self.panels.dose.bundle_path = path.display().to_string();
+            self.panels.dose.load_bundle();
+            self.workspace = WorkspaceTab::Dose;
+        }
+        if let Some(study) = self.panels.project.take_case_request() {
+            match ViewerCase::from_study(study) {
+                Ok(case) => {
+                    self.case = Some(case);
+                    self.load_error = None;
+                }
+                Err(error) => {
+                    self.load_error = Some(format!("study imported but view failed: {error}"));
+                }
+            }
+        }
+    }
+
     /// Bucket the accumulated DICOM members by SOP Class and import —
     /// a research case, verified against itself at load, not a fixture.
     /// Members stay buffered on failure so the user can add what's missing.
@@ -3411,6 +3445,7 @@ impl eframe::App for OpenBnctApp {
             theme,
             &self.case_path,
         );
+        self.apply_project_requests();
         self.help.show_center(
             ui.ctx(),
             self.workspace.into(),
@@ -4126,6 +4161,9 @@ fn show_workbench(
                         language,
                         theme,
                     ),
+                    WorkspaceTab::Project => {
+                        project_ws::show_project_workspace(ui, &mut panels.project, language, theme);
+                    }
                 });
         });
     show_avify_tutorial(ui.ctx(), &mut panels.avify, theme);
@@ -10430,7 +10468,7 @@ mod tests {
     #[test]
     fn workspace_navigation_has_stable_unique_labels() {
         let labels = WorkspaceTab::ALL.map(WorkspaceTab::label);
-        assert_eq!(labels.len(), 7);
+        assert_eq!(labels.len(), 8);
         assert!(labels.iter().all(|label| !label.is_empty()));
         for (index, left) in labels.iter().enumerate() {
             assert!(!labels[index + 1..].contains(left));
