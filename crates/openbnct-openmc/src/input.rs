@@ -677,10 +677,11 @@ impl OpenMcInputDeck {
         // densities, so a region may only change the mass fraction of a
         // nuclide that a fluence-fold estimator explicitly covers —
         // collection rescales those components by the region/base
-        // atom-density ratio (density × mass fraction). Every other nuclide
+        // mass-fraction ratio (folded responses are mass kerma, so density does
+        // not enter). Every other nuclide
         // fraction must match the base material exactly; per-voxel mass then
         // differs only through the region density, which collection uses for
-        // heating normalization and residual-component scaling.
+        // heating normalization.
         let covered_nuclides: Vec<&str> = component_profile
             .components
             .iter()
@@ -712,7 +713,7 @@ impl OpenMcInputDeck {
                 for region in &assignment.regions {
                     // Region densities may differ: collection normalizes
                     // heating by per-voxel mass and rescales folded-response
-                    // components by atom-density ratios. Temperature must
+                    // components by mass-fraction ratios. Temperature must
                     // still match — the cross sections are bound to the base
                     // material's temperature.
                     if region.material.temperature_k != material.temperature_k {
@@ -3245,7 +3246,7 @@ pub(crate) mod tests {
         ));
 
         // Region density may differ — collection normalizes heating by the
-        // per-voxel mass and rescales folded components by the atom-density
+        // per-voxel mass and rescales folded components by the mass-fraction
         // ratio. Temperature must still match the bound cross sections.
         let mut assignment: serde_json::Value = serde_json::from_slice(&assignment_json()).unwrap();
         assignment["regions"][0]["material"]["density_g_cm3"] = serde_json::json!(1.2);

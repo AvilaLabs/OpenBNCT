@@ -388,8 +388,9 @@ Implementation status:
   realized as a rectilinear material lattice (one universe per distinct
   material, one element per voxel). Region densities may differ from the
   base — collection normalizes heating by per-voxel mass and rescales
-  folded components by the atom-density ratio (density × mass fraction),
-  residual folds by the density ratio alone. Rotated grids, overlaps,
+  folded components by the mass-fraction ratio of the covered nuclide
+  (folded responses are mass kerma, so no density factor applies; an
+  earlier density-ratio factor was a defect and has been removed). Rotated grids, overlaps,
   out-of-grid indices, and duplicated voxels are all rejected;
 - complete (negative result): the first candidate-reference evaluation at
   300M histories missed only the photon voxel-precision gates — report

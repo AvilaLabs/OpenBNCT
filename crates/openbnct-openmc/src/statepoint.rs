@@ -494,10 +494,11 @@ pub fn collect_statepoint(
         .try_fold(1usize, |acc, dim| acc.checked_mul(*dim as usize))
         .ok_or(OpenMcCollectError::InvalidMesh)?;
     // Region-material corrections: folded-response tallies score the base
-    // material's atom densities, so a covered component's per-voxel dose
-    // scales by the region/base atom-density ratio (density × mass fraction)
-    // of its backing nuclide, and a residual component — all of whose
-    // nuclides keep base fractions — scales by the density ratio alone.
+    // material's mass kerma per unit fluence, so a covered component's
+    // per-voxel dose scales by the region/base mass-fraction ratio of its
+    // backing nuclide (no density factor: mass kerma is density-free), and
+    // a residual component — all of whose nuclides keep base fractions —
+    // needs no correction.
     // Native heating tallies already see the real material; their
     // normalization needs the per-voxel mass, which differs from the base
     // voxel mass whenever a region carries a different density.
@@ -647,7 +648,8 @@ pub fn collect_statepoint(
 
 /// Per-voxel corrections derived from the deck's bound material assignment
 /// and component profile: multiplicative factors for each folded-response
-/// component plus the per-voxel mass density for heating normalization.
+/// component (mass-fraction ratios; density does not enter mass kerma) plus
+/// the per-voxel mass density for heating normalization.
 /// Coupled-photon-heating components are absent from the factor map — their
 /// native tallies already see the real materials.
 pub struct RegionCorrections {
@@ -734,12 +736,16 @@ fn load_region_corrections(
 
     let mut component_factors = BTreeMap::new();
     for rule in &profile.components {
-        // Folded tallies score atom density × response. The region/base
-        // atom-density ratio factors as (ρ_r/ρ_b) × (f_r/f_b): covered folds
-        // additionally apply their nuclide's fraction ratio inside each
-        // region; residual folds cover only nuclides whose fractions the
-        // assignment gate pins to base, so the density ratio stands alone.
-        // Coupled photon heating is a native tally and needs no factor.
+        // Folded tallies score fluence × MASS kerma per unit fluence
+        // (Gy cm^2: HEATR kerma times atoms per kg). Mass kerma at fixed
+        // composition does not depend on density, so no density factor is
+        // applied; a covered fold only rescales by its nuclide's mass-
+        // fraction ratio f_r/f_b inside each region. Residual folds cover
+        // only nuclides whose fractions the assignment gate pins to base,
+        // so they need no factor at all. Coupled photon heating is a native
+        // tally and needs no factor. (Density enters only through the
+        // fluence tally itself and the per-voxel mass used to normalize
+        // native heating.)
         let covered_nuclide = match &rule.estimator {
             ComponentEstimator::NjoyPartialKermaFluenceFold { nuclide, .. } => {
                 if base_fraction(nuclide) <= 0.0 {
@@ -755,10 +761,7 @@ fn load_region_corrections(
             ComponentEstimator::ResidualNeutronKermaFluenceFold { .. } => None,
             ComponentEstimator::CoupledPhotonHeating => continue,
         };
-        let mut per_voxel: Vec<f64> = voxel_density_g_cm3
-            .iter()
-            .map(|density| density / base_density)
-            .collect();
+        let mut per_voxel: Vec<f64> = vec![1.0; voxel_count];
         if let Some(nuclide) = covered_nuclide {
             let base = base_fraction(nuclide);
             for region in &assignment.regions {
@@ -1385,10 +1388,10 @@ mod tests {
                 < 1.0e-12
         );
 
-        // With a denser region material (2×), the atom-density ratio factors
-        // as density × fraction: nitrogen quadruples, the residual hydrogen
-        // fold doubles, and the native heating tally divides by the doubled
-        // voxel mass — halving the reported dose.
+        // With a denser region material (2×), folded components are MASS
+        // kerma and must not change (regression: they used to scale with
+        // density), while the native heating tally divides by the doubled
+        // voxel mass and so halves.
         let mut dense_assignment = assignment_json();
         dense_assignment["regions"][0]["material"]["density_g_cm3"] = serde_json::json!(2.0);
         let assignment_bytes = serde_json::to_vec_pretty(&dense_assignment).unwrap();
@@ -1409,11 +1412,11 @@ mod tests {
         assert_eq!(component(&bundle, "boron").values, vec![1.0e-12, 0.0]);
         assert_eq!(
             component(&bundle, "nitrogen").values,
-            vec![2.0e-13, 8.0e-13]
+            vec![2.0e-13, 4.0e-13]
         );
         assert_eq!(
             component(&bundle, "hydrogen").values,
-            vec![5.0e-13, 1.0e-12]
+            vec![5.0e-13, 5.0e-13]
         );
         let expected_photon = 20_000.0 * 1.602176634e-19 / 2.0e-3;
         assert!(
@@ -1424,6 +1427,59 @@ mod tests {
         assert!(
             (bundle.physical_total.values[1] - expected_total).abs() / expected_total < 1.0e-12
         );
+    }
+
+    #[test]
+    fn same_composition_at_double_density_leaves_folded_components_unchanged() {
+        // Regression: folded components are mass kerma. A region with the
+        // base composition at twice the density, fed equal fluence, must
+        // report identical boron/nitrogen/hydrogen Gy per voxel.
+        let directory = tempfile::tempdir().unwrap();
+        write_deck(directory.path(), &tally_defs());
+        let profile_bytes = serde_json::to_vec_pretty(&component_profile_json()).unwrap();
+        std::fs::write(
+            directory.path().join("openbnct-component-profile.json"),
+            &profile_bytes,
+        )
+        .unwrap();
+        let manifest_path = directory.path().join(OPENMC_INPUT_MANIFEST_FILE);
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+        manifest["bindings"]["component_profile"]["sha256"] = sha256_hex(&profile_bytes).into();
+
+        let mut results = Vec::new();
+        for density in [1.0, 2.0] {
+            let mut assignment = assignment_json();
+            assignment["regions"][0]["material"]["nuclides"] = serde_json::json!([
+                {"name": "B10", "mass_fraction": 0.5},
+                {"name": "N14", "mass_fraction": 0.5},
+            ]);
+            assignment["regions"][0]["material"]["density_g_cm3"] = serde_json::json!(density);
+            let bytes = serde_json::to_vec_pretty(&assignment).unwrap();
+            std::fs::write(
+                directory.path().join("openbnct-material-assignment.json"),
+                &bytes,
+            )
+            .unwrap();
+            manifest["bindings"]["material_assignment"] = serde_json::json!({
+                "id": "openbnct.material-assignment/0.2.0",
+                "sha256": sha256_hex(&bytes),
+            });
+            std::fs::write(
+                &manifest_path,
+                serde_json::to_vec_pretty(&manifest).unwrap(),
+            )
+            .unwrap();
+            let bundle = collect_statepoint(directory.path()).unwrap();
+            let folded: Vec<Vec<f64>> = bundle
+                .components
+                .iter()
+                .filter(|v| !matches!(v.component, openbnct_core::DoseComponent::Photon))
+                .map(|v| v.values.clone())
+                .collect();
+            results.push(folded);
+        }
+        assert_eq!(results[0], results[1]);
     }
 
     #[test]
