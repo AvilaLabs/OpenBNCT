@@ -2290,8 +2290,10 @@ fn sweep_group(
                     // q(edge)/σ instead of the cell-mean value (DD's
                     // perfect-mixer defect).
                     let mut psi_out_ideal = [0.0_f64; 3];
+                    let mut out_shift = 0.0_f64;
                     for a in 0..3 {
                         let mut o = (psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a];
+                        let o_theta = o;
                         if let Some(recon) = source_lambda {
                             let mu = dir[a].abs().max(1e-30);
                             // Only engage where the flat-source defect
@@ -2378,18 +2380,27 @@ fn sweep_group(
                             }
                         }
                         psi_out_ideal[a] = o;
+                        // Outflow shift the exponential closure applied
+                        // (exactly 0.0 wherever it did not engage).
+                        out_shift += dir[a].abs() * face_area[a] * (o - o_theta);
                     }
                     // The exponential model only redistributes the
                     // source within the cell — the reported mean must
                     // remain balance-consistent with the corrected
                     // edges. With zero λ the recomputed balance
                     // returns the θ-mean identically.
-                    let (psi_avg, psi_avg_ideal) = if source_lambda.is_some() {
-                        let mut rhs = q * volume;
-                        for a in 0..3 {
-                            rhs += dir[a].abs() * face_area[a] * (psi_in[a] - psi_out_ideal[a]);
-                        }
-                        let bal = rhs / (st * volume).max(1e-30);
+                    let (psi_avg, psi_avg_ideal) = if source_lambda.is_some() && out_shift != 0.0 {
+                        // Balance shift of the mean, formed from the
+                        // outflow CORRECTION alone: the full recompute
+                        // (qV + ΣA(ψ_in − ψ_out))/σV subtracts O(A·ψ)
+                        // terms to leave O(σV·ψ̄) — in near-vacuum
+                        // cells (σ ~ 1e-10/cm) that cancellation loses
+                        // all but ~6 digits, and the roundoff noise —
+                        // a different value each inner — floored the
+                        // inner iteration at ~1e-5. The shift is exactly
+                        // zero where the closure did not engage, and
+                        // well-conditioned where it did (σ·Δ > 1).
+                        let bal = psi_avg_ideal - out_shift / (st * volume).max(1e-30);
                         (bal.max(0.0), bal)
                     } else {
                         (psi_avg, psi_avg_ideal)
