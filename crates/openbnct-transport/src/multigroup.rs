@@ -2003,6 +2003,101 @@ fn sweep_group(
     // ordinate also adds its partial outflow per face plus boundary
     // inflow per face into a `[cell][12]` accumulator.
     let want_faces = face_current.is_some();
+    // Direction-independent isotropic in-scatter source per cell for this
+    // group: `flux` is read-only for the whole sweep, so the sum over
+    // source groups (same order, same expression as the per-ordinate
+    // form it replaces) is formed once per cell instead of once per
+    // cell per ordinate.
+    let scatter_sum: Vec<f64> = (0..n_cells)
+        .into_par_iter()
+        .map(|cell| {
+            let mi = case_material[cell];
+            (0..groups)
+                .map(|gp| scatter_eff[mi][gp * groups + g] * flux[cell][gp])
+                .sum::<f64>()
+        })
+        .collect();
+    // θ weight and its face-area weight w = A/θ depend only on
+    // (material, ordinate, axis) at fixed group; tabulate them once per
+    // sweep rather than evaluating exp() per cell per ordinate.
+    let n_mat = sigma_eff.len();
+    let mut theta_tab = vec![0.5_f64; n_mat * n_dirs * 3];
+    let mut w_tab = vec![0.0_f64; n_mat * n_dirs * 3];
+    let mut t_tab = vec![0.0_f64; n_mat * n_dirs * 3];
+    for mi in 0..n_mat {
+        let st = sigma_eff[mi][g];
+        for d in 0..n_dirs {
+            let dir = quadrature[d].0;
+            for a in 0..3 {
+                let area_a = dir[a].abs() * face_area[a];
+                let mu = dir[a].abs().max(1e-30);
+                let tau = st * dx[a] / mu;
+                // e^{-τ} is shared with the exponential-source closure.
+                let e = (-tau.min(700.0)).exp();
+                t_tab[(mi * n_dirs + d) * 3 + a] = e;
+                let th = if tau > 1e-6 {
+                    ((tau - (1.0 - e)) / (tau * (1.0 - e))).clamp(0.5, 1.0)
+                } else {
+                    0.5
+                };
+                theta_tab[(mi * n_dirs + d) * 3 + a] = th;
+                w_tab[(mi * n_dirs + d) * 3 + a] = area_a / th;
+            }
+        }
+    }
+    // Boundary inflow per (ordinate, face, in-face cell) for this group,
+    // resolved once from the keyed map (first matching entry wins, as in
+    // the per-cell lookup it replaces).
+    let bnd_stride = (nx * ny).max(ny * nz).max(nx * nz);
+    let mut bnd_tab: Vec<f64> = Vec::new();
+    if !boundary.is_empty() {
+        bnd_tab = vec![0.0; n_dirs * 6 * bnd_stride];
+        let mut seen = vec![false; n_dirs * 6 * bnd_stride];
+        for (&(face, uu, vv), entries) in boundary.iter() {
+            let (nu, nv) = match face / 2 {
+                0 => (ny, nz),
+                1 => (nx, nz),
+                _ => (nx, ny),
+            };
+            if face >= 6 || uu as usize >= nu || vv as usize >= nv {
+                continue;
+            }
+            let slot = uu as usize + nu * vv as usize;
+            for &(dd, gg, v) in entries.iter() {
+                if gg == g && dd < n_dirs {
+                    let idx = (dd * 6 + face as usize) * bnd_stride + slot;
+                    if !seen[idx] {
+                        seen[idx] = true;
+                        bnd_tab[idx] = v;
+                    }
+                }
+            }
+        }
+    }
+    // Direction-free part of the exponential-source closure: the edge
+    // normalizer 1 − e^{−xl} for each cell/axis/side, where it can
+    // engage (NaN = degenerate rate or closure not engaged there; the
+    // per-ordinate code then takes its original path).
+    let den_tab: Vec<f64> = match source_lambda {
+        Some(recon) => (0..n_cells)
+            .into_par_iter()
+            .flat_map_iter(|cell| {
+                let st = sigma_eff[case_material[cell]][g];
+                (0..6).map(move |k| {
+                    let a = k % 3;
+                    if st * dx[a] > 1.0 && st > 0.0 {
+                        let lam = recon.lambda[cell][k];
+                        let xl = lam * dx[a];
+                        if lam.is_finite() && xl.abs() >= 1e-8 {
+                            return -(-xl).exp_m1();
+                        }
+                    }
+                    f64::NAN
+                })
+            })
+            .collect(),
+        None => Vec::new(),
+    };
     let sweep_one = |d: usize, psi_d: &mut Vec<f64>| {
         let mut acc = want_faces.then(|| vec![[0.0_f64; 13]; n_cells]);
         let dir = quadrature[d].0;
@@ -2070,15 +2165,12 @@ fn sweep_group(
                                 1 => (i, k),
                                 _ => (i, j),
                             };
-                            boundary
-                                .get(&(face, uu as u32, vv as u32))
-                                .and_then(|entries| {
-                                    entries
-                                        .iter()
-                                        .find(|(dd, gg, _)| *dd == d && *gg == g)
-                                        .map(|(_, _, v)| *v)
-                                })
-                                .unwrap_or(0.0)
+                            if boundary.is_empty() {
+                                0.0
+                            } else {
+                                let nu = if a == 0 { ny } else { nx };
+                                bnd_tab[(d * 6 + face as usize) * bnd_stride + uu + nu * vv]
+                            }
                         };
                     }
                     let mi = case_material[cell];
@@ -2092,9 +2184,7 @@ fn sweep_group(
                     // exponential rate — a sum of exponentials is not
                     // itself an exponential.
                     let q_iso: f64 = fixed_source[cell][g] * source_weights.map_or(1.0, |w| w[d])
-                        + (0..groups)
-                            .map(|gp| scatter_eff[mi][gp * groups + g] * flux[cell][gp])
-                            .sum::<f64>();
+                        + scatter_sum[cell];
                     let q_p1 = p1_source.map_or(0.0, |s| {
                         3.0 * (dir[0] * s[cell][0] + dir[1] * s[cell][1] + dir[2] * s[cell][2])
                     });
@@ -2121,19 +2211,9 @@ fn sweep_group(
                     // (sigma, delta, mu) — identical for forward and
                     // adjoint sweeps — so the discrete maps stay dual.
                     let area = [ax, ay, az];
-                    let mut theta = [0.5_f64; 3];
-                    let mut w_a = [0.0_f64; 3];
-                    for a in 0..3 {
-                        let mu = dir[a].abs().max(1e-30);
-                        let tau = st * dx[a] / mu;
-                        theta[a] = if tau > 1e-6 {
-                            let e = (-tau.min(700.0)).exp();
-                            ((tau - (1.0 - e)) / (tau * (1.0 - e))).clamp(0.5, 1.0)
-                        } else {
-                            0.5
-                        };
-                        w_a[a] = area[a] / theta[a];
-                    }
+                    let tab = (mi * n_dirs + d) * 3;
+                    let mut theta = [theta_tab[tab], theta_tab[tab + 1], theta_tab[tab + 2]];
+                    let mut w_a = [w_tab[tab], w_tab[tab + 1], w_tab[tab + 2]];
                     // Positive-preserving θ repair: an axis whose
                     // outflow edge would go negative gets bumped toward
                     // the step closure θ=1, where ψ_out = ψ̄ ≥ 0
@@ -2157,6 +2237,10 @@ fn sweep_group(
                     // the modes stay bit-identical.
                     let signed_source = p1_source.is_some_and(|s| s[cell] != [0.0; 3])
                         || kernel_source.is_some_and(|s| s[cell][d] != 0.0);
+                    // Set when the last repair pass changed nothing: the
+                    // weights are then exactly those it evaluated, so its
+                    // ψ̄ is reused instead of recomputed.
+                    let mut settled_psi: Option<f64> = None;
                     for _ in 0..4 {
                         if !theta_repair || signed_source {
                             break;
@@ -2180,17 +2264,23 @@ fn sweep_group(
                             }
                         }
                         if !repaired {
+                            settled_psi = Some(psi_avg_ideal);
                             break;
                         }
                     }
-                    let denom_w = st * volume + w_a.iter().sum::<f64>();
-                    let numer_w = q * volume
-                        + w_a
-                            .iter()
-                            .zip(psi_in.iter())
-                            .map(|(w, pin)| w * pin)
-                            .sum::<f64>();
-                    let psi_avg_ideal = numer_w / denom_w.max(1e-30);
+                    let psi_avg_ideal = match settled_psi {
+                        Some(v) => v,
+                        None => {
+                            let denom_w = st * volume + w_a.iter().sum::<f64>();
+                            let numer_w = q * volume
+                                + w_a
+                                    .iter()
+                                    .zip(psi_in.iter())
+                                    .map(|(w, pin)| w * pin)
+                                    .sum::<f64>();
+                            numer_w / denom_w.max(1e-30)
+                        }
+                    };
                     let psi_avg = psi_avg_ideal.max(0.0);
                     // Per-axis ideal outflows: the θ-WDD closure value
                     // plus, under `exp_source`, the exponential-
@@ -2204,7 +2294,6 @@ fn sweep_group(
                         let mut o = (psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a];
                         if let Some(recon) = source_lambda {
                             let mu = dir[a].abs().max(1e-30);
-                            let tau = st * dx[a] / mu;
                             // Only engage where the flat-source defect
                             // exists: optically thick cells. Gate on
                             // the CELL optical thickness σ_t·Δ_a —
@@ -2230,14 +2319,19 @@ fn sweep_group(
                                 // edge cell, non-monotone or sign-
                                 // changing leg, or ρ ≤ 0) contributes
                                 // the component's flat share.
-                                let t_a = (-tau.min(700.0)).exp();
+                                let t_a = t_tab[tab + a];
                                 let flat = |qc: f64| qc / st * (1.0 - t_a);
-                                let comp_share = |qc: f64, lam_c: f64| -> f64 {
+                                let comp_share = |qc: f64, lam_c: f64, den_pre: f64| -> f64 {
                                     let xl = lam_c * dx[a];
                                     if !lam_c.is_finite() || xl.abs() < 1e-8 {
                                         return flat(qc);
                                     }
-                                    let q_edge = qc * xl / (-(-xl).exp_m1());
+                                    let den = if den_pre.is_nan() {
+                                        -(-xl).exp_m1()
+                                    } else {
+                                        den_pre
+                                    };
+                                    let q_edge = qc * xl / den;
                                     let rho = st + mu * lam_c;
                                     if rho <= 0.0 {
                                         return flat(qc);
@@ -2271,9 +2365,11 @@ fn sweep_group(
                                     .dir_kernel
                                     .as_ref()
                                     .map_or(f64::NAN, |f| f[d * n_cells + cell][a]);
-                                let src_exp = comp_share(q_iso, lam_iso)
-                                    + comp_share(q_p1, lam_p1)
-                                    + comp_share(q_k, lam_k);
+                                let den_iso =
+                                    den_tab[cell * 6 + if dir[a] > 0.0 { a } else { a + 3 }];
+                                let src_exp = comp_share(q_iso, lam_iso, den_iso)
+                                    + comp_share(q_p1, lam_p1, f64::NAN)
+                                    + comp_share(q_k, lam_k, f64::NAN);
                                 let src_flat = flat(q);
                                 let src_part = o - t_a * psi_in[a];
                                 if src_flat > 1e-30 && src_part > 0.0 {
