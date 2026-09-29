@@ -512,6 +512,68 @@ round-trip artifact under `planning/hu-demo/`, where a synthetic
 HU volume at the anchors recovers the phantom's assignment voxel-exact
 and its solve is bit-identical to the ground-truth solve.
 
+### Standard tissue library
+
+`libraries/tissue/` ships versioned, hash-listed inputs so a head CT reaches
+a transport solve without authoring materials or collapsing cross sections
+(`manifest.json`, `openbnct.library-manifest/0.1.0`, lists every file's
+sha256 and its source):
+
+- `materials/*.json` — `openbnct.material-definition/0.1.0` for dry air,
+  liquid water, adipose, soft tissue, skeletal muscle, brain, skin, blood,
+  lung, cortical bone (all N-bearing tissues carry N14). Element weight
+  fractions are transcribed from **PNNL-15870 Rev. 1** (the printed
+  "(ICRP)" entries, which reproduce NIST 1998 tabulations); the manifest
+  records each entry's printed name, entry number and page. Elements
+  and isotopes with no local ENDF/B-VIII.1 evaluation (Ar, Si, Zn,
+  Fe54/57/58, S36) are dropped, never substituted, and the rest
+  renormalized; `audit.json` records every dropped mass fraction (largest:
+  argon in air, 1.28 %; otherwise at most 0.01 %). `lung-inflated-declared`
+  is the same lung composition at a *declared* density of 0.26 g/cm3, which
+  is not a PNNL value. Spongiosa and marrow are omitted (no source read).
+- `hu-calibration-generic-head-ct.json` — `openbnct.hu-calibration/0.1.0`,
+  a **generic demonstration table, not a scanner calibration**: anchors at
+  air −1000, inflated lung −740, adipose −100, water 0, brain 30, skeletal
+  muscle 50, skin 60, cortical bone 1200 HU. The HU positions are
+  declared conventions of the library, not values read from Schneider,
+  Bortfeld & Schlegel, *Phys. Med. Biol.* 45 (2000) 459, whose
+  stoichiometric-calibration structure (linear volume mixtures between
+  anchors) `dicom calibrate` uses. Substitute a site table for real work.
+- `multigroup-data-28g.json` — 28-group collapse of all library
+  materials (recipe of `layered-head-phantom/collapse-v2.sh`: free-gas
+  kernel, no self-shielding; ENDF/B-VIII.1), bound to the local-kerma
+  component profile, with `boron_unit_response_gy_cm2_per_ug_g`.
+  Regenerate with `libraries/tissue/collapse-28g.sh` (about 1.5 minutes,
+  under 100 MB RAM; needs the external nuclear-data store).
+
+End to end, on the synthetic NF-BNCT-001 study (research demonstration only):
+
+```text
+openbnct benchmark generate STUDY-DIR
+openbnct dicom import-ct --series STUDY-DIR --spacing-mm 8 \
+  --case-id mylab.head.v1 --base-material libraries/tissue/materials/air-dry.json \
+  --case-output CASE.json --hu-output HU.nii --masks-dir MASKS-DIR
+openbnct dicom calibrate \
+  --calibration libraries/tissue/hu-calibration-generic-head-ct.json \
+  --hu-nifti HU.nii --case CASE.json \
+  --output ASSIGNMENT.json --materials-out-dir NEW-MATERIALS-DIR
+openbnct beam bind --beam beams/fir1-k63.json --case CASE.json --output CASE-BEAM.json
+openbnct sn solve --case CASE-BEAM.json \
+  --data libraries/tissue/multigroup-data-28g.json --assignment ASSIGNMENT.json \
+  --order 4 --dose DOSE.json --boron-unit-output UNIT-DOSE.json --output FLUX.json
+```
+
+`import-ct` leaves a placeholder source, so a beam must be bound before
+`sn solve`. The synthetic study is uniform 0 HU, so this exercises only the
+water anchor; feeding an HU volume that spans the anchors produces
+`voxel_fractions` mixtures, which `sn solve` accepts directly with the
+library data (it blends the per-material macroscopic tables). The
+checked chain ran with `--max-outer 2 --allow-unconverged` on the 25³
+grid, S4, and emitted a provisional (unconverged) field — proof the chain
+executes, not a converged result. `--materials-out-dir` files are the
+anchors again and are not needed when solving against the library data,
+whose material ids are the library's.
+
 ### OpenMC input generation
 
 With the sealed response set in place, generate the deterministic OpenMC deck

@@ -1,0 +1,125 @@
+{
+ "schema_version": "openbnct.material-definition/0.1.0",
+ "id": "openbnct.tissue-library.adipose-icrp.v1",
+ "density_g_cm3": 0.92,
+ "temperature_k": 293.6,
+ "nuclides": [
+  {
+   "name": "H1",
+   "mass_fraction": 0.11945213685040197
+  },
+  {
+   "name": "H2",
+   "mass_fraction": 2.7456045341189387e-05
+  },
+  {
+   "name": "C12",
+   "mass_fraction": 0.6298716936481042
+  },
+  {
+   "name": "C13",
+   "mass_fraction": 0.007382135765786028
+  },
+  {
+   "name": "N14",
+   "mass_fraction": 0.007939103940987157
+  },
+  {
+   "name": "N15",
+   "mass_fraction": 3.106902434569296e-05
+  },
+  {
+   "name": "O16",
+   "mass_fraction": 0.23170841239876935
+  },
+  {
+   "name": "O17",
+   "mass_fraction": 9.380518234714457e-05
+  },
+  {
+   "name": "O18",
+   "mass_fraction": 0.0005358245211014901
+  },
+  {
+   "name": "Na23",
+   "mass_fraction": 0.0005000108510246456
+  },
+  {
+   "name": "Mg24",
+   "mass_fraction": 1.5590335618447094e-05
+  },
+  {
+   "name": "Mg25",
+   "mass_fraction": 2.0560646907162978e-06
+  },
+  {
+   "name": "Mg26",
+   "mass_fraction": 2.354033731822436e-06
+  },
+  {
+   "name": "P31",
+   "mass_fraction": 0.0001600034723278866
+  },
+  {
+   "name": "S32",
+   "mass_fraction": 0.0006914369416514227
+  },
+  {
+   "name": "S33",
+   "mass_fraction": 5.629934572600764e-06
+  },
+  {
+   "name": "S34",
+   "mass_fraction": 3.286708037502858e-05
+  },
+  {
+   "name": "Cl35",
+   "mass_fraction": 0.0008892533497100394
+  },
+  {
+   "name": "Cl37",
+   "mass_fraction": 0.0003007724757286174
+  },
+  {
+   "name": "K39",
+   "mass_fraction": 0.0002974050540515372
+  },
+  {
+   "name": "K40",
+   "mass_fraction": 3.826981049802974e-08
+  },
+  {
+   "name": "K41",
+   "mass_fraction": 2.2563620793737922e-05
+  },
+  {
+   "name": "Ca40",
+   "mass_fraction": 1.933277816555451e-05
+  },
+  {
+   "name": "Ca42",
+   "mass_fraction": 1.354748223915015e-07
+  },
+  {
+   "name": "Ca43",
+   "mass_fraction": 2.89413447412368e-08
+  },
+  {
+   "name": "Ca44",
+   "mass_fraction": 4.5757309793716927e-07
+  },
+  {
+   "name": "Ca46",
+   "mass_fraction": 9.173045344745191e-10
+  },
+  {
+   "name": "Ca48",
+   "mass_fraction": 4.474930582693829e-08
+  },
+  {
+   "name": "Fe56",
+   "mass_fraction": 1.8380704687700672e-05
+  }
+ ],
+ "neutron_thermal_treatment": "free_gas"
+}

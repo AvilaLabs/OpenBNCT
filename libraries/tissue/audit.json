@@ -1,0 +1,282 @@
+{
+ "source": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+ "materials": {
+  "air-dry": {
+   "printed_name": "Air (Dry, Near Sea Level)",
+   "printed_entry": 4,
+   "printed_page_of_357": 18,
+   "printed_element_weight_fractions": {
+    "C": 0.000124,
+    "N": 0.755268,
+    "O": 0.231781,
+    "Ar": 0.012827
+   },
+   "printed_sum": 1.0,
+   "dropped_no_local_evaluation": {
+    "Ar": 0.012827
+   },
+   "renormalization_factor": 1.0129936698025572,
+   "source_comment": "NIST 1996 (physics.nist.gov/PhysRefData/XrayMassCoef/tab2.html)"
+  },
+  "water-liquid": {
+   "printed_name": "Water, Liquid",
+   "printed_entry": 354,
+   "printed_page_of_357": 338,
+   "printed_element_weight_fractions": {
+    "H": 0.111894,
+    "O": 0.888106
+   },
+   "printed_sum": 1.0,
+   "dropped_no_local_evaluation": {},
+   "renormalization_factor": 1.0000000000000002,
+   "source_comment": "NIST 1998 (compos.pl matno=276); density 0.998207 g/cm3, de-aerated SMOW at 1 atm (Tanaka et al. 2001)"
+  },
+  "adipose-icrp": {
+   "printed_name": "Tissue, Adipose (ICRP)",
+   "printed_entry": 316,
+   "printed_page_of_357": 302,
+   "printed_element_weight_fractions": {
+    "H": 0.119477,
+    "C": 0.63724,
+    "N": 0.00797,
+    "O": 0.232333,
+    "Na": 0.0005,
+    "Mg": 2e-05,
+    "P": 0.00016,
+    "S": 0.00073,
+    "Cl": 0.00119,
+    "K": 0.00032,
+    "Ca": 2e-05,
+    "Fe": 2e-05,
+    "Zn": 2e-05
+   },
+   "printed_sum": 1.0,
+   "dropped_no_local_evaluation": {
+    "S_unevaluated_isotopes": 8.188411987721828e-08,
+    "Fe_unevaluated_isotopes": 1.6196942026017293e-06,
+    "Zn": 2e-05
+   },
+   "renormalization_factor": 1.0000217020492912,
+   "source_comment": "NIST 1998 (compos.pl matno=103)"
+  },
+  "soft-tissue-icrp": {
+   "printed_name": "Tissue, Soft (ICRP)",
+   "printed_entry": 320,
+   "printed_page_of_357": 307,
+   "printed_element_weight_fractions": {
+    "H": 0.104472,
+    "C": 0.23219,
+    "N": 0.02488,
+    "O": 0.630238,
+    "Na": 0.00113,
+    "Mg": 0.00013,
+    "P": 0.00133,
+    "S": 0.00199,
+    "Cl": 0.00134,
+    "K": 0.00199,
+    "Ca": 0.00023,
+    "Fe": 5e-05,
+    "Zn": 3e-05
+   },
+   "printed_sum": 1.0,
+   "dropped_no_local_evaluation": {
+    "S_unevaluated_isotopes": 2.2321835418584162e-07,
+    "Fe_unevaluated_isotopes": 4.0492355065043225e-06,
+    "Zn": 3e-05
+   },
+   "renormalization_factor": 1.000034273628502,
+   "source_comment": "NIST 1998 (compos.pl matno=261)"
+  },
+  "muscle-skeletal-icrp": {
+   "printed_name": "Muscle, Skeletal (ICRP)",
+   "printed_entry": 201,
+   "printed_page_of_357": 197,
+   "printed_element_weight_fractions": {
+    "H": 0.100637,
+    "C": 0.10783,
+    "N": 0.02768,
+    "O": 0.754773,
+    "Na": 0.00075,
+    "Mg": 0.00019,
+    "P": 0.0018,
+    "S": 0.00241,
+    "Cl": 0.00079,
+    "K": 0.00302,
+    "Ca": 3e-05,
+    "Fe": 4e-05,
+    "Zn": 5e-05
+   },
+   "printed_sum": 1.0,
+   "dropped_no_local_evaluation": {
+    "S_unevaluated_isotopes": 2.7032976562204936e-07,
+    "Fe_unevaluated_isotopes": 3.2393884052034586e-06,
+    "Zn": 5e-05
+   },
+   "renormalization_factor": 1.0000535125816141,
+   "source_comment": "NIST 1998 (compos.pl matno=201)"
+  },
+  "brain-icrp": {
+   "printed_name": "Brain (ICRP)",
+   "printed_entry": 44,
+   "printed_page_of_357": 54,
+   "printed_element_weight_fractions": {
+    "H": 0.110667,
+    "C": 0.12542,
+    "N": 0.01328,
+    "O": 0.737723,
+    "Na": 0.00184,
+    "Mg": 0.00015,
+    "P": 0.00354,
+    "S": 0.00177,
+    "Cl": 0.00236,
+    "K": 0.0031,
+    "Ca": 9e-05,
+    "Fe": 5e-05,
+    "Zn": 1e-05
+   },
+   "printed_sum": 1.0,
+   "dropped_no_local_evaluation": {
+    "S_unevaluated_isotopes": 1.9854094819544706e-07,
+    "Fe_unevaluated_isotopes": 4.0492355065043225e-06,
+    "Zn": 1e-05
+   },
+   "renormalization_factor": 1.0000142479794567,
+   "source_comment": "NIST 1998 (compos.pl matno=123)"
+  },
+  "skin-icrp": {
+   "printed_name": "Skin (ICRP)",
+   "printed_entry": 286,
+   "printed_page_of_357": 274,
+   "printed_element_weight_fractions": {
+    "H": 0.100588,
+    "C": 0.22825,
+    "N": 0.04642,
+    "O": 0.619002,
+    "Na": 7e-05,
+    "Mg": 6e-05,
+    "P": 0.00033,
+    "S": 0.00159,
+    "Cl": 0.00267,
+    "K": 0.00085,
+    "Ca": 0.00015,
+    "Fe": 1e-05,
+    "Zn": 1e-05
+   },
+   "printed_sum": 1.0,
+   "dropped_no_local_evaluation": {
+    "S_unevaluated_isotopes": 1.7835034329421518e-07,
+    "Fe_unevaluated_isotopes": 8.098471013008647e-07,
+    "Zn": 1e-05
+   },
+   "renormalization_factor": 1.0000109883181862,
+   "source_comment": "NIST 1998 (compos.pl matno=250)"
+  },
+  "blood-icrp": {
+   "printed_name": "Blood (ICRP)",
+   "printed_entry": 29,
+   "printed_page_of_357": 41,
+   "printed_element_weight_fractions": {
+    "H": 0.101866,
+    "C": 0.10002,
+    "N": 0.02964,
+    "O": 0.759414,
+    "Na": 0.00185,
+    "Mg": 4e-05,
+    "Si": 3e-05,
+    "P": 0.00035,
+    "S": 0.00185,
+    "Cl": 0.00278,
+    "K": 0.00163,
+    "Ca": 6e-05,
+    "Fe": 0.00046
+   },
+   "printed_sum": 0.99999,
+   "dropped_no_local_evaluation": {
+    "Si": 3e-05,
+    "S_unevaluated_isotopes": 2.0751455037377237e-07,
+    "Fe_unevaluated_isotopes": 3.725296665983977e-05
+   },
+   "renormalization_factor": 1.0000774664818013,
+   "source_comment": "NIST 1998 (compos.pl matno=118)"
+  },
+  "lung-icrp": {
+   "printed_name": "Tissue, Lung (ICRP)",
+   "printed_entry": 318,
+   "printed_page_of_357": 305,
+   "printed_element_weight_fractions": {
+    "H": 0.101278,
+    "C": 0.10231,
+    "N": 0.02865,
+    "O": 0.757072,
+    "Na": 0.00184,
+    "Mg": 0.00073,
+    "P": 0.0008,
+    "S": 0.00225,
+    "Cl": 0.00266,
+    "K": 0.00194,
+    "Ca": 9e-05,
+    "Fe": 0.00037,
+    "Zn": 1e-05
+   },
+   "printed_sum": 1.0,
+   "dropped_no_local_evaluation": {
+    "S_unevaluated_isotopes": 2.523825612653988e-07,
+    "Fe_unevaluated_isotopes": 2.9964342748131986e-05,
+    "Zn": 1e-05
+   },
+   "renormalization_factor": 1.0000402183427595,
+   "source_comment": "NIST 1998 (compos.pl matno=190)"
+  },
+  "cortical-bone-icrp": {
+   "printed_name": "Bone, Cortical (ICRP)",
+   "printed_entry": 33,
+   "printed_page_of_357": 45,
+   "printed_element_weight_fractions": {
+    "H": 0.047234,
+    "C": 0.14433,
+    "N": 0.04199,
+    "O": 0.446096,
+    "Mg": 0.0022,
+    "P": 0.10497,
+    "S": 0.00315,
+    "Ca": 0.20993,
+    "Zn": 0.0001
+   },
+   "printed_sum": 1.0,
+   "dropped_no_local_evaluation": {
+    "S_unevaluated_isotopes": 3.533355857715583e-07,
+    "Zn": 0.0001
+   },
+   "renormalization_factor": 1.0001003634073884,
+   "source_comment": "NIST 1998 (compos.pl matno=120)"
+  },
+  "lung-inflated-declared": {
+   "printed_name": "Tissue, Lung (ICRP)",
+   "printed_entry": 318,
+   "printed_page_of_357": 305,
+   "printed_element_weight_fractions": {
+    "H": 0.101278,
+    "C": 0.10231,
+    "N": 0.02865,
+    "O": 0.757072,
+    "Na": 0.00184,
+    "Mg": 0.00073,
+    "P": 0.0008,
+    "S": 0.00225,
+    "Cl": 0.00266,
+    "K": 0.00194,
+    "Ca": 9e-05,
+    "Fe": 0.00037,
+    "Zn": 1e-05
+   },
+   "printed_sum": 1.0,
+   "dropped_no_local_evaluation": {
+    "S_unevaluated_isotopes": 2.523825612653988e-07,
+    "Fe_unevaluated_isotopes": 2.9964342748131986e-05,
+    "Zn": 1e-05
+   },
+   "renormalization_factor": 1.0000402183427595,
+   "source_comment": "composition identical to lung-icrp; density DECLARED 0.26 g/cm3 (the inflated-lung value commonly attributed to ICRU 44; not verified against the ICRU 44 text in this work; not a PNNL-15870 value)"
+  }
+ }
+}

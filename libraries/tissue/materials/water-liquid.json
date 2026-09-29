@@ -1,0 +1,29 @@
+{
+ "schema_version": "openbnct.material-definition/0.1.0",
+ "id": "openbnct.tissue-library.water-liquid.v1",
+ "density_g_cm3": 0.998207,
+ "temperature_k": 293.6,
+ "nuclides": [
+  {
+   "name": "H1",
+   "mass_fraction": 0.1118682871007262
+  },
+  {
+   "name": "H2",
+   "mass_fraction": 2.5712899273834916e-05
+  },
+  {
+   "name": "O16",
+   "mass_fraction": 0.8856992571680837
+  },
+  {
+   "name": "O17",
+   "mass_fraction": 0.00035856782005996726
+  },
+  {
+   "name": "O18",
+   "mass_fraction": 0.0020481750118562145
+  }
+ ],
+ "neutron_thermal_treatment": "free_gas"
+}

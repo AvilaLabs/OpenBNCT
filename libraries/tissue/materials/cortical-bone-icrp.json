@@ -1,0 +1,97 @@
+{
+ "schema_version": "openbnct.material-definition/0.1.0",
+ "id": "openbnct.tissue-library.cortical-bone-icrp.v1",
+ "density_g_cm3": 1.85,
+ "temperature_k": 293.6,
+ "nuclides": [
+  {
+   "name": "H1",
+   "mass_fraction": 0.047227885246955044
+  },
+  {
+   "name": "H2",
+   "mass_fraction": 1.0855318229533403e-05
+  },
+  {
+   "name": "C12",
+   "mass_fraction": 0.142672356481793
+  },
+  {
+   "name": "C13",
+   "mass_fraction": 0.0016721289687954017
+  },
+  {
+   "name": "N14",
+   "mass_fraction": 0.04183051401471606
+  },
+  {
+   "name": "N15",
+   "mass_fraction": 0.00016370024476017453
+  },
+  {
+   "name": "O16",
+   "mass_fraction": 0.4449317424947037
+  },
+  {
+   "name": "O17",
+   "mass_fraction": 0.00018012683615871225
+  },
+  {
+   "name": "O18",
+   "mass_fraction": 0.0010289023837200238
+  },
+  {
+   "name": "Mg24",
+   "mass_fraction": 0.001715071814368676
+  },
+  {
+   "name": "Mg25",
+   "mass_fraction": 0.00022618490620520822
+  },
+  {
+   "name": "Mg26",
+   "mass_fraction": 0.0002589640789223701
+  },
+  {
+   "name": "P31",
+   "mass_fraction": 0.10498053514687355
+  },
+  {
+   "name": "S32",
+   "mass_fraction": 0.0029838324506792644
+  },
+  {
+   "name": "S33",
+   "mass_fraction": 2.429546421515341e-05
+  },
+  {
+   "name": "S34",
+   "mass_fraction": 0.0001418348587911207
+  },
+  {
+   "name": "Ca40",
+   "mass_fraction": 0.20294246814288902
+  },
+  {
+   "name": "Ca42",
+   "mass_fraction": 0.001422123328158628
+  },
+  {
+   "name": "Ca43",
+   "mass_fraction": 0.0003038067205273989
+  },
+  {
+   "name": "Ca44",
+   "mass_fraction": 0.004803293818195712
+  },
+  {
+   "name": "Ca46",
+   "mass_fraction": 9.629244419542703e-06
+  },
+  {
+   "name": "Ca48",
+   "mass_fraction": 0.00046974803592276886
+  }
+ ],
+ "neutron_thermal_treatment": "free_gas"
+}

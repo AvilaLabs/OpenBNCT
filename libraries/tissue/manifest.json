@@ -1,0 +1,413 @@
+{
+ "schema_version": "openbnct.library-manifest/0.1.0",
+ "id": "openbnct.tissue-library.v1",
+ "note": "Standard tissue library for head-CT-to-transport workflows: research inputs, not clinical commissioning data. Compositions are element weight fractions printed in PNNL-15870 Rev. 1 (Detwiler et al. 2021, Pacific Northwest National Laboratory), which reproduce NIST 1998 / ICRP reference-man tabulations; each entry below records the exact printed name, entry number and page. Omitted for want of a readable authoritative source: spongiosa / trabecular bone, red and yellow marrow, ICRU-44 inflated-lung density. Regenerate with generate.py, collapse-28g.sh, make-manifest.py.",
+ "materials": [
+  {
+   "id": "openbnct.tissue-library.air-dry.v1",
+   "file": "materials/air-dry.json",
+   "sha256": "d32ecf9ab0ce18161843be4c57393c1e9f2bb208514a8aaffa3738acb49567d2",
+   "density_g_cm3": 0.001205,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Air (Dry, Near Sea Level)",
+    "printed_entry_number": 4,
+    "printed_page_of_357": 18,
+    "underlying_tabulation": "NIST 1996 (physics.nist.gov/PhysRefData/XrayMassCoef/tab2.html)",
+    "printed_element_weight_fractions": {
+     "C": 0.000124,
+     "N": 0.755268,
+     "O": 0.231781,
+     "Ar": 0.012827
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {
+     "Ar": 0.012827
+    },
+    "renormalization_factor": 1.0129936698025572
+   }
+  },
+  {
+   "id": "openbnct.tissue-library.water-liquid.v1",
+   "file": "materials/water-liquid.json",
+   "sha256": "e406845b9e774546d58dd83ecbab0a16966a84644f2685b3ad517b5963238cfc",
+   "density_g_cm3": 0.998207,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Water, Liquid",
+    "printed_entry_number": 354,
+    "printed_page_of_357": 338,
+    "underlying_tabulation": "NIST 1998 (compos.pl matno=276); density 0.998207 g/cm3, de-aerated SMOW at 1 atm (Tanaka et al. 2001)",
+    "printed_element_weight_fractions": {
+     "H": 0.111894,
+     "O": 0.888106
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {},
+    "renormalization_factor": 1.0000000000000002
+   }
+  },
+  {
+   "id": "openbnct.tissue-library.adipose-icrp.v1",
+   "file": "materials/adipose-icrp.json",
+   "sha256": "a93134f0fbfc008bdda21e9f4b5e315af62e9d2d8d55de00cd595c960202a6e8",
+   "density_g_cm3": 0.92,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Tissue, Adipose (ICRP)",
+    "printed_entry_number": 316,
+    "printed_page_of_357": 302,
+    "underlying_tabulation": "NIST 1998 (compos.pl matno=103)",
+    "printed_element_weight_fractions": {
+     "H": 0.119477,
+     "C": 0.63724,
+     "N": 0.00797,
+     "O": 0.232333,
+     "Na": 0.0005,
+     "Mg": 2e-05,
+     "P": 0.00016,
+     "S": 0.00073,
+     "Cl": 0.00119,
+     "K": 0.00032,
+     "Ca": 2e-05,
+     "Fe": 2e-05,
+     "Zn": 2e-05
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {
+     "S_unevaluated_isotopes": 8.188411987721828e-08,
+     "Fe_unevaluated_isotopes": 1.6196942026017293e-06,
+     "Zn": 2e-05
+    },
+    "renormalization_factor": 1.0000217020492912
+   }
+  },
+  {
+   "id": "openbnct.tissue-library.soft-tissue-icrp.v1",
+   "file": "materials/soft-tissue-icrp.json",
+   "sha256": "d1641ec8557de97ded668438b5a21209469bc86d34e0b96ceed3303ec610f13a",
+   "density_g_cm3": 1.0,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Tissue, Soft (ICRP)",
+    "printed_entry_number": 320,
+    "printed_page_of_357": 307,
+    "underlying_tabulation": "NIST 1998 (compos.pl matno=261)",
+    "printed_element_weight_fractions": {
+     "H": 0.104472,
+     "C": 0.23219,
+     "N": 0.02488,
+     "O": 0.630238,
+     "Na": 0.00113,
+     "Mg": 0.00013,
+     "P": 0.00133,
+     "S": 0.00199,
+     "Cl": 0.00134,
+     "K": 0.00199,
+     "Ca": 0.00023,
+     "Fe": 5e-05,
+     "Zn": 3e-05
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {
+     "S_unevaluated_isotopes": 2.2321835418584162e-07,
+     "Fe_unevaluated_isotopes": 4.0492355065043225e-06,
+     "Zn": 3e-05
+    },
+    "renormalization_factor": 1.000034273628502
+   }
+  },
+  {
+   "id": "openbnct.tissue-library.muscle-skeletal-icrp.v1",
+   "file": "materials/muscle-skeletal-icrp.json",
+   "sha256": "966644dcdffcb67038a734440baaa614b4304a332444ea9fa206b0387fe0f228",
+   "density_g_cm3": 1.04,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Muscle, Skeletal (ICRP)",
+    "printed_entry_number": 201,
+    "printed_page_of_357": 197,
+    "underlying_tabulation": "NIST 1998 (compos.pl matno=201)",
+    "printed_element_weight_fractions": {
+     "H": 0.100637,
+     "C": 0.10783,
+     "N": 0.02768,
+     "O": 0.754773,
+     "Na": 0.00075,
+     "Mg": 0.00019,
+     "P": 0.0018,
+     "S": 0.00241,
+     "Cl": 0.00079,
+     "K": 0.00302,
+     "Ca": 3e-05,
+     "Fe": 4e-05,
+     "Zn": 5e-05
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {
+     "S_unevaluated_isotopes": 2.7032976562204936e-07,
+     "Fe_unevaluated_isotopes": 3.2393884052034586e-06,
+     "Zn": 5e-05
+    },
+    "renormalization_factor": 1.0000535125816141
+   }
+  },
+  {
+   "id": "openbnct.tissue-library.brain-icrp.v1",
+   "file": "materials/brain-icrp.json",
+   "sha256": "27962cf9835237339e3fcbd1b35c4416d28fc41ada09e5b31eb3df449b1bd17e",
+   "density_g_cm3": 1.03,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Brain (ICRP)",
+    "printed_entry_number": 44,
+    "printed_page_of_357": 54,
+    "underlying_tabulation": "NIST 1998 (compos.pl matno=123)",
+    "printed_element_weight_fractions": {
+     "H": 0.110667,
+     "C": 0.12542,
+     "N": 0.01328,
+     "O": 0.737723,
+     "Na": 0.00184,
+     "Mg": 0.00015,
+     "P": 0.00354,
+     "S": 0.00177,
+     "Cl": 0.00236,
+     "K": 0.0031,
+     "Ca": 9e-05,
+     "Fe": 5e-05,
+     "Zn": 1e-05
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {
+     "S_unevaluated_isotopes": 1.9854094819544706e-07,
+     "Fe_unevaluated_isotopes": 4.0492355065043225e-06,
+     "Zn": 1e-05
+    },
+    "renormalization_factor": 1.0000142479794567
+   }
+  },
+  {
+   "id": "openbnct.tissue-library.skin-icrp.v1",
+   "file": "materials/skin-icrp.json",
+   "sha256": "08e3f941668d71402971bdda2d0cadcf3e0d79aeb68247673d6e175473549c5c",
+   "density_g_cm3": 1.1,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Skin (ICRP)",
+    "printed_entry_number": 286,
+    "printed_page_of_357": 274,
+    "underlying_tabulation": "NIST 1998 (compos.pl matno=250)",
+    "printed_element_weight_fractions": {
+     "H": 0.100588,
+     "C": 0.22825,
+     "N": 0.04642,
+     "O": 0.619002,
+     "Na": 7e-05,
+     "Mg": 6e-05,
+     "P": 0.00033,
+     "S": 0.00159,
+     "Cl": 0.00267,
+     "K": 0.00085,
+     "Ca": 0.00015,
+     "Fe": 1e-05,
+     "Zn": 1e-05
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {
+     "S_unevaluated_isotopes": 1.7835034329421518e-07,
+     "Fe_unevaluated_isotopes": 8.098471013008647e-07,
+     "Zn": 1e-05
+    },
+    "renormalization_factor": 1.0000109883181862
+   }
+  },
+  {
+   "id": "openbnct.tissue-library.blood-icrp.v1",
+   "file": "materials/blood-icrp.json",
+   "sha256": "e052ad847244404aa3f032601997994226212eadbf5165bdbae8851d35efb704",
+   "density_g_cm3": 1.06,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Blood (ICRP)",
+    "printed_entry_number": 29,
+    "printed_page_of_357": 41,
+    "underlying_tabulation": "NIST 1998 (compos.pl matno=118)",
+    "printed_element_weight_fractions": {
+     "H": 0.101866,
+     "C": 0.10002,
+     "N": 0.02964,
+     "O": 0.759414,
+     "Na": 0.00185,
+     "Mg": 4e-05,
+     "Si": 3e-05,
+     "P": 0.00035,
+     "S": 0.00185,
+     "Cl": 0.00278,
+     "K": 0.00163,
+     "Ca": 6e-05,
+     "Fe": 0.00046
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {
+     "Si": 3e-05,
+     "S_unevaluated_isotopes": 2.0751455037377237e-07,
+     "Fe_unevaluated_isotopes": 3.725296665983977e-05
+    },
+    "renormalization_factor": 1.0000774664818013
+   }
+  },
+  {
+   "id": "openbnct.tissue-library.lung-icrp.v1",
+   "file": "materials/lung-icrp.json",
+   "sha256": "da030f0c4081ca09c468e264e4b8b6e5db49a7f76dad3f48ab637d053a19a8e1",
+   "density_g_cm3": 1.05,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Tissue, Lung (ICRP)",
+    "printed_entry_number": 318,
+    "printed_page_of_357": 305,
+    "underlying_tabulation": "NIST 1998 (compos.pl matno=190)",
+    "printed_element_weight_fractions": {
+     "H": 0.101278,
+     "C": 0.10231,
+     "N": 0.02865,
+     "O": 0.757072,
+     "Na": 0.00184,
+     "Mg": 0.00073,
+     "P": 0.0008,
+     "S": 0.00225,
+     "Cl": 0.00266,
+     "K": 0.00194,
+     "Ca": 9e-05,
+     "Fe": 0.00037,
+     "Zn": 1e-05
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {
+     "S_unevaluated_isotopes": 2.523825612653988e-07,
+     "Fe_unevaluated_isotopes": 2.9964342748131986e-05,
+     "Zn": 1e-05
+    },
+    "renormalization_factor": 1.0000402183427595
+   }
+  },
+  {
+   "id": "openbnct.tissue-library.cortical-bone-icrp.v1",
+   "file": "materials/cortical-bone-icrp.json",
+   "sha256": "9b0bbc12f7f53a07ab72492d0fcc9f4716e7042202c79b05b5b86a678a65ec18",
+   "density_g_cm3": 1.85,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Bone, Cortical (ICRP)",
+    "printed_entry_number": 33,
+    "printed_page_of_357": 45,
+    "underlying_tabulation": "NIST 1998 (compos.pl matno=120)",
+    "printed_element_weight_fractions": {
+     "H": 0.047234,
+     "C": 0.14433,
+     "N": 0.04199,
+     "O": 0.446096,
+     "Mg": 0.0022,
+     "P": 0.10497,
+     "S": 0.00315,
+     "Ca": 0.20993,
+     "Zn": 0.0001
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {
+     "S_unevaluated_isotopes": 3.533355857715583e-07,
+     "Zn": 0.0001
+    },
+    "renormalization_factor": 1.0001003634073884
+   }
+  },
+  {
+   "id": "openbnct.tissue-library.lung-inflated-declared.v1",
+   "file": "materials/lung-inflated-declared.json",
+   "sha256": "ab4137fc53e7cf04918bbb89d2f8d20660b763a1af5e689aee35a4a1efed81ad",
+   "density_g_cm3": 0.26,
+   "source": {
+    "document": "PNNL-15870 Rev. 1, Compendium of Material Composition Data for Radiation Transport Modeling (PIET-43741-TM-963)",
+    "printed_material_name": "Tissue, Lung (ICRP)",
+    "printed_entry_number": 318,
+    "printed_page_of_357": 305,
+    "underlying_tabulation": "composition identical to lung-icrp; density DECLARED 0.26 g/cm3 (the inflated-lung value commonly attributed to ICRU 44; not verified against the ICRU 44 text in this work; not a PNNL-15870 value)",
+    "printed_element_weight_fractions": {
+     "H": 0.101278,
+     "C": 0.10231,
+     "N": 0.02865,
+     "O": 0.757072,
+     "Na": 0.00184,
+     "Mg": 0.00073,
+     "P": 0.0008,
+     "S": 0.00225,
+     "Cl": 0.00266,
+     "K": 0.00194,
+     "Ca": 9e-05,
+     "Fe": 0.00037,
+     "Zn": 1e-05
+    }
+   },
+   "expansion": {
+    "rule": "element -> locally evaluated natural nuclides, natural abundance converted to mass fraction; elements/isotopes without a local evaluation dropped (never substituted) and the rest renormalized",
+    "dropped_mass_fraction_before_renormalization": {
+     "S_unevaluated_isotopes": 2.523825612653988e-07,
+     "Fe_unevaluated_isotopes": 2.9964342748131986e-05,
+     "Zn": 1e-05
+    },
+    "renormalization_factor": 1.0000402183427595
+   }
+  }
+ ],
+ "hu_calibration": {
+  "id": "openbnct.tissue-library.hu-calibration-generic-head-ct.v1",
+  "file": "hu-calibration-generic-head-ct.json",
+  "sha256": "00949f2280409e7387670bfe474265d1481d160075284e31ba3e302c69505a1d",
+  "status": "generic demonstration table, not a scanner calibration",
+  "anchors_hu": [
+   -1000,
+   -740,
+   -100,
+   0,
+   30,
+   50,
+   60,
+   1200
+  ],
+  "anchor_citation": "Structure: Schneider, Bortfeld & Schlegel, Phys. Med. Biol. 45 (2000) 459-478. The anchor HU positions are conventional values chosen by the library authors; they were not read from, fitted to, or derived from that paper's tables."
+ },
+ "multigroup_data": {
+  "id": "openbnct.tissue-library.multigroup-28g.v1",
+  "file": "multigroup-data-28g.json",
+  "sha256": "2ce6cb175be37a2be674025d6b4c383f8c5b02b61b81622ab090d4dd0e0701c4",
+  "recipe": "collapse-28g.sh (recipe of benchmarks/synthetic/layered-head-phantom/collapse-v2.sh)",
+  "nuclear_data": "ENDF/B-VIII.1: H/C/N/O/Fe56/B10 from 294 K OpenMC-HDF5; Na/Mg/P/S/Cl/K/Ca from NJOY 293.6 K PENDF",
+  "component_profile": "benchmarks/synthetic/nf-bnct-001/transport/component-profile-local-kerma.json"
+ },
+ "generators": {
+  "generate.py": "7e95a54fc8798a58803890334a3118348a6569d61bd2334a5428d205e37b76c0",
+  "collapse-28g.sh": "dbfb57daa5dbd1c1a0b70779deb36b1d19f69184603d08ba4a22a97148127011",
+  "make-manifest.py": "309074852bd9d5ccb10896b0c3e6537a4d20d0594b3c9057aefb42a587a23a0f"
+ }
+}
