@@ -6,6 +6,17 @@ own versions independent of the crate version.
 
 ## [Unreleased]
 
+### Added — post-hoc boron
+
+- `sn collapse` emits an optional `boron_unit_response_gy_cm2_per_ug_g`
+  vector (tissue-independent ¹⁰B kerma per µg/g; additive optional field
+  of `openbnct.multigroup-data/0.1.0`). `sn solve`/`sn fold
+  --boron-unit-output` write the new `openbnct.boron-unit-dose/0.1.0`
+  artifact, and `boron dose` (CLI and `openbnct.boron_dose` in Python)
+  applies a blood concentration with tissue:blood ratio masks, or a
+  `boron-field`, to re-total a physical dose bundle without re-solving.
+  Trace-¹⁰B approximation (no flux depression from the applied boron).
+
 ### Added — transport
 
 - Exponential within-cell source reconstruction (`SnOptions.exp_source`,

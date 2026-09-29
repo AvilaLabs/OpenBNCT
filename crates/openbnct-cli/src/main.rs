@@ -905,6 +905,46 @@ enum BoronCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Apply a ¹⁰B concentration to a unit-concentration boron dose and
+    /// re-total a physical dose bundle (post-hoc boron, trace-¹⁰B
+    /// approximation: the applied boron does not perturb the flux).
+    ///
+    /// The boron component becomes C(v)·u(v); the physical total is
+    /// old total − old boron + new boron. Give either a blood
+    /// concentration with optional tissue:blood ratio masks, or a
+    /// per-voxel `openbnct.boron-field/0.1.0` from `boron apply`.
+    Dose {
+        /// Physical dose bundle JSON (`openbnct.physical-dose-bundle/0.2.0`)
+        /// from the same transport run as the unit dose.
+        #[arg(long)]
+        physical_bundle: PathBuf,
+        /// `openbnct.boron-unit-dose/0.1.0` from `sn solve/fold
+        /// --boron-unit-output`.
+        #[arg(long)]
+        unit_dose: PathBuf,
+        /// Blood ¹⁰B concentration in µg/g (with `--ratio`/`--mask`;
+        /// mutually exclusive with `--boron-field`).
+        #[arg(long)]
+        blood_ug_g: Option<f64>,
+        /// Tissue:blood ratio `NAME=value`; repeatable. Every ratio
+        /// needs a `--mask` of the same name and vice versa.
+        #[arg(long = "ratio")]
+        ratios: Vec<String>,
+        /// RegionMask binding `NAME=path`; repeatable — the first
+        /// matching mask wins per voxel.
+        #[arg(long = "mask")]
+        masks: Vec<String>,
+        /// Tissue:blood ratio for voxels covered by no mask.
+        #[arg(long, default_value_t = 1.0)]
+        default_ratio: f64,
+        /// `openbnct.boron-field/0.1.0` (per-voxel µg/g with 1σ); its
+        /// σ propagates into the boron and total uncertainty.
+        #[arg(long)]
+        boron_field: Option<PathBuf>,
+        /// New output path for the re-totalled physical dose bundle.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Microdistribution model evaluation and measured-data import.
     Microdistribution {
         #[command(subcommand)]
@@ -3305,6 +3345,14 @@ enum SnCommand {
         /// `component_profile` binding).
         #[arg(long)]
         dose: Option<PathBuf>,
+        /// Also write the unit-concentration boron dose
+        /// (`openbnct.boron-unit-dose/0.1.0`, Gy per source particle per
+        /// µg/g of ¹⁰B) to this path. Requires the data to carry
+        /// `boron_unit_response_gy_cm2_per_ug_g` (re-run `sn collapse`
+        /// for older data). Apply a concentration later with
+        /// `boron dose`.
+        #[arg(long)]
+        boron_unit_output: Option<PathBuf>,
         /// Output path for the multigroup-flux JSON.
         #[arg(long)]
         output: PathBuf,
@@ -3327,6 +3375,11 @@ enum SnCommand {
         /// The `openbnct.material-assignment/0.2.0` the solve used.
         #[arg(long)]
         assignment: Option<PathBuf>,
+        /// Also write the unit-concentration boron dose
+        /// (`openbnct.boron-unit-dose/0.1.0`) to this path; the data must
+        /// carry `boron_unit_response_gy_cm2_per_ug_g`.
+        #[arg(long)]
+        boron_unit_output: Option<PathBuf>,
         /// Output path for the dose bundle.
         #[arg(long)]
         output: PathBuf,
@@ -11015,6 +11068,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 source_weighting,
                 allow_unconverged,
                 dose,
+                boron_unit_output,
                 output,
             } => {
                 let case_bytes = fs::read(&case)?;
@@ -11139,12 +11193,24 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     write_new_json(&dose_path, &bundle)?;
                     println!("folded dose bundle at {}", dose_path.display());
                 }
+                if let Some(unit_path) = boron_unit_output {
+                    write_boron_unit_dose(
+                        &unit_path,
+                        &transport_case,
+                        &mg_data,
+                        &flux,
+                        assignment_model.as_ref(),
+                        &data_bytes,
+                        &fs::read(&output)?,
+                    )?;
+                }
             }
             SnCommand::Fold {
                 case,
                 data,
                 flux,
                 assignment,
+                boron_unit_output,
                 output,
             } => {
                 let case_bytes = fs::read(&case)?;
@@ -11152,8 +11218,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let data_bytes = fs::read(&data)?;
                 let mg_data: openbnct_transport::MultigroupData =
                     serde_json::from_slice(&data_bytes)?;
+                let flux_bytes = fs::read(&flux)?;
                 let flux_model: openbnct_transport::MultigroupFlux =
-                    serde_json::from_slice(&fs::read(&flux)?)?;
+                    serde_json::from_slice(&flux_bytes)?;
                 let assignment_model = match &assignment {
                     Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
                         path,
@@ -11180,6 +11247,17 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 .map_err(|error| io::Error::other(format!("dose fold: {error}")))?;
                 write_new_json(&output, &bundle)?;
                 println!("folded dose bundle at {}", output.display());
+                if let Some(unit_path) = boron_unit_output {
+                    write_boron_unit_dose(
+                        &unit_path,
+                        &transport_case,
+                        &mg_data,
+                        &flux_model,
+                        assignment_model.as_ref(),
+                        &data_bytes,
+                        &flux_bytes,
+                    )?;
+                }
             }
             SnCommand::Collapse {
                 library,
@@ -15702,6 +15780,133 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 println!("validity domain: {}", model.validity_domain);
                 println!("provenance: {}", model.provenance_id);
             }
+            BoronCommand::Dose {
+                physical_bundle,
+                unit_dose,
+                blood_ug_g,
+                ratios,
+                masks,
+                default_ratio,
+                boron_field,
+                output,
+            } => {
+                let physical: PhysicalDoseBundle =
+                    serde_json::from_slice(&fs::read(&physical_bundle)?)?;
+                let unit: openbnct_transport::BoronUnitDose =
+                    serde_json::from_slice(&fs::read(&unit_dose)?)?;
+                let n = unit
+                    .geometry
+                    .voxel_count()
+                    .map_err(|error| io::Error::other(error.to_string()))?;
+                let (conc, sigma, spec): (Vec<f64>, Option<Vec<f64>>, String) =
+                    match (blood_ug_g, &boron_field) {
+                        (Some(blood), None) => {
+                            let mut regions = Vec::new();
+                            let loaded = load_named_masks(&masks)?;
+                            let mut ratio_of = std::collections::BTreeMap::new();
+                            for pair in &ratios {
+                                let (name, value) = pair.split_once('=').ok_or_else(|| {
+                                    io::Error::other(format!(
+                                        "--ratio {pair:?} must be written as NAME=value"
+                                    ))
+                                })?;
+                                let value: f64 = value.parse().map_err(|_| {
+                                    io::Error::other(format!("--ratio {pair:?}: bad number"))
+                                })?;
+                                if ratio_of.insert(name.to_string(), value).is_some() {
+                                    return Err(io::Error::other(format!(
+                                        "--ratio {name:?} given twice"
+                                    ))
+                                    .into());
+                                }
+                            }
+                            for mask in &loaded {
+                                let ratio = ratio_of.get(&mask.name).ok_or_else(|| {
+                                    io::Error::other(format!(
+                                        "--mask {:?} has no matching --ratio",
+                                        mask.name
+                                    ))
+                                })?;
+                                regions.push(openbnct_transport::RatioRegion {
+                                    name: mask.name.clone(),
+                                    ratio: *ratio,
+                                    mask: mask.voxels.clone(),
+                                });
+                            }
+                            if let Some(name) = ratio_of
+                                .keys()
+                                .find(|k| !loaded.iter().any(|m| &m.name == *k))
+                            {
+                                return Err(io::Error::other(format!(
+                                    "--ratio {name:?} has no matching --mask"
+                                ))
+                                .into());
+                            }
+                            let conc = openbnct_transport::concentration_from_ratios(
+                                blood,
+                                &regions,
+                                default_ratio,
+                                n,
+                            )
+                            .map_err(|error| io::Error::other(error.to_string()))?;
+                            let spec = format!(
+                                "blood {blood} ug/g; ratios [{}]; default ratio {default_ratio}",
+                                regions
+                                    .iter()
+                                    .map(|r| format!("{}={}", r.name, r.ratio))
+                                    .collect::<Vec<_>>()
+                                    .join(", ")
+                            );
+                            (conc, None, spec)
+                        }
+                        (None, Some(path)) => {
+                            if !ratios.is_empty() || !masks.is_empty() {
+                                return Err(io::Error::other(
+                                    "--ratio/--mask apply to --blood-ug-g, not --boron-field",
+                                )
+                                .into());
+                            }
+                            let field_bytes = fs::read(path)?;
+                            let field: openbnct_boron::BoronField =
+                                serde_json::from_slice(&field_bytes)?;
+                            field
+                                .validate()
+                                .map_err(|error| io::Error::other(error.to_string()))?;
+                            if field.case_id != unit.case_id || field.geometry != unit.geometry {
+                                return Err(io::Error::other(
+                                    "boron field case_id/grid does not match the unit dose",
+                                )
+                                .into());
+                            }
+                            let spec = format!(
+                                "boron field {} sha256 {}",
+                                field.id,
+                                openbnct_evidence::sha256_hex(&field_bytes)
+                            );
+                            (field.values, Some(field.uncertainty_1sigma), spec)
+                        }
+                        _ => {
+                            return Err(io::Error::other(
+                                "give exactly one of --blood-ug-g (with optional \
+                                 --ratio/--mask) or --boron-field",
+                            )
+                            .into());
+                        }
+                    };
+                let bundle = openbnct_transport::apply_boron_concentration(
+                    &physical,
+                    &unit,
+                    &conc,
+                    sigma.as_deref(),
+                    &spec,
+                )
+                .map_err(|error| io::Error::other(format!("boron dose: {error}")))?;
+                write_new_json(&output, &bundle)?;
+                println!(
+                    "physical dose bundle with applied boron at {} ({spec})",
+                    output.display()
+                );
+            }
             BoronCommand::Apply {
                 model: model_path,
                 case,
@@ -17670,6 +17875,33 @@ fn image_reference(
             Ok(openbnct_core::ContentReference { id, sha256 })
         })
         .transpose()
+}
+
+/// Fold the flux through the data's tissue-independent ¹⁰B unit response
+/// and write the `openbnct.boron-unit-dose/0.1.0` artifact.
+fn write_boron_unit_dose(
+    path: &Path,
+    case: &TransportCase,
+    data: &openbnct_transport::MultigroupData,
+    flux: &openbnct_transport::MultigroupFlux,
+    assignment: Option<&MaterialAssignment>,
+    data_bytes: &[u8],
+    flux_bytes: &[u8],
+) -> Result<(), Box<dyn std::error::Error>> {
+    let data_ref = openbnct_core::ContentReference {
+        id: data.id.clone(),
+        sha256: openbnct_evidence::sha256_hex(data_bytes),
+    };
+    let flux_ref = openbnct_core::ContentReference {
+        id: flux.provenance_id.clone(),
+        sha256: openbnct_evidence::sha256_hex(flux_bytes),
+    };
+    let unit =
+        openbnct_transport::fold_boron_unit_dose(case, data, flux, assignment, data_ref, flux_ref)
+            .map_err(|error| io::Error::other(format!("boron unit dose: {error}")))?;
+    write_new_json(path, &unit)?;
+    println!("boron unit dose at {}", path.display());
+    Ok(())
 }
 
 fn load_named_masks(pairs: &[String]) -> Result<Vec<RegionMask>, io::Error> {

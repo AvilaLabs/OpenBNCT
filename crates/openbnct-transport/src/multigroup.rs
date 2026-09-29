@@ -128,6 +128,14 @@ pub struct MultigroupData {
     /// Component profile the `dose_response` vectors realize.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub component_profile: Option<ContentReference>,
+    /// ¹⁰B capture mass kerma per unit fluence per µg/g of ¹⁰B in tissue,
+    /// `[G]`, Gy·cm² per (µg/g). Tissue-independent: for any material
+    /// with ¹⁰B mass fraction `w` the material's `boron` response equals
+    /// `w·1e6 · unit[g]` (declared collapse weighting, no
+    /// self-shielding/attenuation weighting). Absent on data collapsed
+    /// before this field existed — re-run `sn collapse` to obtain it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub boron_unit_response_gy_cm2_per_ug_g: Option<Vec<f64>>,
     pub materials: Vec<MultigroupMaterial>,
 }
 
@@ -159,6 +167,13 @@ impl MultigroupData {
             return Err(invalid("at least one material is required".into()));
         }
         let finite_nonneg = |v: &[f64]| v.iter().all(|x| x.is_finite() && *x >= 0.0);
+        if let Some(unit) = &self.boron_unit_response_gy_cm2_per_ug_g
+            && (unit.len() != groups || !finite_nonneg(unit))
+        {
+            return Err(invalid(format!(
+                "boron_unit_response_gy_cm2_per_ug_g must have {groups} finite non-negative entries"
+            )));
+        }
         for material in &self.materials {
             if material.sigma_total_per_cm.len() != groups {
                 return Err(invalid(format!(
@@ -4169,6 +4184,7 @@ pub(crate) mod tests {
             },
             collapse_declaration: "test fixture".into(),
             component_profile: None,
+            boron_unit_response_gy_cm2_per_ug_g: None,
             materials: vec![MultigroupMaterial {
                 material_id: "absorber".into(),
                 sigma_total_per_cm: sigma_t.to_vec(),
@@ -6034,6 +6050,7 @@ mod heterogeneous_tests {
             energy_boundaries_ev: vec![1.0, 1.0e-3],
             collapse_declaration: "test".into(),
             component_profile: None,
+            boron_unit_response_gy_cm2_per_ug_g: None,
             materials: vec![
                 MultigroupMaterial {
                     material_id: "absorber".into(),

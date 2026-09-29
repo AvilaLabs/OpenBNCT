@@ -132,3 +132,22 @@ openbnct sn solve --case bound.json --data multigroup.json \
 The solver refuses honestly if the multigroup data lacks one of your
 materials — that's the data-acquisition step, not a format problem.
 `docs/USAGE.md` covers `sn collapse` against ENDF-B/VIII.1 sources.
+
+## Then evaluate boron
+
+`sn collapse` also records the tissue-independent ¹⁰B response per µg/g,
+so the ¹⁰B concentration can be changed after transport without
+rebuilding materials (trace-¹⁰B approximation: the applied boron does
+not perturb the flux):
+
+```text
+openbnct sn solve --case bound.json --data multigroup.json \
+    --assignment assignment.json --dose dose.json \
+    --boron-unit-output unit-dose.json --output flux.json
+openbnct boron dose --physical-bundle dose.json --unit-dose unit-dose.json \
+    --blood-ug-g 25 --ratio tumor=3.5 --mask tumor=tumor-mask.json \
+    --output dose-25ug.json
+```
+
+Multigroup data collapsed before this feature lacks the unit vector;
+re-run `sn collapse`. See "Post-hoc boron" in `docs/USAGE.md`.

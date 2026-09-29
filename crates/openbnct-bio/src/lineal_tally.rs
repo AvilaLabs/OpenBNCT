@@ -355,6 +355,7 @@ mod tests {
             energy_boundaries_ev: vec![1.0, 1.0e-3],
             collapse_declaration: "test".into(),
             component_profile: None,
+            boron_unit_response_gy_cm2_per_ug_g: None,
             materials: vec![MultigroupMaterial {
                 material_id: "absorber".into(),
                 sigma_total_per_cm: vec![0.5],

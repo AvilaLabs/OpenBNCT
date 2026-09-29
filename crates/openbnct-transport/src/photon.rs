@@ -274,6 +274,7 @@ impl MultigroupPhotonData {
             energy_boundaries_ev: self.energy_boundaries_ev.clone(),
             collapse_declaration: self.collapse_declaration.clone(),
             component_profile: self.component_profile.clone(),
+            boron_unit_response_gy_cm2_per_ug_g: None,
             materials: self
                 .materials
                 .iter()

@@ -2115,6 +2115,85 @@ distinct material in the deck. The emitted field asserts
 `pet_derived_boron_research_only_not_clinical`: it is a modeled estimate
 with propagated parameter uncertainty, not an assayed measurement.
 
+### Post-hoc boron: unit-concentration dose
+
+BNCT practice treats ¹⁰B as a trace: transport once, record the boron
+dose per unit ¹⁰B concentration, then apply blood concentration ×
+tissue:blood ratios (or a per-voxel PET-derived field) at evaluation
+time. Changing the concentration therefore does not require rebuilding
+materials or re-solving. The mass kerma per µg/g of ¹⁰B is
+tissue-independent, so the per-voxel boron dose is `D(v) = C(v) · u(v)`
+with `u(v) = Σ_g φ_g(v) · unit_g`.
+
+`sn collapse` emits, whenever a `B10` table is available, an optional
+top-level `boron_unit_response_gy_cm2_per_ug_g` vector in the
+multigroup data (Gy·cm² per µg/g; same (n,α) collapse, declared
+2.34 MeV charged kerma and unit conversion as the material `boron`
+response, so `material_boron[g] = w_B10 · 1e6 · unit[g]` for a material
+with ¹⁰B mass fraction `w_B10`). The vector uses the bare declared
+spectrum weighting — no per-material Bondarenko shielding or
+penetration weighting — so that identity is exact for data collapsed
+without `--self-shielding`/attenuation weighting. The field is an
+additive optional member of `openbnct.multigroup-data/0.1.0`; data
+collapsed earlier (all committed benchmark data) lacks it, and the
+unit-dose fold refuses with an instruction to re-run `sn collapse`.
+
+```text
+openbnct sn solve --case CASE.json --data MG-DATA.json \
+  --dose PHYSICAL-BUNDLE.json --boron-unit-output NEW-UNIT-DOSE.json \
+  --output NEW-FLUX.json
+openbnct sn fold --case CASE.json --data MG-DATA.json --flux FLUX.json \
+  --boron-unit-output NEW-UNIT-DOSE.json --output NEW-PHYSICAL-BUNDLE.json
+openbnct boron dose --physical-bundle PHYSICAL-BUNDLE.json \
+  --unit-dose UNIT-DOSE.json --blood-ug-g 25 \
+  [--ratio tumor=3.5 --mask tumor=tumor-mask.json \
+   --ratio brain=1.0 --mask brain=brain-mask.json --default-ratio 1.0] \
+  --output NEW-PHYSICAL-BUNDLE-25UG.json
+openbnct boron dose --physical-bundle PHYSICAL-BUNDLE.json \
+  --unit-dose UNIT-DOSE.json --boron-field FIELD.json \
+  --output NEW-PHYSICAL-BUNDLE-PET.json
+```
+
+`--boron-unit-output` writes `openbnct.boron-unit-dose/0.1.0`: the grid,
+`case_id`, per-voxel dose in Gy per source particle per µg/g, an
+optional statistical σ (the deterministic fold carries none), content
+references to the flux and multigroup data, and the declared trace-¹⁰B
+assumption. A boron-microdistribution compound factor declared on a
+material multiplies the unit dose exactly as in the ordinary fold.
+
+`boron dose` writes a new physical dose bundle whose boron component is
+`C(v) · u(v)` and whose physical total is
+`old_total − old_boron + new_boron` (floored at zero against rounding).
+Concentration comes from either a blood concentration with optional
+tissue:blood ratio masks (`--ratio NAME=value` needs a `--mask
+NAME=path` of the same name and vice versa; the first matching mask
+wins per voxel; uncovered voxels use `--default-ratio`, 1.0 by
+default), or a per-voxel `openbnct.boron-field/0.1.0` from `boron
+apply`. The physical bundle, unit dose and field must share the exact
+grid and `case_id`, or the command refuses. Other components are
+carried over unchanged and units stay Gy per source particle.
+
+Uncertainty handling: the new boron σ combines, in quadrature, the
+unit-dose σ (when present) scaled by `C` and the field's 1σ scaled by
+`u`; a scalar blood concentration and ratios are treated as exact. The
+input bundle's total σ cannot be split into boron and non-boron parts
+without covariance, so the output total σ is only reported when the
+input carries both a total σ and a boron-component σ, and is then the
+conservative triangle bound `σ_T,old + σ_B,old + σ_B,new` (keeping the
+input's total-uncertainty method label; it is an upper bound, not a
+dedicated estimate). Otherwise the total's uncertainty is
+`unavailable`. Provenance records the concentration specification, the
+unit-dose provenance and the assumption.
+
+Declared approximation: the applied ¹⁰B is a trace — it does not perturb
+the neutron flux. The flux is the one transported with whatever ¹⁰B the
+transport materials carried; for concentrations far from that, the
+flux-depression error is not modeled. Research software, not a clinical
+quantity.
+
+From Python: `openbnct.boron_dose(bundle, unit_dose, blood_ug_g=25.0,
+ratios={"tumor": 3.5}, masks=[("tumor", "tumor-mask.json")])`.
+
 `openbnct boron microdistribution evaluate` evaluates a ¹⁰B subcellular
 microdistribution model (`openbnct.boron-microdistribution/0.1.0`) into
 a correction record (`openbnct.microdistribution-correction/0.1.0`):

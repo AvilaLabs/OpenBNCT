@@ -1206,6 +1206,114 @@ fn load_physical_dose_bundle(path: PathBuf) -> PyResult<PyPhysicalDoseBundle> {
     })
 }
 
+/// Apply a 10B concentration to a unit-concentration boron dose and re-total
+/// a physical dose bundle (same path as `openbnct boron dose`; trace-10B
+/// approximation: the applied boron does not perturb the flux).
+///
+/// Give either `blood_ug_g` (with `ratios` mapping region name to
+/// tissue:blood ratio and a matching `masks` `(name, path)` entry for each;
+/// first matching mask wins per voxel, uncovered voxels use
+/// `default_ratio`) or `boron_field` (an `openbnct.boron-field/0.1.0` path
+/// whose 1-sigma propagates). `output`, when given, is a new file path that
+/// receives the bundle JSON.
+#[pyfunction]
+#[pyo3(signature = (physical_bundle, unit_dose, blood_ug_g=None, ratios=None, masks=None, default_ratio=1.0, boron_field=None, output=None))]
+#[allow(clippy::too_many_arguments)]
+fn boron_dose(
+    physical_bundle: &PyPhysicalDoseBundle,
+    unit_dose: PathBuf,
+    blood_ug_g: Option<f64>,
+    ratios: Option<HashMap<String, f64>>,
+    masks: Option<Vec<(String, PathBuf)>>,
+    default_ratio: f64,
+    boron_field: Option<PathBuf>,
+    output: Option<PathBuf>,
+) -> PyResult<PyPhysicalDoseBundle> {
+    let unit: openbnct_transport::BoronUnitDose =
+        serde_json::from_slice(&fs::read(&unit_dose).map_err(reject)?).map_err(reject)?;
+    unit.validate().map_err(reject)?;
+    let n = unit.geometry.voxel_count().map_err(reject)?;
+    let ratios: BTreeMap<String, f64> = ratios.unwrap_or_default().into_iter().collect();
+    let masks = masks.unwrap_or_default();
+    let (conc, sigma, spec) = match (blood_ug_g, &boron_field) {
+        (Some(blood), None) => {
+            let loaded = load_named_masks(masks)?;
+            let mut regions = Vec::new();
+            for mask in &loaded {
+                let ratio = ratios
+                    .get(&mask.name)
+                    .ok_or_else(|| reject(format!("mask {:?} has no matching ratio", mask.name)))?;
+                regions.push(openbnct_transport::RatioRegion {
+                    name: mask.name.clone(),
+                    ratio: *ratio,
+                    mask: mask.voxels.clone(),
+                });
+            }
+            if let Some(name) = ratios
+                .keys()
+                .find(|k| !loaded.iter().any(|m| &m.name == *k))
+            {
+                return Err(reject(format!("ratio {name:?} has no matching mask")));
+            }
+            let conc =
+                openbnct_transport::concentration_from_ratios(blood, &regions, default_ratio, n)
+                    .map_err(reject)?;
+            let spec = format!(
+                "blood {blood} ug/g; ratios [{}]; default ratio {default_ratio}",
+                regions
+                    .iter()
+                    .map(|r| format!("{}={}", r.name, r.ratio))
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            (conc, None, spec)
+        }
+        (None, Some(path)) => {
+            if !ratios.is_empty() || !masks.is_empty() {
+                return Err(reject("ratios/masks apply to blood_ug_g, not boron_field"));
+            }
+            let field_bytes = fs::read(path).map_err(reject)?;
+            let field: openbnct_boron::BoronField =
+                serde_json::from_slice(&field_bytes).map_err(reject)?;
+            field.validate().map_err(reject)?;
+            if field.case_id != unit.case_id || field.geometry != unit.geometry {
+                return Err(reject(
+                    "boron field case_id/grid does not match the unit dose",
+                ));
+            }
+            let spec = format!(
+                "boron field {} sha256 {}",
+                field.id,
+                openbnct_evidence::sha256_hex(&field_bytes)
+            );
+            (field.values, Some(field.uncertainty_1sigma), spec)
+        }
+        _ => {
+            return Err(reject(
+                "give exactly one of blood_ug_g (with optional ratios/masks) or boron_field",
+            ));
+        }
+    };
+    let bundle = openbnct_transport::apply_boron_concentration(
+        &physical_bundle.inner,
+        &unit,
+        &conc,
+        sigma.as_deref(),
+        &spec,
+    )
+    .map_err(reject)?;
+    if let Some(path) = output {
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&path)
+            .map_err(reject)?;
+        serde_json::to_writer_pretty(&mut file, &bundle).map_err(reject)?;
+        std::io::Write::write_all(&mut file, b"\n").map_err(reject)?;
+    }
+    Ok(PyPhysicalDoseBundle { inner: bundle })
+}
+
 /// Collect a completed OpenMC run directory into a validated physical dose
 /// bundle, using the same `OpenMcBackend::collect` path as the CLI.
 #[pyfunction]
@@ -4452,6 +4560,7 @@ fn _openbnct(m: &Bound<'_, PyModule>) -> PyResult<()> {
     m.add_function(wrap_pyfunction!(load_response_set, m)?)?;
     m.add_function(wrap_pyfunction!(load_physical_dose_bundle, m)?)?;
     m.add_function(wrap_pyfunction!(collect_run, m)?)?;
+    m.add_function(wrap_pyfunction!(boron_dose, m)?)?;
     m.add_function(wrap_pyfunction!(load_biological_model, m)?)?;
     m.add_function(wrap_pyfunction!(load_bio_model_comparison, m)?)?;
     m.add_function(wrap_pyfunction!(load_bio_evidence_library, m)?)?;

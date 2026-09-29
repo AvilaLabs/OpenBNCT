@@ -153,6 +153,12 @@
       "module": "src/microdistribution.rs"
     },
     {
+      "token": "openbnct.boron-unit-dose/0.1.0",
+      "constant": "BORON_UNIT_DOSE_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/boron_unit.rs"
+    },
+    {
       "token": "openbnct.boron-uptake-model/0.1.0",
       "constant": "BORON_UPTAKE_MODEL_SCHEMA",
       "crate": "openbnct-boron",

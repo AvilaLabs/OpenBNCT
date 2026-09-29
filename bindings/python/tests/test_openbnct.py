@@ -427,6 +427,109 @@ class DoseBundleTest(unittest.TestCase):
                 )
 
 
+def _boron_unit_dose_json(origin_x: float = -2.5) -> str:
+    reference = lambda seed: {"id": seed, "sha256": seed * (64 // len(seed))}
+    return json.dumps(
+        {
+            "schema_version": "openbnct.boron-unit-dose/0.1.0",
+            "id": "unit-dose",
+            "case_id": "synthetic-case",
+            "geometry": {
+                "shape": [2, 1, 1],
+                "spacing_mm": [5.0, 5.0, 5.0],
+                "origin_mm": [origin_x, -2.5, -2.5],
+                "direction": [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+            },
+            "unit": "gray_per_source_particle_per_ug_per_g",
+            "values": [4.0e-14, 8.0e-14],
+            "absolute_standard_uncertainty": None,
+            "flux": reference("ef"),
+            "multigroup_data": reference("ab"),
+            "assumptions": "trace-10B: applied 10B does not perturb the flux",
+            "qualification": "research-only",
+            "provenance_id": "unit-provenance",
+        }
+    )
+
+
+class BoronDoseTest(unittest.TestCase):
+    """Mirrors ``openbnct boron dose``: C(v)*u(v), total re-summed."""
+
+    def _inputs(self, tmp: str, origin_x: float = -2.5):
+        bundle = openbnct.load_physical_dose_bundle(
+            _write(tmp, "dose.json", _physical_bundle_json())
+        )
+        unit = _write(tmp, "unit.json", _boron_unit_dose_json(origin_x))
+        return bundle, unit
+
+    def test_uniform_blood_and_ratio_mask(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle, unit = self._inputs(tmp)
+            boron = lambda b: next(
+                c for c in b.components if c.component == "boron"
+            )
+            out = openbnct.boron_dose(bundle, unit, blood_ug_g=10.0)
+            # boron = C * u, total = old_total - old_boron + new_boron.
+            self.assertEqual(
+                boron(out).values[0], 10.0 * 4.0e-14
+            )
+            self.assertAlmostEqual(
+                out.physical_total.values[0], 1.75e-12 - 1.0e-12 + 4.0e-13, places=24
+            )
+            self.assertIn("posthoc-boron", out.provenance_id)
+            self.assertIn("does not perturb the flux", out.provenance_id)
+            # Total sigma is the conservative triangle bound (unit dose has
+            # no sigma): 1.1e-14 + 1e-14.
+            self.assertAlmostEqual(
+                out.physical_total.absolute_standard_uncertainty[0], 2.1e-14, places=24
+            )
+
+            mask = _write(
+                tmp, "tumor.json", json.dumps({"name": "tumor", "voxels": [True, False]})
+            )
+            out = openbnct.boron_dose(
+                bundle,
+                unit,
+                blood_ug_g=10.0,
+                ratios={"tumor": 3.5},
+                masks=[("tumor", mask)],
+                default_ratio=0.5,
+            )
+            values = boron(out).values
+            self.assertAlmostEqual(values[0], 35.0 * 4.0e-14, places=24)
+            self.assertAlmostEqual(values[1], 5.0 * 8.0e-14, places=24)
+            written = Path(tmp) / "out.json"
+            openbnct.boron_dose(bundle, unit, blood_ug_g=10.0, output=written)
+            again = openbnct.load_physical_dose_bundle(written)
+            self.assertEqual(again.case_id, "synthetic-case")
+            with self.assertRaises(NctForgeError):
+                openbnct.boron_dose(bundle, unit, blood_ug_g=10.0, output=written)
+
+    def test_refusals(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle, unit = self._inputs(tmp)
+            mask = _write(
+                tmp, "tumor.json", json.dumps({"name": "tumor", "voxels": [True, False]})
+            )
+            with self.assertRaises(NctForgeError):  # ratio without mask
+                openbnct.boron_dose(bundle, unit, blood_ug_g=10.0, ratios={"tumor": 2.0})
+            with self.assertRaises(NctForgeError):  # mask without ratio
+                openbnct.boron_dose(
+                    bundle, unit, blood_ug_g=10.0, masks=[("tumor", mask)]
+                )
+            with self.assertRaises(NctForgeError):  # no concentration source
+                openbnct.boron_dose(bundle, unit)
+            with self.assertRaises(NctForgeError):  # negative blood
+                openbnct.boron_dose(bundle, unit, blood_ug_g=-1.0)
+        with tempfile.TemporaryDirectory() as tmp:
+            bundle = openbnct.load_physical_dose_bundle(
+                _write(tmp, "dose.json", _physical_bundle_json())
+            )
+            moved = _write(tmp, "moved.json", _boron_unit_dose_json(origin_x=0.5))
+            with self.assertRaises(NctForgeError):  # grid mismatch
+                openbnct.boron_dose(bundle, moved, blood_ug_g=10.0)
+
+
 class BiologicalLayerTest(unittest.TestCase):
     def test_apply_and_histogram_biological_total(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:

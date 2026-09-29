@@ -10,6 +10,7 @@ use serde::{Deserialize, Serialize};
 mod accelerator;
 mod beam;
 mod beam_quality;
+mod boron_unit;
 mod boundaries;
 mod bsa;
 mod cadis;
@@ -39,6 +40,11 @@ pub use beam_quality::{
     ComponentWeights, InAirMetrics, InPhantomMetrics, MetricComparison, ReferenceMetric,
     TransverseFluenceProfile, attach_absolute_fluence_profile, attach_transverse_fluence_profiles,
     evaluate_beam_quality, in_air_metrics, in_phantom_metrics,
+};
+pub use boron_unit::{
+    BORON_UNIT_DOSE_QUALIFICATION, BORON_UNIT_DOSE_SCHEMA, BORON_UNIT_DOSE_UNIT, BoronUnitDose,
+    BoronUnitError, RatioRegion, TRACE_BORON_ASSUMPTION, apply_boron_concentration,
+    concentration_from_ratios, fold_boron_unit_dose,
 };
 pub use boundaries::{BOUNDARY_PROPOSAL_SCHEMA, BoundaryError, BoundaryProposal, adapt_boundaries};
 pub use bsa::{

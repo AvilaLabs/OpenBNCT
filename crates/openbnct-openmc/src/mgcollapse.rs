@@ -549,6 +549,7 @@ fn elastic_transfer_pl(e: f64, alpha: f64, mass_number: f64, l: u32, lo: f64, hi
 }
 
 /// Options for [`collapse_multigroup`].
+#[derive(Clone)]
 pub struct CollapseOptions {
     /// Directory of `<Nuclide>.h5` incident-neutron tables.
     pub library_dir: PathBuf,
@@ -696,6 +697,9 @@ pub fn collapse_multigroup(opts: &CollapseOptions) -> Result<MultigroupData, Col
          all depositing locally — no photon transport. Other \
          charged-particle channels (e.g. 17O(n,α)) remain in σt \
          removal but are not folded into a named component. \
+         When a B10 table is available, boron_unit_response_gy_cm2_per_ug_g \
+         is the tissue-independent 10B kerma per µg/g (same (n,α) \
+         collapse and 2.34 MeV, bare spectrum weighting). \
          Weighting: {}.{}{}{}",
         opts.library_dir.display(),
         opts.weighting.describe(),
@@ -711,17 +715,69 @@ pub fn collapse_multigroup(opts: &CollapseOptions) -> Result<MultigroupData, Col
         declaration.truncate(4000);
     }
 
+    let boron_unit = boron_unit_response(opts, groups)?;
     let data = MultigroupData {
         schema_version: openbnct_transport::MULTIGROUP_DATA_SCHEMA.into(),
         id: opts.id.clone(),
         energy_boundaries_ev: b.clone(),
         collapse_declaration: declaration,
         component_profile: opts.component_profile.clone(),
+        boron_unit_response_gy_cm2_per_ug_g: boron_unit,
         materials,
     };
     data.validate()
         .map_err(|e| CollapseError::Model(format!("emitted data invalid: {e}")))?;
     Ok(data)
+}
+
+/// Tissue-independent ¹⁰B capture mass kerma per unit fluence per µg/g
+/// of ¹⁰B (Gy·cm² per µg/g), `[groups]`, or `None` when no ¹⁰B table is
+/// available (no `B10` ENDF tape and no `B10.h5` in the library).
+///
+/// Same arithmetic as the per-material `boron` response in
+/// [`collapse_material`] — the group-collapsed (n,α) σ with the declared
+/// spectrum weighting, times `B10_NA_CHARGED_MEV`, times the
+/// MeV→Gy·cm² conversion — evaluated for a unit material (ρ = 1 g/cm³,
+/// ¹⁰B mass fraction 1e-6, i.e. 1 µg/g). The density cancels between
+/// `n_density` (∝ρ) and `conv` (∝1/ρ), so the vector is per gram of
+/// tissue. The weighting is the bare declared spectrum: no Bondarenko
+/// shield factor and no penetration attenuation (both are per-material
+/// weightings), so the material identity
+/// `boron_response == w·1e6 · unit` is exact only for data collapsed
+/// with those two options off; with them on, the ¹⁰B-dilute unit vector
+/// differs from the material response by the shield/attenuation weight.
+fn boron_unit_response(
+    opts: &CollapseOptions,
+    groups: usize,
+) -> Result<Option<Vec<f64>>, CollapseError> {
+    let table = match opts.endf_paths.get("B10") {
+        Some(path) => load_nuclide_endf(path, "B10")?,
+        None => {
+            if !opts.library_dir.join("B10.h5").exists() {
+                return Ok(None);
+            }
+            load_nuclide(&opts.library_dir, "B10")?
+        }
+    };
+    let b = &opts.energy_boundaries_ev;
+    let e = &table.energy;
+    let weight: Vec<f64> = e.iter().map(|&x| opts.weighting.w(x)).collect();
+    let sna_w: Vec<f64> = table.na.0.iter().zip(&weight).map(|(s, w)| s * w).collect();
+    // Unit material: rho = 1 g/cm3, w_B10 = 1 ug/g = 1e-6.
+    let rho = 1.0_f64;
+    let n_density = rho * 1.0e-6 / table.mass_g_mol * N_A * BARN_CM2;
+    let conv = MEV_TO_J * G_PER_KG / rho;
+    let mut unit = Vec::with_capacity(groups);
+    for g in 0..groups {
+        let (hi, lo) = (b[g], b[g + 1]);
+        let w_norm = integrate_grid(e, &weight, lo, hi);
+        if w_norm <= 0.0 {
+            return Err(invalid(format!("group {g}: zero weighting integral")));
+        }
+        let sna = integrate_grid(e, &sna_w, lo, hi) / w_norm;
+        unit.push(n_density * sna * B10_NA_CHARGED_MEV * conv);
+    }
+    Ok(Some(unit))
 }
 
 /// Bound-atom/free-gas transfer from incident energy `e` into
@@ -1671,5 +1727,138 @@ mod tests {
             (0.02..0.5).contains(&st_sh),
             "shielded σ_t {st_sh} far from the ~0.14 off-resonance limit"
         );
+    }
+
+    /// The tissue-independent ¹⁰B unit response reproduces the material
+    /// boron response: `boron[g] == w·1e6 · unit[g]`, for two different
+    /// ¹⁰B mass fractions in different carrier materials.
+    #[test]
+    fn boron_unit_response_reproduces_material_boron_response() {
+        let dir = tempfile::tempdir().unwrap();
+        let mat = 125;
+        let grid: Vec<f64> = (0..)
+            .map(|i| 1.0e-5 * 1.02_f64.powi(i))
+            .take_while(|e| *e <= 2.0e7)
+            .collect();
+        let write_tape = |name: &str, sections: &[(u32, Vec<(f64, f64)>)]| {
+            let mut lines = Vec::new();
+            for (sidx, (mt, points)) in sections.iter().enumerate() {
+                let np = points.len();
+                lines.push(endf_line(
+                    ["1.00100E+3", "9.99167E-1", "0", "0", "0", "0"],
+                    mat,
+                    3,
+                    *mt,
+                    (1 + sidx * 1000) as u32,
+                ));
+                lines.push(endf_line(
+                    ["0.00000E+0", "0.00000E+0", "0", "0", "1", &np.to_string()],
+                    mat,
+                    3,
+                    *mt,
+                    2,
+                ));
+                lines.push(endf_line(
+                    [&np.to_string(), "2", "", "", "", ""],
+                    mat,
+                    3,
+                    *mt,
+                    3,
+                ));
+                for (seq, chunk) in (4 + sidx * 1000..).zip(points.chunks(3)) {
+                    let mut fields: Vec<String> = Vec::new();
+                    for (e, s) in chunk {
+                        fields.push(endf_real(*e));
+                        fields.push(endf_real(*s));
+                    }
+                    fields.resize(6, String::new());
+                    let f: [&str; 6] = std::array::from_fn(|i| fields[i].as_str());
+                    lines.push(endf_line(f, mat, 3, *mt, seq as u32));
+                }
+            }
+            let tape = dir.path().join(format!("{name}.endf"));
+            std::fs::write(&tape, lines.join("\n") + "\n").unwrap();
+            tape
+        };
+        // (n,alpha) ~ 1/v: sigma = 3837 b at 0.0253 eV.
+        let na: Vec<(f64, f64)> = grid
+            .iter()
+            .map(|&e| (e, 3837.0 * (0.0253 / e).sqrt().min(1.0e3)))
+            .collect();
+        let el: Vec<(f64, f64)> = grid.iter().map(|&e| (e, 2.0)).collect();
+        let b10 = write_tape("B10", &[(2, el.clone()), (107, na)]);
+        let o16 = write_tape("O16", &[(2, el)]);
+        let make = |id: &str, w: f64, rho: f64| MaterialDefinition {
+            schema_version: "openbnct.material/0.1.0".into(),
+            id: id.into(),
+            density_g_cm3: rho,
+            temperature_k: 294.0,
+            nuclides: vec![
+                openbnct_transport::NuclideMassFraction {
+                    name: "B10".into(),
+                    mass_fraction: w,
+                },
+                openbnct_transport::NuclideMassFraction {
+                    name: "O16".into(),
+                    mass_fraction: 1.0 - w,
+                },
+            ],
+            neutron_thermal_treatment: openbnct_transport::NeutronThermalTreatment::FreeGas,
+            boron_microdistribution: None,
+        };
+        let opts = CollapseOptions {
+            library_dir: dir.path().to_path_buf(),
+            endf_paths: [
+                ("B10".to_string(), b10.clone()),
+                ("O16".to_string(), o16.clone()),
+            ]
+            .into_iter()
+            .collect(),
+            materials: vec![make("a", 30.0e-6, 1.04), make("b", 1.5e-4, 0.93)],
+            energy_boundaries_ev: vec![1.0e6, 1.0e3, 1.0, 0.5, 1.0e-3],
+            weighting: WeightingSpectrum::FlatLethargy,
+            tsl_paths: BTreeMap::new(),
+            tsl_temperature_k: 294.0,
+            self_shielding: false,
+            attenuation_depth_cm: None,
+            id: "test.boron-unit".into(),
+            component_profile: None,
+            note: String::new(),
+        };
+        let data = collapse_multigroup(&opts).unwrap();
+        let unit = data
+            .boron_unit_response_gy_cm2_per_ug_g
+            .as_ref()
+            .expect("unit vector emitted when a B10 table is available");
+        assert_eq!(unit.len(), 4);
+        assert!(unit.iter().all(|u| *u > 0.0));
+        for (material, w) in data.materials.iter().zip([30.0e-6, 1.5e-4]) {
+            let boron = &material.dose_response_gy_cm2["boron"];
+            for (g, (&m, &u)) in boron.iter().zip(unit).enumerate() {
+                let want = w * 1.0e6 * u;
+                assert!(
+                    (m - want).abs() <= 1e-12 * want.abs(),
+                    "group {g}: material {m:e} vs w*1e6*unit {want:e}"
+                );
+            }
+        }
+        // Round-trips through serde and validates; a wrong length is rejected.
+        let text = serde_json::to_string(&data).unwrap();
+        let back: MultigroupData = serde_json::from_str(&text).unwrap();
+        back.validate().unwrap();
+        let mut bad = back;
+        bad.boron_unit_response_gy_cm2_per_ug_g = Some(vec![1.0; 3]);
+        assert!(bad.validate().is_err());
+        // No B10 table anywhere -> no unit vector (field omitted).
+        let mut no_b10 = opts.clone();
+        no_b10.endf_paths.remove("B10");
+        no_b10.materials = vec![{
+            let mut m = make("c", 0.0, 1.0);
+            m.nuclides.remove(0);
+            m.nuclides[0].mass_fraction = 1.0;
+            m
+        }];
+        let data = collapse_multigroup(&no_b10).unwrap();
+        assert!(data.boron_unit_response_gy_cm2_per_ug_g.is_none());
     }
 }

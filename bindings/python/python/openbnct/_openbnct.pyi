@@ -549,6 +549,22 @@ class SensitivitySweep:
         """Write the sweep JSON; refuses to overwrite an existing file."""
 
 def load_physical_dose_bundle(path: str | PathLike[str]) -> PhysicalDoseBundle: ...
+def boron_dose(
+    physical_bundle: PhysicalDoseBundle,
+    unit_dose: str | PathLike[str],
+    blood_ug_g: float | None = None,
+    ratios: dict[str, float] | None = None,
+    masks: list[tuple[str, str | PathLike[str]]] | None = None,
+    default_ratio: float = 1.0,
+    boron_field: str | PathLike[str] | None = None,
+    output: str | PathLike[str] | None = None,
+) -> PhysicalDoseBundle:
+    """Apply a 10B concentration to an ``openbnct.boron-unit-dose/0.1.0``
+    and re-total a physical dose bundle (same path as ``openbnct boron
+    dose``; trace-10B approximation, the applied boron does not perturb the
+    flux). Give ``blood_ug_g`` (with ``ratios`` and matching ``masks``;
+    first mask wins, uncovered voxels use ``default_ratio``) or
+    ``boron_field``. ``output`` optionally writes a new bundle file."""
 def collect_run(working_directory: str | PathLike[str]) -> PhysicalDoseBundle:
     """Collect a completed OpenMC run directory into a dose bundle."""
 def load_biological_model(path: str | PathLike[str]) -> BiologicalModel:
