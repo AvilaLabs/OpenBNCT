@@ -116,8 +116,25 @@ from source: `cargo build --workspace`, `cargo run --bin openbnct-gui`.
 
 ## Try it
 
-Solve the shipped layered-head benchmark with the deterministic solver —
-no external codes needed — then open the result in the workbench:
+From a CT plus RT Structure Set to component dose, boron-scaled dose, DVHs and
+a report in two commands, no external codes needed. This runs the synthetic
+NF-BNCT-001 study (a research demonstration, not a patient case):
+
+```text
+openbnct benchmark generate study/
+openbnct project init --dicom study --output p001 --target CORE --spacing-mm 8
+openbnct project run p001
+```
+
+With default settings (S8, 28 groups) the run converged in about 3 minutes
+on a 2-core machine with a release build. The report lands at
+`p001/out/report.md` (and `report.json`), with per-structure DVH curves in
+`p001/out/dvh/*.csv`. Every step is a hash-bound artifact under `p001/out/`;
+the report lists the exact command line of each, and rerunning skips steps
+whose inputs are unchanged. See [`docs/USAGE.md`](docs/USAGE.md#quick-start-project).
+
+Under the hood, the deterministic solver on its own — the shipped
+layered-head benchmark — then open the result in the workbench:
 
 ```text
 git clone https://github.com/AvilaLabs/OpenBNCT && cd OpenBNCT

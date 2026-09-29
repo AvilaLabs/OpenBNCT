@@ -502,6 +502,10 @@ pub struct SnOptions {
     /// source spectrum — see [`SourceWeighting`]. Recorded on the
     /// emitted flux artifact's `source_spectrum_weighting`.
     pub source_weighting: SourceWeighting,
+    /// Print one `[sn] outer k/max: residual r (t s)` line to stderr per
+    /// outer iteration. Diagnostic only — never changes numerics. Off by
+    /// default.
+    pub progress: bool,
 }
 
 impl Default for SnOptions {
@@ -523,6 +527,7 @@ impl Default for SnOptions {
             theta_repair: true,
             exp_source: true,
             source_weighting: SourceWeighting::CollapseConsistent,
+            progress: false,
         }
     }
 }
@@ -3451,6 +3456,7 @@ pub(crate) fn solve_sn_problem(
     // first inner pass of an outer and frozen inside the inner
     // iteration — see `build_source_lambda`.
     let mut source_lambda_cache: Vec<Option<SourceRecon>> = vec![None; groups];
+    let solve_started = std::time::Instant::now();
     for outer in 0..options.max_outer_iterations {
         let previous = flux.clone();
         if anderson.is_some() && outer % 2 == 0 {
@@ -3993,6 +3999,15 @@ pub(crate) fn solve_sn_problem(
             }
         }
         outer_done = outer + 1;
+        if options.progress {
+            eprintln!(
+                "[sn] outer {}/{}: residual {:.3e} ({:.1}s)",
+                outer + 1,
+                options.max_outer_iterations,
+                residual,
+                solve_started.elapsed().as_secs_f64()
+            );
+        }
         if residual < options.convergence {
             converged = true;
             break;
@@ -4026,9 +4041,6 @@ pub(crate) fn solve_sn_problem(
             flux = acc.mix(&flux, &cycle_origin);
         }
         two_back = Some(previous);
-        if std::env::var_os("OPENBNCT_SOLVE_PROGRESS").is_some() {
-            eprintln!("[sn-solve] outer {} residual {:.4e}", outer + 1, residual);
-        }
     }
 
     // The rebalance and Anderson steps rescale the iterate after the
@@ -4325,6 +4337,7 @@ pub(crate) mod tests {
             theta_repair: true,
             exp_source: true,
             source_weighting: SourceWeighting::CollapseConsistent,
+            progress: false,
         }
     }
 

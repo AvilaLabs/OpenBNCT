@@ -545,6 +545,7 @@ mod tests {
             theta_repair: true,
             exp_source: true,
             source_weighting: crate::multigroup::SourceWeighting::CollapseConsistent,
+            progress: false,
         }
     }
 

@@ -84,9 +84,9 @@ sha256s. A rerun skips a step whose inputs, command and outputs still match,
 so editing `[boron] blood_ug_g` reruns only `boron`, `metrics` and `report`.
 `openbnct project run ./p001 --force` reruns everything and `--from
 transport` reruns that step and all later ones. `openbnct project status
-./p001` prints the step table. While `transport` runs, set
-`OPENBNCT_SOLVE_PROGRESS=1` to print each outer iteration's residual to
-stderr; a heartbeat line appears every 20 s regardless. Research software;
+./p001` prints the step table. While `transport` runs, one line per outer
+iteration (`[sn] outer k/max: residual r (t s)`) goes to stderr; `sn solve`
+prints these by default and `--quiet` turns them off. Research software;
 nothing here is a clinical calculation.
 
 ## Workspace
@@ -364,10 +364,11 @@ as the `--source` artifact so content binding stays honest.
 
 `bind` can also aim the beam: `--aim-mask MASK.json --approach=+x` (a
 RegionMask, and one of `+x -x +y -y +z -z`) re-centers the circular port as
-a monodirectional disk on the entry face where the beam axis through the mask
-centroid meets it (the same `aim_disk_source_at_centroid` that `plan fields`
-uses), keeping the declared radius; the beam's divergence cone is replaced by
-the axis direction. The disk must fit inside the face or the bind is
+a disk on the entry face where the beam axis through the mask centroid meets
+it (position from `aim_disk_source_at_centroid`, as `plan fields` uses),
+keeping the declared radius. The angular distribution is preserved: an
+`isotropic_cone` source keeps its half-angle and only its axis is re-pointed,
+and a monodirectional source stays monodirectional. The disk must fit inside the face or the bind is
 rejected. `openbnct project run` uses this to aim at the target structure.
 
 The underlying transport model supports `uniform_disk` spatial,

@@ -1282,28 +1282,6 @@ fn execute_command(command: &[String]) -> DynResult<()> {
     }
 }
 
-/// Run `work`, printing a heartbeat to stderr while it takes long.
-fn with_heartbeat<T>(label: &str, work: impl FnOnce() -> T) -> T {
-    let (stop, wake) = std::sync::mpsc::channel::<()>();
-    std::thread::scope(|scope| {
-        scope.spawn(move || {
-            let started = Instant::now();
-            while wake
-                .recv_timeout(std::time::Duration::from_secs(20))
-                .is_err()
-            {
-                eprintln!(
-                    "  {label}: still running ({:.0} s elapsed)",
-                    started.elapsed().as_secs_f64()
-                );
-            }
-        });
-        let result = work();
-        let _ = stop.send(());
-        result
-    })
-}
-
 fn load_config(project: &Path) -> DynResult<(ProjectConfig, String)> {
     let path = project.join("project.toml");
     let text = fs::read_to_string(&path)
@@ -1419,22 +1397,11 @@ fn run_steps(project_arg: &Path, force: bool, from: Option<&str>) -> DynResult<(
             if index == 6 {
                 return write_report(&project, &config, &manifest, &rois);
             }
-            let run_all = || -> DynResult<()> {
-                for command in &plan.commands {
-                    execute_command(command)?;
-                }
-                Ok(())
-            };
-            if index == 3 {
-                if std::env::var_os("OPENBNCT_SOLVE_PROGRESS").is_none() {
-                    eprintln!(
-                        "  (set OPENBNCT_SOLVE_PROGRESS=1 to print each outer iteration's residual)"
-                    );
-                }
-                with_heartbeat("transport", run_all)
-            } else {
-                run_all()
+            // `sn solve` prints per-outer-iteration progress by default.
+            for command in &plan.commands {
+                execute_command(command)?;
             }
+            Ok(())
         })();
         let seconds = timer.elapsed().as_secs_f64();
         let mut record = StepRecord {

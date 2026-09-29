@@ -3368,6 +3368,10 @@ enum SnCommand {
         /// `boron dose`.
         #[arg(long)]
         boron_unit_output: Option<PathBuf>,
+        /// Suppress the per-outer-iteration progress lines
+        /// (`[sn] outer k/max: residual r (t s)`) printed to stderr.
+        #[arg(long)]
+        quiet: bool,
         /// Output path for the multigroup-flux JSON.
         #[arg(long)]
         output: PathBuf,
@@ -9979,6 +9983,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic_axes[index] = true;
                 }
                 let options = openbnct_transport::SnOptions {
+                    progress: false,
                     quadrature_order: order,
                     convergence,
                     max_inner_iterations: max_inner,
@@ -11160,6 +11165,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 allow_unconverged,
                 dose,
                 boron_unit_output,
+                quiet,
                 output,
             } => {
                 let case_bytes = fs::read(&case)?;
@@ -11189,6 +11195,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic_axes[index] = true;
                 }
                 let options = openbnct_transport::SnOptions {
+                    progress: !quiet,
                     quadrature_order: order,
                     convergence,
                     max_inner_iterations: max_inner,
@@ -11802,6 +11809,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic_axes[index] = true;
                 }
                 let options = openbnct_transport::SnOptions {
+                    progress: false,
                     quadrature_order: order,
                     convergence,
                     max_inner_iterations: max_inner,
@@ -14581,6 +14589,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic_axes[index] = true;
                 }
                 let options = openbnct_transport::SnOptions {
+                    progress: false,
                     quadrature_order: order,
                     convergence,
                     max_inner_iterations: max_inner,
@@ -16274,6 +16283,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic_axes[index] = true;
                 }
                 let options = openbnct_transport::SnOptions {
+                    progress: false,
                     quadrature_order: order,
                     convergence,
                     max_inner_iterations: max_inner,
@@ -16419,6 +16429,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic_axes[index] = true;
                 }
                 let options = openbnct_transport::SnOptions {
+                    progress: false,
                     quadrature_order: order,
                     convergence,
                     max_inner_iterations: max_inner,
@@ -17449,6 +17460,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic_axes[index] = true;
                 }
                 let options = openbnct_transport::SnOptions {
+                    progress: false,
                     quadrature_order: order,
                     convergence,
                     max_inner_iterations: max_inner,
@@ -18057,6 +18069,16 @@ fn aim_bound_source(
         radius_cm,
     )
     .map_err(|error| io::Error::other(format!("beam aim: {error}")))?;
+    // Keep the beam's angular distribution: only re-point a cone's axis.
+    let mut aimed = aimed;
+    if let openbnct_transport::AngularDistribution::IsotropicCone { half_angle_rad, .. } =
+        &case.source.angle
+    {
+        aimed.angle = openbnct_transport::AngularDistribution::IsotropicCone {
+            axis_unit_vector: direction,
+            half_angle_rad: *half_angle_rad,
+        };
+    }
     println!(
         "aimed at {:?} centroid LPS [{:.3}, {:.3}, {:.3}] mm from {approach}",
         report.target_region,
@@ -19064,6 +19086,44 @@ fn scaffold_case_from_geometry(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn beam_aim_preserves_the_cone_half_angle() {
+        let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
+        let beam: openbnct_transport::BeamDescription =
+            serde_json::from_slice(&fs::read(root.join("beams/fir1-k63.json")).unwrap()).unwrap();
+        let base: MaterialDefinition = serde_json::from_slice(
+            &fs::read(root.join("libraries/tissue/materials/air-dry.json")).unwrap(),
+        )
+        .unwrap();
+        let geometry = openbnct_core::GridGeometry {
+            shape: [25, 25, 25],
+            spacing_mm: [8.0; 3],
+            origin_mm: [-96.0; 3],
+            direction: [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0],
+        };
+        let mut case = scaffold_case_from_geometry(&geometry, &base, "t.aim");
+        case.source = beam.bound_source(&geometry).unwrap();
+        let mut voxels = vec![false; 25 * 25 * 25];
+        voxels[12 + 25 * (12 + 25 * 12)] = true;
+        let mask = RegionMask {
+            name: "T".into(),
+            voxels,
+        };
+        for (approach, axis) in [("+x", [1.0, 0.0, 0.0]), ("-y", [0.0, -1.0, 0.0])] {
+            let aimed = aim_bound_source(&case, &mask, approach).unwrap();
+            match aimed.angle {
+                openbnct_transport::AngularDistribution::IsotropicCone {
+                    axis_unit_vector,
+                    half_angle_rad,
+                } => {
+                    assert_eq!(half_angle_rad, 0.1491);
+                    assert_eq!(axis_unit_vector, axis);
+                }
+                other => panic!("cone became {other:?}"),
+            }
+        }
+    }
 
     #[test]
     fn workbook_paths_stay_inside_the_workbook_directory() {
