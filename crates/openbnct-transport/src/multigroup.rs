@@ -1319,6 +1319,79 @@ fn cone_directions(
     }
 }
 
+/// Axis-aligned voxel grid for the uncollided beam's ray traversal.
+struct RayGrid {
+    /// Lower corner of voxel (0,0,0), cm.
+    lo_cm: [f64; 3],
+    /// Voxel edge lengths, cm.
+    h_cm: [f64; 3],
+    n: [i64; 3],
+}
+
+impl RayGrid {
+    /// Amanatides–Woo traversal of the ray `origin + t·dir`,
+    /// `t ∈ [0, t_end]`, accumulating the track length in each voxel
+    /// into `lengths[case_material[voxel]]`. Track outside the grid
+    /// is void (contributes nothing). `entry = (axis, ascending)`
+    /// names the source-plane axis: the ray starts exactly on that
+    /// grid face, so its voxel index along the axis is forced to the
+    /// first (ascending) or last layer instead of trusting a floor
+    /// of a face coordinate.
+    fn trace(
+        &self,
+        origin: [f64; 3],
+        dir: [f64; 3],
+        t_end: f64,
+        entry: (usize, bool),
+        case_material: &[usize],
+        lengths: &mut [f64],
+    ) {
+        let mut idx = [0_i64; 3];
+        let mut step = [0_i64; 3];
+        let mut t_max = [f64::INFINITY; 3];
+        let mut t_delta = [f64::INFINITY; 3];
+        for ax in 0..3 {
+            idx[ax] = if ax == entry.0 {
+                if entry.1 { 0 } else { self.n[ax] - 1 }
+            } else {
+                ((origin[ax] - self.lo_cm[ax]) / self.h_cm[ax]).floor() as i64
+            };
+            if dir[ax] > 0.0 {
+                step[ax] = 1;
+                t_max[ax] =
+                    (self.lo_cm[ax] + (idx[ax] + 1) as f64 * self.h_cm[ax] - origin[ax]) / dir[ax];
+                t_delta[ax] = self.h_cm[ax] / dir[ax];
+            } else if dir[ax] < 0.0 {
+                step[ax] = -1;
+                t_max[ax] =
+                    (self.lo_cm[ax] + idx[ax] as f64 * self.h_cm[ax] - origin[ax]) / dir[ax];
+                t_delta[ax] = -self.h_cm[ax] / dir[ax];
+            }
+        }
+        let mut t = 0.0;
+        while t < t_end {
+            let ax = if t_max[0] <= t_max[1] && t_max[0] <= t_max[2] {
+                0
+            } else if t_max[1] <= t_max[2] {
+                1
+            } else {
+                2
+            };
+            let t_next = t_max[ax].min(t_end);
+            if (0..3).all(|q| idx[q] >= 0 && idx[q] < self.n[q]) {
+                let cell = idx[0] + self.n[0] * (idx[1] + self.n[1] * idx[2]);
+                lengths[case_material[cell as usize]] += (t_next - t).max(0.0);
+            }
+            if t_max[ax] >= t_end {
+                break;
+            }
+            t = t_next;
+            idx[ax] += step[ax];
+            t_max[ax] += t_delta[ax];
+        }
+    }
+}
+
 /// Analytic uncollided-flux ray-trace for an on-face disk source.
 /// Each cell's uncollided fluence is the cell average of the incident
 /// fluence: φ_unc(cell, g) = (R/A_disk)·w_g·⟨e^{−Σ_t·s}⟩/μ̄ where the
@@ -1330,9 +1403,18 @@ fn cone_directions(
 /// back-ray misses the disk contribute nothing — partially covered
 /// cells receive the illuminated fraction. The outer average is over
 /// the angular distribution (a single direction for a monodirectional
-/// beam, the cone solid angle for an isotropic cone). Attenuation uses
-/// the target cell's material along the whole ray — a declared
-/// approximation for layered geometries.
+/// beam, the cone solid angle for an isotropic cone).
+///
+/// Attenuation is the optical depth along the actual ray: an
+/// Amanatides–Woo voxel traversal from the source-plane entry point
+/// to the start of the target cell's axial slab accumulates
+/// τ_g = Σ_voxels σ_t,g(material)·chord (void and other tissues
+/// attenuate with their own σ_t; track outside the grid is void).
+/// The in-cell segment uses the target cell's own material in closed
+/// form. The traversal runs once per (cell point, direction) and is
+/// shared by all groups; under `uniform_in_bin` each sub-bin node j
+/// attenuates with every traversed material's own node σ_j (node
+/// weights must agree across materials). Cells run in parallel.
 ///
 /// Returns `None` for source shapes/angles that stay on the
 /// boundary-flux path (wide cones, isotropic, off-face sources).
@@ -1435,108 +1517,202 @@ pub(crate) fn uncollided_beam_moments(
     // 1/coverage). Only sample directions pointing inward contribute.
     const TRANSVERSE_POINTS: u32 = 8;
     let sub = TRANSVERSE_POINTS as f64;
-    let mut unc = vec![vec![0.0; groups]; n_cells];
-    let mut unc_current = vec![vec![[0.0_f64; 3]; groups]; n_cells];
-    let mut lit = false;
-    for k in 0..nz {
-        for j in 0..ny {
-            for i in 0..nx {
-                let center_mm = geometry.voxel_center_lps_mm([i as u32, j as u32, k as u32])?;
-                let c: [f64; 3] = [
-                    center_mm[0] / 10.0,
-                    center_mm[1] / 10.0,
-                    center_mm[2] / 10.0,
-                ];
-                let cell = i + nx * j + nx * ny * k;
-                let material = &data.materials[case_material[cell]];
-                // The uncollided population was spread per eV under
-                // `uniform_in_bin` — attenuate it with the artifact's
-                // sub-bin kernel Σ_j w_j·e^{−σ_j·s} (a broad group's
-                // penetrating tail survives; a single mean σ_t
-                // over-removes it). Falls back to the collapsed σ_t
-                // on artifacts without the kernel or for the
-                // collapse-consistent convention.
-                let sigma_t_unc: &[f64] = match (weighting, &material.beam_sigma_nodes_per_cm) {
-                    (SourceWeighting::UniformInBin, Some(nodes)) => nodes.as_slice(),
-                    _ => &[],
-                };
-                let su = geometry.spacing_mm[u] / 10.0;
-                let sv = geometry.spacing_mm[v] / 10.0;
-                let sa = geometry.spacing_mm[a] / 10.0;
-                for (d_hat, w_dir) in &dirs {
-                    let d_axis = d_hat[a];
-                    if inward * d_axis <= 0.0 {
-                        continue;
+    let su = geometry.spacing_mm[u] / 10.0;
+    let sv = geometry.spacing_mm[v] / 10.0;
+    let sa = geometry.spacing_mm[a] / 10.0;
+    // Axis-aligned grid: the traversal below and the source-face
+    // geometry above both assume voxel axes are the patient axes.
+    const IDENTITY_DIRECTION: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    if geometry
+        .direction
+        .iter()
+        .zip(IDENTITY_DIRECTION)
+        .any(|(x, y)| (x - y).abs() > 1e-9)
+    {
+        return Err(invalid(
+            "uncollided beam ray-trace requires an identity grid direction".into(),
+        ));
+    }
+    let grid = RayGrid {
+        lo_cm: std::array::from_fn(|ax| {
+            (geometry.origin_mm[ax] - 0.5 * geometry.spacing_mm[ax]) / 10.0
+        }),
+        h_cm: std::array::from_fn(|ax| geometry.spacing_mm[ax] / 10.0),
+        n: [nx as i64, ny as i64, nz as i64],
+    };
+    let n_mat = data.materials.len();
+    // The sub-bin kernel decomposes survival per node j with weight
+    // w_j; a multi-material ray needs the SAME node weights in every
+    // material it crosses (the collapse writes 1/N for all).
+    let mut ref_nodes: Option<&[f64]> = None;
+    for m in &data.materials {
+        if let Some(nd) = m.beam_sigma_nodes_per_cm.as_deref() {
+            match ref_nodes {
+                None => ref_nodes = Some(nd),
+                Some(r) => {
+                    if r.iter()
+                        .zip(nd)
+                        .step_by(2)
+                        .any(|(x, y)| (x - y).abs() > 1e-12)
+                    {
+                        return Err(invalid(
+                            "beam sub-bin node weights differ between materials".into(),
+                        ));
                     }
-                    let frac = w_dir / omega;
-                    // Ray chord through the cell along the beam axis:
-                    // s varies linearly across the cell, so the
-                    // segment-average of e^{−σs} is closed form.
-                    let chord = sa / d_axis.abs();
-                    for pu in 0..TRANSVERSE_POINTS {
-                        for pv in 0..TRANSVERSE_POINTS {
-                            let mut p = c;
-                            p[u] += ((pu as f64 + 0.5) / sub - 0.5) * su;
-                            p[v] += ((pv as f64 + 0.5) / sub - 0.5) * sv;
-                            let s = (p[a] - face_cm) / d_axis;
-                            if s <= 0.0 {
+                }
+            }
+        }
+    }
+
+    let per_cell: Vec<Option<(Vec<f64>, Vec<[f64; 3]>)>> = (0..n_cells)
+        .into_par_iter()
+        .map(|cell| -> Result<_, MultigroupError> {
+            let i = cell % nx;
+            let j = (cell / nx) % ny;
+            let k = cell / (nx * ny);
+            let center_mm = geometry.voxel_center_lps_mm([i as u32, j as u32, k as u32])?;
+            let c: [f64; 3] = [
+                center_mm[0] / 10.0,
+                center_mm[1] / 10.0,
+                center_mm[2] / 10.0,
+            ];
+            let material = &data.materials[case_material[cell]];
+            // The uncollided population was spread per eV under
+            // `uniform_in_bin` — attenuate it with the artifact's
+            // sub-bin kernel Σ_j w_j·e^{−τ_j} (a broad group's
+            // penetrating tail survives; a single mean σ_t
+            // over-removes it). Falls back to the collapsed σ_t
+            // on artifacts without the kernel or for the
+            // collapse-consistent convention.
+            let kernel = matches!(
+                (weighting, &material.beam_sigma_nodes_per_cm),
+                (SourceWeighting::UniformInBin, Some(_))
+            );
+            let mut cell_unc = vec![0.0; groups];
+            let mut cell_cur = vec![[0.0_f64; 3]; groups];
+            let mut lit_cell = false;
+            let mut lengths = vec![0.0_f64; n_mat];
+            let mut path: Vec<(usize, f64)> = Vec::with_capacity(n_mat);
+            for (d_hat, w_dir) in &dirs {
+                let d_axis = d_hat[a];
+                if inward * d_axis <= 0.0 {
+                    continue;
+                }
+                let frac = w_dir / omega;
+                // Ray chord through the cell along the beam axis:
+                // s varies linearly across the cell, so the
+                // segment-average of e^{−σs} is closed form.
+                let chord = sa / d_axis.abs();
+                for pu in 0..TRANSVERSE_POINTS {
+                    for pv in 0..TRANSVERSE_POINTS {
+                        let mut p = c;
+                        p[u] += ((pu as f64 + 0.5) / sub - 0.5) * su;
+                        p[v] += ((pv as f64 + 0.5) / sub - 0.5) * sv;
+                        let s = (p[a] - face_cm) / d_axis;
+                        if s <= 0.0 {
+                            continue;
+                        }
+                        // In-medium portion of the in-cell segment:
+                        // [s_lo, s_lo + span], clipped at the face.
+                        let s_lo = (s - chord / 2.0).max(0.0);
+                        let span = (s + chord / 2.0) - s_lo;
+                        let eu = p[u] - d_hat[u] * s;
+                        let ev = p[v] - d_hat[v] * s;
+                        let du = eu - center_uv_cm[0];
+                        let dv = ev - center_uv_cm[1];
+                        if du * du + dv * dv > r2 {
+                            continue;
+                        }
+                        lit_cell = true;
+                        // Optical-depth path: per-material track
+                        // length from the source plane to s_lo,
+                        // walking the actual voxels the ray crosses.
+                        let mut origin = [0.0; 3];
+                        for ax in 0..3 {
+                            origin[ax] = p[ax] - d_hat[ax] * s_lo;
+                        }
+                        origin[a] = face_cm;
+                        lengths.iter_mut().for_each(|l| *l = 0.0);
+                        grid.trace(
+                            origin,
+                            *d_hat,
+                            s_lo,
+                            (a, inward > 0.0),
+                            case_material,
+                            &mut lengths,
+                        );
+                        path.clear();
+                        path.extend(
+                            lengths
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, l)| **l > 0.0)
+                                .map(|(m, l)| (m, *l)),
+                        );
+                        // In-cell segment mean of e^{−σ·t} over the
+                        // target cell's own span (closed form).
+                        let seg_factor = |sigma: f64| -> f64 {
+                            let x = sigma * span;
+                            if x > 1e-8 {
+                                (1.0 - (-x).exp()) / x
+                            } else {
+                                1.0
+                            }
+                        };
+                        for (g, w) in group_weights.iter().enumerate() {
+                            if *w <= 0.0 {
                                 continue;
                             }
-                            // In-medium portion of the in-cell segment:
-                            // [s_lo, s_lo + span], clipped at the face.
-                            let s_lo = (s - chord / 2.0).max(0.0);
-                            let span = (s + chord / 2.0) - s_lo;
-                            let eu = p[u] - d_hat[u] * s;
-                            let ev = p[v] - d_hat[v] * s;
-                            let du = eu - center_uv_cm[0];
-                            let dv = ev - center_uv_cm[1];
-                            if du * du + dv * dv > r2 {
-                                continue;
-                            }
-                            lit = true;
-                            // Cell-mean uncollided fluence: beam
-                            // intensity times the transverse
-                            // illuminated fraction, with e^{−σs}
-                            // averaged over the in-cell ray segment
-                            // (e^{−σs_lo}(1−e^{−σ·span})/(σ·span)) —
-                            // the center-point value under-counts the
-                            // cell mean by ~ (σ·chord)²/24, which is
-                            // 20–60% in optically thick groups.
-                            let seg_mean = |sigma: f64| -> f64 {
-                                let x = sigma * span;
-                                (-sigma * s_lo).exp()
-                                    * if x > 1e-8 {
-                                        (1.0 - (-x).exp()) / x
-                                    } else {
-                                        1.0
-                                    }
+                            let survival = if !kernel {
+                                let tau: f64 = path
+                                    .iter()
+                                    .map(|&(m, l)| data.materials[m].sigma_total_per_cm[g] * l)
+                                    .sum();
+                                (-tau).exp() * seg_factor(material.sigma_total_per_cm[g])
+                            } else {
+                                let base = g * 2 * BEAM_KERNEL_NODES;
+                                let tgt_nodes =
+                                    material.beam_sigma_nodes_per_cm.as_deref().unwrap_or(&[]);
+                                (0..BEAM_KERNEL_NODES)
+                                    .map(|jn| {
+                                        let tau: f64 = path
+                                            .iter()
+                                            .map(|&(m, l)| {
+                                                let mat = &data.materials[m];
+                                                let sig = match &mat.beam_sigma_nodes_per_cm {
+                                                    Some(nd) => nd[base + 2 * jn + 1],
+                                                    None => mat.sigma_total_per_cm[g],
+                                                };
+                                                sig * l
+                                            })
+                                            .sum();
+                                        tgt_nodes[base + 2 * jn]
+                                            * (-tau).exp()
+                                            * seg_factor(tgt_nodes[base + 2 * jn + 1])
+                                    })
+                                    .sum()
                             };
-                            for (g, w) in group_weights.iter().enumerate() {
-                                if *w <= 0.0 {
-                                    continue;
-                                }
-                                let survival = if sigma_t_unc.is_empty() {
-                                    seg_mean(material.sigma_total_per_cm[g])
-                                } else {
-                                    let base = g * 2 * BEAM_KERNEL_NODES;
-                                    (0..BEAM_KERNEL_NODES)
-                                        .map(|j| {
-                                            sigma_t_unc[base + 2 * j]
-                                                * seg_mean(sigma_t_unc[base + 2 * j + 1])
-                                        })
-                                        .sum()
-                                };
-                                let deposit = beam_intensity * w * frac / (sub * sub) * survival;
-                                unc[cell][g] += deposit;
-                                let j = &mut unc_current[cell][g];
-                                j[0] += deposit * d_hat[0];
-                                j[1] += deposit * d_hat[1];
-                                j[2] += deposit * d_hat[2];
-                            }
+                            let deposit = beam_intensity * w * frac / (sub * sub) * survival;
+                            cell_unc[g] += deposit;
+                            let jc = &mut cell_cur[g];
+                            jc[0] += deposit * d_hat[0];
+                            jc[1] += deposit * d_hat[1];
+                            jc[2] += deposit * d_hat[2];
                         }
                     }
                 }
             }
+            Ok(lit_cell.then_some((cell_unc, cell_cur)))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut unc = vec![vec![0.0; groups]; n_cells];
+    let mut unc_current = vec![vec![[0.0_f64; 3]; groups]; n_cells];
+    let mut lit = false;
+    for (cell, entry) in per_cell.into_iter().enumerate() {
+        if let Some((fu, fc)) = entry {
+            lit = true;
+            unc[cell] = fu;
+            unc_current[cell] = fc;
         }
     }
     if !lit {
@@ -4882,6 +5058,137 @@ pub(crate) mod tests {
                 (got - center_val).abs() / center_val > 0.2,
                 "cell {cell}: deposit should differ from the center value by ~30%"
             );
+        }
+    }
+
+    /// Two-material fixture on the 1 mm slab: material 0 is a void gap
+    /// (σ = 0) filling layers `k < gap_cells`, material 1 is tissue.
+    fn gap_and_tissue(
+        sigma_tissue: f64,
+        nodes: Option<Vec<f64>>,
+        gap_cells: usize,
+    ) -> (TransportCase, MultigroupData, Vec<usize>) {
+        let case = slab_case();
+        let mut mg = data(&[0.0], vec![0.0]);
+        let mut tissue = mg.materials[0].clone();
+        tissue.material_id = "tissue".into();
+        tissue.sigma_total_per_cm = vec![sigma_tissue];
+        if let Some(nd) = nodes {
+            tissue.beam_sigma_nodes_per_cm = Some(nd);
+            let mut void = mg.materials[0].clone();
+            void.beam_sigma_nodes_per_cm = Some(
+                (0..2 * BEAM_KERNEL_NODES)
+                    .map(|i| {
+                        if i % 2 == 0 {
+                            1.0 / BEAM_KERNEL_NODES as f64
+                        } else {
+                            0.0
+                        }
+                    })
+                    .collect(),
+            );
+            mg.materials[0] = void;
+        }
+        mg.materials.push(tissue);
+        let cm = (0..case.geometry.voxel_count().unwrap())
+            .map(|cell| usize::from(cell / 16 >= gap_cells))
+            .collect();
+        (case, mg, cm)
+    }
+
+    /// Void gap then tissue: the uncollided flux must attenuate only
+    /// through the tissue, e^{−σ_tissue·(s − gap)} — the previous
+    /// whole-path-in-target-material rule over-attenuated the gap.
+    #[test]
+    fn uncollided_void_gap_does_not_attenuate() {
+        let sigma = 8.0;
+        let gap_cells = 5;
+        let (case, mg, cm) = gap_and_tissue(sigma, None, gap_cells);
+        let (unc, _) =
+            uncollided_beam_moments(&case, &mg, &cm, SourceWeighting::CollapseConsistent)
+                .unwrap()
+                .unwrap();
+        let intensity = 1.0 / (std::f64::consts::PI * 0.25 * 0.25);
+        let d = 0.1_f64;
+        for (i, j, k) in [(1usize, 1usize, 2usize), (2, 2, 5), (1, 2, 8), (2, 1, 15)] {
+            let cell = i + 4 * j + 16 * k;
+            let got = unc[cell][0];
+            let want = if k < gap_cells {
+                intensity
+            } else {
+                let tissue_before = d * (k - gap_cells) as f64;
+                intensity * (-sigma * tissue_before).exp() * (1.0 - (-sigma * d).exp())
+                    / (sigma * d)
+            };
+            assert!(
+                (got - want).abs() / want < 1e-10,
+                "cell {cell}: {got} vs analytic {want}"
+            );
+        }
+    }
+
+    /// Sub-bin kernel variant of the void-gap column: each node j
+    /// attenuates with the tissue's own σ_j only.
+    #[test]
+    fn uncollided_void_gap_kernel_nodes() {
+        let gap_cells = 4;
+        let sig: Vec<f64> = (0..BEAM_KERNEL_NODES)
+            .map(|j| 2.0 + 3.0 * j as f64)
+            .collect();
+        let w = 1.0 / BEAM_KERNEL_NODES as f64;
+        let nodes: Vec<f64> = sig.iter().flat_map(|&s| [w, s]).collect();
+        let (case, mg, cm) = gap_and_tissue(5.0, Some(nodes), gap_cells);
+        let (unc, _) = uncollided_beam_moments(&case, &mg, &cm, SourceWeighting::UniformInBin)
+            .unwrap()
+            .unwrap();
+        let intensity = 1.0 / (std::f64::consts::PI * 0.25 * 0.25);
+        let d = 0.1_f64;
+        for k in [6usize, 9, 14] {
+            let cell = 1 + 4 + 16 * k;
+            let before = d * (k - gap_cells) as f64;
+            let want: f64 = sig
+                .iter()
+                .map(|&s| w * (-s * before).exp() * (1.0 - (-s * d).exp()) / (s * d))
+                .sum::<f64>()
+                * intensity;
+            assert!(
+                (unc[cell][0] - want).abs() / want < 1e-10,
+                "cell {cell}: {} vs analytic {want}",
+                unc[cell][0]
+            );
+        }
+    }
+
+    /// Homogeneous column split across two identical-σ materials
+    /// (alternating layers): the traversal must reproduce the closed
+    /// form e^{−σ·s_lo}(1−e^{−σΔ})/(σΔ) to rounding.
+    #[test]
+    fn uncollided_traversal_matches_closed_form_when_homogeneous() {
+        let sigma = 12.0;
+        let case = slab_case();
+        let mut mg = data(&[sigma], vec![0.0]);
+        let mut twin = mg.materials[0].clone();
+        twin.material_id = "twin".into();
+        mg.materials.push(twin);
+        let cm: Vec<usize> = (0..case.geometry.voxel_count().unwrap())
+            .map(|cell| (cell / 16) % 2)
+            .collect();
+        let (unc, cur) =
+            uncollided_beam_moments(&case, &mg, &cm, SourceWeighting::CollapseConsistent)
+                .unwrap()
+                .unwrap();
+        let intensity = 1.0 / (std::f64::consts::PI * 0.25 * 0.25);
+        let d = 0.1_f64;
+        for k in 0..20usize {
+            let cell = 1 + 4 + 16 * k;
+            let want = intensity * (-sigma * d * k as f64).exp() * (1.0 - (-sigma * d).exp())
+                / (sigma * d);
+            assert!(
+                (unc[cell][0] - want).abs() / want < 1e-12,
+                "layer {k}: {} vs {want}",
+                unc[cell][0]
+            );
+            assert!((cur[cell][0][2] - unc[cell][0]).abs() <= 1e-12 * want);
         }
     }
 
