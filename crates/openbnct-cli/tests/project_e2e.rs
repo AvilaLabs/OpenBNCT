@@ -58,7 +58,11 @@ fn init_run_resume_and_invalidate() {
     assert!(init.contains("CORE"), "{init}");
     let project = root.join("p001");
     assert!(project.join("inputs/SHA256SUMS").is_file());
-    assert!(project.join("inputs/multigroup-data-28g.json").is_file());
+    assert!(
+        project
+            .join("inputs/multigroup-data-28g-tsl.json")
+            .is_file()
+    );
 
     // init refuses to overwrite.
     let again = openbnct(

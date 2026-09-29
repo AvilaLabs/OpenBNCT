@@ -43,7 +43,7 @@ spacing_mm = 5.0
 
 [materials]                                # builtin:NAME or a path; `openbnct project builtins` lists names
 calibration = "builtin:tissue/hu-calibration-generic-head-ct"
-multigroup_data = "builtin:tissue/multigroup-data-28g"
+multigroup_data = "builtin:tissue/multigroup-data-28g-tsl"
 base_material = "builtin:tissue/material-air-dry"
 
 [beam]
@@ -633,12 +633,15 @@ sha256 and its source):
   Bortfeld & Schlegel, *Phys. Med. Biol.* 45 (2000) 459, whose
   stoichiometric-calibration structure (linear volume mixtures between
   anchors) `dicom calibrate` uses. Substitute a site table for real work.
-- `multigroup-data-28g.json` — 28-group collapse of all library
-  materials (recipe of `layered-head-phantom/collapse-v2.sh`: free-gas
-  kernel, no self-shielding; ENDF/B-VIII.1), bound to the local-kerma
-  component profile, with `boron_unit_response_gy_cm2_per_ug_g`.
-  Regenerate with `libraries/tissue/collapse-28g.sh` (about 1.5 minutes,
-  under 100 MB RAM; needs the external nuclear-data store).
+- `multigroup-data-28g-tsl.json` (default; `builtin:tissue/multigroup-data-28g-tsl`)
+  — 28-group collapse of all library materials with the ENDF/B-VIII.1
+  H-in-H2O thermal-scattering law on hydrogen (thermal upscatter), free-gas
+  kernel elsewhere, no self-shielding, bound to the local-kerma component
+  profile, with `boron_unit_response_gy_cm2_per_ug_g`. Regenerate with
+  `libraries/tissue/collapse-28g.sh` (about 1.5 minutes, under 100 MB RAM;
+  needs the external nuclear-data store).
+- `multigroup-data-28g.json` (`builtin:tissue/multigroup-data-28g`) — the
+  earlier free-gas-only collapse, kept for provenance and reproducibility.
 
 End to end, on the synthetic NF-BNCT-001 study (research demonstration only):
 
@@ -653,7 +656,7 @@ openbnct dicom calibrate \
   --output ASSIGNMENT.json --materials-out-dir NEW-MATERIALS-DIR
 openbnct beam bind --beam beams/fir1-k63.json --case CASE.json --output CASE-BEAM.json
 openbnct sn solve --case CASE-BEAM.json \
-  --data libraries/tissue/multigroup-data-28g.json --assignment ASSIGNMENT.json \
+  --data libraries/tissue/multigroup-data-28g-tsl.json --assignment ASSIGNMENT.json \
   --order 4 --dose DOSE.json --boron-unit-output UNIT-DOSE.json --output FLUX.json
 ```
 

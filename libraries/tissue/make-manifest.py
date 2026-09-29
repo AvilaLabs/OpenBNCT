@@ -59,11 +59,17 @@ ntb = {
                             "were not read from, fitted to, or derived from that paper's tables."),
     },
     "multigroup_data": {
-        "id": "openbnct.tissue-library.multigroup-28g.v1",
-        "file": "multigroup-data-28g.json",
-        "sha256": sha("multigroup-data-28g.json"),
+        "id": "openbnct.tissue-library.multigroup-28g-tsl.v1",
+        "file": "multigroup-data-28g-tsl.json",
+        "sha256": sha("multigroup-data-28g-tsl.json"),
+        "note": ("Default. Hydrogen in every material carries the ENDF/B-VIII.1 H-in-H2O thermal-scattering "
+                 "law (293.6 K), giving thermal upscatter. multigroup-data-28g.json (id "
+                 "openbnct.tissue-library.multigroup-28g.v1, free-gas kernel) is retained for provenance only."),
+        "free_gas_predecessor": {"id": "openbnct.tissue-library.multigroup-28g.v1",
+                                 "file": "multigroup-data-28g.json",
+                                 "sha256": sha("multigroup-data-28g.json")},
         "recipe": "collapse-28g.sh (recipe of benchmarks/synthetic/layered-head-phantom/collapse-v2.sh)",
-        "nuclear_data": "ENDF/B-VIII.1: H/C/N/O/Fe56/B10 from 294 K OpenMC-HDF5; Na/Mg/P/S/Cl/K/Ca from NJOY 293.6 K PENDF",
+        "nuclear_data": "ENDF/B-VIII.1: H/C/N/O/Fe56/B10 from 294 K OpenMC-HDF5; Na/Mg/P/S/Cl/K/Ca from NJOY 293.6 K PENDF; H-in-H2O S(alpha,beta) tsl_H(H2O)_0001 on hydrogen",
         "component_profile": "benchmarks/synthetic/nf-bnct-001/transport/component-profile-local-kerma.json",
     },
     "generators": {f: sha(f) for f in ("generate.py", "collapse-28g.sh", "make-manifest.py")},

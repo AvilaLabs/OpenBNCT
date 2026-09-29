@@ -144,6 +144,11 @@ const BUILTINS: &[Builtin] = &[
         bytes: include_bytes!("../builtins/hu-calibration-generic-head-ct.json"),
     },
     Builtin {
+        name: "tissue/multigroup-data-28g-tsl",
+        file: "multigroup-data-28g-tsl.json",
+        bytes: include_bytes!("../builtins/multigroup-data-28g-tsl.json"),
+    },
+    Builtin {
         name: "tissue/multigroup-data-28g",
         file: "multigroup-data-28g.json",
         bytes: include_bytes!("../builtins/multigroup-data-28g.json"),
@@ -260,7 +265,7 @@ fn default_calibration() -> String {
     "builtin:tissue/hu-calibration-generic-head-ct".into()
 }
 fn default_multigroup() -> String {
-    "builtin:tissue/multigroup-data-28g".into()
+    "builtin:tissue/multigroup-data-28g-tsl".into()
 }
 fn default_base_material() -> String {
     "builtin:tissue/material-air-dry".into()
@@ -1844,6 +1849,10 @@ mod tests {
             (
                 "tissue/hu-calibration-generic-head-ct",
                 "libraries/tissue/hu-calibration-generic-head-ct.json",
+            ),
+            (
+                "tissue/multigroup-data-28g-tsl",
+                "libraries/tissue/multigroup-data-28g-tsl.json",
             ),
             (
                 "tissue/multigroup-data-28g",
