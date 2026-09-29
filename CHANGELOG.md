@@ -6,6 +6,21 @@ own versions independent of the crate version.
 
 ## [Unreleased]
 
+### Added — `openbnct project`
+
+- `project init` / `project run` / `project status` / `project builtins`:
+  CT + RT Structure Set to component dose, boron-scaled dose, per-structure
+  metrics, DVH CSVs and `out/report.md` in two commands, driven by a
+  `project.toml`. Each step is the same handler as its individual command
+  (equivalent command lines are recorded and printed in the report); a
+  resumable `out/run-manifest.json` (`openbnct.project-run/0.1.0`) skips
+  steps whose inputs, command and outputs still hash-match. Built-in tissue
+  library, 28-group data and FiR 1 K63 beam are embedded in the binary and
+  copied into the project with sha256. Report schema
+  `openbnct.project-report/0.1.0`.
+- `beam bind --aim-mask MASK --approach=+x`: aim the bound disk source at a
+  mask centroid.
+
 ### Added — Python: NumPy arrays and `sn_solve`
 
 - Voxel fields in the Python package return C-order `np.ndarray`s of shape

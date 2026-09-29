@@ -31,6 +31,7 @@ openbnct-plan = { path = "../openbnct-plan", version = "0.2.0" }
 openbnct-transport = { path = "../openbnct-transport", version = "0.2.0" }
 serde.workspace = true
 serde_json.workspace = true
+toml.workspace = true
 openbnct-mcnp = { path = "../openbnct-mcnp", version = "0.2.0" }
 openbnct-phits = { path = "../openbnct-phits", version = "0.2.0" }
 

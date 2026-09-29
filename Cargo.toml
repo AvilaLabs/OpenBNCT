@@ -46,6 +46,7 @@ rayon = "1.10"
 reqwest = { version = "0.13", default-features = false, features = ["blocking", "rustls"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
+toml = "0.9"
 sha2 = "0.10"
 thiserror = "2"
 uuid = { version = "1", features = ["v5"] }

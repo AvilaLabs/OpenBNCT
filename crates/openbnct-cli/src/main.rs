@@ -9,6 +9,8 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod project;
+
 use clap::{Args, Parser, Subcommand};
 use openbnct_bio::{
     BedQuantity, BiologicalModel, LinealSpectrum, LinealWeighting, MicrodosimetricModel,
@@ -85,6 +87,11 @@ enum Command {
     /// Inspect and bind versioned facility beam descriptions
     /// (`openbnct.beam-description/0.1.0`).
     Beam(BeamArgs),
+    /// One-command golden path: initialize and run a self-contained
+    /// project from a CT + RT Structure Set to component dose, boron-scaled
+    /// dose, DVHs and a report. Orchestrates the same steps as the
+    /// individual commands and records them in a resumable manifest.
+    Project(project::ProjectArgs),
     /// Evaluate parametric accelerator-target neutron sources
     /// (`openbnct.accelerator-source/0.1.0`).
     Accelerator(AcceleratorArgs),
@@ -1765,6 +1772,14 @@ enum BeamCommand {
         /// New output path for the bound transport-case JSON.
         #[arg(long)]
         output: PathBuf,
+        /// RegionMask JSON whose centroid the beam axis is aimed at
+        /// (requires `--approach`). The circular port becomes a disk on
+        /// the entry face centered where the axis meets it.
+        #[arg(long, requires = "approach")]
+        aim_mask: Option<PathBuf>,
+        /// Axis approach `+x|-x|+y|-y|+z|-z` used with `--aim-mask`.
+        #[arg(long, requires = "aim_mask")]
+        approach: Option<String>,
     },
     /// Emit a `openbnct.beam-description/0.1.0` from a binned spectrum
     /// CSV plus declared port geometry — the on-ramp for a group that
@@ -5207,6 +5222,7 @@ fn acquisition_pairs<'a>(
 
 fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
     match cli.command {
+        Some(Command::Project(args)) => project::run_project(args)?,
         Some(Command::Backends) => {
             let backend = OpenMcBackend::default();
             let descriptor = backend.descriptor();
@@ -5460,13 +5476,22 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                 }
             }
-            BeamCommand::Bind { beam, case, output } => {
+            BeamCommand::Bind {
+                beam,
+                case,
+                output,
+                aim_mask,
+                approach,
+            } => {
                 let beam: openbnct_transport::BeamDescription =
                     serde_json::from_slice(&fs::read(&beam)?)?;
                 let mut bound: TransportCase = serde_json::from_slice(&fs::read(&case)?)?;
                 bound.source = beam
                     .bound_source(&bound.geometry)
                     .map_err(|error| io::Error::other(format!("beam bind: {error}")))?;
+                if let (Some(mask), Some(approach)) = (&aim_mask, &approach) {
+                    bound.source = aim_bound_source(&bound, &read_region_mask(mask)?, approach)?;
+                }
                 bound
                     .validate()
                     .map_err(|error| io::Error::other(format!("bound case is invalid: {error}")))?;
@@ -9655,68 +9680,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             bins,
             output,
         }) => {
-            let dose_bytes = fs::read(&dose)?;
-            let schema: serde_json::Value = serde_json::from_slice(&dose_bytes)?;
-            let mask: RegionMask = serde_json::from_slice(&fs::read(&mask)?)?;
-            let source = openbnct_core::ContentReference {
-                id: dose.display().to_string(),
-                sha256: openbnct_evidence::sha256_file(&dose)?,
-            };
-            let dose_schema = openbnct_core::normalize_contract_id(
-                schema
-                    .get("schema_version")
-                    .and_then(|v| v.as_str())
-                    .unwrap_or_default(),
-            );
-            let histogram = match dose_schema.as_str() {
-                openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
-                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
-                    let (values, unit) = dose_values(&bundle, &quantity)?;
-                    let voxel_volume = bundle.geometry.spacing_mm.iter().product();
-                    openbnct_evidence::DoseVolumeHistogram::compute(
-                        &bundle.case_id,
-                        &mask.name,
-                        &quantity,
-                        source,
-                        unit,
-                        values,
-                        &mask.voxels,
-                        voxel_volume,
-                        bins,
-                    )?
-                }
-                openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
-                    let bundle: openbnct_bio::BiologicalDoseBundle =
-                        serde_json::from_slice(&dose_bytes)?;
-                    let (values, unit) = biological_dose_values(&bundle, &quantity)?;
-                    let voxel_volume = bundle.geometry.spacing_mm.iter().product();
-                    openbnct_evidence::DoseVolumeHistogram::compute(
-                        &bundle.case_id,
-                        &mask.name,
-                        &quantity,
-                        source,
-                        unit,
-                        values,
-                        &mask.voxels,
-                        voxel_volume,
-                        bins,
-                    )?
-                }
-                other => {
-                    return Err(io::Error::other(format!(
-                        "unsupported dose bundle schema {other:?}"
-                    ))
-                    .into());
-                }
-            };
-            let json = serde_json::to_vec_pretty(&histogram)?;
-            let mut file = fs::OpenOptions::new()
-                .write(true)
-                .create_new(true)
-                .open(&output)?;
-            file.write_all(&json)?;
-            file.write_all(b"\n")?;
-            file.sync_all()?;
+            let histogram = compute_dvh_file(&dose, &quantity, &mask, bins, &output)?;
             println!("dose-volume histogram at {}", output.display());
             println!(
                 "region: {} ({} voxels)",
@@ -15599,28 +15563,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             eud,
             output,
         }) => {
-            let dose_bytes = fs::read(&dose)?;
-            let bundle = load_dose_bundle(&dose_bytes)?;
-            let mask: RegionMask = serde_json::from_slice(&fs::read(&mask)?)?;
-            let source = openbnct_core::ContentReference {
-                id: dose.display().to_string(),
-                sha256: openbnct_evidence::sha256_file(&dose)?,
-            };
-            let selection = bundle.select(&quantity)?;
-            let metrics = openbnct_evidence::RegionDoseMetrics::compute(
-                selection.case_id,
-                &mask.name,
-                &quantity,
-                source,
-                selection.unit,
-                selection.values,
-                &mask.voxels,
-                selection.voxel_volume_mm3,
-                &dx,
-                &vx,
-                &eud,
-            )?;
-            write_new_json(&output, &metrics)?;
+            let metrics = compute_metrics_file(&dose, &quantity, &mask, &dx, &vx, &eud, &output)?;
             println!("dose metrics at {}", output.display());
             println!(
                 "region: {} ({} voxels, {} [{}])",
@@ -17975,6 +17918,153 @@ fn confined_workbook_path(base: &Path, declared: &Path) -> io::Result<PathBuf> {
         return Err(reject("is not a regular file"));
     }
     Ok(target)
+}
+
+/// Compute a dose-volume histogram from a dose bundle file and a mask file
+/// and write it to `output` (never overwriting). Shared by `dvh` and the
+/// project runner.
+fn compute_dvh_file(
+    dose: &Path,
+    quantity: &str,
+    mask: &Path,
+    bins: usize,
+    output: &Path,
+) -> Result<openbnct_evidence::DoseVolumeHistogram, Box<dyn Error>> {
+    let dose_bytes = fs::read(dose)?;
+    let schema: serde_json::Value = serde_json::from_slice(&dose_bytes)?;
+    let mask: RegionMask = serde_json::from_slice(&fs::read(mask)?)?;
+    let source = openbnct_core::ContentReference {
+        id: dose.display().to_string(),
+        sha256: openbnct_evidence::sha256_file(dose)?,
+    };
+    let dose_schema = openbnct_core::normalize_contract_id(
+        schema
+            .get("schema_version")
+            .and_then(|v| v.as_str())
+            .unwrap_or_default(),
+    );
+    let histogram = match dose_schema.as_str() {
+        openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
+            let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+            let (values, unit) = dose_values(&bundle, quantity)?;
+            let voxel_volume = bundle.geometry.spacing_mm.iter().product();
+            openbnct_evidence::DoseVolumeHistogram::compute(
+                &bundle.case_id,
+                &mask.name,
+                quantity,
+                source,
+                unit,
+                values,
+                &mask.voxels,
+                voxel_volume,
+                bins,
+            )?
+        }
+        openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
+            let bundle: openbnct_bio::BiologicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+            let (values, unit) = biological_dose_values(&bundle, quantity)?;
+            let voxel_volume = bundle.geometry.spacing_mm.iter().product();
+            openbnct_evidence::DoseVolumeHistogram::compute(
+                &bundle.case_id,
+                &mask.name,
+                quantity,
+                source,
+                unit,
+                values,
+                &mask.voxels,
+                voxel_volume,
+                bins,
+            )?
+        }
+        other => {
+            return Err(
+                io::Error::other(format!("unsupported dose bundle schema {other:?}")).into(),
+            );
+        }
+    };
+    let json = serde_json::to_vec_pretty(&histogram)?;
+    let mut file = fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(output)?;
+    file.write_all(&json)?;
+    file.write_all(b"\n")?;
+    file.sync_all()?;
+    Ok(histogram)
+}
+
+/// Compute exact dose-volume metrics from a dose bundle file and a mask
+/// file and write them to `output` (never overwriting). Shared by
+/// `metrics` and the project runner.
+fn compute_metrics_file(
+    dose: &Path,
+    quantity: &str,
+    mask: &Path,
+    dx: &[f64],
+    vx: &[f64],
+    eud: &[f64],
+    output: &Path,
+) -> Result<openbnct_evidence::RegionDoseMetrics, Box<dyn Error>> {
+    let dose_bytes = fs::read(dose)?;
+    let bundle = load_dose_bundle(&dose_bytes)?;
+    let mask: RegionMask = serde_json::from_slice(&fs::read(mask)?)?;
+    let source = openbnct_core::ContentReference {
+        id: dose.display().to_string(),
+        sha256: openbnct_evidence::sha256_file(dose)?,
+    };
+    let selection = bundle.select(quantity)?;
+    let metrics = openbnct_evidence::RegionDoseMetrics::compute(
+        selection.case_id,
+        &mask.name,
+        quantity,
+        source,
+        selection.unit,
+        selection.values,
+        &mask.voxels,
+        selection.voxel_volume_mm3,
+        dx,
+        vx,
+        eud,
+    )?;
+    write_new_json(output, &metrics)?;
+    Ok(metrics)
+}
+
+/// `beam bind --aim-mask`: re-aim a face-centered bound disk source so the
+/// beam axis (`approach`) passes through the mask centroid. The aperture
+/// radius is the bound port's; the aimed disk sits on the entry face.
+fn aim_bound_source(
+    case: &TransportCase,
+    mask: &RegionMask,
+    approach: &str,
+) -> Result<openbnct_transport::FixedSourceDefinition, io::Error> {
+    let radius_cm = match &case.source.space {
+        openbnct_transport::SourceSpatialDistribution::UniformDisk { radius_cm, .. } => *radius_cm,
+        _ => {
+            return Err(io::Error::other(
+                "--aim-mask needs a beam with a circular port (uniform disk source)",
+            ));
+        }
+    };
+    let direction = openbnct_transport::AxisApproach::parse(approach)
+        .map_err(|error| io::Error::other(error.to_string()))?
+        .unit_vector();
+    let (aimed, report) = openbnct_transport::aim_disk_source_at_centroid(
+        &case.source,
+        &case.geometry,
+        mask,
+        direction,
+        radius_cm,
+    )
+    .map_err(|error| io::Error::other(format!("beam aim: {error}")))?;
+    println!(
+        "aimed at {:?} centroid LPS [{:.3}, {:.3}, {:.3}] mm from {approach}",
+        report.target_region,
+        report.target_centroid_lps_mm[0],
+        report.target_centroid_lps_mm[1],
+        report.target_centroid_lps_mm[2]
+    );
+    Ok(aimed)
 }
 
 fn write_new_json<T: serde::Serialize>(path: &Path, value: &T) -> io::Result<()> {

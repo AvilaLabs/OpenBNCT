@@ -609,6 +609,18 @@
       "module": "src/positioning.rs"
     },
     {
+      "token": "openbnct.project-report/0.1.0",
+      "constant": "PROJECT_REPORT_SCHEMA",
+      "crate": "openbnct-cli",
+      "module": "src/project.rs"
+    },
+    {
+      "token": "openbnct.project-run/0.1.0",
+      "constant": "PROJECT_RUN_SCHEMA",
+      "crate": "openbnct-cli",
+      "module": "src/project.rs"
+    },
+    {
       "token": "openbnct.prompt-gamma-source/0.1.0",
       "constant": "PROMPT_GAMMA_SOURCE_SCHEMA",
       "crate": "openbnct-transport",

@@ -1,0 +1,37 @@
+{
+ "schema_version": "openbnct.material-definition/0.1.0",
+ "id": "openbnct.tissue-library.air-dry.v1",
+ "density_g_cm3": 0.001205,
+ "temperature_k": 293.6,
+ "nuclides": [
+  {
+   "name": "C12",
+   "mass_fraction": 0.00012415609780012447
+  },
+  {
+   "name": "C13",
+   "mass_fraction": 1.4551172553926138e-06
+  },
+  {
+   "name": "N14",
+   "mass_fraction": 0.7620992906828383
+  },
+  {
+   "name": "N15",
+   "mass_fraction": 0.002982412321599649
+  },
+  {
+   "name": "O16",
+   "mass_fraction": 0.2341564040602067
+  },
+  {
+   "name": "O17",
+   "mass_fraction": 9.479623097506501e-05
+  },
+  {
+   "name": "O18",
+   "mass_fraction": 0.0005414854893247443
+  }
+ ],
+ "neutron_thermal_treatment": "free_gas"
+}

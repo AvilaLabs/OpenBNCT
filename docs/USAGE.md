@@ -4,6 +4,91 @@ Detailed command and workflow reference for the OpenBNCT CLI, GUI, and Python
 surfaces. For project status see [ROADMAP.md](ROADMAP.md); for the research
 boundary see [DISCLAIMER.md](DISCLAIMER.md).
 
+## Quick start: project
+
+From a head CT with an RT Structure Set to component dose, boron-scaled dose,
+DVHs and a report in two commands, with no hand-written JSON. The example uses
+the synthetic NF-BNCT-001 study (research demonstration only):
+
+```text
+openbnct benchmark generate ./study
+openbnct project init --dicom ./study --output ./p001 --target CORE --spacing-mm 8
+openbnct project run ./p001
+```
+
+`project init` reads the study, lists the detected ROI names in a comment at
+the top of `p001/project.toml`, and copies every built-in artifact the project
+uses into `p001/inputs/` (with `SHA256SUMS`), so the project is self-contained
+and reproducible from the binary alone. It refuses to overwrite an existing
+directory; without `--target` the `[beam] target` line is a commented
+placeholder you must fill in.
+
+`project run` executes seven steps, each the same code as the individual
+command it names: `import` (`dicom import-ct`), `calibrate` (`dicom
+calibrate`), `beam` (`beam bind --aim-mask`), `transport` (`sn solve --dose
+--boron-unit-output`), `boron` (`boron dose`), `metrics` (`metrics` and `dvh`
+per structure) and `report`. Artifacts land in `p001/out/01-import` ...
+`06-metrics`; the report is `out/report.md` and `out/report.json`
+(`openbnct.project-report/0.1.0`) with DVH curves in `out/dvh/*.csv`.
+Everything underneath stays the existing hash-bound artifacts; the runner only
+orchestrates.
+
+```toml
+[project]
+id = "mylab.p001"                          # case id
+
+[imaging]
+dicom = "../study"                         # one CT series (+ RTSTRUCT), relative to the project dir
+spacing_mm = 5.0
+
+[materials]                                # builtin:NAME or a path; `openbnct project builtins` lists names
+calibration = "builtin:tissue/hu-calibration-generic-head-ct"
+multigroup_data = "builtin:tissue/multigroup-data-28g"
+base_material = "builtin:tissue/material-air-dry"
+
+[beam]
+description = "builtin:beams/fir1-k63"     # or a path to an openbnct.beam-description
+target = "GTV"                             # RTSTRUCT ROI whose centroid the beam axis passes through
+approach = "+x"                            # +x -x +y -y +z -z
+
+[transport]
+engine = "sn"
+order = 8
+max_outer = 64
+allow_unconverged = false                  # demos/tests only; the report is then marked PROVISIONAL if it did not converge
+
+[boron]
+blood_ug_g = 25.0
+ratios = { GTV = 3.5, SKIN = 1.5 }         # tissue:blood per ROI; smaller ROI wins where they overlap
+default_ratio = 1.0                        # voxels in no listed ROI
+
+[report]
+structures = []                            # empty = every ROI
+# source_strength_per_s = 1.0e12           # both, or neither: scales per-source-particle
+# irradiation_time_s = 1800                # dose to Gy
+```
+
+The generic HU table and 28-group data are demonstration inputs (see
+[Standard tissue library](#standard-tissue-library)); the boron
+concentrations above are illustrative placeholders. The report header carries
+the project id, OpenBNCT version, timestamp, `converged` or `PROVISIONAL`,
+and the sha256 of every input; each structure gets mean, max, D95, D50 and D2
+for the boron, nitrogen, hydrogen and photon components and the physical total
+(per source particle, or Gy with delivery normalization); a "Commands"
+section lists the exact command line of every step, run from the
+project directory, so any step can be reproduced or modified by hand.
+
+Runs are resumable. `out/run-manifest.json` (`openbnct.project-run/0.1.0`)
+records each step's input sha256s, command, options, outputs and their
+sha256s. A rerun skips a step whose inputs, command and outputs still match,
+so editing `[boron] blood_ug_g` reruns only `boron`, `metrics` and `report`.
+`openbnct project run ./p001 --force` reruns everything and `--from
+transport` reruns that step and all later ones. `openbnct project status
+./p001` prints the step table. While `transport` runs, set
+`OPENBNCT_SOLVE_PROGRESS=1` to print each outer iteration's residual to
+stderr; a heartbeat line appears every 20 s regardless. Research software;
+nothing here is a clinical calculation.
+
 ## Workspace
 
 ```text
@@ -276,6 +361,14 @@ picks the side), centered on that face, keeping the declared aperture. An
 aperture that does not fit the face is rejected rather than clipped. The
 bound case feeds `openmc generate` directly — extract its `source` member
 as the `--source` artifact so content binding stays honest.
+
+`bind` can also aim the beam: `--aim-mask MASK.json --approach=+x` (a
+RegionMask, and one of `+x -x +y -y +z -z`) re-centers the circular port as
+a monodirectional disk on the entry face where the beam axis through the mask
+centroid meets it (the same `aim_disk_source_at_centroid` that `plan fields`
+uses), keeping the declared radius; the beam's divergence cone is replaced by
+the axis direction. The disk must fit inside the face or the bind is
+rejected. `openbnct project run` uses this to aim at the target structure.
 
 The underlying transport model supports `uniform_disk` spatial,
 `isotropic_cone` angular, and `tabulated_histogram` energy distributions;
