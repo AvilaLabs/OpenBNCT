@@ -44,8 +44,44 @@ impl ComponentDefinitionProfile {
                 self.components.len(),
             ));
         }
+        // The two neutron-fold modes may not be mixed within one profile.
+        let mut modes = self
+            .components
+            .iter()
+            .filter_map(|rule| match rule.estimator {
+                ComponentEstimator::NjoyPartialKermaFluenceFold { .. }
+                | ComponentEstimator::ResidualNeutronKermaFluenceFold { .. } => {
+                    Some(ProfileMode::BaseMaterialFold)
+                }
+                ComponentEstimator::UnitMassFractionKermaFold { .. }
+                | ComponentEstimator::NativeHeatingResidual { .. } => {
+                    Some(ProfileMode::UnitMassFraction)
+                }
+                ComponentEstimator::CoupledPhotonHeating => None,
+            });
+        if let Some(first) = modes.next()
+            && modes.any(|mode| mode != first)
+        {
+            return Err(ResponseMethodError::MixedProfileModes);
+        }
 
         Ok(())
+    }
+
+    /// The profile's fold mode. Call on a validated profile.
+    #[must_use]
+    pub fn mode(&self) -> ProfileMode {
+        if self.components.iter().any(|rule| {
+            matches!(
+                rule.estimator,
+                ComponentEstimator::UnitMassFractionKermaFold { .. }
+                    | ComponentEstimator::NativeHeatingResidual { .. }
+            )
+        }) {
+            ProfileMode::UnitMassFraction
+        } else {
+            ProfileMode::BaseMaterialFold
+        }
     }
 }
 
@@ -115,6 +151,33 @@ pub enum ComponentEstimator {
         subtract_components: Vec<DoseComponent>,
     },
     CoupledPhotonHeating,
+    /// Composition-independent partial-KERMA fold: the response curve is the
+    /// HEATR partial KERMA per unit mass fraction of `nuclide` (Gy cm^2 at
+    /// mass fraction one). The per-voxel component is
+    /// `w_nuclide(voxel) * fold(voxel)`, so one curve set serves every
+    /// material of a nuclear-data library.
+    UnitMassFractionKermaFold {
+        nuclide: String,
+        reaction_mt: u16,
+        heatr_partial_kerma_mt: u16,
+        photon_energy: PhotonEnergyTreatment,
+    },
+    /// Residual neutron KERMA taken from the native (composition-aware)
+    /// neutron `heating` tally per voxel mass, minus the named components.
+    NativeHeatingResidual {
+        subtract_components: Vec<DoseComponent>,
+    },
+}
+
+/// How a profile obtains its composition-dependent neutron components.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ProfileMode {
+    /// Folds are computed for one base material; regions may only vary
+    /// covered-nuclide fractions.
+    BaseMaterialFold,
+    /// Unit-mass-fraction folds scaled per voxel by the realized mass
+    /// fraction; residual from native heating. Any material composition.
+    UnitMassFraction,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -511,6 +574,35 @@ fn validate_component_rule(rule: &ComponentRule) -> Result<(), ResponseMethodErr
         {
             Ok(())
         }
+        (
+            DoseComponent::Boron,
+            ComponentEstimator::UnitMassFractionKermaFold {
+                nuclide,
+                reaction_mt: 107,
+                heatr_partial_kerma_mt: 407,
+                ..
+            },
+        ) if nuclide == "B10" => Ok(()),
+        (
+            DoseComponent::Nitrogen,
+            ComponentEstimator::UnitMassFractionKermaFold {
+                nuclide,
+                reaction_mt: 103,
+                heatr_partial_kerma_mt: 403,
+                ..
+            },
+        ) if nuclide == "N14" => Ok(()),
+        (
+            DoseComponent::Hydrogen,
+            ComponentEstimator::NativeHeatingResidual {
+                subtract_components,
+            },
+        ) if subtract_components.len() == 2
+            && subtract_components.iter().copied().collect::<BTreeSet<_>>()
+                == BTreeSet::from([DoseComponent::Boron, DoseComponent::Nitrogen]) =>
+        {
+            Ok(())
+        }
         (DoseComponent::Photon, ComponentEstimator::CoupledPhotonHeating) => Ok(()),
         (component, _) => Err(ResponseMethodError::InvalidComponentRule(component)),
     }
@@ -538,6 +630,8 @@ pub enum ResponseMethodError {
     UnexpectedComponentCount(usize),
     #[error("component {0:?} has an estimator inconsistent with the canonical profile")]
     InvalidComponentRule(DoseComponent),
+    #[error("a component profile may not mix base-material and unit-mass-fraction estimators")]
+    MixedProfileModes,
     #[error("processor source commit must be 40 lowercase hexadecimal characters")]
     InvalidSourceCommit,
     #[error("response-generation temperature must be finite and greater than zero kelvin")]
@@ -715,6 +809,43 @@ mod tests {
             response_set.validate(),
             Err(ResponseSetError::InvalidContentReference(
                 "nuclear_data_manifest"
+            ))
+        );
+    }
+
+    const UNIT_PROFILE_JSON: &str = include_str!(
+        "../../../examples/openmc-multimaterial/component-profile-unit-mass-fraction.json"
+    );
+
+    #[test]
+    fn unit_mass_fraction_profile_validates_and_reports_its_mode() {
+        let unit: ComponentDefinitionProfile = serde_json::from_str(UNIT_PROFILE_JSON).unwrap();
+        unit.validate().unwrap();
+        assert_eq!(unit.mode(), ProfileMode::UnitMassFraction);
+        assert_eq!(profile().mode(), ProfileMode::BaseMaterialFold);
+    }
+
+    #[test]
+    fn profile_modes_may_not_mix() {
+        let mut mixed: ComponentDefinitionProfile =
+            serde_json::from_str(UNIT_PROFILE_JSON).unwrap();
+        mixed.components[2] = profile().components[2].clone();
+        assert_eq!(
+            mixed.validate(),
+            Err(ResponseMethodError::MixedProfileModes)
+        );
+        // The unit boron fold is still pinned to B10 / MT107 / MT407.
+        let mut wrong: ComponentDefinitionProfile =
+            serde_json::from_str(UNIT_PROFILE_JSON).unwrap();
+        if let ComponentEstimator::UnitMassFractionKermaFold { nuclide, .. } =
+            &mut wrong.components[0].estimator
+        {
+            *nuclide = "N14".into();
+        }
+        assert_eq!(
+            wrong.validate(),
+            Err(ResponseMethodError::InvalidComponentRule(
+                DoseComponent::Boron
             ))
         );
     }

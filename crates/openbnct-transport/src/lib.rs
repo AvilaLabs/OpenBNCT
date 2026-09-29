@@ -103,9 +103,9 @@ pub use response::{
     AtomDensityBasis, ComponentDefinitionProfile, ComponentEstimator, ComponentRule,
     FoldNormalization, GridPolicy, HeatrMethod, MethodQualification, NeutronResponseSemantics,
     NeutronResponseSet, OutsideDomainPolicy, PartialKermaChannel, PhotonEnergyTreatment,
-    PhysicalTotalEstimator, ResponseGenerationMethod, ResponseInterpolation, ResponseMethodError,
-    ResponseSetError, ResponseSetQualification, ResponseUnit, SourceNormalization,
-    SpatialDoseModel, ToolIdentity,
+    PhysicalTotalEstimator, ProfileMode, ResponseGenerationMethod, ResponseInterpolation,
+    ResponseMethodError, ResponseSetError, ResponseSetQualification, ResponseUnit,
+    SourceNormalization, SpatialDoseModel, ToolIdentity,
 };
 pub use screening::{
     SENSITIVITY_SCREENING_SCHEMA, SENSITIVITY_SPEC_SCHEMA, ScreeningEntry, ScreeningError,

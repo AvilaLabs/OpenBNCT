@@ -3681,6 +3681,68 @@ struct OpenMcArgs {
     command: OpenMcCommand,
 }
 
+/// Inputs of the unit-mass-fraction (multi-material) component profile.
+/// Required together under that profile, rejected under the base-material
+/// profile.
+#[derive(Debug, Args)]
+struct MultiMaterialArgs {
+    /// Component profile the response set was generated under (the
+    /// base-material profile it is bound to).
+    #[arg(long)]
+    unit_source_component_profile: Option<PathBuf>,
+    /// Material the response set was generated for; its B10 and N14 mass
+    /// fractions normalize the response curves to per-unit-mass-fraction.
+    #[arg(long)]
+    unit_source_material: Option<PathBuf>,
+    /// Nuclear-data manifest the response set is bound to; the deck's
+    /// manifest must select the identical B10 and N14 evaluations.
+    #[arg(long)]
+    unit_source_nuclear_data_manifest: Option<PathBuf>,
+    /// Quantization levels for `voxel_fractions` mixtures: each voxel's
+    /// volume fractions are rounded to multiples of 1/LEVELS and each
+    /// distinct result becomes one OpenMC material.
+    #[arg(long)]
+    mixture_levels: Option<u32>,
+}
+
+impl MultiMaterialArgs {
+    fn into_config(
+        self,
+    ) -> Result<Option<openbnct_openmc::OpenMcMultiMaterialConfig>, Box<dyn std::error::Error>>
+    {
+        match (
+            self.unit_source_component_profile,
+            self.unit_source_material,
+            self.unit_source_nuclear_data_manifest,
+        ) {
+            (None, None, None) => {
+                if self.mixture_levels.is_some() {
+                    return Err(io::Error::other(
+                        "--mixture-levels requires the --unit-source-* artifacts",
+                    )
+                    .into());
+                }
+                Ok(None)
+            }
+            (Some(profile), Some(material), Some(manifest)) => {
+                Ok(Some(openbnct_openmc::OpenMcMultiMaterialConfig {
+                    unit_source_component_profile: profile,
+                    unit_source_material: material,
+                    unit_source_nuclear_data_manifest: manifest,
+                    mixture_levels: self
+                        .mixture_levels
+                        .unwrap_or(openbnct_openmc::DEFAULT_MIXTURE_LEVELS),
+                }))
+            }
+            _ => Err(io::Error::other(
+                "--unit-source-component-profile, --unit-source-material and \
+                 --unit-source-nuclear-data-manifest must be given together",
+            )
+            .into()),
+        }
+    }
+}
+
 #[derive(Debug, Subcommand)]
 enum OpenMcCommand {
     /// Probe or acquire externally published nuclear data.
@@ -3760,6 +3822,8 @@ enum OpenMcCommand {
         /// splitting/roulette in this deck.
         #[arg(long)]
         vr: Option<PathBuf>,
+        #[command(flatten)]
+        multi: MultiMaterialArgs,
         /// New output directory for the generated deck; it must not already exist.
         #[arg(long)]
         output: PathBuf,
@@ -3800,6 +3864,8 @@ enum OpenMcCommand {
         /// splitting/roulette in this run.
         #[arg(long)]
         vr: Option<PathBuf>,
+        #[command(flatten)]
+        multi: MultiMaterialArgs,
         /// Root containing cross_sections.xml and every selected HDF5 file.
         #[arg(long)]
         nuclear_data_root: PathBuf,
@@ -3840,6 +3906,12 @@ enum OpenMcCommand {
         /// New output path for the physical dose bundle JSON.
         #[arg(long)]
         output: PathBuf,
+        /// Also write the unit-concentration boron dose
+        /// (`openbnct.boron-unit-dose/0.1.0`, Gy per source particle per
+        /// ug/g of B-10). Only decks generated under the unit-mass-fraction
+        /// profile carry it.
+        #[arg(long)]
+        boron_unit_dose_output: Option<PathBuf>,
     },
     /// Evaluate completed candidate-reference runs against their bound
     /// acceptance contract (precision, estimator, and seed-consistency gates).
@@ -6739,8 +6811,21 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 acceptance,
                 assignment,
                 vr,
+                multi,
                 output,
             } => {
+                let multi = multi.into_config()?;
+                let multi_bytes = multi
+                    .as_ref()
+                    .map(|config| -> Result<_, io::Error> {
+                        Ok((
+                            fs::read(&config.unit_source_component_profile)?,
+                            fs::read(&config.unit_source_material)?,
+                            fs::read(&config.unit_source_nuclear_data_manifest)?,
+                            config.mixture_levels,
+                        ))
+                    })
+                    .transpose()?;
                 let case_json = fs::read(&case)?;
                 let case: TransportCase = serde_json::from_slice(&case_json)?;
                 let component_profile_json = fs::read(&component_profile)?;
@@ -6765,9 +6850,31 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         acceptance_json: acceptance_json.as_deref(),
                         material_assignment_json: assignment_json.as_deref(),
                         variance_reduction_json: vr_json.as_deref(),
+                        multimaterial: multi_bytes.as_ref().map(
+                            |(profile, material, manifest, levels)| {
+                                openbnct_openmc::MultiMaterialInputs {
+                                    unit_response_source:
+                                        openbnct_openmc::UnitResponseSourceArtifacts {
+                                            component_profile_json: profile,
+                                            material_json: material,
+                                            nuclear_data_manifest_json: manifest,
+                                        },
+                                    mixture_levels: *levels,
+                                }
+                            },
+                        ),
                     },
                 )?;
                 deck.write_new(&output)?;
+                if let Some(realization) = &deck.manifest.material_realization {
+                    println!(
+                        "unit-mass-fraction profile: {} realized materials, {} mixture voxels (levels {}, max fraction error {:.4})",
+                        realization.materials.len(),
+                        realization.mixture_voxel_count,
+                        realization.levels,
+                        realization.max_fraction_error
+                    );
+                }
                 println!(
                     "generated deterministic OpenMC input deck at {}",
                     output.display()
@@ -6791,6 +6898,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 acceptance,
                 assignment,
                 vr,
+                multi,
                 nuclear_data_root,
                 openmc,
                 environment,
@@ -6815,6 +6923,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     acceptance,
                     material_assignment: assignment,
                     variance_reduction: vr,
+                    multimaterial: multi.into_config()?,
                     nuclear_data_root,
                 };
                 let mut backend = OpenMcBackend::new(&openmc)
@@ -6961,6 +7070,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 working_directory,
                 exit_code,
                 output,
+                boron_unit_dose_output,
             } => {
                 let completed = CompletedRun {
                     backend_id: "openmc".into(),
@@ -6981,6 +7091,23 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 println!("case: {}", bundle.case_id);
                 println!("components: {}", bundle.components.len());
                 println!("provenance: {}", bundle.provenance_id);
+                if let Some(unit_output) = boron_unit_dose_output {
+                    let run = openbnct_openmc::collect_statepoint_full(&working_directory)?;
+                    let unit = run.boron_unit_dose.ok_or_else(|| {
+                        io::Error::other(
+                            "this deck was not generated under the unit-mass-fraction profile; no boron unit dose exists",
+                        )
+                    })?;
+                    let json = serde_json::to_vec_pretty(&unit)?;
+                    let mut file = fs::OpenOptions::new()
+                        .write(true)
+                        .create_new(true)
+                        .open(&unit_output)?;
+                    file.write_all(&json)?;
+                    file.write_all(b"\n")?;
+                    file.sync_all()?;
+                    println!("wrote boron unit dose at {}", unit_output.display());
+                }
             }
             OpenMcCommand::CovEndf {
                 tape,

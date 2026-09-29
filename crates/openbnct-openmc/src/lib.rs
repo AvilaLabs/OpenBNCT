@@ -21,6 +21,7 @@ mod evaluated;
 mod input;
 mod mgcollapse;
 mod photoncollapse;
+mod realization;
 mod statepoint;
 mod variance_reduction;
 
@@ -62,20 +63,26 @@ pub use evaluated::{
 };
 pub use input::{
     ACCEPTANCE_CONTRACT_SCHEMA, CANDIDATE_REFERENCE_SEEDS, GeneratedOpenMcFile,
-    OPENMC_DEFAULT_STRIDE, OpenMcAcceptanceContract, OpenMcAcceptanceGates, OpenMcAcceptanceRegion,
-    OpenMcCollectionNormalization, OpenMcElectronTreatment, OpenMcEnergyMode,
-    OpenMcEvaluatedDepositedEnergies, OpenMcExecutionProfile, OpenMcExecutionPurpose,
-    OpenMcInputArtifacts, OpenMcInputBindings, OpenMcInputDeck, OpenMcInputError,
-    OpenMcInputManifest, OpenMcInputManifestArtifact, OpenMcProfileError, OpenMcRawTallyUnit,
-    OpenMcRegionBounds, OpenMcRoiMesh, OpenMcRunControls, OpenMcRunMode, OpenMcScoringMesh,
-    OpenMcTallyContract, OpenMcTallyQuantity, OpenMcTallyScope, OpenMcTemperatureMethod,
+    MultiMaterialInputs, OPENMC_DEFAULT_STRIDE, OpenMcAcceptanceContract, OpenMcAcceptanceGates,
+    OpenMcAcceptanceRegion, OpenMcCollectionNormalization, OpenMcElectronTreatment,
+    OpenMcEnergyMode, OpenMcEvaluatedDepositedEnergies, OpenMcExecutionProfile,
+    OpenMcExecutionPurpose, OpenMcInputArtifacts, OpenMcInputBindings, OpenMcInputDeck,
+    OpenMcInputError, OpenMcInputManifest, OpenMcInputManifestArtifact, OpenMcProfileError,
+    OpenMcRawTallyUnit, OpenMcRegionBounds, OpenMcRoiMesh, OpenMcRunControls, OpenMcRunMode,
+    OpenMcScoringMesh, OpenMcTallyContract, OpenMcTallyQuantity, OpenMcTallyScope,
+    OpenMcTemperatureMethod, OpenMcUnitResponse, UnitResponseSourceArtifacts,
 };
 pub use mgcollapse::{CollapseError, CollapseOptions, WeightingSpectrum, collapse_multigroup};
 pub use photoncollapse::{PhotonCollapseOptions, collapse_photon};
+pub use realization::{
+    DEFAULT_MIXTURE_LEVELS, MAX_MIXTURE_LEVELS, MaterialRealization, OpenMcMaterialRealization,
+    REALIZATION_RULE, RealizationError, RealizedMaterialRecord, assignment_has_fraction_regions,
+    realize,
+};
 pub use statepoint::{
-    CollectedDose, OPENMC_INPUT_MANIFEST_FILE, OpenMcCollectError, OpenMcEnergyFunction,
-    OpenMcStatepoint, OpenMcStatepointTally, collect_completed, collect_statepoint,
-    latest_statepoint,
+    CollectedDose, CollectedRun, OPENMC_INPUT_MANIFEST_FILE, OpenMcCollectError,
+    OpenMcEnergyFunction, OpenMcStatepoint, OpenMcStatepointTally, collect_completed,
+    collect_statepoint, collect_statepoint_full, latest_statepoint,
 };
 pub use variance_reduction::{
     RESOLVED_WW_FILE, VR_VALIDATION_SCHEMA, VarianceReductionError, VrComparison,
@@ -102,7 +109,19 @@ pub struct OpenMcBackendConfig {
     /// Resolved `openbnct.weight-windows` artifact enabling weight-window
     /// splitting/roulette for this run.
     pub variance_reduction: Option<PathBuf>,
+    /// Unit-mass-fraction profile inputs (see [`OpenMcMultiMaterialConfig`]).
+    pub multimaterial: Option<OpenMcMultiMaterialConfig>,
     pub nuclear_data_root: PathBuf,
+}
+
+/// Paths of the artifacts the unit-mass-fraction profile derives its curves
+/// from, plus the mixture quantization level count.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct OpenMcMultiMaterialConfig {
+    pub unit_source_component_profile: PathBuf,
+    pub unit_source_material: PathBuf,
+    pub unit_source_nuclear_data_manifest: PathBuf,
+    pub mixture_levels: u32,
 }
 
 /// Default wall-clock bound on one `openmc` execution: 48 hours — long
@@ -220,6 +239,18 @@ impl TransportBackend for OpenMcBackend {
         let acceptance_json = config.acceptance.as_ref().map(&read).transpose()?;
         let assignment_json = config.material_assignment.as_ref().map(&read).transpose()?;
         let vr_json = config.variance_reduction.as_ref().map(&read).transpose()?;
+        let multimaterial_bytes = config
+            .multimaterial
+            .as_ref()
+            .map(|multi| -> Result<_, OpenMcError> {
+                Ok((
+                    read(&multi.unit_source_component_profile)?,
+                    read(&multi.unit_source_material)?,
+                    read(&multi.unit_source_nuclear_data_manifest)?,
+                    multi.mixture_levels,
+                ))
+            })
+            .transpose()?;
         let deck = OpenMcInputDeck::generate(
             case,
             &config.nuclear_data_root,
@@ -233,6 +264,16 @@ impl TransportBackend for OpenMcBackend {
                 acceptance_json: acceptance_json.as_deref(),
                 material_assignment_json: assignment_json.as_deref(),
                 variance_reduction_json: vr_json.as_deref(),
+                multimaterial: multimaterial_bytes.as_ref().map(
+                    |(profile, material, manifest, levels)| MultiMaterialInputs {
+                        unit_response_source: UnitResponseSourceArtifacts {
+                            component_profile_json: profile,
+                            material_json: material,
+                            nuclear_data_manifest_json: manifest,
+                        },
+                        mixture_levels: *levels,
+                    },
+                ),
             },
         )?;
         deck.write_new(working_directory)?;
@@ -435,6 +476,7 @@ mod tests {
             acceptance: None,
             material_assignment: None,
             variance_reduction: None,
+            multimaterial: None,
             nuclear_data_root: inputs.data_root.path().to_path_buf(),
         };
         (

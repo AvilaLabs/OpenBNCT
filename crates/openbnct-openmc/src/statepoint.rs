@@ -11,9 +11,13 @@ use openbnct_core::{
     PhysicalTotalDoseVolume, TotalUncertaintyMethod,
 };
 use openbnct_transport::{
+    BORON_UNIT_DOSE_QUALIFICATION, BORON_UNIT_DOSE_SCHEMA, BORON_UNIT_DOSE_UNIT, BoronUnitDose,
     CompletedRun, ComponentDefinitionProfile, ComponentEstimator, MaterialAssignment,
+    TRACE_BORON_ASSUMPTION,
 };
 use thiserror::Error;
+
+use crate::realization::{MaterialRealization, realize};
 
 use crate::input::{OpenMcInputManifest, OpenMcTallyContract, sha256_hex};
 
@@ -435,6 +439,118 @@ pub fn latest_statepoint(
 pub fn collect_statepoint(
     working_directory: &Path,
 ) -> Result<PhysicalDoseBundle, OpenMcCollectError> {
+    Ok(collect_statepoint_full(working_directory)?.bundle)
+}
+
+/// A collected run: the physical dose bundle plus, under the
+/// unit-mass-fraction profile, the tissue-independent unit-concentration
+/// boron dose (`openbnct.boron-unit-dose/0.1.0`).
+pub struct CollectedRun {
+    pub bundle: PhysicalDoseBundle,
+    pub boron_unit_dose: Option<BoronUnitDose>,
+}
+
+/// Per-voxel composition context for the unit-mass-fraction profile.
+struct UnitContext {
+    realization: MaterialRealization,
+    /// Mass fraction of each component's backing nuclide, per voxel.
+    boron_fraction: Vec<f64>,
+    nitrogen_fraction: Vec<f64>,
+}
+
+fn load_unit_context(
+    working_directory: &Path,
+    manifest: &OpenMcInputManifest,
+) -> Result<UnitContext, OpenMcCollectError> {
+    let read_bound =
+        |name: &str, declared: &ContentReference| -> Result<Vec<u8>, OpenMcCollectError> {
+            let path = resolve_run_file(working_directory, name);
+            let bytes = std::fs::read(&path).map_err(|error| {
+                OpenMcCollectError::Io(path.display().to_string(), error.to_string())
+            })?;
+            if sha256_hex(&bytes) != declared.sha256 {
+                return Err(OpenMcCollectError::BindingMismatch(name.to_owned()));
+            }
+            Ok(bytes)
+        };
+    let assignment_bytes = read_bound(
+        "openbnct-material-assignment.json",
+        manifest
+            .bindings
+            .material_assignment
+            .as_ref()
+            .ok_or_else(|| {
+                OpenMcCollectError::Manifest(
+                    "input manifest".into(),
+                    "unit-mass-fraction deck without a bound material assignment".into(),
+                )
+            })?,
+    )?;
+    let profile_bytes = read_bound(
+        "openbnct-component-profile.json",
+        &manifest.bindings.component_profile,
+    )?;
+    let assignment: MaterialAssignment =
+        serde_json::from_slice(&assignment_bytes).map_err(|error| {
+            OpenMcCollectError::Manifest("material assignment".into(), error.to_string())
+        })?;
+    let profile: ComponentDefinitionProfile =
+        serde_json::from_slice(&profile_bytes).map_err(|error| {
+            OpenMcCollectError::Manifest("component profile".into(), error.to_string())
+        })?;
+    let recorded = manifest.material_realization.as_ref().ok_or_else(|| {
+        OpenMcCollectError::Manifest(
+            "input manifest".into(),
+            "unit-mass-fraction deck without a material realization record".into(),
+        )
+    })?;
+    let realization = realize(
+        &assignment,
+        manifest.scoring_mesh.dimensions,
+        recorded.levels,
+    )
+    .map_err(|error| {
+        OpenMcCollectError::Manifest("material realization".into(), error.to_string())
+    })?;
+    if realization.record != *recorded {
+        return Err(OpenMcCollectError::Manifest(
+            "material realization".into(),
+            "recomputed realization differs from the manifest record".into(),
+        ));
+    }
+    let voxel_count = realization.voxel_material.len();
+    let nuclide_for = |component: DoseComponent| -> Result<String, OpenMcCollectError> {
+        profile
+            .components
+            .iter()
+            .find_map(
+                |rule| match (&rule.estimator, rule.component == component) {
+                    (ComponentEstimator::UnitMassFractionKermaFold { nuclide, .. }, true) => {
+                        Some(nuclide.clone())
+                    }
+                    _ => None,
+                },
+            )
+            .ok_or(OpenMcCollectError::MissingComponent(component))
+    };
+    let boron = nuclide_for(DoseComponent::Boron)?;
+    let nitrogen = nuclide_for(DoseComponent::Nitrogen)?;
+    Ok(UnitContext {
+        boron_fraction: (0..voxel_count)
+            .map(|voxel| realization.voxel_mass_fraction(voxel, &boron))
+            .collect(),
+        nitrogen_fraction: (0..voxel_count)
+            .map(|voxel| realization.voxel_mass_fraction(voxel, &nitrogen))
+            .collect(),
+        realization,
+    })
+}
+
+/// Collect a completed run, also returning the unit-concentration boron dose
+/// when the deck used the unit-mass-fraction profile.
+pub fn collect_statepoint_full(
+    working_directory: &Path,
+) -> Result<CollectedRun, OpenMcCollectError> {
     let manifest_path = resolve_run_file(working_directory, OPENMC_INPUT_MANIFEST_FILE);
     let manifest_bytes = std::fs::read(&manifest_path).map_err(|error| {
         OpenMcCollectError::Io(manifest_path.display().to_string(), error.to_string())
@@ -502,19 +618,36 @@ pub fn collect_statepoint(
     // Native heating tallies already see the real material; their
     // normalization needs the per-voxel mass, which differs from the base
     // voxel mass whenever a region carries a different density.
-    let corrections = if manifest.bindings.material_assignment.is_some() {
+    let unit = if manifest.unit_response.is_some() {
+        Some(load_unit_context(working_directory, &manifest)?)
+    } else {
+        None
+    };
+    if let Some(unit) = &unit
+        && unit.realization.voxel_material.len() != voxel_count
+    {
+        return Err(OpenMcCollectError::InvalidMesh);
+    }
+    let corrections = if unit.is_none() && manifest.bindings.material_assignment.is_some() {
         Some(load_region_corrections(working_directory, &manifest)?)
     } else {
         None
     };
-    let voxel_mass_kg: Vec<f64> = match &corrections {
-        Some(corrections) => corrections
+    let voxel_mass_kg: Vec<f64> = match (&unit, &corrections) {
+        (Some(unit), _) => (0..voxel_count)
+            .map(|voxel| {
+                unit.realization.voxel_density_g_cm3(voxel) * mesh.voxel_volume_cm3 * 1.0e-3
+            })
+            .collect(),
+        (None, Some(corrections)) => corrections
             .voxel_density_g_cm3
             .iter()
             .map(|density| density * mesh.voxel_volume_cm3 * 1.0e-3)
             .collect(),
-        None => vec![mesh.voxel_mass_g * 1.0e-3; voxel_count],
+        (None, None) => vec![mesh.voxel_mass_g * 1.0e-3; voxel_count],
     };
+    let mut neutron_heating: Option<CollectedDose> = None;
+    let mut boron_unit_fold: Option<CollectedDose> = None;
 
     let mut components: Vec<DoseVolume> = Vec::new();
     let mut physical_total: Option<PhysicalTotalDoseVolume> = None;
@@ -550,6 +683,28 @@ pub fn collect_statepoint(
         let mut dose = normalize_tally(contract, tally, mesh.voxel_volume_cm3, &voxel_mass_kg)?;
         match (contract.component, contract.particle) {
             (Some(component), _) => {
+                if let Some(unit) = &unit {
+                    // Unit fold: dose = w_nuclide(voxel) * fold(voxel).
+                    let fractions = match component {
+                        DoseComponent::Boron => Some(&unit.boron_fraction),
+                        DoseComponent::Nitrogen => Some(&unit.nitrogen_fraction),
+                        _ => None,
+                    };
+                    if let Some(fractions) = fractions {
+                        if component == DoseComponent::Boron {
+                            boron_unit_fold = Some(dose.clone());
+                        }
+                        for ((value, sigma), fraction) in dose
+                            .values
+                            .iter_mut()
+                            .zip(dose.absolute_standard_uncertainty.iter_mut())
+                            .zip(fractions.iter())
+                        {
+                            *value *= fraction;
+                            *sigma *= fraction;
+                        }
+                    }
+                }
                 if let Some(corrections) = &corrections
                     && let Some(factor) = corrections.component_factors.get(&component)
                 {
@@ -584,8 +739,69 @@ pub fn collect_statepoint(
                     uncertainty_method: TotalUncertaintyMethod::DedicatedEstimator,
                 });
             }
-            (None, Some(_)) => continue,
+            (None, Some(_)) => {
+                if unit.is_some() && contract.name == "openbnct.audit.neutron_heating" {
+                    neutron_heating = Some(dose);
+                }
+                continue;
+            }
         }
+    }
+
+    // Unit profile: the residual (hydrogen) neutron KERMA is the native
+    // composition-aware neutron heating minus the two partial folds. Both
+    // come from the same tracks, so the difference is strongly correlated;
+    // adding the uncertainties in quadrature overstates the residual sigma
+    // (conservative).
+    if unit.is_some() {
+        let heating = neutron_heating.ok_or_else(|| {
+            OpenMcCollectError::MissingTally("openbnct.audit.neutron_heating".into())
+        })?;
+        let partials: Vec<&DoseVolume> = components
+            .iter()
+            .filter(|volume| {
+                matches!(
+                    volume.component,
+                    DoseComponent::Boron | DoseComponent::Nitrogen
+                )
+            })
+            .collect();
+        let mut values = heating.values.clone();
+        let mut variance: Vec<f64> = heating
+            .absolute_standard_uncertainty
+            .iter()
+            .map(|sigma| sigma * sigma)
+            .collect();
+        for partial in partials {
+            for (index, value) in partial.values.iter().enumerate() {
+                values[index] -= value;
+            }
+            if let Some(sigma) = &partial.absolute_standard_uncertainty {
+                for (index, sigma) in sigma.iter().enumerate() {
+                    variance[index] += sigma * sigma;
+                }
+            }
+        }
+        for (index, value) in values.iter_mut().enumerate() {
+            if *value < 0.0 {
+                // The library's total heating must not fall below the
+                // partial KERMA it contains; only round-off is tolerated.
+                if *value < -1.0e-6 * heating.values[index] {
+                    return Err(OpenMcCollectError::NegativeResidual {
+                        voxel: index,
+                        residual: *value,
+                        heating: heating.values[index],
+                    });
+                }
+                *value = 0.0;
+            }
+        }
+        components.push(DoseVolume {
+            component: DoseComponent::Hydrogen,
+            unit: DoseUnit::GrayPerSourceParticle,
+            values,
+            absolute_standard_uncertainty: Some(variance.into_iter().map(f64::sqrt).collect()),
+        });
     }
 
     components.sort_by_key(|volume| volume.component);
@@ -643,7 +859,45 @@ pub fn collect_statepoint(
     bundle
         .validate()
         .map_err(|error| OpenMcCollectError::Bundle(error.to_string()))?;
-    Ok(bundle)
+    let boron_unit_dose = match (&manifest.unit_response, boron_unit_fold) {
+        (Some(_), Some(fold)) => {
+            // Mass kerma per unit B10 mass fraction, expressed per ug/g.
+            const PER_UG_PER_G: f64 = 1.0e-6;
+            let dose = BoronUnitDose {
+                schema_version: BORON_UNIT_DOSE_SCHEMA.into(),
+                id: format!("{}.boron-unit-dose", manifest.case_id),
+                case_id: manifest.case_id.clone(),
+                geometry: bundle.geometry.clone(),
+                unit: BORON_UNIT_DOSE_UNIT.into(),
+                values: fold.values.iter().map(|v| v * PER_UG_PER_G).collect(),
+                absolute_standard_uncertainty: Some(
+                    fold.absolute_standard_uncertainty
+                        .iter()
+                        .map(|v| v * PER_UG_PER_G)
+                        .collect(),
+                ),
+                flux: ContentReference {
+                    id: "openmc-statepoint".into(),
+                    sha256: statepoint_sha256.clone(),
+                },
+                multigroup_data: ContentReference {
+                    id: manifest.bindings.response_set.id.clone(),
+                    sha256: manifest.bindings.response_set.sha256.clone(),
+                },
+                assumptions: TRACE_BORON_ASSUMPTION.into(),
+                qualification: BORON_UNIT_DOSE_QUALIFICATION.into(),
+                provenance_id: bundle.provenance_id.clone(),
+            };
+            dose.validate()
+                .map_err(|error| OpenMcCollectError::Bundle(error.to_string()))?;
+            Some(dose)
+        }
+        _ => None,
+    };
+    Ok(CollectedRun {
+        bundle,
+        boron_unit_dose,
+    })
 }
 
 /// Per-voxel corrections derived from the deck's bound material assignment
@@ -760,6 +1014,13 @@ fn load_region_corrections(
             }
             ComponentEstimator::ResidualNeutronKermaFluenceFold { .. } => None,
             ComponentEstimator::CoupledPhotonHeating => continue,
+            ComponentEstimator::UnitMassFractionKermaFold { .. }
+            | ComponentEstimator::NativeHeatingResidual { .. } => {
+                return Err(OpenMcCollectError::Manifest(
+                    "component profile".into(),
+                    "unit-mass-fraction profile on a deck without unit-response metadata".into(),
+                ));
+            }
         };
         let mut per_voxel: Vec<f64> = vec![1.0; voxel_count];
         if let Some(nuclide) = covered_nuclide {
@@ -862,6 +1123,14 @@ pub enum OpenMcCollectError {
     NonZeroExit(i32),
     #[error("collected bundle failed validation: {0}")]
     Bundle(String),
+    #[error(
+        "voxel {voxel}: native neutron heating {heating} Gy is below the folded B10+N14 partials by {residual} Gy; the library's total heating is inconsistent with the partial KERMA"
+    )]
+    NegativeResidual {
+        voxel: usize,
+        residual: f64,
+        heating: f64,
+    },
 }
 
 #[cfg(test)]
@@ -1480,6 +1749,157 @@ mod tests {
             results.push(folded);
         }
         assert_eq!(results[0], results[1]);
+    }
+
+    const UNIT_PROFILE_JSON: &str = include_str!(
+        "../../../examples/openmc-multimaterial/component-profile-unit-mass-fraction.json"
+    );
+
+    /// Bind a unit-profile assignment (region density `region_density`) and
+    /// its realization record into the fixture deck.
+    fn bind_unit_deck(directory: &Path, region_density: f64) {
+        let mut assignment = assignment_json();
+        assignment["regions"][0]["material"]["density_g_cm3"] = serde_json::json!(region_density);
+        let assignment_bytes = serde_json::to_vec_pretty(&assignment).unwrap();
+        let profile_bytes = UNIT_PROFILE_JSON.as_bytes();
+        std::fs::write(
+            directory.join("openbnct-material-assignment.json"),
+            &assignment_bytes,
+        )
+        .unwrap();
+        std::fs::write(
+            directory.join("openbnct-component-profile.json"),
+            profile_bytes,
+        )
+        .unwrap();
+        let parsed: MaterialAssignment = serde_json::from_value(assignment).unwrap();
+        let realization = realize(&parsed, [2, 1, 1], 20).unwrap();
+        let manifest_path = directory.join(OPENMC_INPUT_MANIFEST_FILE);
+        let mut manifest: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&manifest_path).unwrap()).unwrap();
+        manifest["bindings"]["component_profile"]["sha256"] = sha256_hex(profile_bytes).into();
+        manifest["bindings"]["material_assignment"] = serde_json::json!({
+            "id": "openbnct.material-assignment/0.2.0",
+            "sha256": sha256_hex(&assignment_bytes),
+        });
+        let reference = |id: &str| serde_json::json!({"id": id, "sha256": "9".repeat(64)});
+        manifest["unit_response"] = serde_json::json!({
+            "source_component_profile": reference("p"),
+            "source_material": reference("m"),
+            "source_nuclear_data_manifest": reference("n"),
+            "boron_source_mass_fraction": 0.5,
+            "nitrogen_source_mass_fraction": 0.5,
+        });
+        manifest["material_realization"] = serde_json::to_value(&realization.record).unwrap();
+        std::fs::write(
+            &manifest_path,
+            serde_json::to_vec_pretty(&manifest).unwrap(),
+        )
+        .unwrap();
+    }
+
+    #[test]
+    fn unit_profile_scales_folds_by_realized_mass_fraction_and_derives_hydrogen() {
+        let directory = tempfile::tempdir().unwrap();
+        let tallies: Vec<TallySpec> = tally_defs().into_iter().filter(|t| t.id != 3).collect();
+        write_deck(directory.path(), &tallies);
+        bind_unit_deck(directory.path(), 2.0);
+
+        let run = collect_statepoint_full(directory.path()).unwrap();
+        let bundle = &run.bundle;
+        bundle.validate().unwrap();
+        let component = |name: &str| {
+            bundle
+                .components
+                .iter()
+                .find(|v| serde_json::to_value(v.component).unwrap() == serde_json::json!(name))
+                .unwrap()
+        };
+        // Voxel 0 is base (B10 0.5, N14 0.5); voxel 1 is the N14-only core
+        // at twice the density. Raw unit folds: boron 1e-12, nitrogen 2e-13.
+        let boron = &component("boron").values;
+        let nitrogen = &component("nitrogen").values;
+        assert!((boron[0] - 0.5e-12).abs() < 1e-24 && boron[1] == 0.0);
+        assert!((nitrogen[0] - 1.0e-13).abs() < 1e-25);
+        assert!((nitrogen[1] - 2.0e-13).abs() < 1e-25);
+        // Hydrogen = native neutron heating / voxel mass - boron - nitrogen.
+        let ev = 1.602176634e-19;
+        let heating = [170_000.0 * ev / 1.0e-3, 170_000.0 * ev / 2.0e-3];
+        let hydrogen = &component("hydrogen").values;
+        for voxel in 0..2 {
+            let expected = heating[voxel] - boron[voxel] - nitrogen[voxel];
+            assert!(
+                (hydrogen[voxel] - expected).abs() / expected < 1e-12,
+                "voxel {voxel}"
+            );
+        }
+        // Residual sigma adds the correlated terms in quadrature.
+        let sigma = component("hydrogen")
+            .absolute_standard_uncertainty
+            .clone()
+            .unwrap();
+        let sigma_heating = 1_000.0 * ev / 1.0e-3;
+        let sigma_boron: f64 = 0.5 * 1.0e-14;
+        let sigma_nitrogen: f64 = 0.5 * 2.0e-15;
+        let expected_sigma =
+            (sigma_heating.powi(2) + sigma_boron.powi(2) + sigma_nitrogen.powi(2)).sqrt();
+        assert!((sigma[0] - expected_sigma).abs() / expected_sigma < 1e-12);
+        // Photon heating divides by the per-voxel realized mass.
+        let photon = &component("photon").values;
+        assert!((photon[1] - 20_000.0 * ev / 2.0e-3).abs() / photon[1] < 1e-12);
+
+        // Unit boron dose is the unscaled fold per ug/g (x 1e-6).
+        let unit = run
+            .boron_unit_dose
+            .expect("unit profile emits a boron unit dose");
+        assert_eq!(unit.schema_version, "openbnct.boron-unit-dose/0.1.0");
+        assert_eq!(unit.unit, "gray_per_source_particle_per_ug_per_g");
+        for value in &unit.values {
+            assert!((value - 1.0e-18).abs() < 1e-30);
+        }
+        assert!((unit.absolute_standard_uncertainty.unwrap()[0] - 1.0e-20).abs() < 1e-32);
+    }
+
+    #[test]
+    fn unit_profile_folds_do_not_depend_on_density() {
+        let mut folded = Vec::new();
+        for density in [1.0, 2.0] {
+            let directory = tempfile::tempdir().unwrap();
+            let tallies: Vec<TallySpec> = tally_defs().into_iter().filter(|t| t.id != 3).collect();
+            write_deck(directory.path(), &tallies);
+            bind_unit_deck(directory.path(), density);
+            let bundle = collect_statepoint(directory.path()).unwrap();
+            folded.push(
+                bundle
+                    .components
+                    .iter()
+                    .filter(|v| {
+                        matches!(v.component, DoseComponent::Boron | DoseComponent::Nitrogen)
+                    })
+                    .map(|v| v.values.clone())
+                    .collect::<Vec<_>>(),
+            );
+        }
+        assert_eq!(folded[0], folded[1]);
+    }
+
+    #[test]
+    fn unit_profile_refuses_heating_below_the_partials() {
+        // A native heating tally smaller than the B10 fold means the library
+        // total is inconsistent with the partial KERMA: refuse, don't clamp.
+        let directory = tempfile::tempdir().unwrap();
+        let mut tallies: Vec<TallySpec> = tally_defs().into_iter().filter(|t| t.id != 3).collect();
+        for spec in &mut tallies {
+            if spec.id == 4 {
+                spec.mean = 1.0e-3;
+            }
+        }
+        write_deck(directory.path(), &tallies);
+        bind_unit_deck(directory.path(), 1.0);
+        assert!(matches!(
+            collect_statepoint_full(directory.path()),
+            Err(OpenMcCollectError::NegativeResidual { .. })
+        ));
     }
 
     #[test]

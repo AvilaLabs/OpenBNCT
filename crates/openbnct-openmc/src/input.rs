@@ -8,7 +8,7 @@ use openbnct_core::{ContentReference, DoseComponent, GridGeometry};
 use openbnct_transport::{
     AngularDistribution, ComponentDefinitionProfile, EnergyDistribution, FixedSourceDefinition,
     MATERIAL_ASSIGNMENT_SCHEMA, MaterialAssignment, MaterialDefinition, NeutronResponseSet,
-    ParticleType, ResolvedWeightWindows, SourceSpatialDistribution, TransportCase,
+    ParticleType, ProfileMode, ResolvedWeightWindows, SourceSpatialDistribution, TransportCase,
 };
 use quick_xml::Writer;
 use quick_xml::events::{BytesDecl, BytesEnd, BytesStart, BytesText, Event};
@@ -17,6 +17,9 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use thiserror::Error;
 
+use crate::realization::{
+    MaterialRealization, OpenMcMaterialRealization, assignment_has_fraction_regions, realize,
+};
 use crate::{
     NuclearDataError, NuclearDataManifest, TARGET_OPENMC_SOURCE_COMMIT, TARGET_OPENMC_VERSION,
     TEMPERATURE_TOLERANCE_K,
@@ -28,6 +31,7 @@ const EXECUTION_PROFILE_SCHEMA: &str = "openbnct.openmc-execution-profile/0.1.0"
 const EXECUTION_PROFILE_SCHEMA_V2: &str = "openbnct.openmc-execution-profile/0.2.0";
 const INPUT_MANIFEST_SCHEMA: &str = "openbnct.openmc-input-manifest/0.1.0";
 const INPUT_MANIFEST_SCHEMA_V2: &str = "openbnct.openmc-input-manifest/0.2.0";
+const INPUT_MANIFEST_SCHEMA_V3: &str = "openbnct.openmc-input-manifest/0.3.0";
 pub const ACCEPTANCE_CONTRACT_SCHEMA: &str = "openbnct.acceptance-contract/0.1.0";
 const XML_MEDIA_TYPE: &str = "application/xml";
 const JSON_MEDIA_TYPE: &str = "application/json";
@@ -408,6 +412,41 @@ pub struct OpenMcInputArtifacts<'a> {
     /// deck declares each window mesh in `settings.xml` and emits the
     /// OpenMC `<weight_windows>` entries that enable splitting/roulette.
     pub variance_reduction_json: Option<&'a [u8]>,
+    /// Inputs of the unit-mass-fraction component profile: required under
+    /// that profile, forbidden under the base-material profile.
+    pub multimaterial: Option<MultiMaterialInputs<'a>>,
+}
+
+/// The artifacts a reviewed response set was generated from. The
+/// unit-mass-fraction profile derives its composition-independent curves
+/// from that set (curve / source mass fraction), so it needs the exact
+/// profile, material, and nuclear-data manifest the set is bound to.
+#[derive(Debug, Clone, Copy)]
+pub struct UnitResponseSourceArtifacts<'a> {
+    pub component_profile_json: &'a [u8],
+    pub material_json: &'a [u8],
+    pub nuclear_data_manifest_json: &'a [u8],
+}
+
+/// Inputs specific to the unit-mass-fraction (multi-material) profile.
+#[derive(Debug, Clone, Copy)]
+pub struct MultiMaterialInputs<'a> {
+    pub unit_response_source: UnitResponseSourceArtifacts<'a>,
+    /// Quantization levels for `voxel_fractions` mixtures.
+    pub mixture_levels: u32,
+}
+
+/// How the unit-mass-fraction curves were derived, recorded in the manifest.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenMcUnitResponse {
+    pub source_component_profile: ContentReference,
+    pub source_material: ContentReference,
+    pub source_nuclear_data_manifest: ContentReference,
+    /// Source-material B10 mass fraction the boron curve was divided by.
+    pub boron_source_mass_fraction: f64,
+    /// Source-material N14 mass fraction the nitrogen curve was divided by.
+    pub nitrogen_source_mass_fraction: f64,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -427,6 +466,12 @@ pub struct OpenMcInputManifest {
     /// an acceptance contract (schema 0.2.0).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub rois: Vec<OpenMcRoiMesh>,
+    /// Present under the unit-mass-fraction profile only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub unit_response: Option<OpenMcUnitResponse>,
+    /// Voxel material realization (quantization record); unit profile only.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub material_realization: Option<OpenMcMaterialRealization>,
     pub xml_artifacts: Vec<OpenMcInputManifestArtifact>,
 }
 
@@ -586,6 +631,33 @@ impl OpenMcInputDeck {
         component_profile
             .validate()
             .map_err(|error| OpenMcInputError::InvalidComponentProfile(error.to_string()))?;
+        let unit_mode = component_profile.mode() == ProfileMode::UnitMassFraction;
+        match (unit_mode, artifacts.multimaterial.is_some()) {
+            (true, false) => {
+                return Err(OpenMcInputError::UnitProfile(
+                    "the unit-mass-fraction profile requires the unit-response source artifacts and mixture levels"
+                        .into(),
+                ));
+            }
+            (false, true) => {
+                return Err(OpenMcInputError::UnitProfile(
+                    "unit-response source artifacts are only accepted with the unit-mass-fraction profile"
+                        .into(),
+                ));
+            }
+            _ => {}
+        }
+        if unit_mode && artifacts.material_assignment_json.is_none() {
+            return Err(OpenMcInputError::UnitProfile(
+                "a material assignment is required (single-material decks use the base-material profile)"
+                    .into(),
+            ));
+        }
+        if unit_mode && artifacts.acceptance_json.is_some() {
+            return Err(OpenMcInputError::UnitProfile(
+                "acceptance contracts are not supported under this profile yet".into(),
+            ));
+        }
         let material: MaterialDefinition = parse_json("material", artifacts.material_json)?;
         material
             .validate()
@@ -710,7 +782,25 @@ impl OpenMcInputDeck {
                         "assignment base material differs from the bound material artifact".into(),
                     ));
                 }
-                for region in &assignment.regions {
+                if unit_mode {
+                    // Any composition is admissible; only the cross-section
+                    // temperature is bound to the base material. Nuclide
+                    // coverage is checked against the manifest below.
+                    for region in &assignment.regions {
+                        if region.material.temperature_k != material.temperature_k {
+                            return Err(OpenMcInputError::InvalidAssignment(format!(
+                                "region {} temperature differs from the base material",
+                                region.name
+                            )));
+                        }
+                    }
+                } else if assignment_has_fraction_regions(&assignment) {
+                    return Err(OpenMcInputError::InvalidAssignment(
+                        "voxel_fractions mixtures require the unit-mass-fraction component profile"
+                            .into(),
+                    ));
+                }
+                for region in assignment.regions.iter().filter(|_| !unit_mode) {
                     // Region densities may differ: collection normalizes
                     // heating by per-voxel mass and rescales folded-response
                     // components by mass-fraction ratios. Temperature must
@@ -777,25 +867,66 @@ impl OpenMcInputDeck {
         let execution_reference =
             content_reference(&execution_profile.id, artifacts.execution_profile_json);
 
-        require_binding(
-            "response_set.component_profile",
-            &response_set.component_profile,
-            &component_reference,
-        )?;
-        require_binding(
-            "response_set.material",
-            &response_set.material,
-            &material_reference,
-        )?;
-        require_binding(
-            "response_set.nuclear_data_manifest",
-            &response_set.nuclear_data_manifest,
-            &nuclear_data_reference,
-        )?;
+        // Base-material profile: the response set is bound to this deck's
+        // profile, material and manifest. Unit profile: the set is bound to
+        // its own source artifacts, and the composition-independent curves
+        // are derived from it after checking that the deck's manifest selects
+        // the identical B10 and N14 evaluations.
+        let unit_curves = if let Some(multi) = &artifacts.multimaterial {
+            Some(derive_unit_response(
+                &response_set,
+                &nuclear_data,
+                multi.unit_response_source,
+                material.temperature_k,
+            )?)
+        } else {
+            require_binding(
+                "response_set.component_profile",
+                &response_set.component_profile,
+                &component_reference,
+            )?;
+            require_binding(
+                "response_set.material",
+                &response_set.material,
+                &material_reference,
+            )?;
+            require_binding(
+                "response_set.nuclear_data_manifest",
+                &response_set.nuclear_data_manifest,
+                &nuclear_data_reference,
+            )?;
+            None
+        };
 
-        nuclear_data.validate_for_case(case)?;
+        let realization: Option<MaterialRealization> =
+            match (&material_assignment, &artifacts.multimaterial) {
+                (Some(assignment), Some(multi)) => Some(
+                    realize(assignment, case.geometry.shape, multi.mixture_levels)
+                        .map_err(|error| OpenMcInputError::InvalidAssignment(error.to_string()))?,
+                ),
+                _ => None,
+            };
+
+        // The unit profile admits any composition, so one case-scoped
+        // manifest must cover the union of every material's nuclides.
+        let union_material = material_assignment
+            .as_ref()
+            .filter(|_| unit_mode)
+            .map(|assignment| {
+                let mut all: Vec<&MaterialDefinition> = vec![&material];
+                all.extend(assignment.regions.iter().map(|region| &region.material));
+                crate::data::union_material(&all)
+            });
+        if let Some(union) = &union_material {
+            nuclear_data.validate_for_material(union)?;
+        } else {
+            nuclear_data.validate_for_case(case)?;
+        }
         nuclear_data.verify_files(nuclear_data_root)?;
-        let data_energy_range = nuclear_data.neutron_transport_energy_range_for_case(case)?;
+        let data_energy_range = match &union_material {
+            Some(union) => nuclear_data.neutron_transport_energy_range_for_material(union)?,
+            None => nuclear_data.neutron_transport_energy_range_for_case(case)?,
+        };
         let response_energy_range = response_set.transport_energy_range_ev;
         if response_energy_range[0] > data_energy_range[0]
             || response_energy_range[1] < data_energy_range[1]
@@ -912,8 +1043,17 @@ impl OpenMcInputDeck {
             }
         }
 
-        let geometry_xml = geometry_xml(case, &scoring_mesh, material_assignment.as_ref())?;
-        let materials_xml = materials_xml(&material, material_assignment.as_ref())?;
+        let geometry_xml = geometry_xml(
+            case,
+            &scoring_mesh,
+            material_assignment.as_ref(),
+            realization.as_ref(),
+        )?;
+        let materials_xml = materials_xml(
+            &material,
+            material_assignment.as_ref(),
+            realization.as_ref(),
+        )?;
         let settings_xml = settings_xml(
             &source,
             &execution_profile,
@@ -921,11 +1061,21 @@ impl OpenMcInputDeck {
             execution_profile.batches,
             variance_reduction.as_ref(),
         )?;
+        let tally_response = match &unit_curves {
+            Some(curves) => {
+                let mut unit = response_set.clone();
+                unit.boron_gy_cm2 = curves.boron.clone();
+                unit.nitrogen_gy_cm2 = curves.nitrogen.clone();
+                unit
+            }
+            None => response_set.clone(),
+        };
         let tallies_xml = tallies_xml(
-            &response_set,
+            &tally_response,
             &execution_profile,
             &roi_meshes,
             &scoring_mesh,
+            !unit_mode,
         )?;
 
         let mut files = vec![
@@ -977,7 +1127,9 @@ impl OpenMcInputDeck {
             .clone()
             .expect("folding validation requires independent review");
         let manifest = OpenMcInputManifest {
-            schema_version: if acceptance.is_some()
+            schema_version: if unit_mode {
+                INPUT_MANIFEST_SCHEMA_V3
+            } else if acceptance.is_some()
                 || material_assignment.is_some()
                 || variance_reduction.is_some()
             {
@@ -1021,8 +1173,10 @@ impl OpenMcInputDeck {
                 stride: execution_profile.stride,
             },
             scoring_mesh,
-            tallies: tally_contracts(&roi_meshes),
+            tallies: tally_contracts(&roi_meshes, !unit_mode),
             rois: roi_meshes,
+            unit_response: unit_curves.as_ref().map(|curves| curves.record.clone()),
+            material_realization: realization.as_ref().map(|r| r.record.clone()),
             xml_artifacts,
         };
         let mut manifest_bytes = serde_json::to_vec_pretty(&manifest)
@@ -1114,6 +1268,129 @@ fn validate_energy_grid(
         }
     }
     Ok(())
+}
+
+struct UnitResponseCurves {
+    boron: Vec<f64>,
+    nitrogen: Vec<f64>,
+    record: OpenMcUnitResponse,
+}
+
+/// Derive the composition-independent (per unit mass fraction) B10 and N14
+/// response curves from a reviewed base-material response set.
+///
+/// The set's boron curve is `w_B10 * k_B10` with `k_B10` the HEATR partial
+/// KERMA per unit mass fraction, so `curve / w_B10` recovers `k_B10`
+/// exactly. The division is only valid against the set's own source
+/// artifacts, and only when the deck selects the identical evaluations.
+fn derive_unit_response(
+    response_set: &NeutronResponseSet,
+    deck_manifest: &NuclearDataManifest,
+    source: UnitResponseSourceArtifacts<'_>,
+    deck_temperature_k: f64,
+) -> Result<UnitResponseCurves, OpenMcInputError> {
+    let bad = |message: String| OpenMcInputError::InvalidUnitResponseSource(message);
+    let profile: ComponentDefinitionProfile = parse_json(
+        "unit_source_component_profile",
+        source.component_profile_json,
+    )?;
+    profile
+        .validate()
+        .map_err(|error| bad(format!("source component profile: {error}")))?;
+    if profile.mode() != ProfileMode::BaseMaterialFold {
+        return Err(bad(
+            "the source component profile must be a base-material profile".into(),
+        ));
+    }
+    let material: MaterialDefinition = parse_json("unit_source_material", source.material_json)?;
+    material
+        .validate()
+        .map_err(|error| bad(format!("source material: {error}")))?;
+    let manifest: NuclearDataManifest = parse_json(
+        "unit_source_nuclear_data_manifest",
+        source.nuclear_data_manifest_json,
+    )?;
+    manifest
+        .validate()
+        .map_err(|error| bad(format!("source nuclear-data manifest: {error}")))?;
+
+    let profile_reference = content_reference(&profile.id, source.component_profile_json);
+    let material_reference = content_reference(&material.id, source.material_json);
+    let manifest_reference = content_reference(&manifest.id, source.nuclear_data_manifest_json);
+    require_binding(
+        "response_set.component_profile (unit source)",
+        &response_set.component_profile,
+        &profile_reference,
+    )?;
+    require_binding(
+        "response_set.material (unit source)",
+        &response_set.material,
+        &material_reference,
+    )?;
+    require_binding(
+        "response_set.nuclear_data_manifest (unit source)",
+        &response_set.nuclear_data_manifest,
+        &manifest_reference,
+    )?;
+    if material.temperature_k != deck_temperature_k {
+        return Err(bad(format!(
+            "deck temperature {deck_temperature_k} K differs from the response set's source material temperature {} K",
+            material.temperature_k
+        )));
+    }
+    if manifest.evaluated_data_release != deck_manifest.evaluated_data_release {
+        return Err(bad(
+            "the deck and source manifests select different evaluated-data releases".into(),
+        ));
+    }
+
+    let mut fractions = [0.0_f64; 2];
+    for (slot, nuclide) in ["B10", "N14"].into_iter().enumerate() {
+        let fraction = material
+            .nuclides
+            .iter()
+            .find(|n| n.name == nuclide)
+            .map(|n| n.mass_fraction)
+            .unwrap_or(0.0);
+        if fraction <= 0.0 {
+            return Err(bad(format!(
+                "source material carries no {nuclide}, so its response cannot be normalized"
+            )));
+        }
+        fractions[slot] = fraction;
+        let source_table = manifest
+            .neutron_table(nuclide)
+            .ok_or_else(|| bad(format!("source manifest selects no {nuclide} table")))?;
+        let deck_table = deck_manifest
+            .neutron_table(nuclide)
+            .ok_or_else(|| bad(format!("deck manifest selects no {nuclide} table")))?;
+        if source_table.artifact.sha256 != deck_table.artifact.sha256
+            || source_table.atomic_weight_ratio != deck_table.atomic_weight_ratio
+        {
+            return Err(bad(format!(
+                "deck and source manifests select different {nuclide} evaluations"
+            )));
+        }
+    }
+    Ok(UnitResponseCurves {
+        boron: response_set
+            .boron_gy_cm2
+            .iter()
+            .map(|value| value / fractions[0])
+            .collect(),
+        nitrogen: response_set
+            .nitrogen_gy_cm2
+            .iter()
+            .map(|value| value / fractions[1])
+            .collect(),
+        record: OpenMcUnitResponse {
+            source_component_profile: profile_reference,
+            source_material: material_reference,
+            source_nuclear_data_manifest: manifest_reference,
+            boron_source_mass_fraction: fractions[0],
+            nitrogen_source_mass_fraction: fractions[1],
+        },
+    })
 }
 
 fn parse_json<T: DeserializeOwned>(
@@ -1268,17 +1545,22 @@ fn geometry_xml(
     case: &TransportCase,
     mesh: &OpenMcScoringMesh,
     assignment: Option<&MaterialAssignment>,
+    realization: Option<&MaterialRealization>,
 ) -> Result<Vec<u8>, OpenMcInputError> {
+    // A realization with genuine mixtures forces the lattice path: each
+    // voxel then carries its own quantized material.
+    let realized = realization.filter(|r| r.has_mixtures());
     xml_document("geometry", |writer| {
         // Lattice mode: any voxel-set region forces the whole grid into a
         // rectilinear lattice so every voxel carries its assigned material
         // exactly; box-only assignments use exact CSG cells instead.
-        let lattice_mode = assignment.is_some_and(|assignment| {
-            assignment
-                .regions
-                .iter()
-                .any(|region| !region.is_axis_aligned_box())
-        });
+        let lattice_mode = realized.is_some()
+            || assignment.is_some_and(|assignment| {
+                assignment
+                    .regions
+                    .iter()
+                    .any(|region| !region.is_axis_aligned_box())
+            });
 
         // Base cell: outer box with every region box subtracted (CSG mode),
         // or the plain outer box filled with the material lattice.
@@ -1345,7 +1627,11 @@ fn geometry_xml(
                         + nx * ny * voxel[2] as usize] = Some(index);
                 });
             }
-            for (offset, material_id) in (1..=region_material_count(Some(assignment))).enumerate() {
+            let material_count = realized.map_or_else(
+                || region_material_count(Some(assignment)),
+                |r| r.materials.len() as u32,
+            );
+            for (offset, material_id) in (1..=material_count).enumerate() {
                 let universe = (LATTICE_UNIVERSE_BASE + offset as u32).to_string();
                 let mut element = BytesStart::new("cell");
                 element.push_attribute(("id", universe.as_str()));
@@ -1360,8 +1646,12 @@ fn geometry_xml(
             for k in 0..nz {
                 for j in (0..ny).rev() {
                     for i in 0..nx {
-                        words
-                            .push_str(&voxel_universe(owner[i + nx * j + nx * ny * k]).to_string());
+                        let flat = i + nx * j + nx * ny * k;
+                        let universe = match realized {
+                            Some(r) => LATTICE_UNIVERSE_BASE + r.voxel_material[flat] as u32,
+                            None => voxel_universe(owner[flat]),
+                        };
+                        words.push_str(&universe.to_string());
                         words.push(' ');
                     }
                     words.push('\n');
@@ -1467,11 +1757,20 @@ fn region_material_count(assignment: Option<&MaterialAssignment>) -> u32 {
 fn materials_xml(
     material: &MaterialDefinition,
     assignment: Option<&MaterialAssignment>,
+    realization: Option<&MaterialRealization>,
 ) -> Result<Vec<u8>, OpenMcInputError> {
+    let realized = realization.filter(|r| r.has_mixtures());
     xml_document("materials", |writer| {
         let mut emitted: Vec<&MaterialDefinition> = Vec::new();
         let mut queue: Vec<(u32, &MaterialDefinition)> = vec![(1, material)];
-        if let Some(assignment) = assignment {
+        if let Some(realized) = realized {
+            queue = realized
+                .materials
+                .iter()
+                .enumerate()
+                .map(|(index, material)| (index as u32 + 1, material))
+                .collect();
+        } else if let Some(assignment) = assignment {
             for region in &assignment.regions {
                 if !emitted.iter().any(|existing| **existing == region.material)
                     && region.material != *material
@@ -1821,6 +2120,7 @@ fn tallies_xml(
     profile: &OpenMcExecutionProfile,
     rois: &[OpenMcRoiMesh],
     mesh: &OpenMcScoringMesh,
+    include_hydrogen: bool,
 ) -> Result<Vec<u8>, OpenMcInputError> {
     xml_document("tallies", |writer| {
         let mut mesh_element = BytesStart::new("mesh");
@@ -1860,12 +2160,14 @@ fn tallies_xml(
             &response.energy_ev,
             &response.nitrogen_gy_cm2,
         )?;
-        energy_function_filter(
-            writer,
-            HYDROGEN_RESPONSE_FILTER_ID,
-            &response.energy_ev,
-            &response.hydrogen_gy_cm2,
-        )?;
+        if include_hydrogen {
+            energy_function_filter(
+                writer,
+                HYDROGEN_RESPONSE_FILTER_ID,
+                &response.energy_ev,
+                &response.hydrogen_gy_cm2,
+            )?;
+        }
         filter_with_bins(
             writer,
             NEUTRON_ENERGY_FILTER_ID,
@@ -1902,19 +2204,21 @@ fn tallies_xml(
             &["flux"],
             "tracklength",
         )?;
-        tally(
-            writer,
-            HYDROGEN_TALLY_ID,
-            "openbnct.component.hydrogen.response",
-            &[
-                MESH_FILTER_ID,
-                NEUTRON_FILTER_ID,
-                HYDROGEN_RESPONSE_FILTER_ID,
-            ],
-            &[],
-            &["flux"],
-            "tracklength",
-        )?;
+        if include_hydrogen {
+            tally(
+                writer,
+                HYDROGEN_TALLY_ID,
+                "openbnct.component.hydrogen.response",
+                &[
+                    MESH_FILTER_ID,
+                    NEUTRON_FILTER_ID,
+                    HYDROGEN_RESPONSE_FILTER_ID,
+                ],
+                &[],
+                &["flux"],
+                "tracklength",
+            )?;
+        }
         tally(
             writer,
             NEUTRON_HEATING_TALLY_ID,
@@ -2217,7 +2521,7 @@ fn text_element(writer: &mut Writer<Vec<u8>>, name: &str, text: &str) -> io::Res
     writer.write_event(Event::End(BytesEnd::new(name)))
 }
 
-fn tally_contracts(rois: &[OpenMcRoiMesh]) -> Vec<OpenMcTallyContract> {
+fn tally_contracts(rois: &[OpenMcRoiMesh], include_hydrogen: bool) -> Vec<OpenMcTallyContract> {
     let mut contracts = vec![
         response_tally_contract(
             BORON_TALLY_ID,
@@ -2275,6 +2579,11 @@ fn tally_contracts(rois: &[OpenMcRoiMesh]) -> Vec<OpenMcTallyContract> {
             ParticleType::Photon,
         ),
     ];
+    if !include_hydrogen {
+        // The residual hydrogen component is derived at collection from the
+        // native neutron heating tally, so no hydrogen response tally exists.
+        contracts.retain(|contract| contract.id != HYDROGEN_TALLY_ID);
+    }
     for (index, roi) in rois.iter().enumerate() {
         let base = ROI_TALLY_ID_BASE + index as u32 * ROI_TALLIES_PER_REGION;
         let prefix = format!("openbnct.roi.{}", roi.name);
@@ -2585,6 +2894,10 @@ pub enum OpenMcInputError {
     InvalidAcceptance(String),
     #[error("material assignment is invalid: {0}")]
     InvalidAssignment(String),
+    #[error("unit-response source artifacts are invalid: {0}")]
+    InvalidUnitResponseSource(String),
+    #[error("unit-mass-fraction profile: {0}")]
+    UnitProfile(String),
     #[error("candidate-reference decks require a bound acceptance contract")]
     CandidateReferenceRequiresAcceptance,
     #[error("acceptance contracts may only bind candidate-reference decks")]
@@ -2641,25 +2954,30 @@ pub(crate) mod tests {
         }
     }
 
-    fn nuclear_data() -> NuclearDataManifest {
+    fn nuclear_data_with(extra: &[&str]) -> NuclearDataManifest {
         let case = case();
-        let mut neutron_tables = case
+        let names: Vec<String> = case
             .material
             .nuclides
             .iter()
-            .map(|nuclide| NeutronTableCapability {
-                nuclide: nuclide.name.clone(),
-                artifact: artifact(format!("neutron/{}.h5", nuclide.name)),
+            .map(|nuclide| nuclide.name.clone())
+            .chain(extra.iter().map(|name| (*name).to_owned()))
+            .collect();
+        let mut neutron_tables = names
+            .iter()
+            .map(|name| NeutronTableCapability {
+                nuclide: name.clone(),
+                artifact: artifact(format!("neutron/{name}.h5")),
                 hdf5_version: TARGET_DATA_HDF5_VERSION,
                 atomic_weight_ratio: 1.0,
                 temperatures_k: vec![294.0],
                 energy_ranges_ev: vec![[1.0e-5, 20.0e6]],
-                reactions_mt: match nuclide.name.as_str() {
+                reactions_mt: match name.as_str() {
                     "B10" => vec![107, 301],
                     "N14" => vec![103, 301],
                     _ => vec![301],
                 },
-                photon_production_mts: match nuclide.name.as_str() {
+                photon_production_mts: match name.as_str() {
                     "B10" => vec![107],
                     "H1" => vec![102],
                     _ => Vec::new(),
@@ -2667,14 +2985,10 @@ pub(crate) mod tests {
             })
             .collect::<Vec<_>>();
         neutron_tables.sort_by(|left, right| left.nuclide.cmp(&right.nuclide));
-        let elements = case
-            .material
-            .nuclides
+        let elements = names
             .iter()
-            .map(|nuclide| {
-                nuclide
-                    .name
-                    .chars()
+            .map(|name| {
+                name.chars()
                     .take_while(char::is_ascii_alphabetic)
                     .collect::<String>()
             })
@@ -2774,10 +3088,14 @@ pub(crate) mod tests {
     }
 
     pub(crate) fn input_bytes() -> InputBytes {
+        input_bytes_with(&[])
+    }
+
+    pub(crate) fn input_bytes_with(extra: &[&str]) -> InputBytes {
         let data_root = tempfile::tempdir().unwrap();
         std::fs::create_dir(data_root.path().join("neutron")).unwrap();
         std::fs::create_dir(data_root.path().join("photon")).unwrap();
-        let mut nuclear_data = nuclear_data();
+        let mut nuclear_data = nuclear_data_with(extra);
         let mut libraries = Vec::new();
         for table in &mut nuclear_data.neutron_tables {
             let bytes = format!("synthetic neutron table {}\n", table.nuclide).into_bytes();
@@ -2809,7 +3127,14 @@ pub(crate) mod tests {
         nuclear_data.cross_sections.sha256 = sha256_hex(cross_sections.as_bytes());
 
         let nuclear_data_json = json_bytes(&nuclear_data);
-        let response_set_json = json_bytes(&response_set(&nuclear_data_json));
+        // The response set stays bound to the base-material manifest; extra
+        // nuclides only widen the deck's manifest.
+        let base_manifest = if extra.is_empty() {
+            nuclear_data_json.clone()
+        } else {
+            input_bytes_with(&[]).nuclear_data_json
+        };
+        let response_set_json = json_bytes(&response_set(&base_manifest));
         InputBytes {
             data_root,
             nuclear_data_json,
@@ -2832,6 +3157,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap()
@@ -2900,6 +3226,7 @@ pub(crate) mod tests {
                 acceptance_json: Some(&contract),
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap()
@@ -2966,6 +3293,7 @@ pub(crate) mod tests {
                 acceptance_json: Some(&contract),
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap_err();
@@ -2992,6 +3320,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap_err();
@@ -3088,6 +3417,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: Some(assignment_json),
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
     }
@@ -3346,6 +3676,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap_err();
@@ -3375,6 +3706,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap_err();
@@ -3406,6 +3738,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap_err();
@@ -3433,6 +3766,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap_err();
@@ -3460,6 +3794,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap_err();
@@ -3524,6 +3859,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap()
@@ -3615,6 +3951,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: None,
+                multimaterial: None,
             },
         )
         .unwrap_err();
@@ -3677,6 +4014,7 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: Some(&vr),
+                multimaterial: None,
             },
         )
         .unwrap();
@@ -3715,12 +4053,288 @@ pub(crate) mod tests {
                 acceptance_json: None,
                 material_assignment_json: None,
                 variance_reduction_json: Some(&vr_json),
+                multimaterial: None,
             },
         )
         .unwrap_err();
         assert!(matches!(
             error,
             OpenMcInputError::InvalidVarianceReduction(_)
+        ));
+    }
+
+    // ---- unit-mass-fraction (multi-material) profile ----
+
+    const UNIT_PROFILE_JSON: &[u8] = include_bytes!(
+        "../../../examples/openmc-multimaterial/component-profile-unit-mass-fraction.json"
+    );
+
+    fn tissue(id: &str, density: f64, parts: &[(&str, f64)]) -> serde_json::Value {
+        let total: f64 = parts.iter().map(|(_, w)| w).sum();
+        serde_json::json!({
+            "schema_version": "openbnct.material-definition/0.1.0",
+            "id": id,
+            "density_g_cm3": density,
+            "temperature_k": 293.6,
+            "nuclides": parts
+                .iter()
+                .map(|(name, w)| serde_json::json!({"name": name, "mass_fraction": w / total}))
+                .collect::<Vec<_>>(),
+            "neutron_thermal_treatment": "free_gas",
+        })
+    }
+
+    /// Base tissue plus skin/skull/void regions (sets, box) and a two-anchor
+    /// mixture voxel between skin and skull.
+    fn multi_tissue_assignment() -> serde_json::Value {
+        let base: serde_json::Value = serde_json::from_slice(MATERIAL_JSON).unwrap();
+        serde_json::json!({
+            "schema_version": "openbnct.material-assignment/0.2.0",
+            "case_id": "nf-bnct-001",
+            "base_material": base,
+            "regions": [
+                {
+                    "name": "skin",
+                    "material": tissue("test.skin", 1.09, &[("H1", 0.1), ("O16", 0.7), ("Na23", 0.2)]),
+                    "shape": {"kind": "voxel_set", "indices": [[0, 0, 0], [1, 0, 0]]},
+                },
+                {
+                    "name": "skull",
+                    "material": tissue("test.skull", 1.92, &[("O16", 0.4), ("P31", 0.2), ("Ca40", 0.4)]),
+                    "shape": {"kind": "voxel_box", "lower": [4, 4, 4], "upper": [5, 5, 5]},
+                },
+                {
+                    "name": "void",
+                    "material": tissue("test.void", 1.0e-9, &[("H1", 1.0)]),
+                    "shape": {"kind": "voxel_set", "indices": [[30, 30, 30]]},
+                },
+                {
+                    "name": "skin-mix",
+                    "material": tissue("test.skin", 1.09, &[("H1", 0.1), ("O16", 0.7), ("Na23", 0.2)]),
+                    "shape": {"kind": "voxel_fractions", "indices": [[10, 10, 10], [11, 10, 10]], "fractions": [0.42, 0.44]},
+                },
+                {
+                    "name": "skull-mix",
+                    "material": tissue("test.skull", 1.92, &[("O16", 0.4), ("P31", 0.2), ("Ca40", 0.4)]),
+                    "shape": {"kind": "voxel_fractions", "indices": [[10, 10, 10], [11, 10, 10]], "fractions": [0.5, 0.5]},
+                },
+            ],
+            "provenance_id": "case:sha256:test",
+        })
+    }
+
+    const UNIT_EXTRA_NUCLIDES: [&str; 3] = ["Na23", "P31", "Ca40"];
+
+    fn generate_unit(
+        assignment: &serde_json::Value,
+        levels: u32,
+    ) -> Result<OpenMcInputDeck, OpenMcInputError> {
+        let inputs = input_bytes_with(&UNIT_EXTRA_NUCLIDES);
+        let source_inputs = input_bytes();
+        let assignment_bytes = serde_json::to_vec_pretty(assignment).unwrap();
+        OpenMcInputDeck::generate(
+            &case(),
+            inputs.data_root.path(),
+            OpenMcInputArtifacts {
+                component_profile_json: UNIT_PROFILE_JSON,
+                material_json: MATERIAL_JSON,
+                source_json: SOURCE_JSON,
+                response_set_json: &inputs.response_set_json,
+                nuclear_data_manifest_json: &inputs.nuclear_data_json,
+                execution_profile_json: PROFILE_JSON,
+                acceptance_json: None,
+                material_assignment_json: Some(&assignment_bytes),
+                variance_reduction_json: None,
+                multimaterial: Some(MultiMaterialInputs {
+                    unit_response_source: UnitResponseSourceArtifacts {
+                        component_profile_json: COMPONENT_PROFILE_JSON,
+                        material_json: MATERIAL_JSON,
+                        nuclear_data_manifest_json: &source_inputs.nuclear_data_json,
+                    },
+                    mixture_levels: levels,
+                }),
+            },
+        )
+    }
+
+    #[test]
+    fn unit_profile_generates_multi_tissue_deck() {
+        let deck = generate_unit(&multi_tissue_assignment(), 20).unwrap();
+        let manifest = &deck.manifest;
+        assert_eq!(
+            manifest.schema_version,
+            "openbnct.openmc-input-manifest/0.3.0"
+        );
+        // Quantization is recorded: 42/44% skin + 50% skull + remainder base.
+        let realization = manifest.material_realization.as_ref().unwrap();
+        assert_eq!(realization.levels, 20);
+        assert_eq!(realization.mixture_voxel_count, 2);
+        assert!(realization.max_fraction_error <= 0.5 / 20.0 + 1e-12);
+        // Base + skin + skull + void pure materials, plus two distinct
+        // quantized mixtures (0.42/0.5/0.08 -> 8/10/2 differs from
+        // 0.44/0.5/0.06 -> 9/10/1).
+        assert_eq!(realization.materials.len(), 6);
+        let ids: Vec<&str> = realization
+            .materials
+            .iter()
+            .map(|m| m.material_id.as_str())
+            .collect();
+        assert!(ids.contains(&"test.skin") && ids.contains(&"test.void"));
+        assert_eq!(
+            ids.iter()
+                .filter(|id| id.starts_with("openbnct.mixture.q20."))
+                .count(),
+            2
+        );
+        // materials.xml carries every realized material; geometry is a lattice.
+        let materials = std::str::from_utf8(&deck.file("materials.xml").unwrap().bytes).unwrap();
+        for id in 1..=6 {
+            assert!(
+                materials.contains(&format!("<material id=\"{id}\"")),
+                "material {id}"
+            );
+        }
+        assert!(!materials.contains("<material id=\"7\""));
+        assert!(materials.contains("Ca40"));
+        let geometry = std::str::from_utf8(&deck.file("geometry.xml").unwrap().bytes).unwrap();
+        assert!(geometry.contains("<lattice"));
+        // The new tallies: unit folds and native heating, no hydrogen fold.
+        let tallies = std::str::from_utf8(&deck.file("tallies.xml").unwrap().bytes).unwrap();
+        assert!(tallies.contains("openbnct.component.boron.response"));
+        assert!(!tallies.contains("openbnct.component.hydrogen.response"));
+        assert!(tallies.contains("openbnct.audit.neutron_heating"));
+        assert!(
+            !manifest
+                .tallies
+                .iter()
+                .any(|t| t.name == "openbnct.component.hydrogen.response")
+        );
+        // Boron curve is the response set's curve divided by the source
+        // material's B10 mass fraction.
+        let unit = manifest.unit_response.as_ref().unwrap();
+        let w_b10 = unit.boron_source_mass_fraction;
+        assert!(w_b10 > 0.0 && w_b10 < 1.0e-3);
+        let first = format_float(1.0e-12 / w_b10);
+        assert!(tallies.contains(&first), "unit boron curve {first}");
+        // Deterministic.
+        assert_eq!(
+            generate_unit(&multi_tissue_assignment(), 20).unwrap().files,
+            deck.files
+        );
+        // A coarser quantization merges the two mixtures.
+        let coarse = generate_unit(&multi_tissue_assignment(), 5).unwrap();
+        assert_eq!(
+            coarse
+                .manifest
+                .material_realization
+                .as_ref()
+                .unwrap()
+                .materials
+                .len(),
+            5
+        );
+    }
+
+    #[test]
+    fn unit_profile_gates() {
+        // Nuclide missing from the deck manifest is refused.
+        let inputs = input_bytes_with(&["Na23", "P31"]);
+        let source_inputs = input_bytes();
+        let assignment_bytes = serde_json::to_vec_pretty(&multi_tissue_assignment()).unwrap();
+        let mut artifacts = OpenMcInputArtifacts {
+            component_profile_json: UNIT_PROFILE_JSON,
+            material_json: MATERIAL_JSON,
+            source_json: SOURCE_JSON,
+            response_set_json: &inputs.response_set_json,
+            nuclear_data_manifest_json: &inputs.nuclear_data_json,
+            execution_profile_json: PROFILE_JSON,
+            acceptance_json: None,
+            material_assignment_json: Some(&assignment_bytes),
+            variance_reduction_json: None,
+            multimaterial: Some(MultiMaterialInputs {
+                unit_response_source: UnitResponseSourceArtifacts {
+                    component_profile_json: COMPONENT_PROFILE_JSON,
+                    material_json: MATERIAL_JSON,
+                    nuclear_data_manifest_json: &source_inputs.nuclear_data_json,
+                },
+                mixture_levels: 20,
+            }),
+        };
+        assert!(matches!(
+            OpenMcInputDeck::generate(&case(), inputs.data_root.path(), artifacts),
+            Err(OpenMcInputError::InvalidNuclearData(_))
+        ));
+
+        // The unit profile without its source artifacts, and the legacy
+        // profile with them, are both refused.
+        let full = input_bytes_with(&UNIT_EXTRA_NUCLIDES);
+        artifacts.nuclear_data_manifest_json = &full.nuclear_data_json;
+        artifacts.response_set_json = &full.response_set_json;
+        let with_source = artifacts.multimaterial;
+        artifacts.multimaterial = None;
+        assert!(matches!(
+            OpenMcInputDeck::generate(&case(), full.data_root.path(), artifacts),
+            Err(OpenMcInputError::UnitProfile(_))
+        ));
+        artifacts.multimaterial = with_source;
+        artifacts.component_profile_json = COMPONENT_PROFILE_JSON;
+        assert!(matches!(
+            OpenMcInputDeck::generate(&case(), full.data_root.path(), artifacts),
+            Err(OpenMcInputError::UnitProfile(_))
+        ));
+
+        // A response set not bound to the supplied source material is refused.
+        artifacts.component_profile_json = UNIT_PROFILE_JSON;
+        let mut other_material: serde_json::Value = serde_json::from_slice(MATERIAL_JSON).unwrap();
+        other_material["id"] = serde_json::json!("not-the-source");
+        let other_bytes = serde_json::to_vec_pretty(&other_material).unwrap();
+        let mut bad = artifacts;
+        bad.multimaterial = Some(MultiMaterialInputs {
+            unit_response_source: UnitResponseSourceArtifacts {
+                component_profile_json: COMPONENT_PROFILE_JSON,
+                material_json: &other_bytes,
+                nuclear_data_manifest_json: &source_inputs.nuclear_data_json,
+            },
+            mixture_levels: 20,
+        });
+        assert!(matches!(
+            OpenMcInputDeck::generate(&case(), full.data_root.path(), bad),
+            Err(OpenMcInputError::ContentBindingMismatch { .. })
+        ));
+
+        // Region temperature must match the base (cross-section bound).
+        let mut hot = multi_tissue_assignment();
+        hot["regions"][0]["material"]["temperature_k"] = serde_json::json!(600.0);
+        let hot_bytes = serde_json::to_vec_pretty(&hot).unwrap();
+        artifacts.material_assignment_json = Some(&hot_bytes);
+        assert!(matches!(
+            OpenMcInputDeck::generate(&case(), full.data_root.path(), artifacts),
+            Err(OpenMcInputError::InvalidAssignment(_))
+        ));
+    }
+
+    #[test]
+    fn base_material_profile_rejects_voxel_fraction_mixtures() {
+        // Mixtures need per-voxel compositions; the base-material profile
+        // cannot honor them and must refuse rather than ignore the fractions.
+        let base: serde_json::Value = serde_json::from_slice(MATERIAL_JSON).unwrap();
+        let mut region = base.clone();
+        region["id"] = serde_json::json!("test.dense");
+        region["density_g_cm3"] = serde_json::json!(1.2);
+        let assignment = serde_json::json!({
+            "schema_version": "openbnct.material-assignment/0.2.0",
+            "case_id": "nf-bnct-001",
+            "base_material": base,
+            "regions": [{
+                "name": "mix",
+                "material": region,
+                "shape": {"kind": "voxel_fractions", "indices": [[1, 1, 1]], "fractions": [0.5]},
+            }],
+            "provenance_id": "case:sha256:test",
+        });
+        assert!(matches!(
+            generate_assigned(&serde_json::to_vec_pretty(&assignment).unwrap()),
+            Err(OpenMcInputError::InvalidAssignment(message)) if message.contains("voxel_fractions")
         ));
     }
 }

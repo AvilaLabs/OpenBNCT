@@ -283,6 +283,14 @@ impl NuclearDataManifest {
         self.validate_material_capabilities(material)
     }
 
+    /// The manifest entry for `nuclide`, if selected.
+    #[must_use]
+    pub fn neutron_table(&self, nuclide: &str) -> Option<&NeutronTableCapability> {
+        self.neutron_tables
+            .iter()
+            .find(|table| table.nuclide == nuclide)
+    }
+
     /// Check that this exact data selection can represent the supplied case.
     pub fn validate_for_case(&self, case: &TransportCase) -> Result<(), NuclearDataError> {
         self.validate()?;
@@ -858,6 +866,33 @@ pub enum NuclearDataError {
         #[source]
         source: io::Error,
     },
+}
+
+/// A synthetic material whose nuclide set is the union of `materials`
+/// (equal placeholder fractions, first material's temperature). Multi-material
+/// decks use it to check one case-scoped manifest against every material at
+/// once; its composition is never transported.
+#[must_use]
+pub fn union_material(materials: &[&MaterialDefinition]) -> MaterialDefinition {
+    let mut union = materials[0].clone();
+    let mut names: Vec<String> = Vec::new();
+    for material in materials {
+        for nuclide in &material.nuclides {
+            if !names.contains(&nuclide.name) {
+                names.push(nuclide.name.clone());
+            }
+        }
+    }
+    let fraction = 1.0 / names.len() as f64;
+    union.nuclides = names
+        .into_iter()
+        .map(|name| openbnct_transport::NuclideMassFraction {
+            name,
+            mass_fraction: fraction,
+        })
+        .collect();
+    union.boron_microdistribution = None;
+    union
 }
 
 #[cfg(test)]
