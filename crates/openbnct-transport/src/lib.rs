@@ -77,11 +77,12 @@ pub use model::{
     TransportModelError,
 };
 pub use multigroup::{
-    BEAM_KERNEL_NODES, MULTIGROUP_DATA_SCHEMA, MULTIGROUP_FLUX_SCHEMA, MultigroupData,
-    MultigroupError, MultigroupFlux, MultigroupMaterial, SnOptions, SourceWeighting,
-    adjoint_direction_score, cell_compositions, cell_materials, fold_multigroup_dose,
-    level_symmetric_quadrature, load_multigroup_flux, material_composition_map,
-    parse_multigroup_flux, solve_multigroup, solve_multigroup_adjoint, uncollided_beam_flux,
+    BEAM_KERNEL_NODES, DEFAULT_MIXTURE_LEVELS, MULTIGROUP_DATA_SCHEMA, MULTIGROUP_FLUX_SCHEMA,
+    MultigroupData, MultigroupError, MultigroupFlux, MultigroupMaterial, SnOptions,
+    SourceWeighting, adjoint_direction_score, cell_compositions, cell_materials,
+    fold_multigroup_dose, level_symmetric_quadrature, load_multigroup_flux,
+    material_composition_map, mixture_levels, parse_multigroup_flux, quantize_fractions,
+    solve_multigroup, solve_multigroup_adjoint, uncollided_beam_flux,
 };
 pub use openbnct_core::ContentReference;
 pub use phase_space_source::{

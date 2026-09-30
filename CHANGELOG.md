@@ -5,6 +5,18 @@ All notable changes to OpenBNCT are documented here. The project follows
 own versions independent of the crate version.
 
 
+
+## Unreleased — real-anatomy mixture quantization (2026-09-30)
+
+- **HU-calibrated mixtures are quantized before blending.** A real head CT at 4 mm
+  (206k voxels) produced 91 695 distinct `voxel_fractions` signatures, and the S_N
+  solver built one blended material (scatter matrices, sweep tables) per signature:
+  the neutron solve had not finished after 2 h 11 min at 3.9 GB. Fractions are now
+  quantized to 20 levels (largest remainder, the same rule the OpenMC realization
+  uses, now shared as `openbnct_transport::quantize_fractions`), giving ~150
+  materials; the same solve converges in 18 outers (~20 min on 6 threads, 2.3 GB).
+  `OPENBNCT_MIXTURE_LEVELS=0` restores exact fractions.
+
 ## Unreleased — deterministic-transport accuracy fixes (2026-09-29)
 
 - **IAEA phase-space beam sources (R18-11).** `beam phsp-info` reads a

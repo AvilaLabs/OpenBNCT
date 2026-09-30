@@ -3965,6 +3965,53 @@ pub fn cell_compositions(
         .collect())
 }
 
+/// Default mixture quantization levels for `voxel_fractions` blends.
+pub const DEFAULT_MIXTURE_LEVELS: u32 = 20;
+
+/// Mixture quantization levels in effect: `OPENBNCT_MIXTURE_LEVELS`
+/// (0 = exact, unquantized fractions) or [`DEFAULT_MIXTURE_LEVELS`].
+pub fn mixture_levels() -> u32 {
+    std::env::var("OPENBNCT_MIXTURE_LEVELS")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(DEFAULT_MIXTURE_LEVELS)
+}
+
+/// Largest-remainder quantization of volume fractions to integer counts
+/// summing to exactly `levels`; ties go to the lower component index.
+/// Shared by the deterministic blend and the OpenMC realization so both
+/// engines see identical mixtures.
+pub fn quantize_fractions(fractions: &[f64], levels: u32) -> Vec<u32> {
+    let scaled: Vec<f64> = fractions
+        .iter()
+        .map(|f| f.max(0.0) * f64::from(levels))
+        .collect();
+    let mut counts: Vec<u32> = scaled.iter().map(|s| s.floor() as u32).collect();
+    let mut assigned: u32 = counts.iter().sum();
+    let mut order: Vec<usize> = (0..fractions.len()).collect();
+    order.sort_by(|&a, &b| {
+        let ra = scaled[a] - scaled[a].floor();
+        let rb = scaled[b] - scaled[b].floor();
+        rb.total_cmp(&ra).then(a.cmp(&b))
+    });
+    let mut cursor = 0;
+    while assigned < levels {
+        counts[order[cursor % order.len()]] += 1;
+        assigned += 1;
+        cursor += 1;
+    }
+    while assigned > levels {
+        let (index, _) = counts
+            .iter()
+            .enumerate()
+            .max_by_key(|&(index, &count)| (count, std::cmp::Reverse(index)))
+            .expect("nonempty counts");
+        counts[index] -= 1;
+        assigned -= 1;
+    }
+    counts
+}
+
 /// Effective material list + per-cell material index with
 /// partial-cell volume fractions applied: `voxel_fractions` regions
 /// contribute `f` of the region material and `1 − Σf` of the base
@@ -3986,11 +4033,37 @@ pub fn material_composition_map(
     let mut case_material = vec![0usize; n_cells];
     let mut signatures: std::collections::BTreeMap<Vec<(usize, u64)>, usize> =
         std::collections::BTreeMap::new();
+    let levels = mixture_levels();
     for (cell, signature) in compositions.iter().enumerate() {
         if signature.len() == 1 && signature[0].1 == 1.0 {
             case_material[cell] = signature[0].0;
             continue;
         }
+        // HU-calibrated assignments give nearly every voxel its own
+        // continuous mixture (91 695 distinct signatures on a 206k-voxel
+        // head), and each distinct signature is a blended material with
+        // its own scatter matrices and sweep tables. Quantize fractions
+        // to `levels` steps first — the same largest-remainder rule the
+        // OpenMC realization uses, so both engines see identical
+        // mixtures (~150 materials on that head at 20 levels).
+        let quantized: Vec<(usize, f64)>;
+        let signature: &[(usize, f64)] = if levels > 0 {
+            let fractions: Vec<f64> = signature.iter().map(|&(_, f)| f).collect();
+            let counts = quantize_fractions(&fractions, levels);
+            quantized = signature
+                .iter()
+                .zip(counts)
+                .filter(|&(_, c)| c > 0)
+                .map(|(&(m, _), c)| (m, f64::from(c) / f64::from(levels)))
+                .collect();
+            if quantized.len() == 1 {
+                case_material[cell] = quantized[0].0;
+                continue;
+            }
+            &quantized
+        } else {
+            signature
+        };
         let key: Vec<(usize, u64)> = signature.iter().map(|&(m, f)| (m, f.to_bits())).collect();
         let idx = *signatures.entry(key).or_insert_with(|| {
             effective

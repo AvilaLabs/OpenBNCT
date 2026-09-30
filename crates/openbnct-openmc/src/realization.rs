@@ -115,39 +115,9 @@ pub fn assignment_has_fraction_regions(assignment: &MaterialAssignment) -> bool 
 
 type Key = Vec<(usize, u32)>;
 
-/// Largest-remainder quantization of volume fractions to integer counts
-/// summing to exactly `levels`. Ties go to the lower component index.
+/// Largest-remainder quantization shared with the deterministic blend.
 fn quantize(fractions: &[f64], levels: u32) -> Vec<u32> {
-    let scaled: Vec<f64> = fractions
-        .iter()
-        .map(|f| f.max(0.0) * f64::from(levels))
-        .collect();
-    let mut counts: Vec<u32> = scaled.iter().map(|s| s.floor() as u32).collect();
-    let mut assigned: u32 = counts.iter().sum();
-    let mut order: Vec<usize> = (0..fractions.len()).collect();
-    order.sort_by(|&a, &b| {
-        let ra = scaled[a] - scaled[a].floor();
-        let rb = scaled[b] - scaled[b].floor();
-        rb.total_cmp(&ra).then(a.cmp(&b))
-    });
-    let mut cursor = 0;
-    while assigned < levels {
-        counts[order[cursor % order.len()]] += 1;
-        assigned += 1;
-        cursor += 1;
-    }
-    // Floating-point noise can push the floor sum above `levels` only when
-    // the input already exceeded one; trim from the largest count.
-    while assigned > levels {
-        let (index, _) = counts
-            .iter()
-            .enumerate()
-            .max_by_key(|&(index, &count)| (count, std::cmp::Reverse(index)))
-            .expect("nonempty counts");
-        counts[index] -= 1;
-        assigned -= 1;
-    }
-    counts
+    openbnct_transport::quantize_fractions(fractions, levels)
 }
 
 fn blend(
