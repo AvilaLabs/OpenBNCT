@@ -9,6 +9,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod import_formats;
 mod project;
 
 use clap::{Args, Parser, Subcommand};
@@ -21,8 +22,8 @@ use openbnct_core::{ExposurePlan, PhysicalDoseBundle, ResampleMethod};
 use openbnct_dicom::synthetic::generate_nf_bnct_001;
 use openbnct_dicom::{load_nf_bnct_001, verify_nf_bnct_001};
 use openbnct_nifti::{
-    DT_FLOAT64, Interpolation, NiftiImage, box_average_to_grid, covering_grid, read_nifti_file,
-    read_target_geometry, resample_to_grid, write_nifti,
+    DT_FLOAT64, Interpolation, NiftiImage, box_average_to_grid, covering_grid,
+    read_target_geometry, read_volume, resample_to_grid, write_nifti,
 };
 use openbnct_njoy::{
     DEFAULT_CAPTURE_ENERGY_BALANCE_RELATIVE_TOLERANCE,
@@ -827,7 +828,7 @@ enum RegisterCommand {
     /// Resample a moving NIfTI volume onto a target grid through the
     /// registered transform.
     Apply {
-        /// Moving NIfTI volume (`.nii` or `.nii.gz`).
+        /// Moving volume (NIfTI, NRRD or MetaImage).
         #[arg(long)]
         moving: PathBuf,
         /// `openbnct.registration/0.1.0` JSON document.
@@ -869,7 +870,7 @@ enum BoronCommand {
         /// Transport-case JSON whose grid and case_id the field binds.
         #[arg(long)]
         case: PathBuf,
-        /// SUV NIfTI volume (`.nii`/`.nii.gz`). Required unless the model
+        /// SUV volume (NIfTI, NRRD or MetaImage). Required unless the model
         /// mapping is `uniform`. When `--registration` is supplied the
         /// image is first moved through that transform; it is then
         /// resampled onto the case grid if the geometry differs.
@@ -2057,7 +2058,9 @@ enum DicomCommand {
         /// Explicit CT slice files. Mutually exclusive with `--series`.
         #[arg(long, num_args = 1..)]
         slices: Vec<PathBuf>,
-        /// RT Structure Set file (also picked up from `--series`).
+        /// RT Structure Set or DICOM Segmentation (SEG) file (also picked up
+        /// from `--series`). SEG segments become ROI masks (fractional
+        /// segments thresholded at 0.5); the frames must lie on the CT lattice.
         #[arg(long)]
         rtstruct: Option<PathBuf>,
         /// Transport voxel size in mm: one value (isotropic) or `x,y,z`.
@@ -2096,7 +2099,7 @@ enum DicomCommand {
         /// Mutually exclusive with `--hu-nifti`.
         #[arg(long)]
         slices: Vec<PathBuf>,
-        /// HU-valued NIfTI (`.nii`/`.nii.gz`) already resliced onto the
+        /// HU-valued volume (NIfTI, NRRD or MetaImage) already resliced onto the
         /// case grid — mutually exclusive with `--slices`.
         #[arg(long)]
         hu_nifti: Option<PathBuf>,
@@ -2125,15 +2128,16 @@ struct NiftiArgs {
 
 #[derive(Debug, Subcommand)]
 enum NiftiCommand {
-    /// Print a NIfTI file's grid, transform provenance, and datatype.
+    /// Print a volume file's grid, transform provenance, and datatype
+    /// (NIfTI, NRRD or MetaImage).
     Info {
-        /// `.nii` or gzip-compressed `.nii.gz` file.
+        /// `.nii`, `.nii.gz`, `.nrrd`/`.nhdr` or `.mha`/`.mhd` volume.
         #[arg(long)]
         input: PathBuf,
     },
     /// Convert a NIfTI volume to a RegionMask (nonzero voxels included).
     ToMask {
-        /// `.nii` or gzip-compressed `.nii.gz` file.
+        /// `.nii`, `.nii.gz`, `.nrrd`/`.nhdr` or `.mha`/`.mhd` volume.
         #[arg(long)]
         input: PathBuf,
         /// Mask name recorded in the RegionMask JSON.
@@ -2176,7 +2180,7 @@ enum NiftiCommand {
     },
     /// Resample a NIfTI volume onto a transport-case or dose-bundle grid.
     Resample {
-        /// `.nii` or gzip-compressed `.nii.gz` file.
+        /// `.nii`, `.nii.gz`, `.nrrd`/`.nhdr` or `.mha`/`.mhd` volume.
         #[arg(long)]
         input: PathBuf,
         /// Transport case JSON (CT-aligned grid) or dose bundle JSON
@@ -2559,6 +2563,44 @@ enum ImportCommand {
         #[arg(long)]
         out: PathBuf,
     },
+    /// Convert a 3-D scalar volume in any supported format (NIfTI, NRRD
+    /// `.nrrd`/`.nhdr`, MetaImage `.mha`/`.mhd`) to NIfTI. The format is
+    /// sniffed from magic bytes, then extension. NRRD/MetaImage volumes
+    /// whose axes are a flip/permutation of the patient axes are
+    /// reoriented to an identity-direction LPS grid; oblique volumes are
+    /// refused. See USAGE "Supported input formats".
+    Volume {
+        /// Input volume (`.nii`, `.nii.gz`, `.nrrd`, `.nhdr`, `.mha`, `.mhd`).
+        #[arg(long)]
+        input: PathBuf,
+        /// New output NIfTI path (`.nii` or `.nii.gz`).
+        #[arg(long)]
+        output: PathBuf,
+    },
+    /// Import a DICOM RT Dose file (for example a treatment-planning
+    /// system export) as an `openbnct.external-dose` bundle on the case
+    /// grid, resampling trilinearly when the grids differ. Requires Dose
+    /// Units GY; writes `<output>.import-record.json` binding the inputs by
+    /// SHA-256. Compare against OpenBNCT dose with the usual dose tools.
+    #[command(name = "rtdose")]
+    RtDose {
+        /// Part-10 RT Dose file (uncompressed).
+        #[arg(long)]
+        file: PathBuf,
+        /// Transport case or dose bundle JSON supplying the target grid.
+        #[arg(long)]
+        case: PathBuf,
+        /// `physical` (absorbed dose) or `rbe_weighted`; declared, never
+        /// inferred from the file.
+        #[arg(long, default_value = "physical")]
+        quantity: String,
+        /// Number of equal fractions the total dose was delivered in.
+        #[arg(long, default_value_t = 1)]
+        fractions: u32,
+        /// New output path for the external dose bundle.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Import a `openbnct.external-dose/0.1.0` document (single absolute-dose
     /// field with declared fractionation, e.g. a photon/hadron course).
     Dose {
@@ -2578,7 +2620,7 @@ enum ImportCommand {
     /// background/base material. Every nonzero label in the labelmap
     /// must have an entry.
     Labelmap {
-        /// Integer-labeled NIfTI-1 image (`.nii` or `.nii.gz`); voxels
+        /// Integer-labeled volume (NIfTI, NRRD or MetaImage); voxels
         /// must be exact integer labels within 1e-6.
         #[arg(long)]
         nifti: PathBuf,
@@ -6715,7 +6757,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         .collect();
                     (values, ct.geometry.clone())
                 } else {
-                    let image = read_nifti_file(hu_nifti.as_ref().unwrap())
+                    let image = read_volume(hu_nifti.as_ref().unwrap())
                         .map_err(|error| io::Error::other(format!("hu nifti: {error}")))?;
                     (image.values, image.geometry)
                 };
@@ -9863,7 +9905,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         }
         Some(Command::Nifti(args)) => match args.command {
             NiftiCommand::Info { input } => {
-                let image = read_nifti_file(&input)
+                let image = read_volume(&input)
                     .map_err(|error| io::Error::other(format!("nifti: {error}")))?;
                 let g = &image.geometry;
                 println!("shape: {} x {} x {}", g.shape[0], g.shape[1], g.shape[2]);
@@ -9887,7 +9929,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 name,
                 output,
             } => {
-                let image = read_nifti_file(&input)
+                let image = read_volume(&input)
                     .map_err(|error| io::Error::other(format!("nifti: {error}")))?;
                 let mask = openbnct_nifti::to_mask(&image, name);
                 write_new_json(&output, &mask)?;
@@ -9947,7 +9989,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 interpolation,
                 output,
             } => {
-                let image = read_nifti_file(&input)
+                let image = read_volume(&input)
                     .map_err(|error| io::Error::other(format!("nifti: {error}")))?;
                 let target_geometry = openbnct_nifti::read_target_geometry(&target)
                     .map_err(|error| io::Error::other(format!("target: {error}")))?;
@@ -10867,7 +10909,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
 
                 let mut structure_rows = Vec::new();
                 for structure in &plan.structures {
-                    let image = openbnct_nifti::read_nifti_file(&resolve(&structure.mask_path)?)
+                    let image = openbnct_nifti::read_volume(&resolve(&structure.mask_path)?)
                         .map_err(|error| {
                             io::Error::other(format!(
                                 "mask {}: {error}",
@@ -10939,6 +10981,18 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let summary_path = out.join("openpint-plan-summary.json");
                 write_new_json(&summary_path, &summary)?;
                 println!("plan summary at {}", summary_path.display());
+            }
+            ImportCommand::Volume { input, output } => {
+                import_formats::import_volume(&input, &output)?;
+            }
+            ImportCommand::RtDose {
+                file,
+                case,
+                quantity,
+                fractions,
+                output,
+            } => {
+                import_formats::import_rtdose(&file, &case, &quantity, fractions, &output)?;
             }
             ImportCommand::Dose { file, output } => {
                 let bytes = fs::read(&file)?;
@@ -16096,7 +16150,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         .into());
                     }
                 };
-                let mut image = read_nifti_file(&moving)?;
+                let mut image = read_volume(&moving)?;
                 // Registration moves the volume's patient-space frame;
                 // the voxel data itself is unchanged.
                 image.geometry = registration.transform.apply_to_geometry(&image.geometry);
@@ -16305,7 +16359,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 // Load, transform, and resample the SUV volume onto the
                 // case grid when the model consumes one.
                 let suv_values: Option<Vec<f64>> = if let Some(suv_path) = &suv {
-                    let mut image = read_nifti_file(suv_path)
+                    let mut image = read_volume(suv_path)
                         .map_err(|error| io::Error::other(format!("nifti: {error}")))?;
                     if let Some(doc) = &registration_doc {
                         image.geometry = doc.transform.apply_to_geometry(&image.geometry);
@@ -19048,7 +19102,7 @@ fn cmd_import_labelmap(
             "--case-output and --case-id are required when --case is absent",
         ));
     }
-    let image = read_nifti_file(&nifti).map_err(|e| io::Error::other(e.to_string()))?;
+    let image = read_volume(&nifti).map_err(|e| io::Error::other(e.to_string()))?;
     let geometry = &image.geometry;
     let [nx, ny, nz] = geometry.shape;
     let material_table: BTreeMap<String, MaterialDefinition> =
@@ -19311,6 +19365,7 @@ fn cmd_dicom_import_ct(
         "inputs": import.members.iter()
             .map(|(name, sha)| serde_json::json!({"file": name, "sha256": sha}))
             .collect::<Vec<_>>(),
+        "structures_source": import.structure_source.map(|source| source.name()),
         "ignored_inputs": import.ignored,
         "base_material_sha256": openbnct_evidence::sha256_file(base_material)?,
         "outputs": {
