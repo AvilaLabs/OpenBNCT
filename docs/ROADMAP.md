@@ -1914,6 +1914,52 @@ convention.
   (`core::exposure`), exported on the result so plans are
   deliverable-shaped.
 
+## R18 — Patient-scale trust and interoperability (active, 2026-09-30)
+
+The product promise: a fast deterministic answer on real patient CT that anyone
+can check against Monte Carlo with one command, from whatever file formats they
+already have.
+
+**Trust and speed (landed unless marked):**
+
+- **R18-01 — Independent MC check. (landed, 07eef4a)** `openbnct project verify`
+  re-runs a project in continuous-energy OpenMC with matching S(α,β) and emits
+  per-structure ratios, gamma pass rates, ratio NIfTIs and an AGREES / DISAGREES /
+  INCONCLUSIVE verdict.
+- **R18-02 — CI validation regression. (landed, c7852dd)** Infinite medium, 1-D
+  column and mini head against committed MC references, with negative tests.
+- **R18-03 — Component fidelity. (landed, 92ac993)** 120-bin FiR 1 beam default with
+  uniform-in-bin histogram semantics, and transported photon dose. Fast-neutron and
+  photon components are now within ~10 % of MC on the synthetic study.
+- **R18-04 — Speed. (landed: 4ddcec4, 391a355, 7773c0f)** Uncollided-beam caching and
+  ray fix; binary f64 sidecars for large arrays; CMFD on by default. A 4 mm head is
+  ~3 min on 6 threads.
+- **R18-05 — Real-anatomy benchmark. (in progress)** A CC BY 4.0 public head CT
+  through `project run` at 4 mm plus `project verify`. Includes `import ct-nifti`
+  and `project init --ct-nifti`.
+- **R18-06 — Open items.**
+  - Uncollided setup is ~40 % of a 4 mm run.
+  - Voxel-level gamma pass rates are limited by MC statistics.
+  - The CMFD od-θ uses a smoothstep with the published limits (replace with the
+    published fit).
+  - The GUI does not read sidecar arrays.
+  - The 11 % fast-flux deficit in the infinite medium is unexplained.
+  - The exponential closure and P1 do not converge together.
+
+**Input/output formats:**
+
+- **R18-10 — Tier 1, broad convenience.**
+  - Native NRRD and MetaImage (`.nrrd`, `.mha`/`.mhd`) CT and label volumes.
+  - DICOM SEG segmentations, alongside RTSTRUCT.
+  - DICOM RT Dose import, to compare against clinical TPS dose.
+  - Format auto-detection in `project init --ct` / `--labels`.
+- **R18-11 — Tier 2, beam realism.**
+  - IAEA phase-space (`.IAEAheader`/`.IAEAphsp`) beam sources, binned onto the
+    source plane × direction × energy for the deterministic solver and converted
+    for OpenMC so `verify` stays apples-to-apples.
+  - MCNP surface-source and PHITS dump readers.
+- **R18-12 — Tier 3, cross-code breadth.** TOPAS and FLUKA (USRBIN) dose-scoring import.
+
 ## R12 — Optional Avify Dose integration (planned; IP review required)
 
 **Adopted:** 2026-09-22, at the project owner's direction.
