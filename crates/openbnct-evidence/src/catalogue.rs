@@ -513,6 +513,16 @@ pub fn verify_catalogue(
                         item.label
                     ),
                 ));
+            } else if file.ends_with(".json") {
+                // Raw-array sidecars bound by the JSON document are part of
+                // the evidence: re-hash them too.
+                if let Err(error) = openbnct_core::sidecar::verify_document_sidecars(&resolved) {
+                    findings.push(finding(
+                        FindingSeverity::Error,
+                        &entry.id,
+                        format!("item {:?}: {file:?} sidecar: {error}", item.label),
+                    ));
+                }
             }
         }
     }

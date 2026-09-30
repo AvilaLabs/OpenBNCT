@@ -152,7 +152,8 @@ where
     T: DeserializeOwned + ContractCheck,
 {
     let bytes = fs::read(&path).map_err(reject)?;
-    let contract: T = serde_json::from_slice(&bytes).map_err(reject)?;
+    // Sidecar arrays (`{"external": ...}`) resolve relative to the file.
+    let contract: T = openbnct_core::sidecar::from_slice_at(&bytes, &path).map_err(reject)?;
     contract.check().map_err(reject)?;
     Ok(contract)
 }
@@ -1589,7 +1590,7 @@ fn boron_dose(
     let unit: openbnct_transport::BoronUnitDose = match &unit_dose {
         UnitDoseInput::Loaded(loaded) => loaded.get().inner.clone(),
         UnitDoseInput::Path(path) => {
-            serde_json::from_slice(&fs::read(path).map_err(reject)?).map_err(reject)?
+            openbnct_core::sidecar::load_json(path).map_err(reject)?
         }
     };
     unit.validate().map_err(reject)?;

@@ -7,6 +7,7 @@ mod external_dose;
 mod interchange;
 mod joint;
 mod registration;
+pub mod sidecar;
 mod stats;
 mod systematic;
 mod voi;
@@ -252,8 +253,10 @@ pub type ComponentProfileReference = ContentReference;
 pub struct DoseVolume {
     pub component: DoseComponent,
     pub unit: DoseUnit,
+    #[serde(with = "crate::sidecar::values")]
     pub values: Vec<f64>,
     /// One-sigma absolute standard uncertainty in the same unit as `values`.
+    #[serde(default, with = "crate::sidecar::opt_uncertainty")]
     pub absolute_standard_uncertainty: Option<Vec<f64>>,
 }
 
@@ -306,7 +309,9 @@ pub enum TotalUncertaintyMethod {
 #[serde(deny_unknown_fields)]
 pub struct PhysicalTotalDoseVolume {
     pub unit: DoseUnit,
+    #[serde(with = "crate::sidecar::values")]
     pub values: Vec<f64>,
+    #[serde(default, with = "crate::sidecar::opt_uncertainty")]
     pub absolute_standard_uncertainty: Option<Vec<f64>>,
     pub uncertainty_method: TotalUncertaintyMethod,
 }
@@ -652,6 +657,33 @@ impl PhysicalDoseBundle {
 
         Ok(())
     }
+}
+
+/// Failure to load an artifact that may carry sidecar arrays.
+#[derive(Debug, Error)]
+pub enum LoadError {
+    #[error(transparent)]
+    Read(#[from] sidecar::SidecarError),
+    #[error(transparent)]
+    Invalid(#[from] ValidationError),
+}
+
+/// Parse a physical dose bundle read from `document` (sidecar arrays are
+/// resolved relative to it and verified). Does not call
+/// [`PhysicalDoseBundle::validate`].
+pub fn parse_physical_dose_bundle(
+    bytes: &[u8],
+    document: &std::path::Path,
+) -> Result<PhysicalDoseBundle, sidecar::SidecarError> {
+    sidecar::from_slice_at(bytes, document)
+}
+
+/// Read, deserialize, resolve sidecars of, and validate a physical dose
+/// bundle.
+pub fn load_physical_dose_bundle(path: &std::path::Path) -> Result<PhysicalDoseBundle, LoadError> {
+    let bundle: PhysicalDoseBundle = sidecar::load_json(path)?;
+    bundle.validate()?;
+    Ok(bundle)
 }
 
 fn is_canonical_sha256(value: &str) -> bool {

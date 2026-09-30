@@ -58,6 +58,24 @@ pub enum BoronUnitError {
     Core(#[from] openbnct_core::ValidationError),
 }
 
+/// Parse a boron unit dose read from `document`, resolving sidecar arrays
+/// relative to it. Does not call [`BoronUnitDose::validate`].
+pub fn parse_boron_unit_dose(
+    bytes: &[u8],
+    document: &std::path::Path,
+) -> Result<BoronUnitDose, BoronUnitError> {
+    openbnct_core::sidecar::from_slice_at(bytes, document)
+        .map_err(|error| BoronUnitError::Invalid(error.to_string()))
+}
+
+/// Read, deserialize, resolve sidecars of, and validate a boron unit dose.
+pub fn load_boron_unit_dose(path: &std::path::Path) -> Result<BoronUnitDose, BoronUnitError> {
+    let unit: BoronUnitDose = openbnct_core::sidecar::load_json(path)
+        .map_err(|error| BoronUnitError::Invalid(error.to_string()))?;
+    unit.validate()?;
+    Ok(unit)
+}
+
 /// Dose per source particle per µg/g of ¹⁰B, per voxel.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -70,9 +88,11 @@ pub struct BoronUnitDose {
     /// Always [`BORON_UNIT_DOSE_UNIT`].
     pub unit: String,
     /// Gy per source particle per µg/g, grid order `i + nx·j + nx·ny·k`.
+    #[serde(with = "openbnct_core::sidecar::values")]
     pub values: Vec<f64>,
     /// Optional 1σ statistical uncertainty in the same unit. The
     /// deterministic S_N fold carries none.
+    #[serde(default, with = "openbnct_core::sidecar::opt_uncertainty")]
     pub absolute_standard_uncertainty: Option<Vec<f64>>,
     /// The flux this dose was folded from.
     pub flux: ContentReference,

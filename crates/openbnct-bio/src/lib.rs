@@ -341,7 +341,9 @@ pub struct WeightedDoseVolume {
     /// `weighted_gray_per_source_particle` or `weighted_gray`, mirroring the
     /// input bundle's unit.
     pub unit: String,
+    #[serde(with = "openbnct_core::sidecar::values")]
     pub values: Vec<f64>,
+    #[serde(default, with = "openbnct_core::sidecar::opt_uncertainty")]
     pub absolute_standard_uncertainty: Option<Vec<f64>>,
 }
 
@@ -360,7 +362,9 @@ pub enum BiologicalUncertaintyMethod {
 #[serde(deny_unknown_fields)]
 pub struct BiologicalTotal {
     pub unit: String,
+    #[serde(with = "openbnct_core::sidecar::values")]
     pub values: Vec<f64>,
+    #[serde(default, with = "openbnct_core::sidecar::opt_uncertainty")]
     pub absolute_standard_uncertainty: Option<Vec<f64>>,
     pub uncertainty_method: BiologicalUncertaintyMethod,
 }
@@ -750,6 +754,27 @@ pub enum BioError {
     /// at apply time — a hard error, never a silent fallback.
     #[error("lineal spectrum {0:?} was not supplied")]
     UnresolvedSpectrum(String),
+}
+
+/// Parse a biological dose bundle read from `document`, resolving sidecar
+/// arrays relative to it. Does not call [`BiologicalDoseBundle::validate`].
+pub fn parse_biological_dose_bundle(
+    bytes: &[u8],
+    document: &std::path::Path,
+) -> Result<BiologicalDoseBundle, BioError> {
+    openbnct_core::sidecar::from_slice_at(bytes, document)
+        .map_err(|error| BioError::Invalid(error.to_string()))
+}
+
+/// Read, deserialize, resolve sidecars of, and validate a biological dose
+/// bundle.
+pub fn load_biological_dose_bundle(
+    path: &std::path::Path,
+) -> Result<BiologicalDoseBundle, BioError> {
+    let bundle: BiologicalDoseBundle = openbnct_core::sidecar::load_json(path)
+        .map_err(|error| BioError::Invalid(error.to_string()))?;
+    bundle.validate()?;
+    Ok(bundle)
 }
 
 #[cfg(test)]

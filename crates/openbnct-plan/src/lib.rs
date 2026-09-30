@@ -557,12 +557,14 @@ pub fn accumulate_plan_file(plan_path: &Path) -> Result<PhysicalDoseBundle, Plan
                 actual,
             });
         }
+        let bundle_dir = path.parent().unwrap_or(Path::new("."));
         bundles.push(
-            serde_json::from_slice::<PhysicalDoseBundle>(&bytes).map_err(|error| {
-                PlanRunError::BundleJson {
-                    exposure: exposure.name.clone(),
-                    error,
-                }
+            openbnct_core::sidecar::with_read_dir(bundle_dir, || {
+                serde_json::from_slice::<PhysicalDoseBundle>(&bytes)
+            })
+            .map_err(|error| PlanRunError::BundleJson {
+                exposure: exposure.name.clone(),
+                error,
             })?,
         );
     }

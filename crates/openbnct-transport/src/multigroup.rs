@@ -698,6 +698,7 @@ pub struct MultigroupFlux {
     /// Scalar flux `[voxel][group]` in cm⁻²s⁻¹ per unit source rate —
     /// the total including the analytic uncollided component when the
     /// split is active.
+    #[serde(with = "openbnct_core::sidecar::flux_rows")]
     pub flux: Vec<Vec<f64>>,
     /// Whether the extended transport correction (σ_t,tr = σ_t −
     /// μ̄_g·Σ_s,g) was applied to the collided sweep.
@@ -763,6 +764,37 @@ pub struct ResidualSite {
     pub group: u32,
     /// The relative change itself — equals the artifact `residual`.
     pub relative_change: f64,
+}
+
+/// Parse a multigroup flux read from `document`; sidecar arrays are resolved
+/// relative to it and verified. Checks the schema token and row widths.
+pub fn parse_multigroup_flux(
+    bytes: &[u8],
+    document: &std::path::Path,
+) -> Result<MultigroupFlux, MultigroupError> {
+    let flux: MultigroupFlux = openbnct_core::sidecar::from_slice_at(bytes, document)
+        .map_err(|error| MultigroupError::InvalidData(format!("flux: {error}")))?;
+    if !openbnct_core::schema_matches(&flux.schema_version, MULTIGROUP_FLUX_SCHEMA) {
+        return Err(MultigroupError::InvalidData(format!(
+            "flux: unsupported schema_version {:?}",
+            flux.schema_version
+        )));
+    }
+    let groups = flux.energy_boundaries_ev.len().saturating_sub(1);
+    if flux.flux.iter().any(|row| row.len() != groups) {
+        return Err(MultigroupError::InvalidData(format!(
+            "flux rows must each hold {groups} groups"
+        )));
+    }
+    Ok(flux)
+}
+
+/// Read, deserialize, resolve sidecars of, and check a multigroup flux.
+pub fn load_multigroup_flux(path: &std::path::Path) -> Result<MultigroupFlux, MultigroupError> {
+    let bytes = std::fs::read(path).map_err(|error| {
+        MultigroupError::InvalidData(format!("flux {}: {error}", path.display()))
+    })?;
+    parse_multigroup_flux(&bytes, path)
 }
 
 impl MultigroupFlux {

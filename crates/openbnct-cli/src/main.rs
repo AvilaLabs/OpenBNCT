@@ -5723,7 +5723,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     Some(dose_path) => {
                         let dose_bytes = fs::read(&dose_path)?;
                         let bundle: openbnct_core::PhysicalDoseBundle =
-                            serde_json::from_slice(&dose_bytes)?;
+                            openbnct_core::sidecar::from_slice_at(&dose_bytes, &dose_path)?;
                         let dose_reference = openbnct_transport::ContentReference {
                             id: format!("dose:{}", bundle.provenance_id),
                             sha256: format!(
@@ -5765,7 +5765,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 if let Some(flux_path) = &flux {
                     let bundle = &dose_inputs.as_ref().expect("--flux requires --dose").0;
                     let flux_model: openbnct_transport::MultigroupFlux =
-                        serde_json::from_slice(&fs::read(flux_path)?)?;
+                        openbnct_core::sidecar::load_json(flux_path)?;
                     // Declared absolute scale: port fluence rate × the
                     // beam's forward current/fluence ratio × port area
                     // → source neutrons per second.
@@ -6430,7 +6430,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 output,
             } => {
                 let bundle: openbnct_core::PhysicalDoseBundle =
-                    serde_json::from_slice(&fs::read(&bundle)?)?;
+                    openbnct_core::sidecar::load_json(&bundle)?;
                 let selection = match component.trim().to_ascii_lowercase().as_str() {
                     "total" => openbnct_dicom::DoseSelection::PhysicalTotal,
                     "b" | "boron" => openbnct_dicom::DoseSelection::Component(
@@ -7125,7 +7125,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 }
                 println!("execution finished with exit code 0");
                 let bundle = backend.collect(&completed)?;
-                let json = serde_json::to_vec_pretty(&bundle)?;
+                let json = openbnct_core::sidecar::to_vec_pretty_for(&bundle, &dose_output, false)?;
                 let mut file = fs::OpenOptions::new()
                     .write(true)
                     .create_new(true)
@@ -7259,7 +7259,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     exit_code,
                 };
                 let bundle = OpenMcBackend::default().collect(&completed)?;
-                let json = serde_json::to_vec_pretty(&bundle)?;
+                let json = openbnct_core::sidecar::to_vec_pretty_for(&bundle, &output, false)?;
                 let mut file = fs::OpenOptions::new()
                     .write(true)
                     .create_new(true)
@@ -7278,7 +7278,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                             "this deck was not generated under the unit-mass-fraction profile; no boron unit dose exists",
                         )
                     })?;
-                    let json = serde_json::to_vec_pretty(&unit)?;
+                    let json =
+                        openbnct_core::sidecar::to_vec_pretty_for(&unit, &unit_output, false)?;
                     let mut file = fs::OpenOptions::new()
                         .write(true)
                         .create_new(true)
@@ -9093,7 +9094,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     .unwrap_or_default()
                     .to_string();
                 let bundle_bytes = fs::read(&physical_bundle)?;
-                let physical: PhysicalDoseBundle = serde_json::from_slice(&bundle_bytes)?;
+                let physical: PhysicalDoseBundle =
+                    openbnct_core::sidecar::from_slice_at(&bundle_bytes, &physical_bundle)?;
                 let mut masks = Vec::new();
                 for pair in &region_masks {
                     let (name, path) = pair.split_once('=').ok_or_else(|| {
@@ -9199,7 +9201,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     let model: BiologicalModel = serde_json::from_slice(&model_bytes)?;
                     apply_biological_model(&model, &model_bytes, &physical, &masks)?
                 };
-                let json = serde_json::to_vec_pretty(&bundle)?;
+                let json = openbnct_core::sidecar::to_vec_pretty_for(&bundle, &output, false)?;
                 let mut file = fs::OpenOptions::new()
                     .write(true)
                     .create_new(true)
@@ -9332,7 +9334,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     serde_json::from_slice(&data_bytes)?;
                 let flux_bytes = fs::read(&flux)?;
                 let mg_flux: openbnct_transport::MultigroupFlux =
-                    serde_json::from_slice(&flux_bytes)?;
+                    openbnct_core::sidecar::from_slice_at(&flux_bytes, &flux)?;
                 let spec_bytes = fs::read(&spec)?;
                 let tally_spec: openbnct_bio::LinealTallySpec =
                     serde_json::from_slice(&spec_bytes)?;
@@ -9427,7 +9429,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             } => {
                 let primary_bytes = fs::read(&primary)?;
                 let primary_bundle: openbnct_bio::BiologicalDoseBundle =
-                    serde_json::from_slice(&primary_bytes)?;
+                    openbnct_core::sidecar::from_slice_at(&primary_bytes, &primary)?;
                 let external_bytes = fs::read(&external)?;
                 let external_bundle: openbnct_bio::BedBundle =
                     serde_json::from_slice(&external_bytes)?;
@@ -9475,9 +9477,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 output,
             } => {
                 let a_bundle: openbnct_bio::BiologicalDoseBundle =
-                    serde_json::from_slice(&fs::read(&a)?)?;
+                    openbnct_core::sidecar::load_json(&a)?;
                 let b_bundle: openbnct_bio::BiologicalDoseBundle =
-                    serde_json::from_slice(&fs::read(&b)?)?;
+                    openbnct_core::sidecar::load_json(&b)?;
                 let masks = load_named_masks(&region_masks)?;
                 let comparison = openbnct_bio::compare_biological_models(
                     &a_bundle,
@@ -9520,7 +9522,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let model_bytes = fs::read(&model)?;
                 let model: BiologicalModel = serde_json::from_slice(&model_bytes)?;
                 let bundle_bytes = fs::read(&physical_bundle)?;
-                let physical: PhysicalDoseBundle = serde_json::from_slice(&bundle_bytes)?;
+                let physical: PhysicalDoseBundle =
+                    openbnct_core::sidecar::from_slice_at(&bundle_bytes, &physical_bundle)?;
                 let masks = load_named_masks(&region_masks)?;
                 let parameter = SweepParameter::parse(&parameter)?;
                 let sweep = openbnct_bio::run_sweep(
@@ -9884,7 +9887,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 quantity,
                 output,
             } => {
-                let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(&dose)?)?;
+                let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(&dose)?;
                 let (values, _unit) = dose_values(&bundle, &quantity)?;
                 let image = openbnct_nifti::NiftiImage {
                     geometry: bundle.geometry.clone(),
@@ -9904,7 +9907,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 gzip,
                 pint,
             } => {
-                let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(&dose)?)?;
+                let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(&dose)?;
                 let manifest =
                     openbnct_nifti::export_component_niftis(&bundle, &output_dir, gzip, pint)?;
                 let manifest_path = output_dir.join(format!("{}.components.json", bundle.case_id));
@@ -9967,8 +9970,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             output,
         }) => {
             let bytes = fs::read(&dose)?;
-            let bundle: PhysicalDoseBundle = serde_json::from_slice(&bytes)
-                .map_err(|error| io::Error::other(format!("dose {}: {error}", dose.display())))?;
+            let bundle: PhysicalDoseBundle = openbnct_core::sidecar::from_slice_at(&bytes, &dose)
+                .map_err(|error| {
+                io::Error::other(format!("dose {}: {error}", dose.display()))
+            })?;
             bundle
                 .validate()
                 .map_err(|error| io::Error::other(format!("dose {}: {error}", dose.display())))?;
@@ -10646,7 +10651,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
         Some(Command::Accumulate { plan, output }) => {
             let accumulated = openbnct_plan::accumulate_plan_file(&plan)
                 .map_err(|error| io::Error::other(format!("accumulation: {error}")))?;
-            let json = serde_json::to_vec_pretty(&accumulated)?;
+            let json = openbnct_core::sidecar::to_vec_pretty_for(&accumulated, &output, false)?;
             let mut file = fs::OpenOptions::new()
                 .write(true)
                 .create_new(true)
@@ -10981,7 +10986,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             }
             ExportCommand::Meshtal { dose, output } => {
                 let bundle: openbnct_core::PhysicalDoseBundle =
-                    serde_json::from_slice(&fs::read(&dose)?).map_err(|error| {
+                    openbnct_core::sidecar::load_json(&dose).map_err(|error| {
                         io::Error::other(format!("dose {}: {error}", dose.display()))
                     })?;
                 let text = openbnct_mcnp::pint_meshtal(&bundle)
@@ -11034,9 +11039,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             output,
         }) => {
             let reference_bytes = fs::read(&reference)?;
-            let reference_bundle: PhysicalDoseBundle = serde_json::from_slice(&reference_bytes)?;
+            let reference_bundle: PhysicalDoseBundle =
+                openbnct_core::sidecar::from_slice_at(&reference_bytes, &reference)?;
             let candidate_bytes = fs::read(&candidate)?;
-            let candidate_bundle: PhysicalDoseBundle = serde_json::from_slice(&candidate_bytes)?;
+            let candidate_bundle: PhysicalDoseBundle =
+                openbnct_core::sidecar::from_slice_at(&candidate_bytes, &candidate)?;
             let comparison = openbnct_evidence::compare_dose_bundles(
                 &reference_bundle,
                 &candidate_bundle,
@@ -11094,9 +11101,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 }
             };
             let reference_bytes = fs::read(&reference)?;
-            let reference_bundle: PhysicalDoseBundle = serde_json::from_slice(&reference_bytes)?;
+            let reference_bundle: PhysicalDoseBundle =
+                openbnct_core::sidecar::from_slice_at(&reference_bytes, &reference)?;
             let candidate_bytes = fs::read(&candidate)?;
-            let candidate_bundle: PhysicalDoseBundle = serde_json::from_slice(&candidate_bytes)?;
+            let candidate_bundle: PhysicalDoseBundle =
+                openbnct_core::sidecar::from_slice_at(&candidate_bytes, &candidate)?;
             let evaluation = openbnct_evidence::evaluate_gamma(
                 &reference_bundle,
                 &candidate_bundle,
@@ -11194,7 +11203,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 }
             };
             let reference_bytes = fs::read(&reference)?;
-            let reference_bundle: PhysicalDoseBundle = serde_json::from_slice(&reference_bytes)?;
+            let reference_bundle: PhysicalDoseBundle =
+                openbnct_core::sidecar::from_slice_at(&reference_bytes, &reference)?;
             let mut inputs = vec![openbnct_core::ContentReference {
                 id: reference.display().to_string(),
                 sha256: openbnct_evidence::sha256_hex(&reference_bytes),
@@ -11206,7 +11216,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     id: path.display().to_string(),
                     sha256: openbnct_evidence::sha256_hex(&bytes),
                 });
-                candidates.push(serde_json::from_slice::<PhysicalDoseBundle>(&bytes)?);
+                candidates.push(openbnct_core::sidecar::from_slice_at::<PhysicalDoseBundle>(
+                    &bytes, path,
+                )?);
             }
             let candidate_refs: Vec<&PhysicalDoseBundle> = candidates.iter().collect();
             let evaluation = openbnct_evidence::evaluate_metamorphic(
@@ -11265,7 +11277,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 sha256: openbnct_evidence::sha256_hex(&oracle_bytes),
             };
             let dose_bytes = fs::read(&dose)?;
-            let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+            let bundle: PhysicalDoseBundle =
+                openbnct_core::sidecar::from_slice_at(&dose_bytes, &dose)?;
             let dose_ref = openbnct_core::ContentReference {
                 id: dose.display().to_string(),
                 sha256: openbnct_evidence::sha256_hex(&dose_bytes),
@@ -11473,7 +11486,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     serde_json::from_slice(&data_bytes)?;
                 let flux_bytes = fs::read(&flux)?;
                 let flux_model: openbnct_transport::MultigroupFlux =
-                    serde_json::from_slice(&flux_bytes)?;
+                    openbnct_core::sidecar::from_slice_at(&flux_bytes, &flux)?;
                 let assignment_model = match &assignment {
                     Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
                         path,
@@ -11654,7 +11667,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 output,
             } => {
                 let flux_doc: openbnct_transport::MultigroupFlux =
-                    serde_json::from_slice(&fs::read(&flux)?).map_err(|error| {
+                    openbnct_core::sidecar::load_json(&flux).map_err(|error| {
                         io::Error::other(format!("flux {}: {error}", flux.display()))
                     })?;
                 let groups = flux_doc.energy_boundaries_ev.len().saturating_sub(1);
@@ -11941,7 +11954,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let ph_data: openbnct_transport::MultigroupPhotonData =
                     serde_json::from_slice(&data_bytes)?;
                 let neutron_flux_model: openbnct_transport::MultigroupFlux =
-                    serde_json::from_slice(&fs::read(&neutron_flux)?)?;
+                    openbnct_core::sidecar::load_json(&neutron_flux)?;
                 let assignment_model = match &assignment {
                     Some(path) => Some(serde_json::from_slice::<MaterialAssignment>(&fs::read(
                         path,
@@ -12045,8 +12058,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             } => {
                 let neutron_bytes = fs::read(&neutron_dose)?;
                 let photon_bytes = fs::read(&photon_dose)?;
-                let mut bundle: PhysicalDoseBundle = serde_json::from_slice(&neutron_bytes)?;
-                let photon: PhysicalDoseBundle = serde_json::from_slice(&photon_bytes)?;
+                let mut bundle: PhysicalDoseBundle =
+                    openbnct_core::sidecar::from_slice_at(&neutron_bytes, &neutron_dose)?;
+                let photon: PhysicalDoseBundle =
+                    openbnct_core::sidecar::from_slice_at(&photon_bytes, &photon_dose)?;
                 bundle
                     .validate()
                     .map_err(|error| io::Error::other(format!("neutron dose bundle: {error}")))?;
@@ -12210,7 +12225,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let mut fields = Vec::with_capacity(dose.len());
                 let mut geometry: Option<openbnct_core::GridGeometry> = None;
                 for path in &dose {
-                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)?;
+                    let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(path)?;
                     if scenarios_doc.is_some() {
                         match &geometry {
                             Some(g) if *g != bundle.geometry => {
@@ -12475,7 +12490,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let mut dose_refs = Vec::with_capacity(dose.len());
                 for path in &dose {
                     let bytes = fs::read(path)?;
-                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&bytes)?;
+                    let bundle: PhysicalDoseBundle =
+                        openbnct_core::sidecar::from_slice_at(&bytes, path)?;
                     let all_components = || {
                         let name = |c: openbnct_core::DoseComponent| match c {
                             openbnct_core::DoseComponent::Boron => "boron",
@@ -12742,7 +12758,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let mut sigmas = Vec::with_capacity(dose.len());
                 let mut dose_references = Vec::with_capacity(dose.len());
                 for path in &dose {
-                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)?;
+                    let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(path)?;
                     bundle
                         .validate()
                         .map_err(|error| io::Error::other(error.to_string()))?;
@@ -12941,7 +12957,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let mut dose_references = Vec::with_capacity(dose.len());
                 let mut geometry: Option<openbnct_core::GridGeometry> = None;
                 for path in &dose {
-                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)?;
+                    let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(path)?;
                     bundle
                         .validate()
                         .map_err(|error| io::Error::other(error.to_string()))?;
@@ -13108,7 +13124,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let mut fields = Vec::with_capacity(dose.len());
                 let mut geometry: Option<openbnct_core::GridGeometry> = None;
                 for path in &dose {
-                    let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)?;
+                    let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(path)?;
                     bundle
                         .validate()
                         .map_err(|error| io::Error::other(error.to_string()))?;
@@ -13540,10 +13556,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                     let mut fields = Vec::with_capacity(dose.len());
                     for path in &dose {
-                        let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)
+                        let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(path)
                             .map_err(|error| {
-                            io::Error::other(format!("dose {}: {error}", path.display()))
-                        })?;
+                                io::Error::other(format!("dose {}: {error}", path.display()))
+                            })?;
                         let name = |c: openbnct_core::DoseComponent| match c {
                             openbnct_core::DoseComponent::Boron => "boron",
                             openbnct_core::DoseComponent::Nitrogen => "nitrogen",
@@ -14432,10 +14448,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                     let mut fields = Vec::new();
                     for path in &dose {
-                        let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(path)?)
+                        let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(path)
                             .map_err(|error| {
-                            io::Error::other(format!("{}: {error}", path.display()))
-                        })?;
+                                io::Error::other(format!("{}: {error}", path.display()))
+                            })?;
                         let name = |c: openbnct_core::DoseComponent| match c {
                             openbnct_core::DoseComponent::Boron => "boron",
                             openbnct_core::DoseComponent::Nitrogen => "nitrogen",
@@ -15296,7 +15312,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 };
                 let (case_id, total_values, boron_values, unit) = match dose_schema.as_str() {
                     openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
-                        let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+                        let bundle: PhysicalDoseBundle =
+                            openbnct_core::sidecar::from_slice_at(&dose_bytes, &dose)?;
                         let (total, total_unit) = dose_values(&bundle, &quantity)?;
                         let (total, boron, unit) = pk_boron_split(
                             &quantity,
@@ -15319,7 +15336,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                     openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
                         let bundle: openbnct_bio::BiologicalDoseBundle =
-                            serde_json::from_slice(&dose_bytes)?;
+                            openbnct_core::sidecar::from_slice_at(&dose_bytes, &dose)?;
                         let (total, total_unit) = biological_dose_values(&bundle, &quantity)?;
                         let (total, boron, unit) = pk_boron_split(
                             &quantity,
@@ -15405,7 +15422,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
             } else {
                 let report = match dose_schema.as_str() {
                     openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
-                        let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+                        let bundle: PhysicalDoseBundle =
+                            openbnct_core::sidecar::from_slice_at(&dose_bytes, &dose)?;
                         let (values, unit) = dose_values(&bundle, &quantity)?;
                         openbnct_evidence::IrradiationTimeReport::evaluate(
                             &bundle.case_id,
@@ -15420,7 +15438,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                     openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
                         let bundle: openbnct_bio::BiologicalDoseBundle =
-                            serde_json::from_slice(&dose_bytes)?;
+                            openbnct_core::sidecar::from_slice_at(&dose_bytes, &dose)?;
                         let (values, unit) = biological_dose_values(&bundle, &quantity)?;
                         openbnct_evidence::IrradiationTimeReport::evaluate(
                             &bundle.case_id,
@@ -15595,7 +15613,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let pk: openbnct_evidence::PkModel = serde_json::from_slice(&fs::read(&pk_model)?)?;
                 let (case_id, total, boron, unit) = match dose_schema.as_str() {
                     openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
-                        let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+                        let bundle: PhysicalDoseBundle =
+                            openbnct_core::sidecar::from_slice_at(&dose_bytes, &dose)?;
                         let (total, total_unit) = dose_values(&bundle, &quantity)?;
                         let (total, boron, unit) = pk_boron_split(
                             &quantity,
@@ -15618,7 +15637,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     }
                     openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
                         let bundle: openbnct_bio::BiologicalDoseBundle =
-                            serde_json::from_slice(&dose_bytes)?;
+                            openbnct_core::sidecar::from_slice_at(&dose_bytes, &dose)?;
                         let (total, total_unit) = biological_dose_values(&bundle, &quantity)?;
                         let (total, boron, unit) = pk_boron_split(
                             &quantity,
@@ -15700,7 +15719,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 provenance_id,
                 output,
             } => {
-                let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(&dose)?)?;
+                let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(&dose)?;
                 let pk: openbnct_evidence::PkModel = serde_json::from_slice(&fs::read(&pk_model)?)?;
                 let mut region_masks = Vec::with_capacity(masks.len());
                 for binding in &masks {
@@ -15824,7 +15843,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 let endpoint_model: openbnct_bio::EndpointModel =
                     serde_json::from_slice(&model_bytes)?;
                 let dose_bytes = fs::read(&dose)?;
-                let bundle = load_dose_bundle(&dose_bytes)?;
+                let bundle = load_dose_bundle(&dose_bytes, &dose)?;
                 let mask = read_region_mask(&mask)?;
                 let source = openbnct_core::ContentReference {
                     id: dose.display().to_string(),
@@ -16090,9 +16109,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 output,
             } => {
                 let physical: PhysicalDoseBundle =
-                    serde_json::from_slice(&fs::read(&physical_bundle)?)?;
+                    openbnct_core::sidecar::load_json(&physical_bundle)?;
                 let unit: openbnct_transport::BoronUnitDose =
-                    serde_json::from_slice(&fs::read(&unit_dose)?)?;
+                    openbnct_core::sidecar::load_json(&unit_dose)?;
                 let n = unit
                     .geometry
                     .voxel_count()
@@ -16795,7 +16814,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 id,
                 output,
             } => {
-                let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(&dose)?)?;
+                let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(&dose)?;
                 bundle
                     .validate()
                     .map_err(|error| io::Error::other(error.to_string()))?;
@@ -17012,7 +17031,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 id,
                 output,
             } => {
-                let bundle: PhysicalDoseBundle = serde_json::from_slice(&fs::read(&dose)?)?;
+                let bundle: PhysicalDoseBundle = openbnct_core::sidecar::load_json(&dose)?;
                 bundle
                     .validate()
                     .map_err(|error| io::Error::other(error.to_string()))?;
@@ -17440,13 +17459,16 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     let path = named.get(&beam.beam).ok_or_else(|| {
                         io::Error::other(format!("no --bundle supplied for beam {:?}", beam.beam))
                     })?;
-                    bundles.push(serde_json::from_slice(&fs::read(path)?)?);
+                    bundles.push(openbnct_core::sidecar::load_json::<PhysicalDoseBundle>(
+                        path,
+                    )?);
                 }
                 let planned_doc: Option<PhysicalDoseBundle> = planned
                     .as_ref()
                     .map(|p| {
                         let bytes = fs::read(p)?;
-                        Ok::<_, io::Error>(serde_json::from_slice::<PhysicalDoseBundle>(&bytes)?)
+                        openbnct_core::sidecar::from_slice_at::<PhysicalDoseBundle>(&bytes, p)
+                            .map_err(io::Error::other)
                     })
                     .transpose()?;
                 let planned_ref = planned_doc.as_ref().map(|p| (p, 0.0f64));
@@ -17703,7 +17725,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     .map(|path| {
                         let bytes = fs::read(path)?;
                         let flux: openbnct_transport::MultigroupFlux =
-                            serde_json::from_slice(&bytes)?;
+                            openbnct_core::sidecar::from_slice_at(&bytes, path)
+                                .map_err(io::Error::other)?;
                         let reference = openbnct_core::ContentReference {
                             id: flux.provenance_id.clone(),
                             sha256: openbnct_evidence::sha256_hex(&bytes),
@@ -18177,7 +18200,8 @@ fn compute_dvh_file(
     );
     let histogram = match dose_schema.as_str() {
         openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
-            let bundle: PhysicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+            let bundle: PhysicalDoseBundle =
+                openbnct_core::sidecar::from_slice_at(&dose_bytes, dose)?;
             let (values, unit) = dose_values(&bundle, quantity)?;
             let voxel_volume = bundle.geometry.spacing_mm.iter().product();
             openbnct_evidence::DoseVolumeHistogram::compute(
@@ -18193,7 +18217,8 @@ fn compute_dvh_file(
             )?
         }
         openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
-            let bundle: openbnct_bio::BiologicalDoseBundle = serde_json::from_slice(&dose_bytes)?;
+            let bundle: openbnct_bio::BiologicalDoseBundle =
+                openbnct_core::sidecar::from_slice_at(&dose_bytes, dose)?;
             let (values, unit) = biological_dose_values(&bundle, quantity)?;
             let voxel_volume = bundle.geometry.spacing_mm.iter().product();
             openbnct_evidence::DoseVolumeHistogram::compute(
@@ -18238,7 +18263,7 @@ fn compute_metrics_file(
     output: &Path,
 ) -> Result<openbnct_evidence::RegionDoseMetrics, Box<dyn Error>> {
     let dose_bytes = fs::read(dose)?;
-    let bundle = load_dose_bundle(&dose_bytes)?;
+    let bundle = load_dose_bundle(&dose_bytes, dose)?;
     let mask: RegionMask = serde_json::from_slice(&fs::read(mask)?)?;
     let source = openbnct_core::ContentReference {
         id: dose.display().to_string(),
@@ -18314,8 +18339,14 @@ fn write_new_json<T: serde::Serialize>(path: &Path, value: &T) -> io::Result<()>
         .write(true)
         .create_new(true)
         .open(path)?;
-    serde_json::to_writer_pretty(&mut file, value)?;
-    file.write_all(b"\n")?;
+    let mut out = io::BufWriter::with_capacity(1 << 20, &mut file);
+    openbnct_core::sidecar::with_write_context(path, false, || {
+        serde_json::to_writer_pretty(&mut out, value)
+    })
+    .map_err(io::Error::other)??;
+    out.write_all(b"\n")?;
+    out.flush()?;
+    drop(out);
     file.sync_all()
 }
 
@@ -18420,8 +18451,8 @@ enum DoseBundle {
 }
 
 /// Load a dose bundle whose `schema_version` is a known dose contract.
-fn load_dose_bundle(bytes: &[u8]) -> Result<DoseBundle, Box<dyn Error>> {
-    let schema: serde_json::Value = serde_json::from_slice(bytes)?;
+fn load_dose_bundle(bytes: &[u8], document: &Path) -> Result<DoseBundle, Box<dyn Error>> {
+    let schema: serde_json::Value = openbnct_core::sidecar::from_slice_at(bytes, document)?;
     match openbnct_core::normalize_contract_id(
         schema
             .get("schema_version")
@@ -18431,10 +18462,10 @@ fn load_dose_bundle(bytes: &[u8]) -> Result<DoseBundle, Box<dyn Error>> {
     .as_str()
     {
         openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => Ok(DoseBundle::Physical(Box::new(
-            serde_json::from_slice(bytes)?,
+            openbnct_core::sidecar::from_slice_at(bytes, document)?,
         ))),
         openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => Ok(DoseBundle::Biological(Box::new(
-            serde_json::from_slice(bytes)?,
+            openbnct_core::sidecar::from_slice_at(bytes, document)?,
         ))),
         other => Err(io::Error::other(format!("unsupported dose bundle schema {other:?}")).into()),
     }

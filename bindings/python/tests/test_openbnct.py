@@ -2074,6 +2074,95 @@ class SnSolveTest(unittest.TestCase):
             openbnct.sn_solve("/nonexistent/case.json", data)
 
 
+def _externalize(document: dict, path: Path, stem: str) -> None:
+    """Rewrite a JSON document's dose/flux arrays as hash-bound f64le sidecars."""
+    import struct
+
+    def external(flat: list[float], name: str, row_len: int | None = None) -> dict:
+        raw = struct.pack(f"<{len(flat)}d", *flat)
+        (path.parent / name).write_bytes(raw)
+        reference = {
+            "path": name,
+            "sha256": hashlib.sha256(raw).hexdigest(),
+            "len": len(flat),
+            "dtype": "f64le",
+        }
+        if row_len is not None:
+            reference["row_len"] = row_len
+        return {"external": reference}
+
+    count = 0
+
+    def volume(entry: dict) -> None:
+        nonlocal count
+        count += 1
+        entry["values"] = external(entry["values"], f"{stem}.v{count}.f64le")
+        sigma = entry.get("absolute_standard_uncertainty")
+        if sigma is not None:
+            entry["absolute_standard_uncertainty"] = external(
+                sigma, f"{stem}.s{count}.f64le"
+            )
+
+    for entry in document.get("components", []):
+        volume(entry)
+    if "physical_total" in document:
+        volume(document["physical_total"])
+    if "flux" in document:
+        rows = document["flux"]
+        document["flux"] = external(
+            [v for row in rows for v in row], f"{stem}.flux.f64le", len(rows[0])
+        )
+    path.write_text(json.dumps(document))
+
+
+class SidecarArrayTest(unittest.TestCase):
+    """Hash-bound external arrays load through the ordinary `load_*` calls."""
+
+    def test_physical_dose_bundle_with_sidecars(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            inline = openbnct.load_physical_dose_bundle(
+                _write(tmp, "inline.json", _physical_bundle_json())
+            )
+            path = Path(tmp) / "dose.json"
+            _externalize(json.loads(_physical_bundle_json()), path, "dose")
+            self.assertIn('"external"', path.read_text())
+            external = openbnct.load_physical_dose_bundle(path)
+            self.assertEqual(external.case_id, inline.case_id)
+            for a, b in zip(external.components, inline.components):
+                self.assertEqual(a.component, b.component)
+                self.assertEqual(a.values, b.values)
+                self.assertEqual(
+                    a.absolute_standard_uncertainty, b.absolute_standard_uncertainty
+                )
+
+            # Tampered sidecar: refused with a sha256 error naming the file.
+            side = Path(tmp) / "dose.v1.f64le"
+            good = side.read_bytes()
+            side.write_bytes(bytes([good[0] ^ 1]) + good[1:])
+            with self.assertRaisesRegex(OpenBnctError, "dose.v1.f64le.*sha256 mismatch"):
+                openbnct.load_physical_dose_bundle(path)
+            # Wrong length.
+            side.write_bytes(good[:-8])
+            with self.assertRaisesRegex(OpenBnctError, "length mismatch"):
+                openbnct.load_physical_dose_bundle(path)
+            # Missing.
+            side.unlink()
+            with self.assertRaisesRegex(OpenBnctError, "dose.v1.f64le"):
+                openbnct.load_physical_dose_bundle(path)
+
+    def test_multigroup_flux_with_sidecar(self) -> None:
+        source = NF003 / "multigroup-flux.json"
+        inline = openbnct.load_multigroup_flux(source)
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "flux.json"
+            _externalize(json.loads(source.read_text()), path, "flux")
+            self.assertIn('"external"', path.read_text())
+            external = openbnct.load_multigroup_flux(path)
+            self.assertEqual(external.voxel_count, inline.voxel_count)
+            self.assertEqual(external.group_count, inline.group_count)
+            self.assertEqual(external.flux(), inline.flux())
+
+
 if __name__ == "__main__":
 
     unittest.main()

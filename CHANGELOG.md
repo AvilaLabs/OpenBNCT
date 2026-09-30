@@ -7,6 +7,14 @@ own versions independent of the crate version.
 
 ## Unreleased — deterministic-transport accuracy fixes (2026-09-29)
 
+- **Raw binary sidecars for large flux and dose arrays.** Multigroup flux,
+  physical/biological dose bundles and boron unit doses may store their large
+  arrays as raw little-endian `f64` sidecar files referenced from the JSON by
+  `{"external": {"path", "sha256", "len", "dtype"}}` (additive; inline arrays and
+  all schema versions are unchanged). Writers externalize above
+  `OPENBNCT_SIDECAR_MIN_VALUES` values (default 1,000,000; `0` always, `-1`
+  never); all loaders verify length and SHA-256, `evidence export/verify` and
+  `bench verify` treat sidecars as bound files. See `docs/ARCHITECTURE.md`.
 - **Project workflow: histogram-consistent beam and transported photon dose.**
   `project init` now defaults to `builtin:beams/fir1-k63-ineel` (the 120-bin
   log-spaced FiR 1 reconstruction; `builtin:beams/fir1-k63` stays resolvable) and

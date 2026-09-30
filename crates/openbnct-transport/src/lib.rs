@@ -44,7 +44,7 @@ pub use beam_quality::{
 pub use boron_unit::{
     BORON_UNIT_DOSE_QUALIFICATION, BORON_UNIT_DOSE_SCHEMA, BORON_UNIT_DOSE_UNIT, BoronUnitDose,
     BoronUnitError, RatioRegion, TRACE_BORON_ASSUMPTION, apply_boron_concentration,
-    concentration_from_ratios, fold_boron_unit_dose,
+    concentration_from_ratios, fold_boron_unit_dose, load_boron_unit_dose, parse_boron_unit_dose,
 };
 pub use boundaries::{BOUNDARY_PROPOSAL_SCHEMA, BoundaryError, BoundaryProposal, adapt_boundaries};
 pub use bsa::{
@@ -76,8 +76,8 @@ pub use multigroup::{
     BEAM_KERNEL_NODES, MULTIGROUP_DATA_SCHEMA, MULTIGROUP_FLUX_SCHEMA, MultigroupData,
     MultigroupError, MultigroupFlux, MultigroupMaterial, SnOptions, SourceWeighting,
     adjoint_direction_score, cell_compositions, cell_materials, fold_multigroup_dose,
-    level_symmetric_quadrature, material_composition_map, solve_multigroup,
-    solve_multigroup_adjoint, uncollided_beam_flux,
+    level_symmetric_quadrature, load_multigroup_flux, material_composition_map,
+    parse_multigroup_flux, solve_multigroup, solve_multigroup_adjoint, uncollided_beam_flux,
 };
 pub use openbnct_core::ContentReference;
 pub use photon::{

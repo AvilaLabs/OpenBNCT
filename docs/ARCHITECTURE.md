@@ -110,6 +110,48 @@ case-scoped OpenMC manifest binds both profile and receipt by SHA-256 before any
 table is accepted. This establishes transfer provenance without implying
 scientific or clinical qualification; see ADR 0010.
 
+### Large numeric arrays: hash-bound sidecars
+
+Volume-scale arrays are inline JSON arrays by default. Above a size threshold
+a writer may instead store an array as a raw little-endian `f64` file beside
+the JSON document and reference it:
+
+```json
+"values": {"external": {"path": "dose.values.f64le", "sha256": "<hex>",
+                        "len": 1234567, "dtype": "f64le"}}
+```
+
+The encoding is an additive alternative to the inline array, so no schema
+version changes: every artifact written today loads unchanged, and a small
+artifact is written byte-for-byte as before. It applies to the multigroup flux
+`flux` (`[voxel][group]`, flattened row-major with an extra `row_len` field),
+the `values` and `absolute_standard_uncertainty` of physical dose bundle
+components and `physical_total`, biological dose bundle components and total,
+and boron unit doses. Other arrays (P1 currents, moments) stay inline.
+
+- **Binding.** The sidecar's SHA-256 and value count live in the JSON document,
+  whose own content hash therefore covers the sidecar. Loaders verify the
+  length and digest and refuse a missing, truncated or altered file, naming it.
+  `path` is a relative path without `..`, resolved against the JSON file's
+  directory.
+- **Loading.** Deserialization has two phases: the wire types `F64Array` and
+  `F64Rows` in `openbnct_core::sidecar` accept either encoding, then
+  `resolve(base_dir)` loads and verifies. The typed helpers
+  (`load_physical_dose_bundle`, `load_multigroup_flux`, `load_boron_unit_dose`,
+  `load_biological_dose_bundle`, and the generic `sidecar::load_json` /
+  `from_slice_at`) run both and validate. Plain `serde_json` on a document with
+  an external array fails with an error saying so, never with an empty array.
+- **Writing.** The CLI's artifact writers externalize an array holding more
+  than `OPENBNCT_SIDECAR_MIN_VALUES` values (default 1,000,000; `0` = always,
+  a negative value = never) to `<output-stem>.<field>.f64le` (a repeated field,
+  such as the per-component `values`, gets `.2`, `.3`, ... before the
+  extension). Sidecars are created without overwriting.
+- **Evidence.** `evidence export` copies the sidecars a JSON artifact
+  references into the bundle next to it and records each in the manifest;
+  `evidence verify` requires every referenced sidecar to be a manifest artifact
+  with the declared digest; `bench verify` re-hashes the sidecars of every
+  `.json` evidence item.
+
 ## Qualification
 
 Every result declares one of the bounded qualification states defined by

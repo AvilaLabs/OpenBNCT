@@ -1900,6 +1900,17 @@ Scope is honestly bounded: isotropic (P0) scattering by default
 multigroup data as declared input — a verification solver, not a
 production engine, and its output is research-only.
 
+#### Large flux and dose artifacts
+
+Above `OPENBNCT_SIDECAR_MIN_VALUES` values (default 1,000,000; `0` = always,
+`-1` = never) `sn solve`, `sn fold`, `boron dose` and the other dose writers
+store the flux, dose values and uncertainties as raw little-endian `f64` files
+next to the JSON (`<output-stem>.<field>.f64le`), referenced by SHA-256 from
+the document. Every command that reads these artifacts resolves and verifies
+the files transparently; copy the JSON and its `.f64le` files together.
+`openbnct evidence export` bundles them automatically. See
+`docs/ARCHITECTURE.md` (Large numeric arrays).
+
 ### Prompt-gamma verification chain
 
 The `openbnct prompt-gamma` and `openbnct pg` commands build the

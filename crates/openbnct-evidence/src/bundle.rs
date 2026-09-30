@@ -113,6 +113,47 @@ fn verify_artifact_hashes(artifacts: &[ArtifactRecord], root: &Path) -> Result<(
             });
         }
     }
+    verify_sidecar_bindings(artifacts, root)
+}
+
+/// Bundle-relative path of a sidecar named by the JSON artifact at
+/// `artifact_path`.
+fn sidecar_relative_path(artifact_path: &str, sidecar: &str) -> String {
+    match artifact_path.rsplit_once('/') {
+        Some((dir, _)) => format!("{dir}/{sidecar}"),
+        None => sidecar.to_string(),
+    }
+}
+
+/// Every external array a JSON artifact references must itself be a
+/// manifest artifact carrying the digest the document declares, so a
+/// sidecar can neither be missing from nor drift from the bundle.
+fn verify_sidecar_bindings(artifacts: &[ArtifactRecord], root: &Path) -> Result<(), ManifestError> {
+    for artifact in artifacts.iter().filter(|a| a.path.ends_with(".json")) {
+        let full = root.join(&artifact.path);
+        let bytes = fs::read(&full).map_err(|source| ManifestError::Io {
+            path: full.clone(),
+            source,
+        })?;
+        let refs = openbnct_core::sidecar::external_refs(&bytes)
+            .map_err(|e| ManifestError::Invalid(format!("{}: {e}", artifact.path)))?;
+        for reference in refs {
+            let wanted = sidecar_relative_path(&artifact.path, &reference.path);
+            let Some(record) = artifacts.iter().find(|a| a.path == wanted) else {
+                return Err(ManifestError::Invalid(format!(
+                    "artifact {:?} references sidecar {wanted:?} which is not in the manifest",
+                    artifact.path
+                )));
+            };
+            if record.sha256 != reference.sha256 {
+                return Err(ManifestError::HashMismatch {
+                    path: wanted,
+                    expected: reference.sha256,
+                    observed: record.sha256.clone(),
+                });
+            }
+        }
+    }
     Ok(())
 }
 
@@ -186,6 +227,40 @@ pub fn export_evidence_bundle(
             })?,
             media_type: input.media_type.clone(),
         });
+        if input.relative_path.ends_with(".json") {
+            // A JSON artifact may bind raw-array sidecars by hash; they are
+            // bundle payload too. Verifying here fails closed on a tampered
+            // or missing sidecar before anything is recorded.
+            let refs = openbnct_core::sidecar::verify_document_sidecars(&input.source)
+                .map_err(|e| ManifestError::Invalid(format!("{}: {e}", input.relative_path)))?;
+            let source_dir = openbnct_core::sidecar::document_dir(&input.source);
+            for reference in refs {
+                let relative = sidecar_relative_path(&input.relative_path, &reference.path);
+                if artifacts.iter().any(|a| a.path == relative)
+                    || inputs.iter().any(|i| i.relative_path == relative)
+                {
+                    continue;
+                }
+                let side_destination = root.join(&relative);
+                if let Some(parent) = side_destination.parent() {
+                    fs::create_dir_all(parent).map_err(|source| ManifestError::Io {
+                        path: parent.to_path_buf(),
+                        source,
+                    })?;
+                }
+                let side_source = reference.locate(&source_dir);
+                fs::copy(&side_source, &side_destination).map_err(|source| ManifestError::Io {
+                    path: side_source,
+                    source,
+                })?;
+                artifacts.push(ArtifactRecord {
+                    role: format!("{}-sidecar", input.role),
+                    path: relative,
+                    sha256: reference.sha256,
+                    media_type: Some("application/octet-stream".into()),
+                });
+            }
+        }
     }
     artifacts.sort_by(|a, b| a.path.cmp(&b.path));
 
