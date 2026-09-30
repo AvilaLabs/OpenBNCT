@@ -132,6 +132,9 @@ lands at
 `p001/out/dvh/*.csv`. Every step is a hash-bound artifact under `p001/out/`;
 the report lists the exact command line of each, and rerunning skips steps
 whose inputs are unchanged. See [`docs/USAGE.md`](docs/USAGE.md#quick-start-project).
+With OpenMC 0.16.0 and the ENDF/B-VIII.1 library installed,
+`openbnct project verify p001` adds an independent continuous-energy Monte Carlo
+check of the same study and reports the agreement in the same report.
 
 > **Accuracy status (2026-09-29):** on the layered-head benchmark, the
 > deterministic solver with P1 scattering (the default when the data carries

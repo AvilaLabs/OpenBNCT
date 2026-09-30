@@ -23,7 +23,8 @@ and reproducible from the binary alone. It refuses to overwrite an existing
 directory; without `--target` the `[beam] target` line is a commented
 placeholder you must fill in.
 
-`project run` executes seven steps, each the same code as the individual
+`project run` executes seven steps (an eighth, `verify`, is separate: see
+[Independent Monte Carlo check](#independent-monte-carlo-check-project-verify)), each the same code as the individual
 command it names: `import` (`dicom import-ct`), `calibrate` (`dicom
 calibrate`), `beam` (`beam bind --aim-mask`), `transport` (`sn solve --dose
 --boron-unit-output`), `boron` (`boron dose`), `metrics` (`metrics` and `dvh`
@@ -89,6 +90,65 @@ transport` reruns that step and all later ones. `openbnct project status
 iteration (`[sn] outer k/max: residual r (t s)`) goes to stderr; `sn solve`
 prints these by default and `--quiet` turns them off. Research software;
 nothing here is a clinical calculation.
+
+### Independent Monte Carlo check: `project verify`
+
+The deterministic answer is fast; `project verify` is the one-command
+independent check of it. After a completed `project run`:
+
+```text
+export OPENBNCT_OPENMC=$HOME/micromamba/envs/openmc016/bin/openmc
+export OPENMC_CROSS_SECTIONS=/path/to/endfb-viii.1-hdf5/cross_sections.xml
+openbnct project verify p001 --particles 1e6
+```
+
+It re-computes the same case, material assignment, source and boron
+concentrations with continuous-energy OpenMC 0.16.0 on ENDF/B-VIII.1 (the
+unit-mass-fraction multi-material path below, including the H-in-H2O
+S(α,β) table that the default 28-group data carries on hydrogen — the MC
+side declares `H1=c_H_in_H2O` whenever the deterministic data does, and the
+report states whether the two sides use the same scattering physics). The
+library at `OPENMC_CROSS_SECTIONS` must be the full HDF5 distribution
+including its `thermal/` directory. Flags: `--particles N` (default 1e6, `1e6`
+notation accepted), `--batches B` (10), `--threads T` (2), `--openmc PATH`,
+`--cross-sections PATH`, `--timeout-seconds S` (14400; the OpenMC process is
+killed and reaped on expiry), `--force`. Flags override the optional
+`[verify]` table of `project.toml`, which overrides the environment:
+
+```toml
+[verify]                          # every key optional
+particles = 1e6
+batches = 10
+threads = 2
+ratio_tolerance = 0.05            # structure-mean total-dose ratio S_N/MC within 1 +- 5 %
+gamma_pass_min = 0.95             # gamma pass rate per structure
+gamma_dose_percent = 3.0          # gamma criteria, global normalization
+gamma_dta_mm = 3.0
+gamma_cutoff_percent = 10.0       # reference voxels below this % of the maximum are excluded
+# thermal_scattering = ["H1=c_H_in_H2O"]   # default: taken from the deterministic data
+# structures = []                 # verdict structures (default: the report structures)
+```
+
+Step `08-verify` writes `out/08-verify/`: the OpenMC deck, run receipt and
+statepoint (`openmc-run/`), the MC dose bundle `mc-dose.json` (post-hoc
+boron applied with step 05's exact concentration spec), `comparison.json`
+(`openbnct compare`), `gamma.json` (`openbnct gamma`, MC as reference, per-voxel
+volume included), `verification.json`, and `ratio-boron.nii`,
+`ratio-nitrogen.nii`, `ratio-hydrogen.nii`, `ratio-photon.nii`,
+`ratio-total.nii` (S_N/MC per voxel; undefined where the MC value is below 1 %
+of its maximum). It is recorded in the run manifest like the other steps
+(commands, options, input and output hashes), skipped when unchanged, and
+`report.md` / `report.json` gain an "Independent Monte Carlo check" section:
+MC statistical uncertainty, the per-structure S_N/MC mean-dose ratio for
+each component and the total, the gamma pass rate per structure, and a verdict
+line that states its thresholds — `AGREES` (every evaluated structure-mean
+total-dose ratio within the tolerance and every structure's gamma pass rate at
+or above the minimum), `DISAGREES`, or `INCONCLUSIVE` when the MC mean of a
+failing structure is too uncertain (2σ above the tolerance) to test it. A
+verification whose inputs later change is shown as stale and not reported. The
+built-in OpenMC inputs it uses (`project builtins` lists them) are the NF-BNCT-001
+response set and unit-mass-fraction profile; the comparison is between two
+transport methods on one research case and states no clinical claim.
 
 ## Workspace
 
@@ -862,6 +922,19 @@ openbnct openmc generate \
   --mixture-levels 20 \
   --output NEW-DECK-DIRECTORY
 ```
+
+Thermal scattering: `--thermal-scattering NUCLIDE=TABLE` (repeatable, for
+example `H1=c_H_in_H2O`; `openmc generate` and `openmc run`, unit profile
+only) emits `<sab name="TABLE"/>` in every deck material containing the
+nuclide. The table must be listed as `thermal` in the data root's
+`cross_sections.xml`; the input manifest records the nuclide, table name,
+library file, its SHA-256 and the number of materials carrying it. Without the
+flag every nuclide uses free-gas scattering. `openbnct openmc data
+select-manifest --base-manifest B --data-root ROOT --assignment A.json
+--manifest-id ID --output M.json` derives the case-scoped nuclear-data manifest
+for an assignment's nuclides from a reviewed base manifest, inspecting the
+HDF5 tables it does not already carry. `openmc run --boron-unit-dose-output`
+writes the unit dose in the same invocation.
 
 `openbnct openmc collect --boron-unit-dose-output NEW-UNIT-DOSE.json`
 additionally writes the tissue-independent `openbnct.boron-unit-dose/0.1.0`

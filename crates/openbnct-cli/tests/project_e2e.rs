@@ -240,3 +240,154 @@ fn run_rejects_unknown_roi_before_transport() {
     assert!(stderr.contains("available ROIs: PHANTOM, CORE"), "{stderr}");
     assert!(!root.join("p001/out/04-transport").exists());
 }
+
+#[test]
+fn verify_requires_a_completed_run() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    ok(&["benchmark", "generate", "study"], root);
+    ok(
+        &[
+            "project",
+            "init",
+            "--dicom",
+            "study",
+            "--output",
+            "p001",
+            "--target",
+            "CORE",
+            "--spacing-mm",
+            "8",
+        ],
+        root,
+    );
+    let output = openbnct(&["project", "verify", "p001"], root);
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("openbnct project run"), "{stderr}");
+}
+
+/// Real OpenMC check on the synthetic study at 8 mm with a tiny history
+/// count. CI has no OpenMC, so this returns early (a clean skip) unless
+/// `OPENBNCT_OPENMC` and `OPENMC_CROSS_SECTIONS` name an OpenMC 0.16.0
+/// executable and an ENDF/B-VIII.1 HDF5 library with its `thermal/` tables.
+/// The physics agreement itself is not asserted (the 2-outer-iteration S4
+/// solve is a plumbing demonstration); the artifacts, manifest and report
+/// integration are.
+#[test]
+fn verify_against_openmc_on_the_synthetic_study() {
+    let (Some(openmc), Some(xs)) = (
+        std::env::var_os("OPENBNCT_OPENMC"),
+        std::env::var_os("OPENMC_CROSS_SECTIONS"),
+    ) else {
+        eprintln!("skipped: set OPENBNCT_OPENMC and OPENMC_CROSS_SECTIONS to run the OpenMC check");
+        return;
+    };
+    if !Path::new(&openmc).is_file() || !Path::new(&xs).is_file() {
+        eprintln!("skipped: OPENBNCT_OPENMC / OPENMC_CROSS_SECTIONS do not name files");
+        return;
+    }
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+    ok(&["benchmark", "generate", "study"], root);
+    ok(
+        &[
+            "project",
+            "init",
+            "--dicom",
+            "study",
+            "--output",
+            "p001",
+            "--target",
+            "CORE",
+            "--spacing-mm",
+            "8",
+        ],
+        root,
+    );
+    let toml_path = root.join("p001/project.toml");
+    let text = std::fs::read_to_string(&toml_path).unwrap();
+    std::fs::write(
+        &toml_path,
+        text.replace("order = 8", "order = 4")
+            .replace("max_outer = 128", "max_outer = 2")
+            .replace("allow_unconverged = false", "allow_unconverged = true"),
+    )
+    .unwrap();
+    ok(&["project", "run", "p001"], root);
+
+    let verify_args = [
+        "project",
+        "verify",
+        "p001",
+        "--particles",
+        "2e4",
+        "--batches",
+        "4",
+        "--timeout-seconds",
+        "1800",
+    ];
+    let out = ok(&verify_args, root);
+    assert!(
+        out.contains("AGREES") || out.contains("DISAGREES") || out.contains("INCONCLUSIVE"),
+        "{out}"
+    );
+    let project = root.join("p001");
+    for name in ["boron", "nitrogen", "hydrogen", "photon", "total"] {
+        assert!(
+            project
+                .join(format!("out/08-verify/ratio-{name}.nii"))
+                .is_file(),
+            "ratio-{name}.nii"
+        );
+    }
+    for name in [
+        "mc-dose.json",
+        "comparison.json",
+        "gamma.json",
+        "verification.json",
+    ] {
+        assert!(project.join("out/08-verify").join(name).is_file(), "{name}");
+    }
+
+    let report = std::fs::read_to_string(project.join("out/report.md")).unwrap();
+    assert!(
+        report.contains("## Independent Monte Carlo check"),
+        "{report}"
+    );
+    assert!(report.contains("H1=c_H_in_H2O"), "{report}");
+    assert!(report.contains("| CORE |"), "{report}");
+    assert!(
+        report.contains("An independent continuous-energy OpenMC check"),
+        "{report}"
+    );
+    let report_json: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(project.join("out/report.json")).unwrap()).unwrap();
+    assert_eq!(report_json["independent_mc_check"]["status"], "fresh");
+
+    let manifest: serde_json::Value =
+        serde_json::from_slice(&std::fs::read(project.join("out/run-manifest.json")).unwrap())
+            .unwrap();
+    let steps = manifest["steps"].as_array().unwrap();
+    assert_eq!(steps.len(), 8);
+    assert_eq!(steps[7]["id"], "08-verify");
+    assert_eq!(steps[7]["status"], "complete");
+    assert!(
+        steps[7]["commands"][3]
+            .as_str()
+            .unwrap()
+            .starts_with("openbnct openmc run --case out/08-verify/case.json")
+    );
+
+    // Neither a rerun of the pipeline nor of the verification repeats work,
+    // and the report keeps the verification.
+    let rerun = ok(&["project", "run", "p001"], root);
+    assert!(
+        step_lines(&rerun).iter().all(|l| l.contains("skipped")),
+        "{rerun}"
+    );
+    let again = ok(&verify_args, root);
+    assert!(again.contains("skipped"), "{again}");
+    let report = std::fs::read_to_string(project.join("out/report.md")).unwrap();
+    assert!(report.contains("| CORE |"), "{report}");
+}

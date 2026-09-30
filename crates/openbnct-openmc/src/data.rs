@@ -308,11 +308,16 @@ impl NuclearDataManifest {
             .iter()
             .map(|nuclide| nuclide.name.as_str())
             .collect::<BTreeSet<_>>();
-        let available_nuclides = self
+        // B-10 (and its photon element) is always selected: post-hoc boron
+        // decks fold the B-10 response into materials that carry none.
+        let mut available_nuclides = self
             .neutron_tables
             .iter()
             .map(|table| table.nuclide.as_str())
             .collect::<BTreeSet<_>>();
+        if !required_nuclides.contains("B10") {
+            available_nuclides.remove("B10");
+        }
         require_exact_set(
             &required_nuclides,
             &available_nuclides,
@@ -333,11 +338,14 @@ impl NuclearDataManifest {
             .iter()
             .map(|nuclide| element_from_nuclide(nuclide))
             .collect::<BTreeSet<_>>();
-        let available_elements = self
+        let mut available_elements = self
             .photon_tables
             .iter()
             .map(|table| table.element.as_str())
             .collect::<BTreeSet<_>>();
+        if !required_elements.contains("B") {
+            available_elements.remove("B");
+        }
         let required_element_refs = required_elements
             .iter()
             .map(String::as_str)
@@ -632,6 +640,389 @@ struct CrossSectionsLibrary {
     library_type: String,
 }
 
+const K_BOLTZMANN_EV_PER_K: f64 = 8.617_333_262e-5;
+
+/// Photon reaction groups OpenMC's photon HDF5 layout carries, and the MT
+/// each stands for (identical to the reviewed Python inspector).
+const PHOTON_REACTION_GROUPS: [(&str, u16); 7] = [
+    ("coherent", 502),
+    ("incoherent", 504),
+    ("pair_production_electron", 515),
+    ("pair_production_total", 516),
+    ("pair_production_nuclear", 517),
+    ("photoelectric", 522),
+    ("heating", 525),
+];
+
+fn inspect_err(path: &Path, what: impl std::fmt::Display) -> NuclearDataError {
+    NuclearDataError::Inspect(format!("{}: {what}", path.display()))
+}
+
+fn attr_text(value: Option<&hdf5_pure::AttrValue>) -> String {
+    match value {
+        Some(
+            hdf5_pure::AttrValue::AsciiString(text)
+            | hdf5_pure::AttrValue::String(text)
+            | hdf5_pure::AttrValue::StringSized { value: text, .. },
+        ) => text.clone(),
+        _ => String::new(),
+    }
+}
+
+fn attr_hdf5_version(
+    attrs: &std::collections::HashMap<String, hdf5_pure::AttrValue>,
+    path: &Path,
+) -> Result<[u16; 2], NuclearDataError> {
+    let version: Vec<i64> = match attrs.get("version") {
+        Some(hdf5_pure::AttrValue::I32Array(v)) => v.iter().map(|x| i64::from(*x)).collect(),
+        Some(hdf5_pure::AttrValue::I64Array(v)) => v.clone(),
+        Some(hdf5_pure::AttrValue::U32Array(v)) => v.iter().map(|x| i64::from(*x)).collect(),
+        Some(hdf5_pure::AttrValue::U64Array(v)) => v.iter().map(|x| *x as i64).collect(),
+        _ => return Err(inspect_err(path, "HDF5 data version is absent")),
+    };
+    let expected = TARGET_DATA_HDF5_VERSION.map(i64::from);
+    if version != expected {
+        return Err(inspect_err(
+            path,
+            format!("uses HDF5 data version {version:?}; expected {expected:?}"),
+        ));
+    }
+    Ok(TARGET_DATA_HDF5_VERSION)
+}
+
+fn artifact_for(path: &Path, canonical_root: &Path) -> Result<DataArtifact, NuclearDataError> {
+    let resolved = std::fs::canonicalize(path).map_err(|source| NuclearDataError::Io {
+        path: path.to_path_buf(),
+        source,
+    })?;
+    let relative = resolved
+        .strip_prefix(canonical_root)
+        .map_err(|_| NuclearDataError::ArtifactEscapesRoot(path.display().to_string()))?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let sha256 = sha256_file(&resolved).map_err(|source| NuclearDataError::Io {
+        path: resolved,
+        source,
+    })?;
+    Ok(DataArtifact {
+        relative_path: relative,
+        sha256,
+    })
+}
+
+/// Inspect one OpenMC incident-neutron HDF5 file (the checks and fields of
+/// the reviewed Python inspector, `scripts/inspect-openmc-data.py`).
+fn inspect_neutron(
+    path: &Path,
+    nuclide: &str,
+    canonical_root: &Path,
+) -> Result<NeutronTableCapability, NuclearDataError> {
+    let err = |what: String| inspect_err(path, what);
+    let file = hdf5_pure::File::open(path).map_err(|e| err(e.to_string()))?;
+    let root_attrs = file.root().attrs().map_err(|e| err(e.to_string()))?;
+    if attr_text(root_attrs.get("filetype")) != "data_neutron" {
+        return Err(err("not an OpenMC incident-neutron HDF5 file".into()));
+    }
+    let hdf5_version = attr_hdf5_version(&root_attrs, path)?;
+    let group = file
+        .group(nuclide)
+        .map_err(|e| err(format!("lacks root group {nuclide:?}: {e}")))?;
+    let attrs = group.attrs().map_err(|e| err(e.to_string()))?;
+    let atomic_weight_ratio = match attrs.get("atomic_weight_ratio") {
+        Some(hdf5_pure::AttrValue::F64(v)) => *v,
+        Some(hdf5_pure::AttrValue::F32(v)) => f64::from(*v),
+        _ => return Err(err("atomic_weight_ratio attribute is absent".into())),
+    };
+    let kts = group.group("kTs").map_err(|e| err(e.to_string()))?;
+    let energy = group.group("energy").map_err(|e| err(e.to_string()))?;
+    let mut grids: Vec<(f64, [f64; 2])> = Vec::new();
+    for label in kts.datasets().map_err(|e| err(e.to_string()))? {
+        let kt = kts
+            .dataset(&label)
+            .and_then(|d| d.read_f64())
+            .map_err(|e| err(e.to_string()))?;
+        let kt = *kt
+            .first()
+            .ok_or_else(|| err(format!("empty kT for {label:?}")))?;
+        let energies = energy
+            .dataset(&label)
+            .and_then(|d| d.read_f64())
+            .map_err(|e| {
+                err(format!(
+                    "lacks an energy grid for temperature {label:?}: {e}"
+                ))
+            })?;
+        if energies.len() < 2
+            || energies.iter().any(|e| !e.is_finite())
+            || energies[0] < 0.0
+            || !strictly_increasing(&energies)
+        {
+            return Err(err(format!("invalid neutron energy grid for {label:?}")));
+        }
+        grids.push((
+            kt / K_BOLTZMANN_EV_PER_K,
+            [energies[0], energies[energies.len() - 1]],
+        ));
+    }
+    grids.sort_by(|a, b| a.0.total_cmp(&b.0));
+
+    let mut reactions = BTreeSet::new();
+    let mut photon_production = BTreeSet::new();
+    let reaction_group = group.group("reactions").map_err(|e| err(e.to_string()))?;
+    for name in reaction_group.groups().map_err(|e| err(e.to_string()))? {
+        let reaction = reaction_group
+            .group(&name)
+            .map_err(|e| err(format!("{name}: {e}")))?;
+        let attrs = reaction.attrs().map_err(|e| err(e.to_string()))?;
+        let mt = match attrs.get("mt") {
+            Some(hdf5_pure::AttrValue::I32(v)) => i64::from(*v),
+            Some(hdf5_pure::AttrValue::I64(v)) => *v,
+            Some(hdf5_pure::AttrValue::U32(v)) => i64::from(*v),
+            Some(hdf5_pure::AttrValue::U64(v)) => *v as i64,
+            _ => continue,
+        };
+        let mt = u16::try_from(mt).map_err(|_| err(format!("reaction {name}: MT {mt}")))?;
+        reactions.insert(mt);
+        for product in reaction.groups().map_err(|e| err(e.to_string()))? {
+            if !product.starts_with("product_") {
+                continue;
+            }
+            let attrs = reaction
+                .group(&product)
+                .and_then(|g| g.attrs())
+                .map_err(|e| err(format!("{name}/{product}: {e}")))?;
+            if attr_text(attrs.get("particle")) == "photon" {
+                photon_production.insert(mt);
+            }
+        }
+    }
+    Ok(NeutronTableCapability {
+        nuclide: nuclide.into(),
+        artifact: artifact_for(path, canonical_root)?,
+        hdf5_version,
+        atomic_weight_ratio,
+        temperatures_k: grids.iter().map(|g| g.0).collect(),
+        energy_ranges_ev: grids.iter().map(|g| g.1).collect(),
+        reactions_mt: reactions.into_iter().collect(),
+        photon_production_mts: photon_production.into_iter().collect(),
+    })
+}
+
+/// Inspect one OpenMC incident-photon HDF5 file.
+fn inspect_photon(
+    path: &Path,
+    element: &str,
+    canonical_root: &Path,
+) -> Result<PhotonTableCapability, NuclearDataError> {
+    let err = |what: String| inspect_err(path, what);
+    let file = hdf5_pure::File::open(path).map_err(|e| err(e.to_string()))?;
+    let root_attrs = file.root().attrs().map_err(|e| err(e.to_string()))?;
+    if attr_text(root_attrs.get("filetype")) != "data_photon" {
+        return Err(err("not an OpenMC incident-photon HDF5 file".into()));
+    }
+    let hdf5_version = attr_hdf5_version(&root_attrs, path)?;
+    let group = file
+        .group(element)
+        .map_err(|e| err(format!("lacks root group {element:?}: {e}")))?;
+    let members: BTreeSet<String> = group
+        .groups()
+        .map_err(|e| err(e.to_string()))?
+        .into_iter()
+        .chain(group.datasets().map_err(|e| err(e.to_string()))?)
+        .collect();
+    let reactions_mt: Vec<u16> = {
+        let mut mts: Vec<u16> = PHOTON_REACTION_GROUPS
+            .iter()
+            .filter(|(name, _)| members.contains(*name))
+            .map(|(_, mt)| *mt)
+            .collect();
+        mts.sort_unstable();
+        mts
+    };
+    let has_atomic_relaxation_data = match group.group("subshells") {
+        Ok(subshells) => {
+            let attrs = subshells.attrs().map_err(|e| err(e.to_string()))?;
+            let designators: Vec<String> = match attrs.get("designators") {
+                Some(hdf5_pure::AttrValue::StringArray(v)) => v.clone(),
+                Some(hdf5_pure::AttrValue::AsciiStringArray(v)) => v.clone(),
+                _ => Vec::new(),
+            };
+            !designators.is_empty()
+                && designators.iter().all(|d| {
+                    subshells
+                        .group(d.trim())
+                        .and_then(|g| g.attrs())
+                        .is_ok_and(|a| {
+                            a.contains_key("binding_energy") && a.contains_key("num_electrons")
+                        })
+                })
+        }
+        Err(_) => false,
+    };
+    let has_compton_profile_data = match group.group("compton_profiles") {
+        Ok(compton) => {
+            let names: BTreeSet<String> = compton
+                .datasets()
+                .map_err(|e| err(e.to_string()))?
+                .into_iter()
+                .collect();
+            ["num_electrons", "binding_energy", "pz", "J"]
+                .iter()
+                .all(|n| names.contains(*n))
+        }
+        Err(_) => false,
+    };
+    Ok(PhotonTableCapability {
+        element: element.into(),
+        artifact: artifact_for(path, canonical_root)?,
+        hdf5_version,
+        reactions_mt,
+        has_atomic_relaxation_data,
+        has_compton_profile_data,
+    })
+}
+
+/// Derive a case-scoped manifest for exactly `nuclides` from `base`: tables
+/// `base` already selects are reused verbatim, every other one is inspected
+/// from the data root; tables `base` selects that are not needed are
+/// dropped. `base`'s `cross_sections.xml` must hash-match the data root's, so
+/// the distribution identity and file map stay those of the reviewed library.
+pub fn select_manifest(
+    base: &NuclearDataManifest,
+    data_root: &Path,
+    nuclides: &BTreeSet<String>,
+    id: &str,
+) -> Result<NuclearDataManifest, NuclearDataError> {
+    base.validate()?;
+    validate_identifier("nuclear_data.id", id)?;
+    let canonical_root =
+        std::fs::canonicalize(data_root).map_err(|source| NuclearDataError::Io {
+            path: data_root.to_path_buf(),
+            source,
+        })?;
+    let xml_path = verify_artifact(&canonical_root, &base.cross_sections)?;
+    let xml = std::fs::read_to_string(&xml_path).map_err(|source| NuclearDataError::Io {
+        path: xml_path.clone(),
+        source,
+    })?;
+    let listing: CrossSectionsListing = quick_xml::de::from_str(&xml)
+        .map_err(|error| NuclearDataError::InvalidCrossSectionsXml(error.to_string()))?;
+    let listing_base = cross_sections_base(&xml_path, listing.directory.as_deref());
+    let library_path = |kind: &'static str, name: &str| -> Result<PathBuf, NuclearDataError> {
+        let matches: Vec<&CrossSectionsLibrary> = listing
+            .libraries
+            .iter()
+            .filter(|l| {
+                l.library_type == kind && l.materials.split_ascii_whitespace().any(|m| m == name)
+            })
+            .collect();
+        if matches.len() != 1 {
+            return Err(NuclearDataError::CrossSectionsMappingCount {
+                library_type: kind,
+                material: name.into(),
+                count: matches.len(),
+            });
+        }
+        let listed = Path::new(&matches[0].path);
+        Ok(if listed.is_absolute() {
+            listed.to_path_buf()
+        } else {
+            listing_base.join(listed)
+        })
+    };
+
+    let mut neutron_tables = Vec::new();
+    for nuclide in nuclides {
+        neutron_tables.push(match base.neutron_table(nuclide) {
+            Some(existing) => existing.clone(),
+            None => inspect_neutron(&library_path("neutron", nuclide)?, nuclide, &canonical_root)?,
+        });
+    }
+    let elements: BTreeSet<String> = nuclides
+        .iter()
+        .map(|nuclide| element_from_nuclide(nuclide))
+        .collect();
+    let mut photon_tables = Vec::new();
+    for element in &elements {
+        photon_tables.push(
+            match base.photon_tables.iter().find(|t| &t.element == element) {
+                Some(existing) => existing.clone(),
+                None => {
+                    inspect_photon(&library_path("photon", element)?, element, &canonical_root)?
+                }
+            },
+        );
+    }
+    let mut manifest = base.clone();
+    manifest.id = id.into();
+    manifest.neutron_tables = neutron_tables;
+    manifest.photon_tables = photon_tables;
+    manifest.verify_files(&canonical_root)?;
+    Ok(manifest)
+}
+
+/// Resolve a declared S(alpha,beta) table (for example `c_H_in_H2O`) through
+/// the data root's `cross_sections.xml`: exactly one `thermal` library must
+/// list it and its file must exist inside the root. Returns the file's path
+/// relative to the root and its SHA-256, for the input manifest.
+pub(crate) fn resolve_thermal_table(
+    data_root: &Path,
+    cross_sections_relative: &str,
+    table: &str,
+) -> Result<(String, String), NuclearDataError> {
+    let canonical_root =
+        std::fs::canonicalize(data_root).map_err(|source| NuclearDataError::Io {
+            path: data_root.to_path_buf(),
+            source,
+        })?;
+    let xml_path = canonical_root.join(cross_sections_relative);
+    let xml = std::fs::read_to_string(&xml_path).map_err(|source| NuclearDataError::Io {
+        path: xml_path.clone(),
+        source,
+    })?;
+    let listing: CrossSectionsListing = quick_xml::de::from_str(&xml)
+        .map_err(|error| NuclearDataError::InvalidCrossSectionsXml(error.to_string()))?;
+    let base = cross_sections_base(&xml_path, listing.directory.as_deref());
+    let matches: Vec<&CrossSectionsLibrary> = listing
+        .libraries
+        .iter()
+        .filter(|library| {
+            library.library_type == "thermal"
+                && library
+                    .materials
+                    .split_ascii_whitespace()
+                    .any(|listed| listed == table)
+        })
+        .collect();
+    if matches.len() != 1 {
+        return Err(NuclearDataError::CrossSectionsMappingCount {
+            library_type: "thermal",
+            material: table.into(),
+            count: matches.len(),
+        });
+    }
+    let listed = Path::new(&matches[0].path);
+    let unresolved = if listed.is_absolute() {
+        listed.to_path_buf()
+    } else {
+        base.join(listed)
+    };
+    let resolved = std::fs::canonicalize(&unresolved).map_err(|source| NuclearDataError::Io {
+        path: unresolved,
+        source,
+    })?;
+    let relative = resolved
+        .strip_prefix(&canonical_root)
+        .map_err(|_| NuclearDataError::ArtifactEscapesRoot(table.into()))?
+        .to_string_lossy()
+        .replace('\\', "/");
+    let hash = sha256_file(&resolved).map_err(|source| NuclearDataError::Io {
+        path: resolved.clone(),
+        source,
+    })?;
+    Ok((relative, hash))
+}
+
 fn cross_sections_base(cross_sections: &Path, directory: Option<&str>) -> PathBuf {
     let parent = cross_sections.parent().unwrap_or_else(|| Path::new("."));
     match directory.map(str::trim).filter(|value| !value.is_empty()) {
@@ -754,6 +1145,8 @@ fn sha256_file(path: &Path) -> io::Result<String> {
 
 #[derive(Debug, Error)]
 pub enum NuclearDataError {
+    #[error("nuclear-data inspection: {0}")]
+    Inspect(String),
     #[error("required identifier {0} is empty")]
     EmptyIdentifier(&'static str),
     #[error("{0} must be a canonical lowercase SHA-256 digest")]

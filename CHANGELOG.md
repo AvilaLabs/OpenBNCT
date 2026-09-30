@@ -7,6 +7,20 @@ own versions independent of the crate version.
 
 ## Unreleased — deterministic-transport accuracy fixes (2026-09-29)
 
+- **`openbnct project verify`.** One command re-computes a finished project with
+  continuous-energy OpenMC on the same case, assignment, source and boron
+  concentrations (step `08-verify`, `out/08-verify/`), runs `compare` and `gamma`
+  against the S_N result, writes `ratio-<component>.nii`, and adds an "Independent
+  Monte Carlo check" section (per-structure S_N/MC ratios, gamma pass rates, MC
+  statistics, a verdict with explicit thresholds) to `report.md`/`report.json`.
+  Optional `[verify]` table in `project.toml`.
+- **Declared S(α,β) in OpenMC decks.** `openmc generate|run --thermal-scattering
+  NUCLIDE=TABLE` (unit-mass-fraction profile) emits `<sab>` for every material with
+  the nuclide and records the table and its library hash in the input manifest, so
+  the MC side matches the deterministic tissue data's H-in-H2O kernel.
+  `openmc data select-manifest` derives a case-scoped data manifest; `openmc run`
+  gains `--boron-unit-dose-output`.
+
 - **Collapse double-counted redundant reactions in σ_t.** `sn collapse` summed every
   MT 3–299 section into removal, including OpenMC-HDF5 reactions flagged `redundant`
   and ENDF summation/production MTs (4 with levels present, 101, 201–207, 251–253).

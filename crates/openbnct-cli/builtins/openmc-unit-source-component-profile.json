@@ -1,0 +1,49 @@
+{
+  "schema_version": "nctforge.component-definition-profile/0.1.0",
+  "id": "nctforge.macroscopic-absorbed-dose.v1",
+  "spatial_model": "macroscopic_local_charged_particle_kerma",
+  "source_normalization": "per_unit_weight_source_neutron",
+  "neutron_response": {
+    "unit": "gray_square_centimeter",
+    "interpolation": "linear_linear",
+    "fold_normalization": "divide_track_length_by_scoring_volume_cm3",
+    "outside_domain": "reject_run"
+  },
+  "components": [
+    {
+      "component": "boron",
+      "estimator": {
+        "kind": "njoy_partial_kerma_fluence_fold",
+        "nuclide": "B10",
+        "reaction_mt": 107,
+        "heatr_partial_kerma_mt": 407,
+        "photon_energy": "excluded_and_transported"
+      }
+    },
+    {
+      "component": "nitrogen",
+      "estimator": {
+        "kind": "njoy_partial_kerma_fluence_fold",
+        "nuclide": "N14",
+        "reaction_mt": 103,
+        "heatr_partial_kerma_mt": 403,
+        "photon_energy": "excluded_and_transported"
+      }
+    },
+    {
+      "component": "hydrogen",
+      "estimator": {
+        "kind": "residual_neutron_kerma_fluence_fold",
+        "heatr_total_kerma_mt": 301,
+        "subtract_components": ["boron", "nitrogen"]
+      }
+    },
+    {
+      "component": "photon",
+      "estimator": {
+        "kind": "coupled_photon_heating"
+      }
+    }
+  ],
+  "physical_total": "coupled_heating_without_particle_filter"
+}

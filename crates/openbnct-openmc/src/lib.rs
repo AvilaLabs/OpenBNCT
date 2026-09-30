@@ -47,7 +47,7 @@ pub use data::{
     TARGET_ACQUISITION_PROFILE_SHA256, TARGET_DATA_HDF5_VERSION,
     TARGET_DISTRIBUTION_ARCHIVE_SIZE_BYTES, TARGET_DISTRIBUTION_SOURCE_URI,
     TARGET_EVALUATED_DATA_RELEASE, TARGET_INSPECTION_METHOD, TARGET_NUCLEAR_DATA_MANIFEST_SCHEMA,
-    TARGET_OPENMC_SOURCE_COMMIT, TARGET_OPENMC_VERSION, TEMPERATURE_TOLERANCE_K,
+    TARGET_OPENMC_SOURCE_COMMIT, TARGET_OPENMC_VERSION, TEMPERATURE_TOLERANCE_K, select_manifest,
 };
 pub use domain::{
     OPENMC_NEUTRON_TRANSPORT_DOMAIN_SCHEMA, OpenMcDiagnosticBoundaryPolicy,
@@ -70,7 +70,8 @@ pub use input::{
     OpenMcInputError, OpenMcInputManifest, OpenMcInputManifestArtifact, OpenMcProfileError,
     OpenMcRawTallyUnit, OpenMcRegionBounds, OpenMcRoiMesh, OpenMcRunControls, OpenMcRunMode,
     OpenMcScoringMesh, OpenMcTallyContract, OpenMcTallyQuantity, OpenMcTallyScope,
-    OpenMcTemperatureMethod, OpenMcUnitResponse, UnitResponseSourceArtifacts,
+    OpenMcTemperatureMethod, OpenMcThermalScattering, OpenMcUnitResponse,
+    ThermalScatteringDeclaration, UnitResponseSourceArtifacts,
 };
 pub use mgcollapse::{CollapseError, CollapseOptions, WeightingSpectrum, collapse_multigroup};
 pub use photoncollapse::{PhotonCollapseOptions, collapse_photon};
@@ -122,6 +123,8 @@ pub struct OpenMcMultiMaterialConfig {
     pub unit_source_material: PathBuf,
     pub unit_source_nuclear_data_manifest: PathBuf,
     pub mixture_levels: u32,
+    /// Declared S(alpha,beta) tables, `NUCLIDE=TABLE`; empty is free-gas.
+    pub thermal_scattering: Vec<ThermalScatteringDeclaration>,
 }
 
 /// Default wall-clock bound on one `openmc` execution: 48 hours — long
@@ -248,6 +251,7 @@ impl TransportBackend for OpenMcBackend {
                     read(&multi.unit_source_material)?,
                     read(&multi.unit_source_nuclear_data_manifest)?,
                     multi.mixture_levels,
+                    multi.thermal_scattering.clone(),
                 ))
             })
             .transpose()?;
@@ -265,13 +269,14 @@ impl TransportBackend for OpenMcBackend {
                 material_assignment_json: assignment_json.as_deref(),
                 variance_reduction_json: vr_json.as_deref(),
                 multimaterial: multimaterial_bytes.as_ref().map(
-                    |(profile, material, manifest, levels)| MultiMaterialInputs {
+                    |(profile, material, manifest, levels, thermal)| MultiMaterialInputs {
                         unit_response_source: UnitResponseSourceArtifacts {
                             component_profile_json: profile,
                             material_json: material,
                             nuclear_data_manifest_json: manifest,
                         },
                         mixture_levels: *levels,
+                        thermal_scattering: thermal,
                     },
                 ),
             },

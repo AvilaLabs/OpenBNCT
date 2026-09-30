@@ -434,6 +434,53 @@ pub struct MultiMaterialInputs<'a> {
     pub unit_response_source: UnitResponseSourceArtifacts<'a>,
     /// Quantization levels for `voxel_fractions` mixtures.
     pub mixture_levels: u32,
+    /// Declared S(alpha,beta) tables (`NUCLIDE=TABLE`, e.g. `H1=c_H_in_H2O`).
+    /// Each is emitted as a `<sab>` element in every material containing the
+    /// nuclide and recorded, with its library hash, in the input manifest.
+    /// Empty means free-gas scattering everywhere.
+    pub thermal_scattering: &'a [ThermalScatteringDeclaration],
+}
+
+/// A declared thermal-scattering (S(alpha,beta)) table for one nuclide.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ThermalScatteringDeclaration {
+    /// Nuclide the table applies to, in every material that contains it.
+    pub nuclide: String,
+    /// OpenMC thermal table name listed in `cross_sections.xml`.
+    pub table: String,
+}
+
+impl ThermalScatteringDeclaration {
+    /// Parse `NUCLIDE=TABLE`.
+    pub fn parse(spec: &str) -> Result<Self, String> {
+        match spec.split_once('=') {
+            Some((nuclide, table)) if !nuclide.trim().is_empty() && !table.trim().is_empty() => {
+                Ok(Self {
+                    nuclide: nuclide.trim().into(),
+                    table: table.trim().into(),
+                })
+            }
+            _ => Err(format!(
+                "thermal scattering `{spec}` must be NUCLIDE=TABLE, for example H1=c_H_in_H2O"
+            )),
+        }
+    }
+}
+
+/// A declared S(alpha,beta) table as realized in a deck: the library file is
+/// hash-bound so the physics cannot change silently between generation and
+/// a later audit.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct OpenMcThermalScattering {
+    pub nuclide: String,
+    pub table: String,
+    /// Library file relative to the nuclear-data root.
+    pub library_relative_path: String,
+    pub library_sha256: String,
+    /// Number of deck materials that carry the `<sab>` element.
+    pub materials_with_table: u32,
 }
 
 /// How the unit-mass-fraction curves were derived, recorded in the manifest.
@@ -472,6 +519,10 @@ pub struct OpenMcInputManifest {
     /// Voxel material realization (quantization record); unit profile only.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub material_realization: Option<OpenMcMaterialRealization>,
+    /// Declared S(alpha,beta) tables (unit profile only). Absent means
+    /// free-gas scattering for every nuclide.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub thermal_scattering: Vec<OpenMcThermalScattering>,
     pub xml_artifacts: Vec<OpenMcInputManifestArtifact>,
 }
 
@@ -1049,10 +1100,17 @@ impl OpenMcInputDeck {
             material_assignment.as_ref(),
             realization.as_ref(),
         )?;
-        let materials_xml = materials_xml(
+        let declared_thermal: &[ThermalScatteringDeclaration] = artifacts
+            .multimaterial
+            .as_ref()
+            .map_or(&[], |multi| multi.thermal_scattering);
+        let (materials_xml, thermal_scattering) = materials_xml(
             &material,
             material_assignment.as_ref(),
             realization.as_ref(),
+            declared_thermal,
+            nuclear_data_root,
+            &nuclear_data.cross_sections.relative_path,
         )?;
         let settings_xml = settings_xml(
             &source,
@@ -1177,6 +1235,7 @@ impl OpenMcInputDeck {
             rois: roi_meshes,
             unit_response: unit_curves.as_ref().map(|curves| curves.record.clone()),
             material_realization: realization.as_ref().map(|r| r.record.clone()),
+            thermal_scattering,
             xml_artifacts,
         };
         let mut manifest_bytes = serde_json::to_vec_pretty(&manifest)
@@ -1631,7 +1690,20 @@ fn geometry_xml(
                 || region_material_count(Some(assignment)),
                 |r| r.materials.len() as u32,
             );
+            // OpenMC cannot pick a root universe when some universe is
+            // defined but never used as a fill, so only materials that
+            // occupy at least one voxel get an element cell.
+            let mut used_universes = std::collections::BTreeSet::new();
+            for (flat, region_owner) in owner.iter().enumerate() {
+                used_universes.insert(match realized {
+                    Some(r) => LATTICE_UNIVERSE_BASE + r.voxel_material[flat] as u32,
+                    None => voxel_universe(*region_owner),
+                });
+            }
             for (offset, material_id) in (1..=material_count).enumerate() {
+                if !used_universes.contains(&(LATTICE_UNIVERSE_BASE + offset as u32)) {
+                    continue;
+                }
                 let universe = (LATTICE_UNIVERSE_BASE + offset as u32).to_string();
                 let mut element = BytesStart::new("cell");
                 element.push_attribute(("id", universe.as_str()));
@@ -1758,9 +1830,13 @@ fn materials_xml(
     material: &MaterialDefinition,
     assignment: Option<&MaterialAssignment>,
     realization: Option<&MaterialRealization>,
-) -> Result<Vec<u8>, OpenMcInputError> {
+    thermal: &[ThermalScatteringDeclaration],
+    nuclear_data_root: &Path,
+    cross_sections_relative: &str,
+) -> Result<(Vec<u8>, Vec<OpenMcThermalScattering>), OpenMcInputError> {
     let realized = realization.filter(|r| r.has_mixtures());
-    xml_document("materials", |writer| {
+    let mut thermal_counts = vec![0_u32; thermal.len()];
+    let bytes = xml_document("materials", |writer| {
         let mut emitted: Vec<&MaterialDefinition> = Vec::new();
         let mut queue: Vec<(u32, &MaterialDefinition)> = vec![(1, material)];
         if let Some(realized) = realized {
@@ -1803,10 +1879,44 @@ fn materials_xml(
                 element.push_attribute(("wo", fraction.as_str()));
                 writer.write_event(Event::Empty(element))?;
             }
+            for (index, declaration) in thermal.iter().enumerate() {
+                if material
+                    .nuclides
+                    .iter()
+                    .any(|nuclide| nuclide.name == declaration.nuclide)
+                {
+                    let mut element = BytesStart::new("sab");
+                    element.push_attribute(("name", declaration.table.as_str()));
+                    writer.write_event(Event::Empty(element))?;
+                    thermal_counts[index] += 1;
+                }
+            }
             writer.write_event(Event::End(BytesEnd::new("material")))?;
         }
         Ok(())
-    })
+    })?;
+    let mut records = Vec::new();
+    for (declaration, count) in thermal.iter().zip(thermal_counts) {
+        if count == 0 {
+            return Err(OpenMcInputError::UnitProfile(format!(
+                "thermal scattering {}={} declared but no deck material contains {}",
+                declaration.nuclide, declaration.table, declaration.nuclide
+            )));
+        }
+        let (relative, hash) = crate::data::resolve_thermal_table(
+            nuclear_data_root,
+            cross_sections_relative,
+            &declaration.table,
+        )?;
+        records.push(OpenMcThermalScattering {
+            nuclide: declaration.nuclide.clone(),
+            table: declaration.table.clone(),
+            library_relative_path: relative,
+            library_sha256: hash,
+            materials_with_table: count,
+        });
+    }
+    Ok((bytes, records))
 }
 
 fn settings_xml(
@@ -1932,6 +2042,13 @@ fn settings_xml(
                 angle.push_attribute(("type", "mu-phi"));
                 writer.write_event(Event::Start(angle))?;
                 text_element(writer, "reference_uvw", &format_numbers(axis_unit_vector))?;
+                // OpenMC's second reference direction defaults to +x and must
+                // not be parallel to the cone axis: with a +-x axis the
+                // sampled directions are NaN and transport dies mid-run.
+                // Emitted only then, so other decks stay byte-identical.
+                if axis_unit_vector[1].hypot(axis_unit_vector[2]) < 1e-6 {
+                    text_element(writer, "reference_vwu", "0 1 0")?;
+                }
                 univariate_element(writer, "mu", "uniform", &[half_angle_rad.cos(), 1.0])?;
                 univariate_element(writer, "phi", "uniform", &[0.0, std::f64::consts::TAU])?;
                 writer.write_event(Event::End(BytesEnd::new("angle")))?;
@@ -3880,6 +3997,27 @@ pub(crate) mod tests {
     }
 
     #[test]
+    fn cone_about_the_x_axis_declares_a_second_reference_direction() {
+        let mut source: openbnct_transport::FixedSourceDefinition =
+            serde_json::from_slice(SOURCE_JSON).unwrap();
+        source.space = openbnct_transport::SourceSpatialDistribution::UniformDisk {
+            axis: openbnct_transport::PlaneAxis::X,
+            offset_cm: -9.999999,
+            center_uv_cm: [0.0, 0.0],
+            radius_cm: 7.0,
+        };
+        source.angle = AngularDistribution::IsotropicCone {
+            axis_unit_vector: [1.0, 0.0, 0.0],
+            half_angle_rad: 0.1,
+        };
+        let settings = settings_text(&generate_with_source(&source));
+        // Without it OpenMC's default +x second direction is parallel to the
+        // axis and the sampled directions are NaN.
+        assert!(settings.contains("<reference_uvw>1 0 0</reference_uvw>"));
+        assert!(settings.contains("<reference_vwu>0 1 0</reference_vwu>"));
+    }
+
+    #[test]
     fn emits_disk_cone_and_tabulated_source() {
         let mut source: openbnct_transport::FixedSourceDefinition =
             serde_json::from_slice(SOURCE_JSON).unwrap();
@@ -4152,9 +4290,54 @@ pub(crate) mod tests {
                         nuclear_data_manifest_json: &source_inputs.nuclear_data_json,
                     },
                     mixture_levels: levels,
+                    thermal_scattering: &[],
                 }),
             },
         )
+    }
+
+    #[test]
+    fn thermal_scattering_declaration_parses_and_unlisted_table_is_refused() {
+        let declaration = ThermalScatteringDeclaration::parse("H1=c_H_in_H2O").unwrap();
+        assert_eq!(declaration.nuclide, "H1");
+        assert_eq!(declaration.table, "c_H_in_H2O");
+        assert!(ThermalScatteringDeclaration::parse("H1").is_err());
+        assert!(ThermalScatteringDeclaration::parse("=c_H_in_H2O").is_err());
+
+        // The synthetic cross_sections.xml lists no thermal library, so a
+        // declared table must be refused rather than silently dropped.
+        let inputs = input_bytes_with(&UNIT_EXTRA_NUCLIDES);
+        let source_inputs = input_bytes();
+        let assignment_bytes = serde_json::to_vec_pretty(&multi_tissue_assignment()).unwrap();
+        let thermal = [declaration];
+        let result = OpenMcInputDeck::generate(
+            &case(),
+            inputs.data_root.path(),
+            OpenMcInputArtifacts {
+                component_profile_json: UNIT_PROFILE_JSON,
+                material_json: MATERIAL_JSON,
+                source_json: SOURCE_JSON,
+                response_set_json: &inputs.response_set_json,
+                nuclear_data_manifest_json: &inputs.nuclear_data_json,
+                execution_profile_json: PROFILE_JSON,
+                acceptance_json: None,
+                material_assignment_json: Some(&assignment_bytes),
+                variance_reduction_json: None,
+                multimaterial: Some(MultiMaterialInputs {
+                    unit_response_source: UnitResponseSourceArtifacts {
+                        component_profile_json: COMPONENT_PROFILE_JSON,
+                        material_json: MATERIAL_JSON,
+                        nuclear_data_manifest_json: &source_inputs.nuclear_data_json,
+                    },
+                    mixture_levels: 20,
+                    thermal_scattering: &thermal,
+                }),
+            },
+        );
+        assert!(
+            matches!(result, Err(OpenMcInputError::InvalidNuclearData(_))),
+            "{result:?}"
+        );
     }
 
     #[test]
@@ -4258,6 +4441,7 @@ pub(crate) mod tests {
                     nuclear_data_manifest_json: &source_inputs.nuclear_data_json,
                 },
                 mixture_levels: 20,
+                thermal_scattering: &[],
             }),
         };
         assert!(matches!(
@@ -4296,6 +4480,7 @@ pub(crate) mod tests {
                 nuclear_data_manifest_json: &source_inputs.nuclear_data_json,
             },
             mixture_levels: 20,
+            thermal_scattering: &[],
         });
         assert!(matches!(
             OpenMcInputDeck::generate(&case(), full.data_root.path(), bad),

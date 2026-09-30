@@ -33,6 +33,8 @@ pub const PROJECT_RUN_SCHEMA: &str = "openbnct.project-run/0.1.0";
 /// Schema token of `out/report.json`.
 pub const PROJECT_REPORT_SCHEMA: &str = "openbnct.project-report/0.1.0";
 
+mod verify;
+
 type DynResult<T> = Result<T, Box<dyn Error>>;
 
 fn fail<T>(message: impl Into<String>) -> DynResult<T> {
@@ -88,6 +90,44 @@ enum ProjectCommand {
         #[arg(long, conflicts_with = "force")]
         from: Option<String>,
     },
+    /// Re-compute a finished project's dose with continuous-energy OpenMC
+    /// on the same case, material assignment, source and boron
+    /// concentrations, and report the agreement with the deterministic
+    /// (S_N) result per structure and component (step 08, artifacts in
+    /// `out/08-verify/`, folded into `out/report.md`). Needs OpenMC 0.16.0
+    /// and the ENDF/B-VIII.1 HDF5 library including its `thermal/` tables.
+    /// Settings come from flags, then `[verify]` in `project.toml`, then the
+    /// environment (`OPENBNCT_OPENMC`, `OPENMC_CROSS_SECTIONS`).
+    Verify {
+        /// Project directory containing `project.toml` and a completed
+        /// `openbnct project run`.
+        project: PathBuf,
+        /// Source histories, whole number or scientific notation
+        /// (default 1e6); rounded up to a multiple of the batch count.
+        #[arg(long, value_parser = verify::parse_count)]
+        particles: Option<u64>,
+        /// OpenMC batches (default 10).
+        #[arg(long)]
+        batches: Option<u32>,
+        /// OpenMP threads for OpenMC (default 2).
+        #[arg(long)]
+        threads: Option<u32>,
+        /// OpenMC executable (else `[verify] openmc`, `OPENBNCT_OPENMC`, or
+        /// `openmc` on PATH).
+        #[arg(long)]
+        openmc: Option<PathBuf>,
+        /// Path to the library's `cross_sections.xml` (else `[verify]
+        /// cross_sections` or `OPENMC_CROSS_SECTIONS`).
+        #[arg(long)]
+        cross_sections: Option<PathBuf>,
+        /// Wall-clock limit for the OpenMC process in seconds (default
+        /// 14400); on expiry it is killed and the step fails.
+        #[arg(long)]
+        timeout_seconds: Option<u64>,
+        /// Rerun even when inputs, options and outputs are unchanged.
+        #[arg(long)]
+        force: bool,
+    },
     /// Print the step table recorded in a project's run manifest.
     Status {
         /// Project directory containing `project.toml`.
@@ -112,6 +152,27 @@ pub fn run_project(args: ProjectArgs) -> DynResult<()> {
             force,
             from,
         } => run_steps(&project, force, from.as_deref()),
+        ProjectCommand::Verify {
+            project,
+            particles,
+            batches,
+            threads,
+            openmc,
+            cross_sections,
+            timeout_seconds,
+            force,
+        } => verify::verify_project(
+            &project,
+            &verify::VerifyOverrides {
+                particles,
+                batches,
+                threads,
+                openmc,
+                cross_sections,
+                timeout_seconds,
+                force,
+            },
+        ),
         ProjectCommand::Status { project } => print_status(&project),
         ProjectCommand::Builtins => {
             for builtin in BUILTINS {
@@ -157,6 +218,36 @@ const BUILTINS: &[Builtin] = &[
         name: "tissue/material-air-dry",
         file: "material-air-dry.json",
         bytes: include_bytes!("../builtins/material-air-dry.json"),
+    },
+    Builtin {
+        name: "openmc/response-set-nf-bnct-001",
+        file: "openmc-response-set-nf-bnct-001.json",
+        bytes: include_bytes!("../builtins/openmc-response-set-nf-bnct-001.json"),
+    },
+    Builtin {
+        name: "openmc/component-profile-unit-mass-fraction",
+        file: "openmc-component-profile-unit-mass-fraction.json",
+        bytes: include_bytes!("../builtins/openmc-component-profile-unit-mass-fraction.json"),
+    },
+    Builtin {
+        name: "openmc/unit-source-component-profile",
+        file: "openmc-unit-source-component-profile.json",
+        bytes: include_bytes!("../builtins/openmc-unit-source-component-profile.json"),
+    },
+    Builtin {
+        name: "openmc/unit-source-material",
+        file: "openmc-unit-source-material.json",
+        bytes: include_bytes!("../builtins/openmc-unit-source-material.json"),
+    },
+    Builtin {
+        name: "openmc/endfb81-base-manifest",
+        file: "openmc-endfb81-base-manifest.json",
+        bytes: include_bytes!("../builtins/openmc-endfb81-base-manifest.json"),
+    },
+    Builtin {
+        name: "openmc/execution-profile-smoke",
+        file: "openmc-execution-profile-smoke.json",
+        bytes: include_bytes!("../builtins/openmc-execution-profile-smoke.json"),
     },
     Builtin {
         name: "beams/fir1-k63",
@@ -220,6 +311,8 @@ struct ProjectConfig {
     boron: BoronSection,
     #[serde(default)]
     report: ReportSection,
+    #[serde(default)]
+    verify: verify::VerifySection,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -432,6 +525,7 @@ impl ProjectConfig {
                 );
             }
         }
+        self.verify.validate()?;
         // Built-in names are checked up front so a typo fails before any work.
         for spec in [
             &self.materials.calibration,
@@ -720,7 +814,12 @@ impl RunManifest {
     }
 }
 
-const STEP_IDS: [&str; 7] = [
+/// Steps executed by `project run`.
+const RUN_STEPS: usize = 7;
+
+/// Every step id a run manifest may record; `08-verify` is written by
+/// `project verify`, not by `project run`.
+const STEP_IDS: [&str; 8] = [
     "01-import",
     "02-calibrate",
     "03-beam",
@@ -728,6 +827,7 @@ const STEP_IDS: [&str; 7] = [
     "05-boron",
     "06-metrics",
     "07-report",
+    verify::VERIFY_STEP_ID,
 ];
 
 fn step_label(id: &str) -> &str {
@@ -736,7 +836,7 @@ fn step_label(id: &str) -> &str {
 
 fn resolve_step_index(text: &str) -> DynResult<usize> {
     let lowered = text.trim().to_ascii_lowercase();
-    for (index, id) in STEP_IDS.iter().enumerate() {
+    for (index, id) in STEP_IDS.iter().enumerate().take(RUN_STEPS) {
         if lowered == *id || lowered == step_label(id) || lowered == (index + 1).to_string() {
             return Ok(index);
         }
@@ -745,6 +845,7 @@ fn resolve_step_index(text: &str) -> DynResult<usize> {
         "unknown step {text:?}; steps are: {}",
         STEP_IDS
             .iter()
+            .take(RUN_STEPS)
             .map(|id| step_label(id))
             .collect::<Vec<_>>()
             .join(", ")
@@ -1233,7 +1334,14 @@ fn plan_step(
         }
         6 => StepPlan {
             commands: Vec::new(),
-            inputs: vec!["out/06-metrics".into(), "out/04-transport/flux.json".into()],
+            inputs: {
+                let mut inputs = vec!["out/06-metrics".into(), "out/04-transport/flux.json".into()];
+                // The report folds a verification in when one exists.
+                if project.join("out/08-verify/verification.json").is_file() {
+                    inputs.push("out/08-verify/verification.json".into());
+                }
+                inputs
+            },
             outputs: vec![
                 "out/report.md".into(),
                 "out/report.json".into(),
@@ -1339,7 +1447,7 @@ fn run_steps(project_arg: &Path, force: bool, from: Option<&str>) -> DynResult<(
     let from_index = match from {
         Some(text) => resolve_step_index(text)?,
         None if force => 0,
-        None => STEP_IDS.len(),
+        None => RUN_STEPS,
     };
     // Fail on unresolvable inputs before any work.
     for spec in [
@@ -1375,7 +1483,7 @@ fn run_steps(project_arg: &Path, force: bool, from: Option<&str>) -> DynResult<(
 
     println!("project {} ({})", config.project.id, project.display());
     let mut rois: Vec<RoiEntry> = Vec::new();
-    for (index, id) in STEP_IDS.iter().copied().enumerate() {
+    for (index, id) in STEP_IDS.iter().copied().enumerate().take(RUN_STEPS) {
         if index == 1 {
             rois = read_roi_index(&project)?;
             let names: Vec<String> = rois.iter().map(|r| r.name.clone()).collect();
@@ -1391,7 +1499,7 @@ fn run_steps(project_arg: &Path, force: bool, from: Option<&str>) -> DynResult<(
                 &plan,
                 &commands,
             )?;
-        let tag = format!("[{}/{}] {:<10}", index + 1, STEP_IDS.len(), step_label(id));
+        let tag = format!("[{}/{}] {:<10}", index + 1, RUN_STEPS, step_label(id));
         if current {
             println!("{tag} skipped (inputs, options and outputs unchanged)");
             continue;
@@ -1656,10 +1764,14 @@ fn write_report(
             }
         }
     }
+    let verify_state = verify::load_state(project, manifest)?;
     let commands: Vec<(String, Vec<String>)> = manifest
         .steps
         .iter()
         .filter(|s| !s.commands.is_empty())
+        .filter(|s| {
+            s.id != verify::VERIFY_STEP_ID || matches!(verify_state, verify::VerifyState::Fresh(_))
+        })
         .map(|s| (s.id.clone(), s.commands.clone()))
         .collect();
 
@@ -1672,7 +1784,11 @@ fn write_report(
         if converged { "" } else { " (PROVISIONAL)" }
     );
     let _ = writeln!(md, "> {DISCLAIMER}\n");
-    let _ = writeln!(md, "> {ACCURACY_STATUS}\n");
+    let _ = writeln!(
+        md,
+        "> {ACCURACY_STATUS}{}\n",
+        verify::accuracy_suffix(&verify_state)
+    );
     let _ = writeln!(md, "| | |\n|---|---|");
     let _ = writeln!(md, "| Project id | {} |", config.project.id);
     let _ = writeln!(md, "| OpenBNCT version | {} |", env!("CARGO_PKG_VERSION"));
@@ -1728,10 +1844,11 @@ fn write_report(
     for table in &structure_tables {
         let _ = writeln!(md, "{table}");
     }
+    let _ = writeln!(md, "{}", verify::render_section(&verify_state));
     let _ = writeln!(md, "## Commands\n");
     let _ = writeln!(
         md,
-        "Run from the project directory to reproduce or modify a single step by hand. The report step is internal (it reads `out/06-metrics`).\n"
+        "Run from the project directory to reproduce or modify a single step by hand. The report step is internal (it reads `out/06-metrics`); lines starting with `#` in the verify step are internal sub-steps.\n"
     );
     for (id, lines) in &commands {
         let _ = writeln!(md, "{id}:\n\n```text");
@@ -1759,6 +1876,7 @@ fn write_report(
         })),
         "input_hashes": input_hashes,
         "structures": structures_json,
+        "independent_mc_check": verify::report_json(&verify_state),
         "commands": commands.iter().map(|(id, lines)| json!({"step": id, "commands": lines})).collect::<Vec<_>>(),
         "disclaimer": DISCLAIMER,
     });
@@ -1882,6 +2000,30 @@ mod tests {
                 "libraries/tissue/materials/air-dry.json",
             ),
             ("beams/fir1-k63", "beams/fir1-k63.json"),
+            (
+                "openmc/response-set-nf-bnct-001",
+                "benchmarks/synthetic/nf-bnct-001/transport/provenance/neutron-response-set.json",
+            ),
+            (
+                "openmc/component-profile-unit-mass-fraction",
+                "examples/openmc-multimaterial/component-profile-unit-mass-fraction.json",
+            ),
+            (
+                "openmc/unit-source-component-profile",
+                "benchmarks/synthetic/nf-bnct-001/transport/component-profile.json",
+            ),
+            (
+                "openmc/unit-source-material",
+                "benchmarks/synthetic/nf-bnct-001/transport/material.json",
+            ),
+            (
+                "openmc/endfb81-base-manifest",
+                "benchmarks/synthetic/nf-bnct-001/transport/provenance/openmc-endfb81-processed-data-manifest.json",
+            ),
+            (
+                "openmc/execution-profile-smoke",
+                "benchmarks/synthetic/nf-bnct-001/transport/openmc-smoke-profile.json",
+            ),
         ];
         assert_eq!(sources.len(), BUILTINS.len());
         for (name, file) in sources {

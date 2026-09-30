@@ -3736,6 +3736,14 @@ struct MultiMaterialArgs {
     /// distinct result becomes one OpenMC material.
     #[arg(long)]
     mixture_levels: Option<u32>,
+    /// Declared S(alpha,beta) table as `NUCLIDE=TABLE` (repeatable), e.g.
+    /// `H1=c_H_in_H2O`: emitted as `<sab>` in every material containing the
+    /// nuclide, with the table's library hash recorded in the input
+    /// manifest. Omitted means free-gas scattering. Requires the
+    /// `--unit-source-*` artifacts and a `cross_sections.xml` that lists the
+    /// table under `thermal`.
+    #[arg(long = "thermal-scattering")]
+    thermal_scattering: Vec<String>,
 }
 
 impl MultiMaterialArgs {
@@ -3749,9 +3757,9 @@ impl MultiMaterialArgs {
             self.unit_source_nuclear_data_manifest,
         ) {
             (None, None, None) => {
-                if self.mixture_levels.is_some() {
+                if self.mixture_levels.is_some() || !self.thermal_scattering.is_empty() {
                     return Err(io::Error::other(
-                        "--mixture-levels requires the --unit-source-* artifacts",
+                        "--mixture-levels and --thermal-scattering require the --unit-source-* artifacts",
                     )
                     .into());
                 }
@@ -3765,6 +3773,12 @@ impl MultiMaterialArgs {
                     mixture_levels: self
                         .mixture_levels
                         .unwrap_or(openbnct_openmc::DEFAULT_MIXTURE_LEVELS),
+                    thermal_scattering: self
+                        .thermal_scattering
+                        .iter()
+                        .map(|spec| openbnct_openmc::ThermalScatteringDeclaration::parse(spec))
+                        .collect::<Result<Vec<_>, _>>()
+                        .map_err(io::Error::other)?,
                 }))
             }
             _ => Err(io::Error::other(
@@ -3924,6 +3938,11 @@ enum OpenMcCommand {
         /// New output path for the collected physical dose bundle JSON.
         #[arg(long)]
         dose_output: PathBuf,
+        /// Also write the unit-concentration boron dose
+        /// (`openbnct.boron-unit-dose/0.1.0`); decks generated under the
+        /// unit-mass-fraction profile only.
+        #[arg(long)]
+        boron_unit_dose_output: Option<PathBuf>,
         /// New directory for a hash-bound evidence bundle over the run.
         #[arg(long)]
         evidence_root: Option<PathBuf>,
@@ -5145,6 +5164,28 @@ enum OpenMcDataCommand {
         /// Optional material definition whose required capabilities must pass.
         #[arg(long)]
         material: Option<PathBuf>,
+    },
+    /// Derive a case-scoped nuclear-data manifest for every nuclide of a
+    /// material assignment from a reviewed base manifest: tables the base
+    /// already selects are reused, others are inspected from the data root.
+    SelectManifest {
+        /// Reviewed base manifest whose `cross_sections.xml` and
+        /// distribution identity the result inherits.
+        #[arg(long)]
+        base_manifest: PathBuf,
+        /// Root containing cross_sections.xml and every selected HDF5 file.
+        #[arg(long)]
+        data_root: PathBuf,
+        /// Material assignment whose base material and region materials
+        /// name the required nuclides.
+        #[arg(long)]
+        assignment: PathBuf,
+        /// Identifier of the derived manifest.
+        #[arg(long)]
+        manifest_id: String,
+        /// New output path for the manifest JSON.
+        #[arg(long)]
+        output: PathBuf,
     },
     /// Derive the common neutron transport interval for an exact material.
     DeriveTransportDomain {
@@ -6809,6 +6850,53 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         println!("material capabilities: verified");
                     }
                 }
+                OpenMcDataCommand::SelectManifest {
+                    base_manifest,
+                    data_root,
+                    assignment,
+                    manifest_id,
+                    output,
+                } => {
+                    let base: NuclearDataManifest =
+                        serde_json::from_slice(&fs::read(&base_manifest)?)?;
+                    let assignment: openbnct_transport::MaterialAssignment =
+                        serde_json::from_slice(&fs::read(&assignment)?)?;
+                    let mut nuclides = std::collections::BTreeSet::new();
+                    for material in std::iter::once(&assignment.base_material)
+                        .chain(assignment.regions.iter().map(|region| &region.material))
+                    {
+                        nuclides.extend(material.nuclides.iter().map(|n| n.name.clone()));
+                    }
+                    // The unit-mass-fraction response is folded for B-10
+                    // whether or not a material carries it.
+                    nuclides.insert("B10".to_owned());
+                    let derived = openbnct_openmc::select_manifest(
+                        &base,
+                        &data_root,
+                        &nuclides,
+                        &manifest_id,
+                    )?;
+                    write_new_json(&output, &derived)?;
+                    println!(
+                        "manifest {}: {} neutron tables, {} photon tables ({} inspected from the data root)",
+                        derived.id,
+                        derived.neutron_tables.len(),
+                        derived.photon_tables.len(),
+                        derived
+                            .neutron_tables
+                            .iter()
+                            .filter(|t| base.neutron_table(&t.nuclide).is_none())
+                            .count()
+                            + derived
+                                .photon_tables
+                                .iter()
+                                .filter(|t| !base
+                                    .photon_tables
+                                    .iter()
+                                    .any(|b| b.element == t.element))
+                                .count()
+                    );
+                }
                 OpenMcDataCommand::DeriveTransportDomain {
                     manifest,
                     material,
@@ -6874,6 +6962,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                             fs::read(&config.unit_source_material)?,
                             fs::read(&config.unit_source_nuclear_data_manifest)?,
                             config.mixture_levels,
+                            config.thermal_scattering.clone(),
                         ))
                     })
                     .transpose()?;
@@ -6902,7 +6991,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         material_assignment_json: assignment_json.as_deref(),
                         variance_reduction_json: vr_json.as_deref(),
                         multimaterial: multi_bytes.as_ref().map(
-                            |(profile, material, manifest, levels)| {
+                            |(profile, material, manifest, levels, thermal)| {
                                 openbnct_openmc::MultiMaterialInputs {
                                     unit_response_source:
                                         openbnct_openmc::UnitResponseSourceArtifacts {
@@ -6911,6 +7000,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                                             nuclear_data_manifest_json: manifest,
                                         },
                                     mixture_levels: *levels,
+                                    thermal_scattering: thermal,
                                 }
                             },
                         ),
@@ -6957,6 +7047,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 timeout_seconds,
                 working_directory,
                 dose_output,
+                boron_unit_dose_output,
                 evidence_root,
             } => {
                 if timeout_seconds == 0 {
@@ -7019,6 +7110,16 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     dose_output.display()
                 );
                 println!("provenance: {}", bundle.provenance_id);
+                if let Some(unit_output) = boron_unit_dose_output {
+                    let run = openbnct_openmc::collect_statepoint_full(&working_directory)?;
+                    let unit = run.boron_unit_dose.ok_or_else(|| {
+                        io::Error::other(
+                            "this deck was not generated under the unit-mass-fraction profile; no boron unit dose exists",
+                        )
+                    })?;
+                    write_new_json(&unit_output, &unit)?;
+                    println!("wrote boron unit dose at {}", unit_output.display());
+                }
 
                 if let Some(evidence_root) = evidence_root {
                     let config = backend
