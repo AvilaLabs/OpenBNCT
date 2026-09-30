@@ -963,6 +963,12 @@ pub(crate) fn source_coverage(
                 ));
             }
         }
+        SourceSpatialDistribution::PhaseSpace { .. } => {
+            return Err(invalid(
+                "phase-space sources need the uncollided beam split (beam_uncollided_split = true)"
+                    .into(),
+            ));
+        }
         other => {
             return Err(invalid(format!(
                 "only on-face disk sources map to boundary flux (got axis {:?})",
@@ -1559,6 +1565,9 @@ pub(crate) fn uncollided_beam_moments_grid(
 ) -> Result<Option<UncollidedMoments>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
+    if matches!(source.space, SourceSpatialDistribution::PhaseSpace { .. }) {
+        return uncollided_phase_space_moments(case, data, case_material, weighting).map(Some);
+    }
     let SourceSpatialDistribution::UniformDisk {
         axis,
         offset_cm,
@@ -1884,6 +1893,302 @@ pub(crate) fn uncollided_beam_moments_grid(
         ));
     }
     Ok(Some((unc, unc_current)))
+}
+
+/// The uncollided beam of a binned phase-space source
+/// ([`SourceSpatialDistribution::PhaseSpace`]). Same exact per-sample
+/// ray traversal, in-cell segment mean and sub-bin kernel as the
+/// disk/cone path; only the emission differs. For each cell, each of the
+/// file's direction bins and each transverse sample point, the point is
+/// back-traced to the source plane, the plane pixel is looked up, and
+/// the pixel's `(direction, group)` weights are deposited as fluence
+/// `w * <1/mu> / A_pixel` times the survival of that ray.
+fn uncollided_phase_space_moments(
+    case: &TransportCase,
+    data: &MultigroupData,
+    case_material: &[usize],
+    weighting: SourceWeighting,
+) -> Result<UncollidedMoments, MultigroupError> {
+    let invalid = |m: String| MultigroupError::Source(m);
+    let source = &case.source;
+    let SourceSpatialDistribution::PhaseSpace {
+        axis,
+        offset_cm,
+        table_path,
+        table_sha256,
+    } = &source.space
+    else {
+        return Err(invalid("not a phase-space source".into()));
+    };
+    let loaded = crate::phase_space_source::load_phase_space_source(table_path, table_sha256)
+        .map_err(|e| invalid(e.to_string()))?;
+    let table = &loaded.source;
+    let index = &loaded.index;
+    let groups = data.group_count();
+    if table.group_count() != groups
+        || table
+            .energy
+            .group_boundaries_ev
+            .iter()
+            .zip(&data.energy_boundaries_ev)
+            .any(|(a, b)| (a - b).abs() > 1e-9 * b.abs().max(1e-30))
+    {
+        return Err(invalid(
+            "phase-space table was binned onto a different multigroup structure than the \
+             solver data; re-run `beam phsp-bin --data` with this data"
+                .into(),
+        ));
+    }
+    if table.selection.plane_axis != *axis {
+        return Err(invalid(
+            "phase-space table plane axis differs from the case source axis".into(),
+        ));
+    }
+    let geometry = &case.geometry;
+    let a = axis.index();
+    let lo_mm = geometry.origin_mm[a] - 0.5 * geometry.spacing_mm[a];
+    let hi_mm = lo_mm + geometry.spacing_mm[a] * geometry.shape[a] as f64;
+    let face_cm = if (offset_cm * 10.0 - lo_mm).abs() < 1.0 {
+        lo_mm / 10.0
+    } else if (offset_cm * 10.0 - hi_mm).abs() < 1.0 {
+        hi_mm / 10.0
+    } else {
+        return Err(invalid(format!(
+            "source offset {offset_cm} cm is not on a grid face along axis {a}"
+        )));
+    };
+    let inward = if face_cm == lo_mm / 10.0 { 1.0 } else { -1.0 };
+    if f64::from(table.selection.inward_sign) != inward {
+        return Err(invalid(
+            "phase-space table beam direction enters the opposite grid face".into(),
+        ));
+    }
+    let (u, v) = axis.in_plane_axes();
+    let rate = source.statistical_weight_per_site * source.source_sites_per_history as f64;
+    let n_cells = geometry.voxel_count()?;
+    let [nx, ny, nz] = geometry.shape.map(|d| d as usize);
+    let su = geometry.spacing_mm[u] / 10.0;
+    let sv = geometry.spacing_mm[v] / 10.0;
+    let sa = geometry.spacing_mm[a] / 10.0;
+    const IDENTITY_DIRECTION: [f64; 9] = [1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0];
+    if geometry
+        .direction
+        .iter()
+        .zip(IDENTITY_DIRECTION)
+        .any(|(x, y)| (x - y).abs() > 1e-9)
+    {
+        return Err(invalid(
+            "uncollided beam ray-trace requires an identity grid direction".into(),
+        ));
+    }
+    let grid = RayGrid {
+        lo_cm: std::array::from_fn(|ax| {
+            (geometry.origin_mm[ax] - 0.5 * geometry.spacing_mm[ax]) / 10.0
+        }),
+        h_cm: std::array::from_fn(|ax| geometry.spacing_mm[ax] / 10.0),
+        n: [nx as i64, ny as i64, nz as i64],
+    };
+    let n_mat = data.materials.len();
+    let mut ref_nodes: Option<&[f64]> = None;
+    for m in &data.materials {
+        if let Some(nd) = m.beam_sigma_nodes_per_cm.as_deref() {
+            match ref_nodes {
+                None => ref_nodes = Some(nd),
+                Some(r) => {
+                    if r.iter()
+                        .zip(nd)
+                        .step_by(2)
+                        .any(|(x, y)| (x - y).abs() > 1e-12)
+                    {
+                        return Err(invalid(
+                            "beam sub-bin node weights differ between materials".into(),
+                        ));
+                    }
+                }
+            }
+        }
+    }
+
+    let nd = table.direction_count();
+    let dirs = &table.directions;
+    let pix = &table.pixels;
+    let a_pix = pix.pixel_cm * pix.pixel_cm;
+    let mut dir_has_entries = vec![false; nd];
+    for &d in &table.entries.direction {
+        dir_has_entries[usize::from(d)] = true;
+    }
+    let active_groups: Vec<usize> = (0..groups)
+        .filter(|g| table.group_marginal[*g] > 0.0)
+        .collect();
+    let sub_n = TRANSVERSE_POINTS;
+    let sub = f64::from(sub_n);
+
+    let per_cell: Vec<Option<CellUncollided>> = (0..n_cells)
+        .into_par_iter()
+        .map(|cell| -> Result<_, MultigroupError> {
+            let i = cell % nx;
+            let j = (cell / nx) % ny;
+            let k = cell / (nx * ny);
+            let center_mm = geometry.voxel_center_lps_mm([i as u32, j as u32, k as u32])?;
+            let c: [f64; 3] = [
+                center_mm[0] / 10.0,
+                center_mm[1] / 10.0,
+                center_mm[2] / 10.0,
+            ];
+            let material = &data.materials[case_material[cell]];
+            let kernel = matches!(
+                (weighting, &material.beam_sigma_nodes_per_cm),
+                (SourceWeighting::UniformInBin, Some(_))
+            );
+            let mut cell_unc = vec![0.0; groups];
+            let mut cell_cur = vec![[0.0_f64; 3]; groups];
+            let mut lit_cell = false;
+            let mut lengths = vec![0.0_f64; n_mat];
+            let mut path: Vec<(usize, f64)> = Vec::with_capacity(n_mat);
+            let mut cache_path: Vec<(usize, f64)> = Vec::with_capacity(n_mat);
+            let mut cache_surv = vec![0.0_f64; groups];
+            for (d, &has_entries) in dir_has_entries.iter().enumerate() {
+                let d_hat = &dirs.mean_direction[d];
+                let d_axis = d_hat[a];
+                if !has_entries || inward * d_axis <= 0.0 {
+                    continue;
+                }
+                let fluence_per_weight = rate * dirs.mean_inverse_cosine[d] / a_pix;
+                let chord = sa / d_axis.abs();
+                let s = (c[a] - face_cm) / d_axis;
+                if s <= 0.0 {
+                    continue;
+                }
+                let s_lo = (s - chord / 2.0).max(0.0);
+                let span = (s + chord / 2.0) - s_lo;
+                let mut cache_ok = false;
+                for pu in 0..sub_n {
+                    for pv in 0..sub_n {
+                        let mut p = c;
+                        p[u] += ((f64::from(pu) + 0.5) / sub - 0.5) * su;
+                        p[v] += ((f64::from(pv) + 0.5) / sub - 0.5) * sv;
+                        let qu = p[u] - d_hat[u] * s;
+                        let qv = p[v] - d_hat[v] * s;
+                        let fu = ((qu - pix.u0_cm) / pix.pixel_cm).floor();
+                        let fv = ((qv - pix.v0_cm) / pix.pixel_cm).floor();
+                        if fu < 0.0
+                            || fv < 0.0
+                            || fu >= f64::from(pix.nu)
+                            || fv >= f64::from(pix.nv)
+                        {
+                            continue;
+                        }
+                        let pixel = fu as usize + pix.nu as usize * fv as usize;
+                        let range = index.range(pixel, d, nd);
+                        if range.is_empty() {
+                            continue;
+                        }
+                        lit_cell = true;
+                        let mut origin = [0.0; 3];
+                        for ax in 0..3 {
+                            origin[ax] = p[ax] - d_hat[ax] * s;
+                        }
+                        origin[a] = face_cm;
+                        lengths.iter_mut().for_each(|l| *l = 0.0);
+                        grid.trace(
+                            origin,
+                            *d_hat,
+                            s_lo,
+                            (a, inward > 0.0),
+                            case_material,
+                            &mut lengths,
+                        );
+                        path.clear();
+                        path.extend(
+                            lengths
+                                .iter()
+                                .enumerate()
+                                .filter(|(_, l)| **l > 0.0)
+                                .map(|(m, l)| (m, *l)),
+                        );
+                        let seg_factor = |sigma: f64| -> f64 {
+                            let x = sigma * span;
+                            if x > 1e-8 {
+                                (1.0 - (-x).exp()) / x
+                            } else {
+                                1.0
+                            }
+                        };
+                        let same = cache_ok
+                            && cache_path.len() == path.len()
+                            && cache_path.iter().zip(&path).all(|(a, b)| {
+                                a.0 == b.0 && (a.1 - b.1).abs() <= 1e-12 * a.1.max(1.0)
+                            });
+                        if !same {
+                            for &g in &active_groups {
+                                cache_surv[g] = if !kernel {
+                                    let tau: f64 = path
+                                        .iter()
+                                        .map(|&(m, l)| data.materials[m].sigma_total_per_cm[g] * l)
+                                        .sum();
+                                    (-tau).exp() * seg_factor(material.sigma_total_per_cm[g])
+                                } else {
+                                    let base = g * 2 * BEAM_KERNEL_NODES;
+                                    let tgt_nodes =
+                                        material.beam_sigma_nodes_per_cm.as_deref().unwrap_or(&[]);
+                                    (0..BEAM_KERNEL_NODES)
+                                        .map(|jn| {
+                                            let tau: f64 = path
+                                                .iter()
+                                                .map(|&(m, l)| {
+                                                    let mat = &data.materials[m];
+                                                    let sig = match &mat.beam_sigma_nodes_per_cm {
+                                                        Some(nd) => nd[base + 2 * jn + 1],
+                                                        None => mat.sigma_total_per_cm[g],
+                                                    };
+                                                    sig * l
+                                                })
+                                                .sum();
+                                            tgt_nodes[base + 2 * jn]
+                                                * (-tau).exp()
+                                                * seg_factor(tgt_nodes[base + 2 * jn + 1])
+                                        })
+                                        .sum()
+                                };
+                            }
+                            cache_path.clear();
+                            cache_path.extend_from_slice(&path);
+                            cache_ok = true;
+                        }
+                        for e in range {
+                            let g = usize::from(table.entries.group[e]);
+                            let deposit = fluence_per_weight * table.entries.weight[e]
+                                / (sub * sub)
+                                * cache_surv[g];
+                            cell_unc[g] += deposit;
+                            let jc = &mut cell_cur[g];
+                            jc[0] += deposit * d_hat[0];
+                            jc[1] += deposit * d_hat[1];
+                            jc[2] += deposit * d_hat[2];
+                        }
+                    }
+                }
+            }
+            Ok(lit_cell.then_some((cell_unc, cell_cur)))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    let mut unc = vec![vec![0.0; groups]; n_cells];
+    let mut unc_current = vec![vec![[0.0_f64; 3]; groups]; n_cells];
+    let mut lit = false;
+    for (cell, entry) in per_cell.into_iter().enumerate() {
+        if let Some((fu, fc)) = entry {
+            lit = true;
+            unc[cell] = fu;
+            unc_current[cell] = fc;
+        }
+    }
+    if !lit {
+        return Err(invalid(
+            "phase-space beam illuminates no cell centers; check the table's plane and footprint"
+                .into(),
+        ));
+    }
+    Ok((unc, unc_current))
 }
 
 /// Legendre polynomial P_l(x) by the three-term recurrence.
@@ -5300,6 +5605,117 @@ pub(crate) mod tests {
                 .flatten()
                 .all(|v| v.is_finite() && *v >= 0.0)
         );
+    }
+
+    /// A regular lattice of monodirectional neutrons over the whole face,
+    /// binned to a phase-space table, must reproduce the disk source's
+    /// uncollided field cell for cell: same ray trace, same segment mean.
+    /// The two sources differ only in normalization (the table is per
+    /// accepted neutron, all of which cross the 4 mm x 4 mm face; the disk
+    /// spreads one particle over pi r^2), so the ratio is pi r^2 / face area.
+    #[test]
+    fn phase_space_lattice_matches_disk_source_scaled() {
+        use crate::phsp::{PHSP_NEUTRON, PhspRecord, write_iaea_phsp};
+        use sha2::{Digest, Sha256};
+
+        let dir = std::env::temp_dir().join(format!("openbnct-ps-solver-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let header = dir.join("lattice.IAEAheader");
+        // 4 x 4 pixels of 1 mm, 5 x 5 neutrons in each, centred on the axis.
+        let mut records = Vec::new();
+        for i in 0..20 {
+            for j in 0..20 {
+                records.push(PhspRecord {
+                    particle_type: PHSP_NEUTRON,
+                    new_history: true,
+                    energy_mev: 2.53e-8,
+                    position_cm: [
+                        -0.2 + 0.01 + 0.02 * f64::from(i),
+                        -0.2 + 0.01 + 0.02 * f64::from(j),
+                        0.0,
+                    ],
+                    direction: [0.0, 0.0, 1.0],
+                    weight: 1.0,
+                });
+            }
+        }
+        write_iaea_phsp(&header, &records, 400.0, "lattice").unwrap();
+
+        let case_disk = {
+            let mut c = slab_case();
+            c.source.angle = AngularDistribution::Monodirectional {
+                unit_vector: [0.0, 0.0, 1.0],
+            };
+            c.source.space = SourceSpatialDistribution::UniformDisk {
+                axis: PlaneAxis::Z,
+                offset_cm: -1.0,
+                center_uv_cm: [0.0, 0.0],
+                radius_cm: 0.3,
+            };
+            c
+        };
+        let mg = data(&[1.0], vec![0.0]);
+        mg.validate().unwrap();
+        let mut opts = crate::phase_space_source::PhaseSpaceBinOptions::new("test.lattice", "+z");
+        opts.pixel_cm = 0.1;
+        opts.rings = 1;
+        opts.sectors = 1;
+        let table = crate::phase_space_source::bin_phase_space(
+            &header,
+            &case_disk.geometry,
+            &mg,
+            &"0".repeat(64),
+            &opts,
+        )
+        .unwrap();
+        assert_eq!(table.provenance.rejected.total(), 0);
+        let table_path = dir.join("lattice-source.json");
+        let bytes = serde_json::to_vec(&table).unwrap();
+        std::fs::write(&table_path, &bytes).unwrap();
+        let sha = format!("{:x}", Sha256::digest(&bytes));
+        let mut case_ps = case_disk.clone();
+        case_ps.source = crate::phase_space_source::phase_space_fixed_source(
+            &table,
+            &table_path.display().to_string(),
+            &sha,
+        );
+        case_ps.validate().unwrap();
+
+        let cells = vec![0usize; case_disk.geometry.voxel_count().unwrap()];
+        let w = SourceWeighting::CollapseConsistent;
+        let disk = uncollided_beam_flux(&case_disk, &mg, &cells, w)
+            .unwrap()
+            .unwrap();
+        let ps = uncollided_beam_flux(&case_ps, &mg, &cells, w)
+            .unwrap()
+            .unwrap();
+        let scale = std::f64::consts::PI * 0.3 * 0.3 / 0.16;
+        let mut compared = 0;
+        for (d, p) in disk.iter().zip(&ps) {
+            assert!(d[0] > 0.0);
+            assert!(
+                (p[0] / d[0] - scale).abs() < 1e-9 * scale,
+                "phase-space {} vs disk {} x {scale}",
+                p[0],
+                d[0]
+            );
+            compared += 1;
+        }
+        assert_eq!(compared, 4 * 4 * 20);
+
+        // A stale table is refused, not silently used.
+        let mut stale = case_ps.clone();
+        if let SourceSpatialDistribution::PhaseSpace { table_sha256, .. } = &mut stale.source.space
+        {
+            *table_sha256 = "b".repeat(64);
+        }
+        let err = uncollided_beam_flux(&stale, &mg, &cells, w).unwrap_err();
+        assert!(err.to_string().contains("sha256"), "{err}");
+        // Boundary-flux (no uncollided split) has no phase-space form.
+        let mut no_split = options();
+        no_split.beam_uncollided_split = false;
+        let err = solve_multigroup(&case_ps, &mg, &no_split, cref("mg"), cref("case")).unwrap_err();
+        assert!(err.to_string().contains("uncollided"), "{err}");
     }
 
     /// A disk narrower than the cell deposits the cell-AVERAGE fluence,

@@ -466,6 +466,117 @@ vs measured 0.77): the fixture's conservative collimator-bound cone
 cannot reproduce measured penumbra divergence — the report records
 exactly that fidelity gap.
 
+### Phase-space beam sources
+
+A facility or a beam-shaping-assembly study often hands over its beam as an
+IAEA phase-space file (`.IAEAheader` + `.IAEAphsp`, IAEA INDC(NDS)-0484): one
+record per particle with position, direction, energy and weight. OpenBNCT reads
+the format (any byte order; constant or stored X/Y/Z/U/V/W/weight; extra floats
+and longs are skipped), streaming record by record, so a multi-gigabyte file
+costs constant memory. Neutrons (type 4) drive the deterministic solver and the
+OpenMC source; photons (type 1) are counted and reported, not used.
+
+```text
+openbnct beam phsp-info --header beam.IAEAheader
+openbnct beam phsp-bin \
+  --header beam.IAEAheader \
+  --case CASE.json \
+  --data multigroup-data-28g-v5-tsl.json \
+  --plane +z --pixel-mm 5 --dir-bins 8x16 \
+  --output beam-source.json --case-output CASE-PHSP.json
+```
+
+`phsp-info` prints the header keys, the declared and scanned counts per
+particle type with weight sums and energy ranges, and both file hashes.
+
+`phsp-bin` reduces the neutrons to an `openbnct.phase-space-source/0.1.0`
+table on the case's source plane: transverse pixels (`--pixel-mm`, default 5)
+by direction bins (`--dir-bins RINGSxSECTORS`, equal-solid-angle cos-theta
+rings by phi sectors about the plane normal, out to the file's largest polar
+angle) by the energy groups of `--data`. Each record lands in exactly one
+group; the table stores weight per accepted source neutron (entries sum to
+1), the weighted mean direction and mean 1/cos of each direction bin, and
+the provenance: sha256 of the header and data files, counts and weight sums by
+particle type, the accepted count, and the neutrons rejected and why
+(backward, grazing, past the plane, outside the grid face, outside the energy
+groups, beyond `--theta-max-deg`). Rejected weight is reported, never renormalized
+silently: the table is per accepted neutron and `provenance` gives
+`accepted_weight_per_original_history` for absolute scaling.
+
+Frame: the file's +z axis is the beam axis. `--plane` (`+z -z +x -x +y -y`,
+default `+z`) is the case direction that axis maps onto, by a proper
+rotation; the beam enters the grid face opposite that direction, with the plane
+just inside it as `beam bind` does. The file's x = y = 0 axis crosses the plane at the
+face centre unless `--center-uv-cm u,v` says otherwise. Particles are advanced
+in vacuum to the plane from their own z (`--reference-z-cm`, default the
+header's constant Z, else 0). Only case faces are supported as source planes.
+
+`--case-output` writes the case with its source replaced by a `phase_space`
+space that references the table by path (absolute) and sha256; `source.angle`
+and `source.energy` carry the table's cone and spectrum envelope for readers
+that do not need the table. Then:
+
+```text
+openbnct sn solve --case CASE-PHSP.json --data multigroup-data-28g-v5-tsl.json \
+  --assignment assignment.json --source-weighting uniform_in_bin --dose dose.json --output flux.json
+```
+
+In the deterministic solver the uncollided beam iterates the table's direction
+bins instead of the cone grid: each cell sample point is back-traced to the
+plane, the pixel is looked up, and the pixel's (direction, group) weights are
+deposited as fluence `w * <1/cos> / pixel area` times the survival along the
+exact voxel traversal, with the same in-cell segment mean. The first-collision
+source, the P1 current feed, CMFD and the dose fold are unchanged. It needs the
+uncollided split (the default), a case face as the plane, and multigroup data
+with the same group structure the table was binned onto (checked).
+
+For the Monte Carlo cross-check, `openmc generate` (and so `project verify`)
+turns the same `phase_space` source into `phase-space-source.h5`, an OpenMC
+source bank of the ORIGINAL accepted particles (not the bins), selected by the
+same rule as the table, with weights scaled to mean 1; `settings.xml` then
+names it as a file source. The two codes transport the same neutrons.
+
+Binning parameters are a discretization: pixel size and direction resolution
+trade smoothness against per-bin statistics. `scripts/make_synthetic_phsp.py`
+samples a phase-space file from an analytic beam description for this kind
+of convergence check.
+
+Check on the layered-head benchmark (S4, 28 groups, `uniform_in_bin`; 2026-09-30).
+A synthetic file of 1e7 neutrons sampled from `beams/fir1-k63-ineel-20mev.json`
+(seed 20260930) was binned at 5 mm x 8x16 and solved against the analytic disk/cone
+source of the same beam. Region-mean dose, phase space / analytic:
+
+| component | skin | skull | brain | whole grid |
+| --- | --- | --- | --- | --- |
+| total | 0.9998 | 0.9998 | 0.9999 | 1.0000 |
+| boron (brain) | | | 0.9998 | 0.9998 |
+| nitrogen | 0.9996 | 0.9997 | 0.9998 | 0.9997 |
+| photon | 0.9996 | 0.9997 | 0.9998 | 0.9999 |
+| hydrogen (fast) | 1.0066 | 1.0071 | 1.0100 | 1.0067 |
+
+The fast-neutron component rests on about 3 % of the beam and moves by about 1 %
+with the sampling seed (a second 1e7 file gives 0.9996 / 1.0004 / 0.9979 in
+skin / whole grid / brain); everything else is inside 0.05 %. Dependence on the
+binning (total dose, skin / brain ratio, same file): pixel 2.5 mm 1.0001 / 1.0003,
+5 mm 0.9998 / 0.9999, 10 mm 0.9989 / 0.9982, 20 mm 0.9939 / 0.9909 (fast component
++5 % over the whole grid at 20 mm); direction bins at 5 mm 2x4 1.0019 / 1.0025,
+4x8 1.0011 / 1.0012, 8x16 0.9998 / 0.9999, 16x32 0.9997 / 0.9998. A pixel of
+about a cell width and 4x8 or finer directions leave the binning error well under
+the sampling noise. Binning 1e7 neutrons takes 7 s; the solve took 95 s against
+108 s for the analytic source (2 threads).
+
+The Monte Carlo side: `openmc run` on the same case with the analytic source
+(two seeds) and with the converted phase space (two independent 1e7 files), 2e6
+histories in 10 batches each. The two analytic runs differ from each other by
+up to 3 % in the fast component and 0.5 % in photon dose in the brain, so that is
+the noise floor of a run this size. Against the second analytic run, region-mean
+total dose (skin / skull / brain) is +0.0 / +0.7 / +0.4 % with the first file
+and -0.3 / +1.1 / +1.5 % with the second; boron and nitrogen dose in the brain
++0.2 % and +0.6 %. Drawing 2e6 particles from a 1e7 bank adds a common-mode
+fluctuation of a few tenths of a percent to the thermal-dominated components, which
+the per-voxel uncertainties do not show: use a file several times larger than the
+history count.
+
 ### Accelerator sources and beam-shaping assemblies
 
 `openbnct accelerator` evaluates a parametric `⁷Li(p,n)⁷Be` thick-target

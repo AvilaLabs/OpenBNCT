@@ -242,6 +242,22 @@ impl FixedSourceDefinition {
                     return Err(TransportModelError::InvalidSourceSpace);
                 }
             }
+            SourceSpatialDistribution::PhaseSpace {
+                offset_cm,
+                table_path,
+                table_sha256,
+                ..
+            } => {
+                if !offset_cm.is_finite()
+                    || table_path.trim().is_empty()
+                    || table_sha256.len() != 64
+                    || !table_sha256
+                        .bytes()
+                        .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+                {
+                    return Err(TransportModelError::InvalidSourceSpace);
+                }
+            }
             SourceSpatialDistribution::UniformBox {
                 x_range_cm,
                 y_range_cm,
@@ -364,6 +380,18 @@ pub enum SourceSpatialDistribution {
         z_range_cm: [f64; 2],
         interval_convention: IntervalConvention,
     },
+    /// A binned IAEA phase-space beam
+    /// (`openbnct.phase-space-source/0.1.0`, see `beam phsp-bin`)
+    /// entering through the grid face perpendicular to `axis` at
+    /// `offset_cm`. The table is referenced by path and content hash;
+    /// `source.angle` and `source.energy` carry its cone / spectrum
+    /// envelope for readers that do not need the table.
+    PhaseSpace {
+        axis: PlaneAxis,
+        offset_cm: f64,
+        table_path: String,
+        table_sha256: String,
+    },
 }
 
 /// World axis a `UniformAxisPlane` is perpendicular to.
@@ -419,7 +447,8 @@ impl SourceSpatialDistribution {
                 ..
             } => Some((axis, offset_cm, u_range_cm, v_range_cm)),
             SourceSpatialDistribution::UniformDisk { .. }
-            | SourceSpatialDistribution::UniformBox { .. } => None,
+            | SourceSpatialDistribution::UniformBox { .. }
+            | SourceSpatialDistribution::PhaseSpace { .. } => None,
         }
     }
 
@@ -430,7 +459,8 @@ impl SourceSpatialDistribution {
         match self {
             SourceSpatialDistribution::UniformCartesianPlane { .. } => Some(PlaneAxis::Z),
             SourceSpatialDistribution::UniformAxisPlane { axis, .. }
-            | SourceSpatialDistribution::UniformDisk { axis, .. } => Some(*axis),
+            | SourceSpatialDistribution::UniformDisk { axis, .. }
+            | SourceSpatialDistribution::PhaseSpace { axis, .. } => Some(*axis),
             SourceSpatialDistribution::UniformBox { .. } => None,
         }
     }
@@ -442,7 +472,8 @@ impl SourceSpatialDistribution {
         match self {
             SourceSpatialDistribution::UniformCartesianPlane { z_cm, .. } => Some(*z_cm),
             SourceSpatialDistribution::UniformAxisPlane { offset_cm, .. }
-            | SourceSpatialDistribution::UniformDisk { offset_cm, .. } => Some(*offset_cm),
+            | SourceSpatialDistribution::UniformDisk { offset_cm, .. }
+            | SourceSpatialDistribution::PhaseSpace { offset_cm, .. } => Some(*offset_cm),
             SourceSpatialDistribution::UniformBox { .. } => None,
         }
     }

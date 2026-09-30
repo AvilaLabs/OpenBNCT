@@ -19,7 +19,9 @@ mod hu_calibration;
 mod measurement;
 mod model;
 mod multigroup;
+mod phase_space_source;
 mod photon;
+mod phsp;
 mod positioning;
 mod prompt_gamma;
 mod response;
@@ -82,9 +84,19 @@ pub use multigroup::{
     parse_multigroup_flux, solve_multigroup, solve_multigroup_adjoint, uncollided_beam_flux,
 };
 pub use openbnct_core::ContentReference;
+pub use phase_space_source::{
+    AcceptedParticle, PHASE_SPACE_PLANE_MARGIN_CM, PHASE_SPACE_SOURCE_SCHEMA, PhaseSpaceBinOptions,
+    PhaseSpaceError, PhaseSpaceSelection, PhaseSpaceSource, RejectCounts, Rejection,
+    bin_phase_space, load_phase_space_source, parse_beam_direction, phase_space_fixed_source,
+    sha256_file,
+};
 pub use photon::{
     MULTIGROUP_PHOTON_DATA_SCHEMA, MultigroupPhotonData, PHOTON_DOSE_COMPONENT, PhotonMaterial,
     fold_photon_dose, solve_photon, solve_photon_adjoint,
+};
+pub use phsp::{
+    IaeaHeader, PHSP_ELECTRON, PHSP_NEUTRON, PHSP_PHOTON, PHSP_POSITRON, PHSP_PROTON, PhspError,
+    PhspReader, PhspRecord, PhspScan, PhspTypeSummary, phsp_data_path, scan_phsp, write_iaea_phsp,
 };
 pub use positioning::{
     AxisApproach, EntrySide, POSITION_REPORT_SCHEMA, PositionReport, PositioningError,

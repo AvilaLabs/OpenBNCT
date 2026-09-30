@@ -1956,7 +1956,11 @@ already have.
 - **R18-11 — Tier 2, beam realism.**
   - IAEA phase-space (`.IAEAheader`/`.IAEAphsp`) beam sources, binned onto the
     source plane × direction × energy for the deterministic solver and converted
-    for OpenMC so `verify` stays apples-to-apples.
+    for OpenMC so `verify` stays apples-to-apples. **(landed, PHSP_COMMIT)**
+    `beam phsp-info` / `beam phsp-bin`, the `phase_space` source space, and the
+    OpenMC source-bank conversion in `openmc generate`. Neutrons only; photons
+    are counted and reported. Source planes are case faces. Validation numbers
+    are in `docs/USAGE.md` "Phase-space beam sources".
   - MCNP surface-source and PHITS dump readers.
 - **R18-12 — Tier 3, cross-code breadth.** TOPAS and FLUKA (USRBIN) dose-scoring import.
 

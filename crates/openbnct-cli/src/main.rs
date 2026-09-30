@@ -10,6 +10,7 @@ use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
 mod import_formats;
+mod phsp_cmd;
 mod project;
 
 use clap::{Args, Parser, Subcommand};
@@ -1781,6 +1782,66 @@ enum BeamCommand {
         /// Axis approach `+x|-x|+y|-y|+z|-z` used with `--aim-mask`.
         #[arg(long, requires = "aim_mask")]
         approach: Option<String>,
+    },
+    /// Describe an IAEA phase-space file (`.IAEAheader` + `.IAEAphsp`):
+    /// header keys, per-particle-type counts and weight sums, energy and
+    /// position ranges, and file hashes.
+    PhspInfo {
+        /// The `.IAEAheader` file (the `.IAEAphsp` must sit beside it).
+        #[arg(long)]
+        header: PathBuf,
+    },
+    /// Bin the neutrons of an IAEA phase-space file onto a case's source
+    /// plane (pixels x direction bins x multigroup energy groups) and write
+    /// an `openbnct.phase-space-source/0.1.0` table. With `--case-output`
+    /// also writes the case with its source replaced by the phase-space
+    /// source, which `sn solve` and `openmc generate` consume.
+    PhspBin {
+        /// The `.IAEAheader` file.
+        #[arg(long)]
+        header: PathBuf,
+        /// `openbnct.transport-case/0.1.0` whose grid face the beam enters.
+        #[arg(long)]
+        case: PathBuf,
+        /// Multigroup data whose energy groups the table is binned onto.
+        #[arg(long)]
+        data: PathBuf,
+        /// Direction the file's +z axis maps onto (`+z`, `-z`, `+x`, ...);
+        /// the beam enters the grid face opposite that direction.
+        #[arg(long = "plane", alias = "direction", default_value = "+z")]
+        direction: String,
+        /// Where the file's x = y = 0 axis crosses the plane, `u,v` in cm
+        /// (default: the face centre, as `beam bind` centres a port).
+        #[arg(long, value_delimiter = ',')]
+        center_uv_cm: Option<Vec<f64>>,
+        /// File z (cm) taken as the source plane; particles are advanced in
+        /// vacuum from their own z (default: the header's constant Z, else 0).
+        #[arg(long)]
+        reference_z_cm: Option<f64>,
+        /// Transverse pixel size, mm.
+        #[arg(long, default_value_t = 5.0)]
+        pixel_mm: f64,
+        /// Direction bins `RINGSxSECTORS`: cos-theta rings (equal solid
+        /// angle) x phi sectors about the plane normal, out to the file's
+        /// largest polar angle.
+        #[arg(long, default_value = "8x16")]
+        dir_bins: String,
+        /// Drop neutrons beyond this polar angle, degrees (default: keep all).
+        #[arg(long)]
+        theta_max_deg: Option<f64>,
+        /// Reject neutrons whose cosine to the plane normal is below this
+        /// (grazing; their 1/cos fluence weight diverges).
+        #[arg(long, default_value_t = 1.0e-3)]
+        min_cosine: f64,
+        /// Identifier recorded in the table (default from the header name).
+        #[arg(long)]
+        id: Option<String>,
+        /// New output path for the phase-space-source JSON.
+        #[arg(long)]
+        output: PathBuf,
+        /// New output path for the case carrying the phase-space source.
+        #[arg(long)]
+        case_output: Option<PathBuf>,
     },
     /// Emit a `openbnct.beam-description/0.1.0` from a binned spectrum
     /// CSV plus declared port geometry — the on-ramp for a group that
@@ -5651,6 +5712,36 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 println!("bound {} onto {}", beam.id, bound.case_id);
                 println!("case: {}", output.display());
             }
+            BeamCommand::PhspInfo { header } => phsp_cmd::info(&header)?,
+            BeamCommand::PhspBin {
+                header,
+                case,
+                data,
+                direction,
+                center_uv_cm,
+                reference_z_cm,
+                pixel_mm,
+                dir_bins,
+                theta_max_deg,
+                min_cosine,
+                id,
+                output,
+                case_output,
+            } => phsp_cmd::bin(phsp_cmd::BinArgs {
+                header,
+                case,
+                data,
+                direction,
+                center_uv_cm,
+                reference_z_cm,
+                pixel_mm,
+                dir_bins,
+                theta_max_deg,
+                min_cosine,
+                id,
+                output,
+                case_output,
+            })?,
             BeamCommand::Build {
                 id,
                 name,

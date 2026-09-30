@@ -717,6 +717,18 @@ impl OpenMcInputDeck {
         source
             .validate()
             .map_err(|error| OpenMcInputError::InvalidSource(error.to_string()))?;
+        let phase_space_file = match &source.space {
+            SourceSpatialDistribution::PhaseSpace {
+                offset_cm,
+                table_path,
+                table_sha256,
+                ..
+            } => Some(
+                crate::phase_space::build_openmc_source_file(table_path, table_sha256, *offset_cm)
+                    .map_err(OpenMcInputError::InvalidSource)?,
+            ),
+            _ => None,
+        };
         let response_set: NeutronResponseSet =
             parse_json("response_set", artifacts.response_set_json)?;
         response_set
@@ -1142,6 +1154,13 @@ impl OpenMcInputDeck {
             generated_file("settings.xml", XML_MEDIA_TYPE, settings_xml),
             generated_file("tallies.xml", XML_MEDIA_TYPE, tallies_xml),
         ];
+        if let Some(phase_space) = phase_space_file {
+            files.push(generated_file(
+                crate::phase_space::PHASE_SPACE_OPENMC_FILE,
+                "application/x-hdf5",
+                phase_space.bytes,
+            ));
+        }
         // The component profile rides with the deck so collection can map
         // components to their covered nuclides for region-density correction.
         if material_assignment.is_some() {
@@ -1551,6 +1570,14 @@ fn validate_source_containment(
                 && *offset_cm > mesh.lower_left_cm[axis_index]
                 && *offset_cm < mesh.upper_right_cm[axis_index]
         }
+        SourceSpatialDistribution::PhaseSpace {
+            axis, offset_cm, ..
+        } => {
+            // The binning already dropped every particle whose plane
+            // crossing lies outside the grid face; only the plane needs a check.
+            *offset_cm > mesh.lower_left_cm[axis.index()]
+                && *offset_cm < mesh.upper_right_cm[axis.index()]
+        }
         space => {
             let Some((plane_axis, offset_cm, u_range_cm, v_range_cm)) = space.plane_parts() else {
                 return Err(OpenMcInputError::UnsupportedSourceSpace);
@@ -1931,170 +1958,17 @@ fn settings_xml(
         text_element(writer, "particles", &particles_per_batch.to_string())?;
         text_element(writer, "batches", &batches.to_string())?;
 
-        let mut source_element = BytesStart::new("source");
-        source_element.push_attribute(("type", "independent"));
-        source_element.push_attribute(("strength", "1.0"));
-        source_element.push_attribute(("particle", "neutron"));
-        writer.write_event(Event::Start(source_element))?;
-
-        match &source.space {
-            SourceSpatialDistribution::UniformCartesianPlane { .. }
-            | SourceSpatialDistribution::UniformAxisPlane { .. } => {
-                // Any rectangular planar spatial distribution emits as an
-                // axis-aligned box collapsed along the plane axis (zero
-                // thickness -> plane source).
-                let Some((plane_axis, offset_cm, u_range_cm, v_range_cm)) =
-                    source.space.plane_parts()
-                else {
-                    unreachable!("rectangular source variants always have plane parts")
-                };
-                let (u_axis, v_axis) = plane_axis.in_plane_axes();
-                let mut lower = [0.0; 3];
-                let mut upper = [0.0; 3];
-                lower[plane_axis.index()] = offset_cm;
-                upper[plane_axis.index()] = offset_cm;
-                lower[u_axis] = u_range_cm[0];
-                upper[u_axis] = u_range_cm[1];
-                lower[v_axis] = v_range_cm[0];
-                upper[v_axis] = v_range_cm[1];
-                let mut space = BytesStart::new("space");
-                space.push_attribute(("type", "box"));
-                writer.write_event(Event::Start(space))?;
-                text_element(
-                    writer,
-                    "parameters",
-                    &format_numbers(&[lower[0], lower[1], lower[2], upper[0], upper[1], upper[2]]),
-                )?;
-                writer.write_event(Event::End(BytesEnd::new("space")))?;
-            }
-            SourceSpatialDistribution::UniformDisk {
-                axis,
-                offset_cm,
-                center_uv_cm,
-                radius_cm,
-            } => {
-                // A disk emits as a cylindrical distribution on the port
-                // plane: r ~ powerlaw(n=1) samples area uniformly,
-                // phi ~ uniform, z degenerate at the plane.
-                let (u_axis, v_axis) = axis.in_plane_axes();
-                let mut origin = [0.0; 3];
-                origin[axis.index()] = *offset_cm;
-                origin[u_axis] = center_uv_cm[0];
-                origin[v_axis] = center_uv_cm[1];
-                let mut z_dir = [0.0; 3];
-                z_dir[axis.index()] = 1.0;
-                let mut r_dir = [0.0; 3];
-                r_dir[u_axis] = 1.0;
-                let mut space = BytesStart::new("space");
-                space.push_attribute(("type", "cylindrical"));
-                writer.write_event(Event::Start(space))?;
-                text_element(writer, "origin", &format_numbers(&origin))?;
-                text_element(writer, "z_dir", &format_numbers(&z_dir))?;
-                text_element(writer, "r_dir", &format_numbers(&r_dir))?;
-                univariate_element(writer, "r", "powerlaw", &[0.0, *radius_cm, 1.0])?;
-                univariate_element(writer, "phi", "uniform", &[0.0, std::f64::consts::TAU])?;
-                univariate_element(writer, "z", "discrete", &[0.0, 1.0])?;
-                writer.write_event(Event::End(BytesEnd::new("space")))?;
-            }
-            SourceSpatialDistribution::UniformBox {
-                x_range_cm,
-                y_range_cm,
-                z_range_cm,
-                ..
-            } => {
-                // OpenMC's box source is exactly a uniform axis-aligned
-                // volume — the same shape the deterministic path
-                // deposits by overlap fraction.
-                let mut space = BytesStart::new("space");
-                space.push_attribute(("type", "box"));
-                writer.write_event(Event::Start(space))?;
-                text_element(
-                    writer,
-                    "parameters",
-                    &format_numbers(&[
-                        x_range_cm[0],
-                        y_range_cm[0],
-                        z_range_cm[0],
-                        x_range_cm[1],
-                        y_range_cm[1],
-                        z_range_cm[1],
-                    ]),
-                )?;
-                writer.write_event(Event::End(BytesEnd::new("space")))?;
-            }
+        if let SourceSpatialDistribution::PhaseSpace { .. } = &source.space {
+            // Original phase-space particles ride in a source file next
+            // to settings.xml (see `crate::phase_space`).
+            let mut element = BytesStart::new("source");
+            element.push_attribute(("type", "file"));
+            element.push_attribute(("strength", "1.0"));
+            element.push_attribute(("file", crate::phase_space::PHASE_SPACE_OPENMC_FILE));
+            writer.write_event(Event::Empty(element))?;
+        } else {
+            write_independent_source(writer, source)?;
         }
-
-        match &source.angle {
-            AngularDistribution::Monodirectional { unit_vector } => {
-                let mut angle = BytesStart::new("angle");
-                angle.push_attribute(("type", "monodirectional"));
-                writer.write_event(Event::Start(angle))?;
-                text_element(writer, "reference_uvw", &format_numbers(unit_vector))?;
-                writer.write_event(Event::End(BytesEnd::new("angle")))?;
-            }
-            AngularDistribution::IsotropicCone {
-                axis_unit_vector,
-                half_angle_rad,
-            } => {
-                // Uniform-in-solid-angle cone: mu ~ U(cos θ0, 1) about
-                // the cone axis, phi ~ U(0, 2π).
-                let mut angle = BytesStart::new("angle");
-                angle.push_attribute(("type", "mu-phi"));
-                writer.write_event(Event::Start(angle))?;
-                text_element(writer, "reference_uvw", &format_numbers(axis_unit_vector))?;
-                // OpenMC's second reference direction defaults to +x and must
-                // not be parallel to the cone axis: with a +-x axis the
-                // sampled directions are NaN and transport dies mid-run.
-                // Emitted only then, so other decks stay byte-identical.
-                if axis_unit_vector[1].hypot(axis_unit_vector[2]) < 1e-6 {
-                    text_element(writer, "reference_vwu", "0 1 0")?;
-                }
-                univariate_element(writer, "mu", "uniform", &[half_angle_rad.cos(), 1.0])?;
-                univariate_element(writer, "phi", "uniform", &[0.0, std::f64::consts::TAU])?;
-                writer.write_event(Event::End(BytesEnd::new("angle")))?;
-            }
-        }
-
-        match &source.energy {
-            EnergyDistribution::Monoenergetic { energy_ev } => {
-                let mut energy = BytesStart::new("energy");
-                energy.push_attribute(("type", "discrete"));
-                writer.write_event(Event::Start(energy))?;
-                text_element(
-                    writer,
-                    "parameters",
-                    &format!("{} 1.0", format_float(*energy_ev)),
-                )?;
-                writer.write_event(Event::End(BytesEnd::new("energy")))?;
-            }
-            EnergyDistribution::TabulatedHistogram {
-                energy_boundaries_ev,
-                bin_weights,
-            } => {
-                // OpenMC tabular parameters are the x array followed by
-                // the p array. For histogram interpolation p is a density,
-                // so convert bin weights to weights-per-eV; the trailing p
-                // entry is ignored, so pad it with zero.
-                let mut parameters = String::new();
-                for value in energy_boundaries_ev {
-                    parameters.push_str(&format_float(*value));
-                    parameters.push(' ');
-                }
-                for (index, weight) in bin_weights.iter().enumerate() {
-                    let width = energy_boundaries_ev[index + 1] - energy_boundaries_ev[index];
-                    parameters.push_str(&format_float(*weight / width));
-                    parameters.push(' ');
-                }
-                parameters.push('0');
-                let mut energy = BytesStart::new("energy");
-                energy.push_attribute(("type", "tabular"));
-                writer.write_event(Event::Start(energy))?;
-                text_element(writer, "interpolation", "histogram")?;
-                text_element(writer, "parameters", &parameters)?;
-                writer.write_event(Event::End(BytesEnd::new("energy")))?;
-            }
-        }
-        writer.write_event(Event::End(BytesEnd::new("source")))?;
 
         writer.write_event(Event::Start(BytesStart::new("output")))?;
         text_element(writer, "summary", bool_text(profile.write_summary))?;
@@ -2613,6 +2487,180 @@ where
     let mut bytes = writer.into_inner();
     bytes.push(b'\n');
     Ok(bytes)
+}
+
+/// The analytic `independent` source element (space x angle x energy).
+fn write_independent_source(
+    writer: &mut Writer<Vec<u8>>,
+    source: &FixedSourceDefinition,
+) -> io::Result<()> {
+    let mut source_element = BytesStart::new("source");
+    source_element.push_attribute(("type", "independent"));
+    source_element.push_attribute(("strength", "1.0"));
+    source_element.push_attribute(("particle", "neutron"));
+    writer.write_event(Event::Start(source_element))?;
+
+    match &source.space {
+        SourceSpatialDistribution::UniformCartesianPlane { .. }
+        | SourceSpatialDistribution::UniformAxisPlane { .. } => {
+            // Any rectangular planar spatial distribution emits as an
+            // axis-aligned box collapsed along the plane axis (zero
+            // thickness -> plane source).
+            let Some((plane_axis, offset_cm, u_range_cm, v_range_cm)) = source.space.plane_parts()
+            else {
+                unreachable!("rectangular source variants always have plane parts")
+            };
+            let (u_axis, v_axis) = plane_axis.in_plane_axes();
+            let mut lower = [0.0; 3];
+            let mut upper = [0.0; 3];
+            lower[plane_axis.index()] = offset_cm;
+            upper[plane_axis.index()] = offset_cm;
+            lower[u_axis] = u_range_cm[0];
+            upper[u_axis] = u_range_cm[1];
+            lower[v_axis] = v_range_cm[0];
+            upper[v_axis] = v_range_cm[1];
+            let mut space = BytesStart::new("space");
+            space.push_attribute(("type", "box"));
+            writer.write_event(Event::Start(space))?;
+            text_element(
+                writer,
+                "parameters",
+                &format_numbers(&[lower[0], lower[1], lower[2], upper[0], upper[1], upper[2]]),
+            )?;
+            writer.write_event(Event::End(BytesEnd::new("space")))?;
+        }
+        SourceSpatialDistribution::UniformDisk {
+            axis,
+            offset_cm,
+            center_uv_cm,
+            radius_cm,
+        } => {
+            // A disk emits as a cylindrical distribution on the port
+            // plane: r ~ powerlaw(n=1) samples area uniformly,
+            // phi ~ uniform, z degenerate at the plane.
+            let (u_axis, v_axis) = axis.in_plane_axes();
+            let mut origin = [0.0; 3];
+            origin[axis.index()] = *offset_cm;
+            origin[u_axis] = center_uv_cm[0];
+            origin[v_axis] = center_uv_cm[1];
+            let mut z_dir = [0.0; 3];
+            z_dir[axis.index()] = 1.0;
+            let mut r_dir = [0.0; 3];
+            r_dir[u_axis] = 1.0;
+            let mut space = BytesStart::new("space");
+            space.push_attribute(("type", "cylindrical"));
+            writer.write_event(Event::Start(space))?;
+            text_element(writer, "origin", &format_numbers(&origin))?;
+            text_element(writer, "z_dir", &format_numbers(&z_dir))?;
+            text_element(writer, "r_dir", &format_numbers(&r_dir))?;
+            univariate_element(writer, "r", "powerlaw", &[0.0, *radius_cm, 1.0])?;
+            univariate_element(writer, "phi", "uniform", &[0.0, std::f64::consts::TAU])?;
+            univariate_element(writer, "z", "discrete", &[0.0, 1.0])?;
+            writer.write_event(Event::End(BytesEnd::new("space")))?;
+        }
+        SourceSpatialDistribution::PhaseSpace { .. } => {
+            unreachable!("phase-space sources emit a file source, not an independent one")
+        }
+        SourceSpatialDistribution::UniformBox {
+            x_range_cm,
+            y_range_cm,
+            z_range_cm,
+            ..
+        } => {
+            // OpenMC's box source is exactly a uniform axis-aligned
+            // volume — the same shape the deterministic path
+            // deposits by overlap fraction.
+            let mut space = BytesStart::new("space");
+            space.push_attribute(("type", "box"));
+            writer.write_event(Event::Start(space))?;
+            text_element(
+                writer,
+                "parameters",
+                &format_numbers(&[
+                    x_range_cm[0],
+                    y_range_cm[0],
+                    z_range_cm[0],
+                    x_range_cm[1],
+                    y_range_cm[1],
+                    z_range_cm[1],
+                ]),
+            )?;
+            writer.write_event(Event::End(BytesEnd::new("space")))?;
+        }
+    }
+
+    match &source.angle {
+        AngularDistribution::Monodirectional { unit_vector } => {
+            let mut angle = BytesStart::new("angle");
+            angle.push_attribute(("type", "monodirectional"));
+            writer.write_event(Event::Start(angle))?;
+            text_element(writer, "reference_uvw", &format_numbers(unit_vector))?;
+            writer.write_event(Event::End(BytesEnd::new("angle")))?;
+        }
+        AngularDistribution::IsotropicCone {
+            axis_unit_vector,
+            half_angle_rad,
+        } => {
+            // Uniform-in-solid-angle cone: mu ~ U(cos θ0, 1) about
+            // the cone axis, phi ~ U(0, 2π).
+            let mut angle = BytesStart::new("angle");
+            angle.push_attribute(("type", "mu-phi"));
+            writer.write_event(Event::Start(angle))?;
+            text_element(writer, "reference_uvw", &format_numbers(axis_unit_vector))?;
+            // OpenMC's second reference direction defaults to +x and must
+            // not be parallel to the cone axis: with a +-x axis the
+            // sampled directions are NaN and transport dies mid-run.
+            // Emitted only then, so other decks stay byte-identical.
+            if axis_unit_vector[1].hypot(axis_unit_vector[2]) < 1e-6 {
+                text_element(writer, "reference_vwu", "0 1 0")?;
+            }
+            univariate_element(writer, "mu", "uniform", &[half_angle_rad.cos(), 1.0])?;
+            univariate_element(writer, "phi", "uniform", &[0.0, std::f64::consts::TAU])?;
+            writer.write_event(Event::End(BytesEnd::new("angle")))?;
+        }
+    }
+
+    match &source.energy {
+        EnergyDistribution::Monoenergetic { energy_ev } => {
+            let mut energy = BytesStart::new("energy");
+            energy.push_attribute(("type", "discrete"));
+            writer.write_event(Event::Start(energy))?;
+            text_element(
+                writer,
+                "parameters",
+                &format!("{} 1.0", format_float(*energy_ev)),
+            )?;
+            writer.write_event(Event::End(BytesEnd::new("energy")))?;
+        }
+        EnergyDistribution::TabulatedHistogram {
+            energy_boundaries_ev,
+            bin_weights,
+        } => {
+            // OpenMC tabular parameters are the x array followed by
+            // the p array. For histogram interpolation p is a density,
+            // so convert bin weights to weights-per-eV; the trailing p
+            // entry is ignored, so pad it with zero.
+            let mut parameters = String::new();
+            for value in energy_boundaries_ev {
+                parameters.push_str(&format_float(*value));
+                parameters.push(' ');
+            }
+            for (index, weight) in bin_weights.iter().enumerate() {
+                let width = energy_boundaries_ev[index + 1] - energy_boundaries_ev[index];
+                parameters.push_str(&format_float(*weight / width));
+                parameters.push(' ');
+            }
+            parameters.push('0');
+            let mut energy = BytesStart::new("energy");
+            energy.push_attribute(("type", "tabular"));
+            writer.write_event(Event::Start(energy))?;
+            text_element(writer, "interpolation", "histogram")?;
+            text_element(writer, "parameters", &parameters)?;
+            writer.write_event(Event::End(BytesEnd::new("energy")))?;
+        }
+    }
+    writer.write_event(Event::End(BytesEnd::new("source")))?;
+    Ok(())
 }
 
 /// Emit `<name type="kind"><parameters>...</parameters></name>` — the
@@ -4062,6 +4110,84 @@ pub(crate) mod tests {
         assert!(settings.contains(
             "<parameters>0.5 10000 1000000 0.0003000150007500375 0.00000101010101010101 0</parameters>"
         ));
+    }
+
+    #[test]
+    fn phase_space_source_emits_a_file_source_with_the_original_particles() {
+        use openbnct_transport::{
+            MULTIGROUP_DATA_SCHEMA, MultigroupData, PHSP_NEUTRON, PhaseSpaceBinOptions, PhspRecord,
+            bin_phase_space, phase_space_fixed_source, write_iaea_phsp,
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let header = dir.path().join("tiny.IAEAheader");
+        let mut records = Vec::new();
+        for i in 0..50 {
+            let f = f64::from(i);
+            records.push(PhspRecord {
+                particle_type: PHSP_NEUTRON,
+                new_history: true,
+                energy_mev: if i % 2 == 0 { 0.1 } else { 1.0e-3 },
+                position_cm: [-3.0 + 0.1 * f, 1.0, 0.0],
+                direction: [0.1, 0.0, (1.0_f64 - 0.01).sqrt()],
+                weight: 1.0 + 0.5 * f64::from(i % 3),
+            });
+        }
+        write_iaea_phsp(&header, &records, 50.0, "tiny").unwrap();
+        let case = case();
+        let mg = MultigroupData {
+            schema_version: MULTIGROUP_DATA_SCHEMA.into(),
+            id: "t".into(),
+            energy_boundaries_ev: vec![1.0e6, 1.0e4, 0.5],
+            collapse_declaration: String::new(),
+            component_profile: None,
+            boron_unit_response_gy_cm2_per_ug_g: None,
+            materials: vec![],
+        };
+        let mut options = PhaseSpaceBinOptions::new("test.tiny", "+z");
+        options.pixel_cm = 0.5;
+        let table =
+            bin_phase_space(&header, &case.geometry, &mg, &"0".repeat(64), &options).unwrap();
+        let table_path = dir.path().join("table.json");
+        let bytes = serde_json::to_vec(&table).unwrap();
+        std::fs::write(&table_path, &bytes).unwrap();
+        let sha = sha256_hex(&bytes);
+        let source = phase_space_fixed_source(&table, &table_path.display().to_string(), &sha);
+        let deck = generate_with_source(&source);
+        let settings = settings_text(&deck);
+        assert!(
+            settings.contains(
+                "<source type=\"file\" strength=\"1.0\" file=\"phase-space-source.h5\"/>"
+            )
+        );
+        assert!(!settings.contains("<space"));
+        let file = deck.file("phase-space-source.h5").unwrap();
+        let h5 = hdf5_pure::File::from_bytes(file.bytes.clone()).unwrap();
+        let raw = h5.dataset("source_bank").unwrap().read_raw().unwrap();
+        assert_eq!(raw.len(), 50 * 84);
+        let f64_at = |record: usize, offset: usize| {
+            f64::from_le_bytes(
+                raw[record * 84 + offset..record * 84 + offset + 8]
+                    .try_into()
+                    .unwrap(),
+            )
+        };
+        // Record 0: x = -3.0 advanced to the plane (plane offset -9.999999,
+        // file z = 0 maps to it), y = 1.0, E = 1e5 eV.
+        assert!((f64_at(0, 0) - -3.0).abs() < 1e-6);
+        assert!((f64_at(0, 8) - 1.0).abs() < 1e-6);
+        assert!((f64_at(0, 16) - -9.999999).abs() < 1e-9);
+        assert!((f64_at(0, 24) - 0.1).abs() < 1e-6);
+        assert!((f64_at(0, 48) - 1.0e5).abs() < 1.0);
+        // Weights are rescaled to mean 1.
+        let mean = (0..50).map(|i| f64_at(i, 64)).sum::<f64>() / 50.0;
+        assert!((mean - 1.0).abs() < 1e-12);
+        let manifest_paths: Vec<_> = deck
+            .manifest
+            .xml_artifacts
+            .iter()
+            .map(|a| a.path.as_str())
+            .collect();
+        assert!(manifest_paths.contains(&"phase-space-source.h5"));
     }
 
     #[test]

@@ -20,6 +20,7 @@ pub mod endf_mf7;
 mod evaluated;
 mod input;
 mod mgcollapse;
+mod phase_space;
 mod photoncollapse;
 mod realization;
 mod statepoint;
@@ -74,6 +75,7 @@ pub use input::{
     ThermalScatteringDeclaration, UnitResponseSourceArtifacts,
 };
 pub use mgcollapse::{CollapseError, CollapseOptions, WeightingSpectrum, collapse_multigroup};
+pub use phase_space::{OpenMcPhaseSpaceSource, PHASE_SPACE_OPENMC_FILE, build_openmc_source_file};
 pub use photoncollapse::{PhotonCollapseOptions, collapse_photon};
 pub use realization::{
     DEFAULT_MIXTURE_LEVELS, MAX_MIXTURE_LEVELS, MaterialRealization, OpenMcMaterialRealization,

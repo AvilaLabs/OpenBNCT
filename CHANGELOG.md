@@ -7,6 +7,15 @@ own versions independent of the crate version.
 
 ## Unreleased — deterministic-transport accuracy fixes (2026-09-29)
 
+- **IAEA phase-space beam sources (R18-11).** `beam phsp-info` reads a
+  `.IAEAheader`/`.IAEAphsp` pair (streaming, constant or stored variables, both
+  byte orders); `beam phsp-bin` bins its neutrons onto a case face by pixel x
+  direction x multigroup energy group into an `openbnct.phase-space-source/0.1.0`
+  table with file hashes, particle counts and rejection accounting. A new
+  `phase_space` source space feeds the deterministic uncollided beam (the disk/cone
+  path is unchanged), and `openmc generate` converts the original particles to an
+  OpenMC source bank so `project verify` compares like with like. See
+  `docs/USAGE.md` "Phase-space beam sources".
 - **Raw binary sidecars for large flux and dose arrays.** Multigroup flux,
   physical/biological dose bundles and boron unit doses may store their large
   arrays as raw little-endian `f64` sidecar files referenced from the JSON by
