@@ -15,6 +15,28 @@ own versions independent of the crate version.
   `OPENBNCT_SIDECAR_MIN_VALUES` values (default 1,000,000; `0` always, `-1`
   never); all loaders verify length and SHA-256, `evidence export/verify` and
   `bench verify` treat sidecars as bound files. See `docs/ARCHITECTURE.md`.
+- **Opt-in fine-mesh multigroup CMFD for the S_N solver** (`sn solve --cmfd`,
+  `OPENBNCT_CMFD=1`; `--cmfd-inner-sweeps N`, default 2; `--cmfd-damping`).
+  Each outer does a few transport sweeps per group, builds the
+  transport-consistent D-hat closure from the sweep's net face currents (od-CMFD
+  stabilization after Zhu, Xu & Downar, Ann. Nucl. Energy 2016; the paper's
+  theta(tau) polynomial was not available, so a smooth surrogate with the
+  published limits is used - see `cmfd.rs`) and solves the low-order multigroup
+  system (the upscatter block as one Krylov solve with an exact per-cell energy
+  block preconditioner), then replaces the flux by it and rescales the P1
+  currents, kernel moments and wrap planes. The sweep's exact balance defect,
+  boundary partial currents and the periodic wrap mismatch ride on the
+  low-order right-hand side, so the transport fixed point is an exact low-order
+  solution. Replaces the coarse-mesh rebalance when on. Layered-head phantom
+  (25^3, S4, 28 groups, P1, Anderson 3, 4 threads): 21 -> 14-20 outers,
+  2357 -> 560-646 group sweeps (3.6-4.2x), solve loop 37.5 s -> 15.5 s (2.4x),
+  converged dose within 3.5e-6 (region means) / 1.4e-5 (voxels >1 % of max) of
+  the default path; 50^3 (6 threads): 2506 -> 668 sweeps, solve loop 249 s ->
+  111 s. The ~10 s (25^3) / ~70 s (50^3) uncollided-beam ray trace ahead of the
+  iteration is unchanged and bounds the end-to-end gain (48 -> 27 s, 319 ->
+  181 s). Off by default. `SnStats` (in `SnOptions.stats`) counts group sweeps,
+  low-order solves and guard events.
+
 - **Project workflow: histogram-consistent beam and transported photon dose.**
   `project init` now defaults to `builtin:beams/fir1-k63-ineel` (the 120-bin
   log-spaced FiR 1 reconstruction; `builtin:beams/fir1-k63` stays resolvable) and

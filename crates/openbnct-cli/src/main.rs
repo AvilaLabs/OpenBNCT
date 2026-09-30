@@ -3365,6 +3365,18 @@ enum SnCommand {
         /// `OPENBNCT_NO_CMR` also disables it.
         #[arg(long)]
         no_cmr: bool,
+        /// Fine-mesh multigroup CMFD acceleration (optimally-diffusive
+        /// stabilization): a few transport sweeps per group per outer plus
+        /// a low-order multigroup diffusion solve. Replaces the
+        /// coarse-mesh rebalance. `OPENBNCT_CMFD=1` also enables it.
+        #[arg(long)]
+        cmfd: bool,
+        /// Transport sweeps per group per outer under `--cmfd`.
+        #[arg(long, default_value_t = 2)]
+        cmfd_inner_sweeps: u32,
+        /// CMFD prolongation damping in (0, 1].
+        #[arg(long, default_value_t = 1.0)]
+        cmfd_damping: f64,
         /// Within-bin spread of a tabulated-histogram source spectrum:
         /// `collapse_consistent` (Maxwellian below 0.5 eV, 1/E above —
         /// the default) or `uniform_in_bin` (uniform per eV — the
@@ -10152,6 +10164,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: anisotropy,
                     anderson_depth: 0,
                     coarse_rebalance: true,
+                    cmfd: false,
+                    cmfd_inner_sweeps: 2,
+                    cmfd_damping: 1.0,
+                    stats: None,
                     inner_convergence: None,
                     theta_repair: true,
                     exp_source: true,
@@ -11328,6 +11344,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 anisotropy,
                 anderson,
                 no_cmr,
+                cmfd,
+                cmfd_inner_sweeps,
+                cmfd_damping,
                 source_weighting,
                 allow_unconverged,
                 dose,
@@ -11362,6 +11381,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic_axes[index] = true;
                 }
                 let use_p1 = p1 || (!p0 && data_supports_p1(&mg_data));
+                let solve_stats = std::sync::Arc::new(openbnct_transport::SnStats::default());
                 let options = openbnct_transport::SnOptions {
                     progress: !quiet,
                     quadrature_order: order,
@@ -11376,6 +11396,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: anisotropy,
                     anderson_depth: anderson,
                     coarse_rebalance: !no_cmr,
+                    cmfd,
+                    cmfd_inner_sweeps,
+                    cmfd_damping,
+                    stats: Some(solve_stats.clone()),
                     inner_convergence,
                     theta_repair: true,
                     exp_source: exp_source || !use_p1,
@@ -11409,6 +11433,17 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     case_ref,
                 )
                 .map_err(|error| io::Error::other(format!("multigroup: {error}")))?;
+                if !quiet && solve_stats.cmfd_solves() + solve_stats.solve_failures() > 0 {
+                    eprintln!(
+                        "cmfd: {} low-order solves ({} failed), {} group sweeps, \
+                         {} D-hat guards, {} positivity guards",
+                        solve_stats.cmfd_solves(),
+                        solve_stats.solve_failures(),
+                        solve_stats.group_sweeps(),
+                        solve_stats.dhat_guards(),
+                        solve_stats.positivity_guards()
+                    );
+                }
                 if !flux.converged && !allow_unconverged {
                     return Err(io::Error::other(format!(
                         "multigroup solve did not converge (residual {:.3e} after {} outer iterations);                          --allow-unconverged writes the provisional field",
@@ -11990,6 +12025,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: anisotropy,
                     anderson_depth: 0,
                     coarse_rebalance: true,
+                    cmfd: false,
+                    cmfd_inner_sweeps: 2,
+                    cmfd_damping: 1.0,
+                    stats: None,
                     inner_convergence: None,
                     theta_repair: true,
                     exp_source: true,
@@ -14838,6 +14877,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: anisotropy,
                     anderson_depth: anderson,
                     coarse_rebalance: true,
+                    cmfd: false,
+                    cmfd_inner_sweeps: 2,
+                    cmfd_damping: 1.0,
+                    stats: None,
                     inner_convergence: None,
                     theta_repair: true,
                     exp_source: true,
@@ -14906,6 +14949,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                         max_inner_iterations: screen_max_inner,
                         max_outer_iterations: screen_max_outer,
                         assignment: options.assignment.clone(),
+                        stats: None,
                         ..options
                     };
                     let keep = keep_top.unwrap_or(beams.len());
@@ -16535,6 +16579,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: 0,
                     anderson_depth: 0,
                     coarse_rebalance: true,
+                    cmfd: false,
+                    cmfd_inner_sweeps: 2,
+                    cmfd_damping: 1.0,
+                    stats: None,
                     inner_convergence: None,
                     theta_repair: true,
                     exp_source: true,
@@ -16681,6 +16729,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: 0,
                     anderson_depth: 0,
                     coarse_rebalance: true,
+                    cmfd: false,
+                    cmfd_inner_sweeps: 2,
+                    cmfd_damping: 1.0,
+                    stats: None,
                     inner_convergence: None,
                     theta_repair: true,
                     exp_source: true,
@@ -17715,6 +17767,10 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: anisotropy,
                     anderson_depth: 0,
                     coarse_rebalance: true,
+                    cmfd: false,
+                    cmfd_inner_sweeps: 2,
+                    cmfd_damping: 1.0,
+                    stats: None,
                     inner_convergence: None,
                     theta_repair: true,
                     exp_source: true,

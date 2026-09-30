@@ -510,6 +510,28 @@ pub struct SnOptions {
     /// outer iteration. Diagnostic only — never changes numerics. Off by
     /// default.
     pub progress: bool,
+    /// Fine-mesh multigroup CMFD acceleration with optimally-diffusive
+    /// stabilization (see the `cmfd` module). Replaces the coarse-mesh
+    /// rebalance (`coarse_rebalance` is ignored when set) and limits the
+    /// within-group sweeps per group per outer to `cmfd_inner_sweeps`,
+    /// the low-order multigroup diffusion solve supplying the
+    /// group-coupling and long-wavelength convergence. Measured on the
+    /// layered head (25^3 / 50^3, S4, 28 groups, P1): the converged dose
+    /// agrees with the default path to <= 3.5e-6 (region means) and
+    /// <= 1.4e-5 (voxels above 1 % of max) with ~3.6-4.2x fewer group
+    /// sweeps. Periodic problems keep the full inner iteration (the
+    /// lagged wrap planes need it) and use CMFD as the outer
+    /// accelerator only. Opt-in; `OPENBNCT_CMFD=1` also enables it and
+    /// `OPENBNCT_CMFD=0` disables it (A/B diagnostics).
+    pub cmfd: bool,
+    /// Within-group transport sweeps per group per outer under CMFD
+    /// (capped by `max_inner_iterations`; at least 1).
+    pub cmfd_inner_sweeps: u32,
+    /// Prolongation damping ω in (0, 1]: φ ← φ_sweep + ω(φ_cmfd − φ_sweep).
+    pub cmfd_damping: f64,
+    /// Optional shared counters (group sweeps, CMFD guards) filled by
+    /// the solve; diagnostics only, never changes numerics.
+    pub stats: Option<std::sync::Arc<crate::cmfd::SnStats>>,
 }
 
 impl Default for SnOptions {
@@ -527,6 +549,10 @@ impl Default for SnOptions {
             anisotropy_order: 0,
             anderson_depth: 0,
             coarse_rebalance: true,
+            cmfd: false,
+            cmfd_inner_sweeps: 2,
+            cmfd_damping: 1.0,
+            stats: None,
             inner_convergence: None,
             theta_repair: true,
             exp_source: true,
@@ -640,10 +666,12 @@ impl AndersonState {
 /// cell's clamp defect — unlike slots 0..12 it is already in balance
 /// units (area and volume folded in at record time):
 /// Σ_d w_d·[σ·V·max(0,−ψ̄_ideal) + Σ_a |μ_a|A·max(0,−ψ_out,ideal)].
+/// Slot 13 (CMFD) is the exact balance defect Σ_d w_d·[qV − σVψ̄ −
+/// ΣA(ψ_out−ψ_in)] of the values the sweep used (same units).
 /// The measured region balance is nonzero at the transport fixed
 /// point by exactly this defect — subtracting it (adding it to the
 /// rebalance RHS) makes f = 1 an exact CMR solution there.
-type FaceCurrents = Vec<[f64; 13]>;
+type FaceCurrents = Vec<[f64; 14]>;
 
 /// Region-boundary inflow stubs for CMR: per (region, block group) a
 /// list of (neighbor_region, area-weighted partial current) pairs.
@@ -2297,7 +2325,7 @@ fn sweep_group(
     boundary: &BoundarySource,
     periodic: [bool; 3],
     eigen: &[Vec<(f64, Vec<f64>)>],
-    face_current: Option<&mut Vec<[f64; 13]>>,
+    face_current: Option<&mut Vec<[f64; 14]>>,
     theta_repair: bool,
     source_lambda: Option<&SourceRecon>,
 ) {
@@ -2415,7 +2443,7 @@ fn sweep_group(
         None => Vec::new(),
     };
     let sweep_one = |d: usize, psi_d: &mut Vec<f64>| {
-        let mut acc = want_faces.then(|| vec![[0.0_f64; 13]; n_cells]);
+        let mut acc = want_faces.then(|| vec![[0.0_f64; 14]; n_cells]);
         let dir = quadrature[d].0;
         // Sweep order: ascend where the direction points positive,
         // descend where negative.
@@ -2760,6 +2788,19 @@ fn sweep_group(
                             }
                         }
                     }
+                    if let Some(acc) = acc.as_mut() {
+                        // Exact per-ordinate balance defect of the
+                        // values this cell actually used and passed on
+                        // (clamps, θ repair and the exponential-source
+                        // shift included): source minus removal minus
+                        // net outflow. The CMFD low-order system carries
+                        // it on its right-hand side, which makes the
+                        // transport fixed point an exact low-order
+                        // solution whatever the closure did.
+                        let net: f64 = (0..3).map(|a| area[a] * (edge[a][cell] - psi_in[a])).sum();
+                        acc[cell][13] +=
+                            quadrature[d].1 * (q * volume - st * volume * psi_avg - net);
+                    }
                 }
             }
         }
@@ -2805,8 +2846,8 @@ fn sweep_group(
     let chunk_len = n_dirs.div_ceil(rayon::current_num_threads().max(1)).max(1);
     /// One swept direction: its ψ̄ row, its wrap-plane snapshot, and
     /// its face-current accumulator (when requested).
-    type SweptDir = (Vec<f64>, [Vec<f64>; 3], Option<Vec<[f64; 13]>>);
-    let mut face_sums: Option<Vec<[f64; 13]>> = None;
+    type SweptDir = (Vec<f64>, [Vec<f64>; 3], Option<Vec<[f64; 14]>>);
+    let mut face_sums: Option<Vec<[f64; 14]>> = None;
     for chunk_start in (0..n_dirs).step_by(chunk_len) {
         let d_end = (chunk_start + chunk_len).min(n_dirs);
         // Sweep the chunk's directions in parallel, each into its own
@@ -2829,11 +2870,14 @@ fn sweep_group(
                 match face_sums.as_mut() {
                     None => face_sums = Some(part),
                     Some(total) => {
-                        for (t, p) in total.iter_mut().zip(part.iter()) {
-                            for f in 0..13 {
-                                t[f] += p[f];
-                            }
-                        }
+                        total
+                            .par_iter_mut()
+                            .zip(part.par_iter())
+                            .for_each(|(t, p)| {
+                                for f in 0..14 {
+                                    t[f] += p[f];
+                                }
+                            });
                     }
                 }
             }
@@ -2858,6 +2902,184 @@ fn sweep_group(
     }
     if let (Some(out), Some(sums)) = (face_current, face_sums) {
         out.clone_from(&sums);
+    }
+}
+
+/// One CMFD update: solve the low-order multigroup system built from
+/// the transport pass's closures and prolong it onto the iterate.
+/// The scalar flux is replaced by (a damped blend toward) the
+/// low-order solution; the cell currents and kernel moments are
+/// rescaled by the same per-cell ratio, and the periodic wrap planes
+/// (angular-flux state carried between sweeps) by the ratio of the
+/// cell that produced each plane value. Cells where the low-order
+/// flux is non-positive keep the transport flux (counted). A failed
+/// low-order solve leaves the iterate untouched (counted).
+#[allow(clippy::too_many_arguments)]
+fn apply_cmfd(
+    geom: &crate::cmfd::Geom,
+    closures: &[crate::cmfd::GroupClosure],
+    options: &SnOptions,
+    case_material: &[usize],
+    sigma_eff: &[Vec<f64>],
+    scatter_eff: &[Vec<f64>],
+    fixed_source: &[Vec<f64>],
+    source_scale: f64,
+    quadrature: &[([f64; 3], f64)],
+    wrap_depth: usize,
+    wrap_next: &mut [WrapPlanes],
+    flux: &mut [Vec<f64>],
+    current: &mut [Vec<[f64; 3]>],
+    kernel_moments: &mut [Vec<Vec<f64>>],
+    outer: u32,
+    dry_run: bool,
+    block_start: usize,
+    residual: f64,
+) {
+    use std::sync::atomic::Ordering::Relaxed;
+    let groups = closures.len();
+    let n_cells = flux.len();
+    let mut phi_lo: Vec<Vec<f64>> = (0..groups)
+        .map(|g| flux.iter().map(|row| row[g]).collect())
+        .collect();
+    let problem = crate::cmfd::LoProblem {
+        geom: *geom,
+        groups,
+        case_material,
+        sigma_eff,
+        scatter_eff,
+        fixed_source,
+        source_scale,
+        closures,
+        block_start,
+        tol: if dry_run {
+            1.0e-10
+        } else {
+            (0.01 * residual).clamp(1.0e-9, 1.0e-3)
+        },
+    };
+    let lo_started = std::time::Instant::now();
+    let result = crate::cmfd::solve_lo(&problem, &mut phi_lo);
+    let debug = std::env::var_os("CMFD_DEBUG").is_some();
+    let res = match result {
+        Ok(r) => r,
+        Err(msg) => {
+            if let Some(st) = &options.stats {
+                st.solve_failures.fetch_add(1, Relaxed);
+            }
+            if debug {
+                eprintln!("[cmfd] outer {outer}: low-order solve failed: {msg}");
+            }
+            return;
+        }
+    };
+    if let Some(st) = &options.stats {
+        st.cmfd_solves.fetch_add(1, Relaxed);
+        st.lo_iterations.fetch_add(res.iterations, Relaxed);
+    }
+    if dry_run {
+        // Fixed-point probe: the largest change one low-order solve
+        // makes to the converged flux, relative to each group's peak
+        // (recorded, never applied).
+        let mut worst = 0.0_f64;
+        for g in 0..groups {
+            let peak = flux.iter().fold(0.0_f64, |m, r| m.max(r[g])).max(1e-300);
+            for cell in 0..n_cells {
+                worst = worst.max((phi_lo[g][cell] - flux[cell][g]).abs() / peak);
+            }
+        }
+        if let Some(st) = &options.stats {
+            st.probe_change_bits.store(worst.to_bits(), Relaxed);
+        }
+        return;
+    }
+    let omega = options.cmfd_damping.clamp(1.0e-3, 1.0);
+    let mut positivity = 0u64;
+    let mut ratio_range = (f64::MAX, 0.0_f64);
+    let mut worst = (0.0_f64, 0usize, 0usize, 0.0_f64, 0.0_f64);
+    for g in 0..groups {
+        let mut ratio = vec![1.0_f64; n_cells];
+        for cell in 0..n_cells {
+            let old = flux[cell][g];
+            let lo = phi_lo[g][cell];
+            if !(lo > 0.0 && lo.is_finite()) {
+                // Keep the transport flux (a zero/absent flux with a
+                // zero low-order flux is not a violation).
+                if old > 0.0 || !lo.is_finite() || lo < 0.0 {
+                    positivity += 1;
+                }
+                continue;
+            }
+            let new = old + omega * (lo - old);
+            if debug && old > 1.0e-300 && (new / old - 1.0).abs() > worst.0 {
+                worst = ((new / old - 1.0).abs(), cell, g, old, lo);
+            }
+            if old > 1.0e-300 {
+                let r = new / old;
+                ratio[cell] = r;
+                ratio_range.0 = ratio_range.0.min(r);
+                ratio_range.1 = ratio_range.1.max(r);
+                for c in current[cell][g].iter_mut() {
+                    *c *= r;
+                }
+                for m in kernel_moments[cell][g].iter_mut() {
+                    *m *= r;
+                }
+            }
+            flux[cell][g] = new;
+        }
+        // Periodic wrap planes are per-group only when wrap_depth > 1;
+        // a shared set has no single owning group to rescale by.
+        if wrap_depth > 1 && geom.periodic.iter().any(|p| *p) {
+            let [nx, ny, nz] = geom.shape;
+            for (d, planes) in wrap_next[g].iter_mut().enumerate() {
+                let dir = quadrature[d].0;
+                for a in 0..3 {
+                    if !geom.periodic[a] || planes[a].is_empty() {
+                        continue;
+                    }
+                    let plane = if dir[a] > 0.0 { geom.shape[a] - 1 } else { 0 };
+                    let (nu, nv) = match a {
+                        0 => (ny, nz),
+                        1 => (nx, nz),
+                        _ => (nx, ny),
+                    };
+                    for v in 0..nv {
+                        for u in 0..nu {
+                            let c = match a {
+                                0 => [plane, u, v],
+                                1 => [u, plane, v],
+                                _ => [u, v, plane],
+                            };
+                            planes[a][u + nu * v] *= ratio[c[0] + nx * c[1] + nx * ny * c[2]];
+                        }
+                    }
+                }
+            }
+        }
+    }
+    if let Some(st) = &options.stats {
+        st.positivity_guards.fetch_add(positivity, Relaxed);
+    }
+    if debug {
+        eprintln!(
+            "[cmfd] outer {outer}: block from g{block_start} lo iters {} passes {} ({:.2}s) ratio [{:.3e},{:.3e}] positivity guards {positivity}",
+            res.iterations,
+            res.passes,
+            lo_started.elapsed().as_secs_f64(),
+            ratio_range.0,
+            ratio_range.1
+        );
+        let [nx, ny, _] = geom.shape;
+        eprintln!(
+            "[cmfd]   worst cell ({},{},{}) g{} old {:.4e} lo {:.4e} (dev {:.3e})",
+            worst.1 % nx,
+            (worst.1 / nx) % ny,
+            worst.1 / (nx * ny),
+            worst.2,
+            worst.3,
+            worst.4,
+            worst.0
+        );
     }
 }
 
@@ -3724,12 +3946,51 @@ pub(crate) fn solve_sn_problem(
     // CMR stall detection: when the rebalance is active but the sweep
     // residual stops improving, the composed map is in its limit cycle —
     // disable CMR permanently and let bare sweeps finish.
-    let mut cmr_enabled = options.coarse_rebalance && std::env::var_os("OPENBNCT_NO_CMR").is_none();
+    // CMFD (fine-mesh multigroup, od-stabilized) supersedes the coarse
+    // rebalance. `OPENBNCT_CMFD=1` forces it on, `=0` forces it off.
+    let cmfd_on = match std::env::var("OPENBNCT_CMFD").ok().as_deref() {
+        Some("0") => false,
+        Some(_) => true,
+        None => options.cmfd,
+    };
+    let mut cmr_enabled =
+        options.coarse_rebalance && !cmfd_on && std::env::var_os("OPENBNCT_NO_CMR").is_none();
+    let cmfd_geom = crate::cmfd::Geom {
+        shape: [sx, sy, sz],
+        h: [
+            geometry.spacing_mm[0] / 10.0,
+            geometry.spacing_mm[1] / 10.0,
+            geometry.spacing_mm[2] / 10.0,
+        ],
+        periodic: options.periodic,
+    };
+    let mut cmfd_closures: Vec<crate::cmfd::GroupClosure> = if cmfd_on {
+        vec![crate::cmfd::GroupClosure::default(); groups]
+    } else {
+        Vec::new()
+    };
+    let mut cmfd_faces: FaceCurrents = if cmfd_on {
+        vec![[0.0; 14]; n_cells]
+    } else {
+        Vec::new()
+    };
+    // Periodic faces read the previous sweep's wrap-plane averages, so
+    // few-sweep inners leave a slow angular wrap-lag mode the scalar
+    // low-order solve cannot see: periodic problems keep the full inner
+    // iteration and use CMFD only as the outer (energy/space) accelerator.
+    let inner_limit = if cmfd_on && !periodic_any {
+        options
+            .cmfd_inner_sweeps
+            .clamp(1, options.max_inner_iterations.max(1))
+    } else {
+        options.max_inner_iterations
+    };
+    let mut total_group_sweeps = 0u64;
     // The per-cell face-current buffers (13 f64 per cell per block
     // group) exist only when the rebalance can run.
     let mut block_faces: Vec<FaceCurrents> = upscatter_block_start
         .filter(|_| cmr_enabled)
-        .map(|bs| vec![vec![[0.0; 13]; n_cells]; groups - bs])
+        .map(|bs| vec![vec![[0.0; 14]; n_cells]; groups - bs])
         .unwrap_or_default();
     let theta_repair =
         options.theta_repair && std::env::var_os("OPENBNCT_NO_THETA_REPAIR").is_none();
@@ -3784,7 +4045,7 @@ pub(crate) fn solve_sn_problem(
         for g in 0..groups {
             let g = if ascending { groups - 1 - g } else { g };
             // Within-group Jacobi iteration on the scatter source.
-            for inner_iter in 0..options.max_inner_iterations {
+            for inner_iter in 0..inner_limit {
                 // P1 anisotropic source into group g:
                 // S_a(cell) = Σ_gp Σ_s1(gp→g)·J_{a,gp}(cell), with J
                 // the total current — the collided iterate plus the
@@ -3792,7 +4053,7 @@ pub(crate) fn solve_sn_problem(
                 // the beam's first-scatter forward bias.
                 let p1_source: Option<Vec<[f64; 3]>> = if p1 {
                     let mut src = vec![[0.0_f64; 3]; n_cells];
-                    for cell in 0..n_cells {
+                    src.par_iter_mut().enumerate().for_each(|(cell, out)| {
                         let mi = case_material[cell];
                         if let Some(m) = &data.materials[mi].scatter_p1_matrix_per_cm {
                             let ju = uncollided_current.map(|u| &u[cell]);
@@ -3800,12 +4061,12 @@ pub(crate) fn solve_sn_problem(
                                 let s = m[gp * groups + g];
                                 let j = &current[cell][gp];
                                 let ju = ju.map(|u| u[gp]).unwrap_or([0.0; 3]);
-                                src[cell][0] += s * (j[0] + ju[0]);
-                                src[cell][1] += s * (j[1] + ju[1]);
-                                src[cell][2] += s * (j[2] + ju[2]);
+                                out[0] += s * (j[0] + ju[0]);
+                                out[1] += s * (j[1] + ju[1]);
+                                out[2] += s * (j[2] + ju[2]);
                             }
                         }
-                    }
+                    });
                     Some(src)
                 } else {
                     None
@@ -3907,9 +4168,13 @@ pub(crate) fn solve_sn_problem(
                 });
                 // Face currents are only needed while CMR is active —
                 // below the cutoff the accumulation is pure overhead.
-                let faces = upscatter_block_start
-                    .filter(|&bs| g >= bs && cmr_enabled && residual > 5e-3)
-                    .map(|bs| &mut block_faces[g - bs]);
+                let faces = if cmfd_on {
+                    Some(&mut cmfd_faces)
+                } else {
+                    upscatter_block_start
+                        .filter(|&bs| g >= bs && cmr_enabled && residual > 5e-3)
+                        .map(|bs| &mut block_faces[g - bs])
+                };
                 sweep_group(
                     g,
                     &flux,
@@ -3933,6 +4198,11 @@ pub(crate) fn solve_sn_problem(
                     theta_repair,
                     source_lambda_cache[g].as_ref(),
                 );
+                total_group_sweeps += 1;
+                if let Some(st) = &options.stats {
+                    st.group_sweeps
+                        .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+                }
                 // The sweep accumulated the unnormalized angular sums;
                 // apply the scalings (÷4π scalar/current, ×λ_k moments)
                 // and the iterate update serially so `change` and the
@@ -3974,6 +4244,22 @@ pub(crate) fn solve_sn_problem(
                 }
                 if change < inner_tolerance {
                     break;
+                }
+            }
+            if cmfd_on {
+                // Transport-consistent CMFD closure from this group's
+                // last sweep: net face currents against its flux.
+                let phi_g: Vec<f64> = flux.iter().map(|row| row[g]).collect();
+                let guards = crate::cmfd::build_group(
+                    &cmfd_geom,
+                    &|c| sigma_eff[case_material[c]][g],
+                    &phi_g,
+                    &cmfd_faces,
+                    &mut cmfd_closures[g],
+                );
+                if let Some(st) = &options.stats {
+                    st.dhat_guards
+                        .fetch_add(guards, std::sync::atomic::Ordering::Relaxed);
                 }
             }
         }
@@ -4343,6 +4629,28 @@ pub(crate) fn solve_sn_problem(
             converged = true;
             break;
         }
+        if cmfd_on {
+            apply_cmfd(
+                &cmfd_geom,
+                &cmfd_closures,
+                options,
+                case_material,
+                &sigma_eff,
+                &scatter_eff,
+                fixed_source,
+                mean_source_weight,
+                quadrature,
+                wrap_depth,
+                &mut wrap_next,
+                &mut flux,
+                &mut current,
+                &mut kernel_moments,
+                outer,
+                false,
+                upscatter_block_start.unwrap_or(groups),
+                residual,
+            );
+        }
         // Anderson mix once per symmetric down+up cycle (the composed
         // map is the consistent operator the accelerator applies to).
         // The convergence check above already used the true map
@@ -4356,6 +4664,36 @@ pub(crate) fn solve_sn_problem(
         two_back = Some(previous);
     }
 
+    if cmfd_on && converged && options.stats.is_some() {
+        apply_cmfd(
+            &cmfd_geom,
+            &cmfd_closures,
+            options,
+            case_material,
+            &sigma_eff,
+            &scatter_eff,
+            fixed_source,
+            mean_source_weight,
+            quadrature,
+            wrap_depth,
+            &mut wrap_next,
+            &mut flux,
+            &mut current,
+            &mut kernel_moments,
+            outer_done,
+            true,
+            upscatter_block_start.unwrap_or(groups),
+            0.0,
+        );
+    }
+    if options.progress {
+        eprintln!(
+            "[sn] {} outer iterations, {} group sweeps{}",
+            outer_done,
+            total_group_sweeps,
+            if cmfd_on { " (CMFD)" } else { "" }
+        );
+    }
     // The rebalance and Anderson steps rescale the iterate after the
     // sweep's own finiteness check; never return a non-finite flux.
     if let Some((cell, _)) = flux
@@ -4646,6 +4984,10 @@ pub(crate) mod tests {
             anisotropy_order: 0,
             anderson_depth: 0,
             coarse_rebalance: true,
+            cmfd: false,
+            cmfd_inner_sweeps: 2,
+            cmfd_damping: 1.0,
+            stats: None,
             inner_convergence: None,
             theta_repair: true,
             exp_source: true,
@@ -5756,54 +6098,57 @@ pub(crate) mod tests {
         };
 
         let mut combos = 0usize;
-        for anderson in [0usize, 3] {
-            for cmr in [false, true] {
-                for theta in [false, true] {
-                    for tc in [false, true] {
-                        for p1 in [false, true] {
-                            let expected = analytic();
-                            let mut o = options();
-                            o.periodic = [true, true, true];
-                            o.anderson_depth = anderson;
-                            o.coarse_rebalance = cmr;
-                            o.theta_repair = theta;
-                            o.transport_correction = tc;
-                            o.p1_anisotropic = p1;
-                            o.max_outer_iterations = 100;
-                            let flux = solve_multigroup(&case, &mg, &o, cref("mg"), cref("case"))
+        for cmfd in [false, true] {
+            for anderson in [0usize, 3] {
+                for cmr in [false, true] {
+                    for theta in [false, true] {
+                        for tc in [false, true] {
+                            for p1 in [false, true] {
+                                let expected = analytic();
+                                let mut o = options();
+                                o.periodic = [true, true, true];
+                                o.anderson_depth = anderson;
+                                o.coarse_rebalance = cmr;
+                                o.cmfd = cmfd;
+                                o.theta_repair = theta;
+                                o.transport_correction = tc;
+                                o.p1_anisotropic = p1;
+                                o.max_outer_iterations = 100;
+                                let flux = solve_multigroup(&case, &mg, &o, cref("mg"), cref("case"))
                                 .unwrap_or_else(|e| {
                                     panic!(
-                                        "combo a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1}: {e}"
+                                        "combo cmfd{cmfd} a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1}: {e}"
                                     )
                                 });
-                            assert!(
-                                flux.converged,
-                                "combo a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1} unconverged"
-                            );
-                            for (cell, row) in flux.flux.iter().enumerate() {
-                                for g in 0..2 {
-                                    assert!(
-                                        (row[g] - expected[g]).abs() / expected[g] < 1e-8,
-                                        "combo a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1}: \
+                                assert!(
+                                    flux.converged,
+                                    "combo cmfd{cmfd} a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1} unconverged"
+                                );
+                                for (cell, row) in flux.flux.iter().enumerate() {
+                                    for g in 0..2 {
+                                        assert!(
+                                            (row[g] - expected[g]).abs() / expected[g] < 1e-8,
+                                            "combo cmfd{cmfd} a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1}: \
                                          cell {cell} g{g} = {} vs analytic {}",
-                                        row[g],
-                                        expected[g]
-                                    );
+                                            row[g],
+                                            expected[g]
+                                        );
+                                    }
                                 }
-                            }
-                            let absorbed = flux.balance_absorbed_fraction.unwrap();
-                            assert!(
-                                (absorbed - 1.0).abs() < 1e-8,
-                                "combo a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1}: \
+                                let absorbed = flux.balance_absorbed_fraction.unwrap();
+                                assert!(
+                                    (absorbed - 1.0).abs() < 1e-8,
+                                    "combo cmfd{cmfd} a{anderson} cmr{cmr} th{theta} tc{tc} p1{p1}: \
                                  balance {absorbed}"
-                            );
-                            combos += 1;
+                                );
+                                combos += 1;
+                            }
                         }
                     }
                 }
             }
         }
-        assert_eq!(combos, 32, "expected 32 flag combinations exercised");
+        assert_eq!(combos, 64, "expected 64 flag combinations exercised");
     }
 
     /// Option-matrix audit — leaky beam slab: flag combinations may
@@ -6410,6 +6755,10 @@ pub(crate) mod tests {
             &mg,
             &SnOptions {
                 coarse_rebalance: false,
+                cmfd: false,
+                cmfd_inner_sweeps: 2,
+                cmfd_damping: 1.0,
+                stats: None,
                 inner_convergence: None,
                 theta_repair: true,
                 ..opts
@@ -6425,6 +6774,143 @@ pub(crate) mod tests {
                 "CMR moved the fixed point: {a} vs {b}"
             );
         }
+    }
+
+    /// Heterogeneity-free 3-D fixture for the CMFD tests: 6×6×10 cells
+    /// of 4 mm, vacuum on all faces, a beam disk on the −z face and
+    /// two-group upscatter data.
+    fn cmfd_fixture() -> (TransportCase, MultigroupData, SnOptions) {
+        let mut case = slab_case();
+        case.geometry.shape = [6, 6, 10];
+        case.geometry.spacing_mm = [4.0; 3];
+        case.geometry.origin_mm = [-10.0, -10.0, -8.0];
+        if let SourceSpatialDistribution::UniformDisk { radius_cm, .. } = &mut case.source.space {
+            *radius_cm = 0.5;
+        }
+        let mg = data(&[0.8, 0.6], vec![0.2, 0.3, 0.25, 0.25]);
+        let mut opts = options();
+        opts.periodic = [false; 3];
+        opts.convergence = 1e-11;
+        opts.max_outer_iterations = 400;
+        opts.transport_correction = false;
+        opts.coarse_rebalance = false;
+        (case, mg, opts)
+    }
+
+    #[test]
+    fn cmfd_reproduces_the_transport_fixed_point() {
+        // D̂ consistency: the CMFD-accelerated solve lands on the bare
+        // sweep fixed point, and once converged one more low-order
+        // solve leaves the flux unchanged (< 1e-8 of the group peak).
+        let (case, mg, opts) = cmfd_fixture();
+        let bare = solve_multigroup(&case, &mg, &opts, cref("mg"), cref("case")).unwrap();
+        let stats = std::sync::Arc::new(crate::cmfd::SnStats::default());
+        let mut o = opts.clone();
+        o.cmfd = true;
+        o.stats = Some(stats.clone());
+        let acc = solve_multigroup(&case, &mg, &o, cref("mg"), cref("case")).unwrap();
+        assert!(bare.converged && acc.converged);
+        assert_eq!(stats.solve_failures(), 0);
+        assert!(
+            stats.probe_change() < 1e-8,
+            "one more CMFD solve moved the converged flux by {:e}",
+            stats.probe_change()
+        );
+        for (a, b) in acc.flux.iter().flatten().zip(bare.flux.iter().flatten()) {
+            assert!(
+                (a - b).abs() <= b.abs().max(1e-30) * 1e-6 + 1e-12,
+                "CMFD moved the fixed point: {a} vs {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn cmfd_cuts_sweeps_on_a_two_group_upscatter_slab() {
+        if std::env::var_os("OPENBNCT_CMFD").is_some() {
+            return; // the env forces CMFD on both arms: nothing to compare
+        }
+        // Near-conservative two-group block with strong up- and
+        // downscatter on 1 cm cells (σ_t·h = 3): the bare source
+        // iteration crawls; CMFD carries the group coupling and the
+        // long-wavelength mode in the low-order solve.
+        let (mut case, _, mut opts) = cmfd_fixture();
+        case.geometry.spacing_mm = [10.0; 3];
+        case.geometry.origin_mm = [-25.0, -25.0, -5.0];
+        let mg = data(&[3.0, 3.0], vec![0.3, 2.5, 2.5, 0.3]);
+        // The exponential-source rates are a frozen-after-warmup shape
+        // parameter; with them on, two solvers that freeze at different
+        // iterates converge to (slightly) different discrete problems.
+        opts.exp_source = false;
+        opts.convergence = 1e-8;
+        opts.max_outer_iterations = 2000;
+        opts.max_inner_iterations = 100;
+        let bare_stats = std::sync::Arc::new(crate::cmfd::SnStats::default());
+        let mut b = opts.clone();
+        b.stats = Some(bare_stats.clone());
+        let bare = solve_multigroup(&case, &mg, &b, cref("mg"), cref("case")).unwrap();
+        let cm_stats = std::sync::Arc::new(crate::cmfd::SnStats::default());
+        let mut c = opts.clone();
+        c.cmfd = true;
+        c.stats = Some(cm_stats.clone());
+        let cm = solve_multigroup(&case, &mg, &c, cref("mg"), cref("case")).unwrap();
+        assert!(bare.converged && cm.converged);
+        assert_eq!(cm_stats.solve_failures(), 0);
+        let (sb, sc) = (bare_stats.group_sweeps(), cm_stats.group_sweeps());
+        eprintln!("upscatter slab sweeps: bare {sb} cmfd {sc}");
+        assert!(sb >= 3 * sc, "CMFD cut sweeps only {sb} -> {sc}");
+        for (a, b) in cm.flux.iter().flatten().zip(bare.flux.iter().flatten()) {
+            assert!(
+                (a - b).abs() <= b.abs().max(1e-30) * 1e-4 + 1e-12,
+                "CMFD moved the answer: {a} vs {b}"
+            );
+        }
+    }
+
+    #[test]
+    fn cmfd_positivity_guard_keeps_the_transport_flux() {
+        // A single decoupled cell whose low-order source is negative
+        // yields φ_cmfd < 0: the transport flux must be kept, with the
+        // event counted; a healthy group beside it is updated.
+        let geom = crate::cmfd::Geom {
+            shape: [1, 1, 1],
+            h: [1.0; 3],
+            periodic: [true; 3],
+        };
+        let closures = vec![crate::cmfd::GroupClosure::default(); 2];
+        let mut closures = closures;
+        for c in closures.iter_mut() {
+            c.dh = vec![0.0; 6];
+            c.ex = vec![0.0; 1];
+        }
+        let stats = std::sync::Arc::new(crate::cmfd::SnStats::default());
+        let mut options = options();
+        options.stats = Some(stats.clone());
+        let mut flux = vec![vec![1.0, 1.0]];
+        let mut current = vec![vec![[0.0; 3]; 2]];
+        let mut kernel = vec![vec![Vec::new(); 2]];
+        apply_cmfd(
+            &geom,
+            &closures,
+            &options,
+            &[0],
+            &[vec![1.0, 1.0]],
+            &[vec![0.0, 0.0, 0.0, 0.0]],
+            &[vec![-1.0, 2.0]],
+            1.0,
+            &[],
+            1,
+            &mut [],
+            &mut flux,
+            &mut current,
+            &mut kernel,
+            0,
+            false,
+            2,
+            0.0,
+        );
+        assert_eq!(flux[0][0], 1.0, "negative low-order flux must be rejected");
+        assert!((flux[0][1] - 2.0).abs() < 1e-9, "healthy group updates");
+        assert_eq!(stats.positivity_guards(), 1);
     }
 
     #[test]

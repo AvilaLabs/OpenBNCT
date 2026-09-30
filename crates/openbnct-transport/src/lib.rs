@@ -14,6 +14,7 @@ mod boron_unit;
 mod boundaries;
 mod bsa;
 mod cadis;
+mod cmfd;
 mod hu_calibration;
 mod measurement;
 mod model;
@@ -56,6 +57,7 @@ pub use cadis::{
     AdjointDerivation, CadisError, CadisSummary, DEFAULT_TARGET_CAP, resolve_adjoint_windows,
     summarize as summarize_adjoint_derivation,
 };
+pub use cmfd::SnStats;
 pub use hu_calibration::{
     HU_CALIBRATION_SCHEMA, HuAnchor, HuAnchorCoverage, HuCalibration, HuCalibrationReport,
 };
