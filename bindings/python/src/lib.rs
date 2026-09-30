@@ -4872,7 +4872,7 @@ fn run_sn_solve(
 /// `RuntimeWarning` is issued. Object inputs are content-bound by the
 /// SHA-256 of their pretty-printed JSON; path inputs by the file bytes.
 #[pyfunction]
-#[pyo3(signature = (case, data, assignment=None, *, order=4, max_outer=32, convergence=1e-6, allow_unconverged=false, anderson=0, p1=false, anisotropy=0, dose=true, boron_unit=false))]
+#[pyo3(signature = (case, data, assignment=None, *, order=4, max_outer=32, convergence=1e-6, allow_unconverged=false, anderson=3, p1=None, anisotropy=0, dose=true, boron_unit=false))]
 #[allow(clippy::too_many_arguments)]
 fn sn_solve(
     py: Python<'_>,
@@ -4884,7 +4884,7 @@ fn sn_solve(
     convergence: f64,
     allow_unconverged: bool,
     anderson: usize,
-    p1: bool,
+    p1: Option<bool>,
     anisotropy: u32,
     dose: bool,
     boron_unit: bool,
@@ -4918,12 +4918,22 @@ fn sn_solve(
             })
         })
         .transpose()?;
+    // P1 by default whenever every scattering material carries P1
+    // moments (as the CLI does); the exponential closure then stays off
+    // (it can keep a 3-D P1 solve from converging).
+    let use_p1 = p1.unwrap_or_else(|| {
+        mg_data.materials.iter().all(|m| {
+            m.scatter_p1_matrix_per_cm.is_some()
+                || m.scatter_matrix_per_cm.iter().all(|&v| v == 0.0)
+        })
+    });
     let options = openbnct_transport::SnOptions {
         quadrature_order: order,
         convergence,
         max_outer_iterations: max_outer,
         assignment: assignment_model.clone(),
-        p1_anisotropic: p1,
+        p1_anisotropic: use_p1,
+        exp_source: !use_p1,
         anisotropy_order: anisotropy,
         anderson_depth: anderson,
         ..openbnct_transport::SnOptions::default()

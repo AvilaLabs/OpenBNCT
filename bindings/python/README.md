@@ -81,8 +81,9 @@ print(dose[: dose.shape[0] // 2].mean())
 ```
 
 `sn_solve(case, data, assignment=None, *, order=4, max_outer=32,
-convergence=1e-6, allow_unconverged=False, anderson=0, p1=False,
-anisotropy=0, dose=True, boron_unit=False)` calls the same Rust library
+convergence=1e-6, allow_unconverged=False, anderson=3, p1=None,
+anisotropy=0, dose=True, boron_unit=False)` (`p1=None` selects P1 whenever
+every scattering material carries P1 moments, as the CLI does) calls the same Rust library
 functions as `openbnct sn solve` (`solve_multigroup`, `fold_multigroup_dose`,
 `fold_boron_unit_dose`) and releases the GIL while solving; it adds no
 transport logic in Python (ADR 0015). `case` is a path or a `TransportCase`

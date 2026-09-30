@@ -1518,11 +1518,10 @@ fn print_status(project_arg: &Path) -> DynResult<()> {
 
 /// Current, measured accuracy status of the default deterministic path —
 /// printed in every report so absolute numbers are never read in isolation.
-const ACCURACY_STATUS: &str = "Accuracy status: absolute doses from the deterministic \
-(S_N) engine are not yet validated. On the layered-head benchmark the default P0 path \
-currently under-predicts thermal-component dose relative to continuous-energy OpenMC, \
-increasingly with depth (see CHANGELOG). Use these results for relative comparisons; \
-use the OpenMC path for absolute dose.";
+const ACCURACY_STATUS: &str = "Accuracy status: deterministic (S_N) absolute doses are \
+validated on one benchmark geometry only (layered head: P1 scattering tracks continuous-energy \
+OpenMC to ~3-8% in region-mean boron/nitrogen dose). Treat absolute values as research \
+estimates; use the OpenMC path as the reference for absolute dose.";
 
 const DISCLAIMER: &str = "Research software output. OpenBNCT is not a medical device and has \
 not been clinically validated or commissioned for any treatment facility; these results are \

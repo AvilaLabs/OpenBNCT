@@ -133,14 +133,14 @@ lands at
 the report lists the exact command line of each, and rerunning skips steps
 whose inputs are unchanged. See [`docs/USAGE.md`](docs/USAGE.md#quick-start-project).
 
-> **Accuracy status (2026-09-29):** absolute doses from the deterministic
-> engine are not yet validated. After this week's collapse and transport
-> fixes, the default P0 path still under-predicts thermal-component dose on
-> the layered-head benchmark relative to continuous-energy OpenMC,
-> increasingly with depth (P1 scattering closes most of the gap in 1-D but
-> does not yet converge in 3-D). Use the deterministic results for relative
-> comparisons and the OpenMC path for absolute dose. See the
-> [CHANGELOG](CHANGELOG.md).
+> **Accuracy status (2026-09-29):** on the layered-head benchmark, the
+> deterministic solver with P1 scattering (the default when the data carries
+> P1 moments) and the v5 data (H(H2O) S(α,β), corrected collapse) tracks
+> continuous-energy OpenMC to within ~3–8% in region-mean boron and nitrogen
+> dose, and ~0–16% voxel-by-voxel along the beam axis (S4, 28 groups). This
+> is one benchmark geometry; broader validation is ongoing, and the OpenMC
+> path remains the reference for absolute dose. See
+> [the validation note](validation/intercomparison-layered-head/2026-09-29-accuracy-fixes.md).
 
 Under the hood, the deterministic solver on its own — the shipped
 layered-head benchmark — then open the result in the workbench:
@@ -148,10 +148,13 @@ layered-head benchmark — then open the result in the workbench:
 ```text
 git clone https://github.com/AvilaLabs/OpenBNCT && cd OpenBNCT
 openbnct sn solve --case benchmarks/synthetic/layered-head-phantom/case.json \
-    --data benchmarks/synthetic/layered-head-phantom/multigroup-data-28g-v2.json \
+    --data benchmarks/synthetic/layered-head-phantom/multigroup-data-28g-v5-tsl.json \
     --assignment benchmarks/synthetic/layered-head-phantom/assignment.json \
-    --dose dose.json --output flux.json
+    --source-weighting uniform_in_bin --dose dose.json --output flux.json
 ```
+
+With the defaults (S4, P1, Anderson) this converges in ~21 outer iterations —
+about 3 minutes on 2 cores with a release build.
 
 Or skip the terminal entirely: open
 [openbnct.avilalabs.org](https://openbnct.avilalabs.org) and press

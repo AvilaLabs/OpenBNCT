@@ -3321,12 +3321,26 @@ enum SnCommand {
         /// declares `transport_mu_bar`.
         #[arg(long)]
         no_transport_correction: bool,
-        /// Enable P1 anisotropic scattering (requires
+        /// Force P1 anisotropic scattering (requires
         /// `scatter_p1_matrix_per_cm` on every scattering material in
         /// the data; supersedes the transport correction — physical σ_t
-        /// applies).
-        #[arg(long)]
+        /// applies). P1 is already the default whenever the data carries
+        /// P1 moments on every scattering material: P0 plus a transport
+        /// correction cannot represent hydrogen's forward-peaked
+        /// downscatter and under-penetrates tissue with depth.
+        #[arg(long, conflicts_with = "p0")]
         p1: bool,
+        /// Force P0 scattering (isotropic in-scatter plus the in-group
+        /// transport correction) even when the data carries P1 moments.
+        #[arg(long)]
+        p0: bool,
+        /// Keep the exponential within-cell source closure on under P1.
+        /// It is on by default only for P0: under P1 its λ refits can keep
+        /// a 3-D solve from converging (layered head, S4/S8), at the cost
+        /// of diamond-difference overshoot in optically thick cells
+        /// (σ_t·Δx ≳ 1) — refine the grid or pass this flag there.
+        #[arg(long)]
+        exp_source: bool,
         /// Highest Legendre order l carried by the in-scatter kernel
         /// beyond P1 (2–5; requires `--p1` and
         /// `scatter_legendre_moments_per_cm` on every scattering
@@ -3339,7 +3353,7 @@ enum SnCommand {
         /// (0 = plain sweeps). ≥1 mixes the last N outer iterates
         /// per symmetric cycle — accelerates the slow energy-coupling
         /// mode bound-atom S(α,β) upscatter introduces.
-        #[arg(long, default_value_t = 0)]
+        #[arg(long, default_value_t = 3)]
         anderson: usize,
         /// Within-bin spread of a tabulated-histogram source spectrum:
         /// `collapse_consistent` (Maxwellian below 0.5 eV, 1/E above —
@@ -5156,6 +5170,14 @@ enum OpenMcDataCommand {
         #[arg(long)]
         transport_domain: PathBuf,
     },
+}
+
+/// Whether every scattering material in the data carries a P1 scatter
+/// matrix — the condition under which `sn solve` defaults to P1.
+fn data_supports_p1(data: &openbnct_transport::MultigroupData) -> bool {
+    data.materials.iter().all(|m| {
+        m.scatter_p1_matrix_per_cm.is_some() || m.scatter_matrix_per_cm.iter().all(|&v| v == 0.0)
+    })
 }
 
 fn main() -> ExitCode {
@@ -11159,6 +11181,8 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 no_uncollided_split,
                 no_transport_correction,
                 p1,
+                p0,
+                exp_source,
                 anisotropy,
                 anderson,
                 source_weighting,
@@ -11194,6 +11218,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     };
                     periodic_axes[index] = true;
                 }
+                let use_p1 = p1 || (!p0 && data_supports_p1(&mg_data));
                 let options = openbnct_transport::SnOptions {
                     progress: !quiet,
                     quadrature_order: order,
@@ -11204,13 +11229,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic: periodic_axes,
                     beam_uncollided_split: !no_uncollided_split,
                     transport_correction: !no_transport_correction,
-                    p1_anisotropic: p1,
+                    p1_anisotropic: use_p1,
                     anisotropy_order: anisotropy,
                     anderson_depth: anderson,
                     coarse_rebalance: true,
                     inner_convergence,
                     theta_repair: true,
-                    exp_source: true,
+                    exp_source: exp_source || !use_p1,
                     source_weighting: match source_weighting.as_str() {
                         "collapse_consistent" => {
                             openbnct_transport::SourceWeighting::CollapseConsistent

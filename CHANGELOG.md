@@ -27,24 +27,33 @@ own versions independent of the crate version.
   keeps σ_a,eff ≡ σ_a (no fabrication). The infinite-medium oracle test now requires
   every option combination to reproduce the uncorrected fixed point.
 - Infinite homogeneous brain (28 groups, H(H2O) S(α,β)) vs continuous-energy OpenMC
-  after both fixes: thermal 0.97×, epithermal 1.04×, fast 0.89×. The layered-head
-  phantom remains ~0.13× the OpenMC thermal-component reference and is under
-  investigation (finite-geometry deficit; uncollided-beam attenuation through void
-  uses the destination tissue's σ_t). Treat deterministic absolute doses as
-  unvalidated until that closes.
+  after both fixes: thermal 0.97×, epithermal 1.04×, fast 0.89×.
 - **Uncollided beam attenuated void as tissue.** The analytic uncollided beam used the
   destination cell's σ_t over the whole path from the source plane, so off-axis rays
   crossing air/void before the skin were attenuated as tissue. It now traverses the
   voxel grid (Amanatides–Woo) and sums each material's σ_t·ℓ. Layered-head absorbed
   fraction 0.055 → 0.165 (P0, S8).
-- **Scattering order matters for tissue.** A transverse-periodic brain column vs
-  OpenMC: P0 + transport correction absorbs 0.27 per source vs 0.43 (MC) and
-  under-penetrates with depth; `--p1` absorbs 0.45 and tracks MC to ~±15–25% over
-  20 cm. P1 does not yet converge on the 3-D layered head (residual 0.26 after 200
-  outers), so P0 remains the default for now.
+- **P1 scattering is now the default** (`sn solve`, Python `sn_solve`, and therefore
+  `openbnct project`) whenever every scattering material carries P1 moments; `--p0`
+  forces the old path. A transverse-periodic brain column vs OpenMC: P0 + transport
+  correction absorbs 0.27 per source vs 0.43 (MC) and under-penetrates with depth;
+  P1 absorbs 0.45. Under P1 the CLI and Python now leave the exponential
+  within-cell closure off by default (its λ refits kept P1 from converging in 3-D;
+  `--exp-source` re-enables it, e.g. for optically thick cells where plain diamond
+  difference overshoots with depth). `sn solve --anderson` defaults to 3. Open:
+  make the closure and P1 converge together.
+- **Layered head vs continuous-energy OpenMC** (S4, 28 groups, new
+  `multigroup-data-28g-v5-tsl.json`, `--source-weighting uniform_in_bin`): P1 region
+  means 1.03–1.08× (boron brain 1.08, nitrogen skin/skull/brain 1.07/1.04/1.03),
+  on-axis nitrogen 0.99–1.16× from entrance to exit; P0 with the exponential
+  closure 0.76–0.97× and 0.33× at depth. Before these fixes the default path was
+  ~0.15× and the committed September v2 result ~1.6× (particle fabrication).
+  See `validation/intercomparison-layered-head/2026-09-29-accuracy-fixes.md`.
 - Standard tissue library re-collapsed with the fixed collapse and H(H2O) S(α,β)
   (now the `project init` default); project runner defaults `anderson = 3`,
   `max_outer = 128`. Reports carry an accuracy-status line.
+- Correction to the first entry above: absorption per source neutron in the
+  continuous-energy reference is ~0.19 (the reference tallies are already per cm³).
 
 ## [Unreleased]
 
