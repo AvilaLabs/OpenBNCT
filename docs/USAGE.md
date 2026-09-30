@@ -583,6 +583,31 @@ openbnct dicom export-rtdose --bundle dose.json --component total \
   --ct-series /path/to/ct --output dose.dcm
 ```
 
+### RT Dose import
+
+`openbnct import rtdose` reads a DICOM RT Dose file - for example a
+treatment-planning-system export to compare against OpenBNCT dose - into an
+`openbnct.external-dose` bundle on a case grid. It reads Dose Grid Scaling,
+16- or 32-bit unsigned pixel data, Image Position/Orientation (Patient), Pixel
+Spacing, the Grid Frame Offset Vector (uniform, ascending or descending) and
+Dose Units. Only `DoseUnits=GY` is accepted as absolute dose; `RELATIVE` is
+refused. If the RT Dose grid differs from the case (or dose-bundle) grid it is
+resampled trilinearly in world coordinates; case voxels outside the dose grid
+are 0 and the covered fraction is reported. A frame-of-reference mismatch with
+the case is refused. Whether the dose is `physical` or `rbe_weighted`, and how
+many equal fractions it was delivered in, are declared on the command line
+(never inferred). `NEW-BUNDLE.import-record.json` hash-binds the RT Dose file,
+the case and the output and records the RT Dose grid, scaling, SOP Instance UID
+and whether resampling occurred.
+
+```text
+openbnct import rtdose --file dose.dcm --case CASE.json \
+  [--quantity physical|rbe_weighted] [--fractions N] --output NEW-BUNDLE.json
+```
+
+The importer round-trips `dicom export-rtdose` output to within the 32-bit
+quantization step.
+
 ### RT Plan read and export
 
 `openbnct dicom rtplan-info` summarizes an RT Plan file — label, plan
@@ -612,10 +637,50 @@ openbnct dicom export-rtplan --plan-label RESEARCH-1 --fractions 2 \
 Both directions are research interop, not commissioned treatment
 planning.
 
+### Supported input formats
+
+Every command that reads a 3-D scalar volume goes through one shared
+reader, so a CT, HU map, label volume, SUV map or mask can be supplied in any
+of these formats and is detected from magic bytes first, extension second:
+
+| Format | Extensions | Encodings | Element types | Notes |
+| --- | --- | --- | --- | --- |
+| NIfTI-1 | `.nii`, `.nii.gz` | raw, gzip | u8, i16, i32, f32, f64 (little-endian) | sform preferred over qform; RAS+ converted to patient LPS; oblique directions preserved as declared |
+| NRRD | `.nrrd` (attached), `.nhdr` + data file | raw, gzip, ascii | int8/16/32, uint8/16/32, float, double; little and big endian | `space` LPS, RAS or LAS; `space directions`/`space origin`; `byte skip`, `line skip`; a single detached data file in the header's directory |
+| MetaImage | `.mha` (embedded), `.mhd` + raw file | raw, zlib (`CompressedData`), ascii | CHAR, UCHAR, SHORT, USHORT, INT, UINT, FLOAT, DOUBLE; either byte order | coordinates read as LPS (ITK convention); `TransformMatrix` rows are voxel-axis directions; `HeaderSize` for detached raw |
+| DICOM CT | `.dcm` series | uncompressed | 16-bit | `dicom import-ct`, `project init` |
+| DICOM RTSTRUCT | `.dcm` | - | - | contours rasterized onto the CT |
+| DICOM SEG | `.dcm` | uncompressed | BINARY (1-bit) and FRACTIONAL (8/16-bit) | segments become the same per-ROI masks as RTSTRUCT (see below) |
+| DICOM RT Dose | `.dcm` | uncompressed | 16/32-bit, `DoseUnits` GY | `import rtdose` (see below) |
+
+NRRD and MetaImage volumes are **reoriented** on read: when the voxel axes are
+a flip and/or permutation of the patient axes (the common case, for example a
+RAS-saved or slice-reversed CT), the data are re-indexed - no interpolation - so
+the resulting grid has an identity direction, positive spacing and patient-LPS
+millimeter coordinates, which is what the transport, oracle and export paths
+require. Genuinely oblique directions are refused with an explicit error;
+resample such a volume to an axis-aligned grid first. NIfTI keeps the direction
+the file declares. Unsupported element types (int64, complex, vector or
+multi-channel data), multi-file data lists, compressed MetaImage with a header
+offset, bzip2 NRRD and non-millimeter space units are refused, never guessed.
+Detached data files must be plain relative names inside the header's
+directory.
+
+`openbnct import volume --input ANY --output NEW.nii` converts any of the
+volume formats above to NIfTI (float64, LPS-derived sform). The existing
+`--*-nifti` style flags and the `nifti info`, `nifti to-mask`,
+`nifti resample`, `import labelmap`, `import nifti` and `register apply`
+commands accept NRRD and MetaImage files transparently.
+
+```text
+openbnct import volume --input ct.nrrd --output NEW-CT.nii
+openbnct nifti info --input labels.mha
+```
+
 ### CT series to transport case
 
 `openbnct dicom import-ct` builds the transport-grid inputs from a CT series
-(and optional RT Structure Set): a scaffold `openbnct.transport-case` with a
+(and optional RT Structure Set or DICOM SEG): a scaffold `openbnct.transport-case` with a
 **placeholder** source, the HU volume on the case grid, per-ROI masks, and a
 `*.import-record.json` hash-binding all inputs and outputs. HU is
 volume-averaged (overlap-weighted box mean) onto the coarser grid; ROI
@@ -629,6 +694,18 @@ openbnct dicom import-ct --series DICOM-DIR \
   --case-output NEW-CASE.json --hu-output NEW-HU.nii \
   [--rtstruct RTSTRUCT.dcm] [--masks-dir NEW-MASKS-DIR]
 ```
+
+A DICOM Segmentation (Segmentation Storage) can stand in for the RT Structure
+Set - place it in `--series` or pass it as `--rtstruct`. Each segment becomes
+one ROI mask (`number` = Segment Number, name = Segment Label) and flows
+through the same 50 % rule. BINARY and FRACTIONAL segmentations are read;
+fractional frames are thresholded at 0.5 of Maximum Fractional Value. Frames
+must lie exactly on the CT voxel lattice (same in-plane axes, spacing and
+slice positions) and share its Frame of Reference; a SEG that names a
+different referenced series, sits off-lattice or has a segment with no frames
+is refused rather than resampled. Without a CT the SEG's own frame-of-reference
+grid is rebuilt from its Image Position/Orientation and Pixel Spacing (library
+`import_seg`). A study may carry an RTSTRUCT or a SEG, not both.
 
 Feed the output to the calibration below with `--hu-nifti NEW-HU.nii --case
 NEW-CASE.json`, then bind a real beam (`beam bind`).
@@ -2263,7 +2340,8 @@ openbnct endpoint utcp \
 ### NIfTI imaging I/O
 
 `openbnct nifti` provides a strict NIfTI-1 boundary alongside DICOM for
-imaging-driven research workflows. The reader accepts single-file `.nii` and
+imaging-driven research workflows (NRRD and MetaImage inputs are accepted by
+the same commands - see "Supported input formats"). The reader accepts single-file `.nii` and
 gzip-compressed `.nii.gz` volumes: 3-D scalar data (`u8`, `i16`, `i32`, `f32`,
 `f64`), sform preferred over qform, explicit millimeter units or the common
 `xyzt_units == 0` "unspecified" convention (recorded as an assumed-mm

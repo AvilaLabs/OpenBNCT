@@ -13,7 +13,8 @@ If you have a voxel phantom as an integer-labeled NIfTI — exported from
 assignment waiting to happen. You need two files:
 
 **`phantom.nii`** — integer labels per voxel (`0` = background/base
-material). `.nii` or `.nii.gz`.
+material). `.nii`, `.nii.gz`, NRRD (`.nrrd`/`.nhdr`) or MetaImage
+(`.mha`/`.mhd`); see "Supported input formats" in `docs/USAGE.md`.
 
 **`materials.json`** — a label → material-definition map:
 
@@ -68,7 +69,10 @@ openbnct dicom calibrate --calibration hu-calibration.json \
 
 - `--series DIR` is searched recursively; use `--slices f1 f2 ...` and
   `--rtstruct FILE` to name files explicitly. Exactly one CT series and at
-  most one RT Structure Set are accepted; anything else is refused.
+  most one structure object are accepted; anything else is refused. The
+  structure object is an RT Structure Set **or a DICOM Segmentation (SEG)**
+  whose frames lie on the CT lattice (binary, or fractional thresholded at
+  0.5); each segment becomes one ROI mask.
 - `--spacing-mm` is the transport voxel size: one value (isotropic) or
   `x,y,z`. Without it the native CT spacing is kept.
 - HU is **volume-averaged**, not point-sampled: each transport voxel gets the
@@ -87,6 +91,15 @@ openbnct dicom calibrate --calibration hu-calibration.json \
 - Every input file and every output is hash-bound in
   `case.import-record.json` (next to `--case-output`). Existing outputs are
   never overwritten.
+
+Have a clinical plan's RT Dose to compare against? `openbnct import rtdose
+--file dose.dcm --case case.json --output dose-bundle.json` brings it onto the
+case grid (trilinear resample when the grids differ; `DoseUnits` must be GY)
+with a hash-bound import record.
+
+Have the CT as NRRD or MetaImage instead of DICOM? Convert it once with
+`openbnct import volume --input ct.nrrd --output ct.nii`; every command that
+takes a NIfTI volume also accepts `.nrrd`/`.nhdr`/`.mha`/`.mhd` directly.
 
 HU values become per-voxel materials via the calibration curve. PET/SUV uptake
 layers on top via `dicom import-pet`. See `docs/USAGE.md` for the full chain.
