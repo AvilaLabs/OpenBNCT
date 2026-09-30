@@ -136,13 +136,14 @@ With OpenMC 0.16.0 and the ENDF/B-VIII.1 library installed,
 `openbnct project verify p001` adds an independent continuous-energy Monte Carlo
 check of the same study and reports the agreement in the same report.
 
-> **Accuracy status (2026-09-29):** on the layered-head benchmark, the
-> deterministic solver with P1 scattering (the default when the data carries
-> P1 moments) and the v5 data (H(H2O) S(α,β), corrected collapse) tracks
-> continuous-energy OpenMC to within ~3–8% in region-mean boron and nitrogen
-> dose, and ~0–16% voxel-by-voxel along the beam axis (S4, 28 groups). This
-> is one benchmark geometry; broader validation is ongoing, and the OpenMC
-> path remains the reference for absolute dose. See
+> **Accuracy status (2026-09-30):** on the layered-head benchmark the
+> deterministic solver (P1 default, v5 data with H(H2O) S(α,β)) gives boron and
+> nitrogen dose **0.87–0.95×** continuous-energy OpenMC run with the same
+> S(α,β) (1.03–1.08× against the older free-gas reference). The photon
+> component is currently **~3–4× high** (the multigroup data deposits capture-γ
+> energy locally) and the fast-neutron ("hydrogen") component **~0.3×** — both
+> under investigation. `openbnct project verify` runs this Monte Carlo check on
+> any project. See
 > [the validation note](validation/intercomparison-layered-head/2026-09-29-accuracy-fixes.md).
 
 Under the hood, the deterministic solver on its own — the shipped

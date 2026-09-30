@@ -1,5 +1,14 @@
 # Layered head vs continuous-energy OpenMC after the 2026-09-29 fixes
 
+> **Update 2026-09-30 — reference physics mismatch.** The committed reference
+> below is **free-gas** OpenMC; the v5 deterministic data uses H(H2O) S(α,β).
+> Re-running OpenMC through `openbnct project verify`'s machinery (2e6 histories):
+> free-gas MC reproduces this reference within 3 %; with S(α,β) on both sides
+> the deterministic/MC ratios are skin N 0.95, skull N 0.87, brain N 0.88,
+> brain B 0.88 (MC ±2 %). Photon (~3–4×, local capture-γ deposition in the
+> multigroup data) and fast-neutron "hydrogen" (~0.3×, component-definition
+> difference) components disagree and are under investigation.
+
 Reference: `openmc-tallies.json` in this directory (OpenMC 0.16.0, ENDF/B-VIII.1,
 400k histories; B10/N14 absorption rate densities per cm³ per source neutron — the
 tally JSON is already divided by the 0.512 cm³ voxel volume). Deterministic dose is
