@@ -1,0 +1,48 @@
+# OpenBNCT project (research software; not for clinical use, see docs/DISCLAIMER.md).
+# Run:  openbnct project run <this directory>
+#
+# ROIs detected in the study (RT Structure Set or label names):
+#   Brain, Brainstem, Cochlea-Lt, Cochlea-Rt, Lacrimal-Lt, Lacrimal-Rt, Lens-Lt, Lens-Rt, Mandible, Optic-Nerve-Lt, Optic-Nerve-Rt, Orbit-Lt, Orbit-Rt, Parotid-Lt, Parotid-Rt, Spinal-Canal, Spinal-Cord, Submandibular-Lt, Submandibular-Rt, BODY, SKIN, RESEARCH_TARGET
+
+[project]
+id = "openbnct.hn-head-ct.v1"
+
+[imaging]
+ct_nifti = "../data/hu.nii.gz"    # HU-valued NIfTI CT (relative to this directory)
+labels_nifti = "../data/labels.nii.gz"    # integer labelmap on the same grid
+label_names = "../data/label-names.json"    # JSON naming the labels
+spacing_mm = 4.0
+
+[materials]
+calibration = "builtin:tissue/hu-calibration-generic-head-ct"    # or a path to an openbnct.hu-calibration JSON
+multigroup_data = "builtin:tissue/multigroup-data-28g-tsl"    # or a path
+photon_data = "builtin:tissue/multigroup-photon-data-16g"    # coupled photon data for photon_transport (bound to the neutron group structure above)
+base_material = "builtin:tissue/material-air-dry"    # material outside the CT (air)
+
+[beam]
+description = "builtin:beams/fir1-k63-ineel"    # or a path to an openbnct.beam-description JSON
+target = "RESEARCH_TARGET"    # ROI whose centroid the beam axis is aimed at
+approach = "+x"    # beam travel direction: +x -x +y -y +z -z (LPS axes)
+
+[transport]
+engine = "sn"
+order = 4
+max_outer = 128
+anderson = 3    # Anderson acceleration depth; thermal-scattering data need it to converge
+source_weighting = "uniform_in_bin"    # histogram beam bins spread uniformly per eV (OpenMC/MCNP); or "collapse_consistent" (1/E above 0.5 eV)
+photon_transport = true    # transport capture photons (sn photon-solve); false = deposit their energy where it is born
+allow_unconverged = false    # true only for demos/tests; the report then says PROVISIONAL if it did not converge
+
+[boron]
+# ILLUSTRATIVE values (standard textbook-style numbers, not patient or
+# study data): blood 25 ug/g; tissue:blood 3.5 for the SYNTHETIC research
+# target, 1.5 for skin, 1.0 for everything else. Overlapping ROIs: the smaller one wins.
+blood_ug_g = 25.0
+ratios = { "RESEARCH_TARGET" = 3.5, "SKIN" = 1.5 }
+default_ratio = 1.0    # tissue:blood ratio for voxels in no listed ROI
+
+[report]
+structures = []    # empty = every ROI
+# Optional delivery normalization (else results stay per source particle):
+# source_strength_per_s = 1.0e12
+# irradiation_time_s = 1800

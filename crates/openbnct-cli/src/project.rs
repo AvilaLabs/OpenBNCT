@@ -5,7 +5,7 @@
 //! `project init` writes a self-contained project (a `project.toml` plus
 //! copies of the built-in library artifacts it uses, with sha256). `project
 //! run` executes the same steps as the individual commands
-//! (`dicom import-ct` -> `dicom calibrate` -> `beam bind` -> `sn solve` ->
+//! (`dicom import-ct` or `import ct-nifti` -> `dicom calibrate` -> `beam bind` -> `sn solve` ->
 //! `boron dose` -> `metrics`/`dvh`) by building each step's equivalent
 //! command line, parsing it with the real clap definition and dispatching
 //! it to the real handler, so the printed "equivalent command" is exactly
@@ -53,14 +53,29 @@ pub struct ProjectArgs {
 
 #[derive(Debug, Subcommand)]
 enum ProjectCommand {
-    /// Create a new project directory from a DICOM study: reads the CT +
-    /// RT Structure Set, writes `project.toml` (detected ROI names listed
-    /// in a comment) and copies every built-in artifact it uses into
-    /// `inputs/` with sha256. Refuses to overwrite an existing directory.
+    /// Create a new project directory from a DICOM study (CT + RT Structure
+    /// Set) or from a NIfTI CT with a labelmap (`--ct-nifti`): writes
+    /// `project.toml` (detected ROI names listed in a comment) and copies
+    /// every built-in artifact it uses into `inputs/` with sha256. Refuses
+    /// to overwrite an existing directory.
     Init {
         /// Directory holding one CT series and an RT Structure Set.
-        #[arg(long)]
-        dicom: PathBuf,
+        #[arg(
+            long,
+            required_unless_present = "ct_nifti",
+            conflicts_with = "ct_nifti"
+        )]
+        dicom: Option<PathBuf>,
+        /// HU-valued NIfTI CT (alternative to `--dicom`); needs
+        /// `--labels-nifti` and `--label-names`.
+        #[arg(long, requires_all = ["labels_nifti", "label_names"])]
+        ct_nifti: Option<PathBuf>,
+        /// Integer labelmap NIfTI on the CT grid.
+        #[arg(long, requires = "ct_nifti")]
+        labels_nifti: Option<PathBuf>,
+        /// JSON naming the labelmap's labels (see `import ct-nifti`).
+        #[arg(long, requires = "ct_nifti")]
+        label_names: Option<PathBuf>,
         /// New project directory (must not exist).
         #[arg(long)]
         output: PathBuf,
@@ -142,11 +157,27 @@ pub fn run_project(args: ProjectArgs) -> DynResult<()> {
     match args.command {
         ProjectCommand::Init {
             dicom,
+            ct_nifti,
+            labels_nifti,
+            label_names,
             output,
             target,
             spacing_mm,
             id,
-        } => init_project(&dicom, &output, target.as_deref(), spacing_mm, id),
+        } => {
+            let source = match (dicom, ct_nifti, labels_nifti, label_names) {
+                (Some(dicom), None, None, None) => ImagingSource::Dicom(dicom),
+                (None, Some(hu), Some(labels), Some(names)) => {
+                    ImagingSource::Nifti { hu, labels, names }
+                }
+                _ => {
+                    return fail(
+                        "give --dicom, or --ct-nifti with --labels-nifti and --label-names",
+                    );
+                }
+            };
+            init_project(&source, &output, target.as_deref(), spacing_mm, id)
+        }
         ProjectCommand::Run {
             project,
             force,
@@ -334,9 +365,28 @@ struct ProjectSection {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct ImagingSection {
-    dicom: String,
+    /// DICOM directory (CT series + RT Structure Set), or ...
+    #[serde(default)]
+    dicom: Option<String>,
+    /// ... an HU NIfTI with its labelmap and label names.
+    #[serde(default)]
+    ct_nifti: Option<String>,
+    #[serde(default)]
+    labels_nifti: Option<String>,
+    #[serde(default)]
+    label_names: Option<String>,
     #[serde(default = "default_spacing")]
     spacing_mm: f64,
+}
+
+/// Where a project's CT and structures come from.
+enum ImagingSource {
+    Dicom(PathBuf),
+    Nifti {
+        hu: PathBuf,
+        labels: PathBuf,
+        names: PathBuf,
+    },
 }
 
 fn default_spacing() -> f64 {
@@ -495,6 +545,21 @@ impl ProjectConfig {
         if !(self.imaging.spacing_mm.is_finite() && self.imaging.spacing_mm > 0.0) {
             return fail("project.toml: [imaging] spacing_mm must be a positive number");
         }
+        let imaging = &self.imaging;
+        match (
+            &imaging.dicom,
+            &imaging.ct_nifti,
+            &imaging.labels_nifti,
+            &imaging.label_names,
+        ) {
+            (Some(_), None, None, None) | (None, Some(_), Some(_), Some(_)) => {}
+            _ => {
+                return fail(
+                    "project.toml: [imaging] needs either `dicom`, or all of `ct_nifti`, \
+                     `labels_nifti` and `label_names` (not both)",
+                );
+            }
+        }
         if self.transport.engine != "sn" {
             return fail(format!(
                 "project.toml: [transport] engine {:?} is not supported; only \"sn\" is",
@@ -624,7 +689,7 @@ impl ProjectConfig {
 // ---------------------------------------------------------------------------
 
 fn init_project(
-    dicom: &Path,
+    source: &ImagingSource,
     output: &Path,
     target: Option<&str>,
     spacing_mm: f64,
@@ -639,24 +704,42 @@ fn init_project(
     if !(spacing_mm.is_finite() && spacing_mm > 0.0) {
         return fail("--spacing-mm must be a positive number");
     }
-    if !dicom.is_dir() {
-        return fail(format!("{}: not a directory", dicom.display()));
-    }
-    let paths = openbnct_dicom::collect_study_paths(dicom);
-    let import = openbnct_dicom::import_ct_contours_from_paths(&paths)
-        .map_err(|error| io::Error::other(format!("reading {}: {error}", dicom.display())))?;
-    let rois: Vec<String> = import
-        .structures
-        .as_ref()
-        .map(|s| s.rois.iter().map(|r| r.name.clone()).collect())
-        .unwrap_or_default();
-    if rois.is_empty() {
-        return fail(format!(
-            "{}: no RT Structure Set ROIs found; the project workflow needs one to aim the beam \
-             and report per-structure dose",
-            dicom.display()
-        ));
-    }
+    let (rois, origin) = match source {
+        ImagingSource::Dicom(dicom) => {
+            if !dicom.is_dir() {
+                return fail(format!("{}: not a directory", dicom.display()));
+            }
+            let paths = openbnct_dicom::collect_study_paths(dicom);
+            let import =
+                openbnct_dicom::import_ct_contours_from_paths(&paths).map_err(|error| {
+                    io::Error::other(format!("reading {}: {error}", dicom.display()))
+                })?;
+            let rois: Vec<String> = import
+                .structures
+                .as_ref()
+                .map(|s| s.rois.iter().map(|r| r.name.clone()).collect())
+                .unwrap_or_default();
+            if rois.is_empty() {
+                return fail(format!(
+                    "{}: no RT Structure Set ROIs found; the project workflow needs one to aim \
+                     the beam and report per-structure dose",
+                    dicom.display()
+                ));
+            }
+            (rois, dicom.clone())
+        }
+        ImagingSource::Nifti { hu, labels, names } => {
+            for file in [hu, labels, names] {
+                if !file.is_file() {
+                    return fail(format!("{}: not a file", file.display()));
+                }
+            }
+            let parsed = crate::ct_import::parse_label_names(&fs::read(names)?)
+                .map_err(|error| io::Error::other(format!("{}: {error}", names.display())))?;
+            (parsed.names(), hu.clone())
+        }
+    };
+    let dicom = &origin;
     if let Some(target) = target
         && !rois.iter().any(|r| r == target)
     {
@@ -668,8 +751,27 @@ fn init_project(
 
     fs::create_dir_all(output)?;
     let project_dir = output.canonicalize()?;
-    let study = dicom.canonicalize()?;
-    let dicom_rel = relative_path(&project_dir, &study);
+    let imaging_lines = match source {
+        ImagingSource::Dicom(_) => {
+            let rel = relative_path(&project_dir, &dicom.canonicalize()?);
+            format!(
+                "dicom = {rel:?}    # directory with one CT series + RTSTRUCT (relative to this directory)\n"
+            )
+        }
+        ImagingSource::Nifti { hu, labels, names } => {
+            let rel = |path: &Path| -> DynResult<String> {
+                Ok(relative_path(&project_dir, &path.canonicalize()?))
+            };
+            format!(
+                "ct_nifti = {:?}    # HU-valued NIfTI CT (relative to this directory)\n\
+                 labels_nifti = {:?}    # integer labelmap on the same grid\n\
+                 label_names = {:?}    # JSON naming the labels\n",
+                rel(hu)?,
+                rel(labels)?,
+                rel(names)?
+            )
+        }
+    };
     let id = id.unwrap_or_else(|| {
         let name = project_dir
             .file_name()
@@ -708,14 +810,14 @@ fn init_project(
         "# OpenBNCT project (research software; not for clinical use, see docs/DISCLAIMER.md).\n\
          # Run:  openbnct project run <this directory>\n\
          #\n\
-         # ROIs detected in the study's RT Structure Set:\n\
+         # ROIs detected in the study (RT Structure Set or label names):\n\
          #   {rois}\n\
          \n\
          [project]\n\
          id = {id:?}\n\
          \n\
          [imaging]\n\
-         dicom = {dicom_rel:?}    # directory with one CT series + RTSTRUCT (relative to this directory)\n\
+         {imaging_lines}\
          spacing_mm = {spacing_mm:?}\n\
          \n\
          [materials]\n\
@@ -1179,12 +1281,8 @@ fn plan_step(
     let beam = resolve_spec(project, &config.beam.description)?;
     let spacing = config.imaging.spacing_mm.to_string();
     Ok(match index {
-        0 => StepPlan {
-            commands: vec![argv(&[
-                "dicom",
-                "import-ct",
-                "--series",
-                &config.imaging.dicom,
+        0 => {
+            let tail = [
                 "--spacing-mm",
                 &spacing,
                 "--case-id",
@@ -1197,11 +1295,42 @@ fn plan_step(
                 "out/01-import/hu.nii",
                 "--masks-dir",
                 "out/01-import/masks",
-            ])],
-            inputs: vec![config.imaging.dicom.clone(), base_material],
-            outputs: vec!["out/01-import".into()],
-            options: json!({}),
-        },
+            ];
+            let imaging = &config.imaging;
+            let (mut command, mut inputs) = match (
+                &imaging.dicom,
+                &imaging.ct_nifti,
+                &imaging.labels_nifti,
+                &imaging.label_names,
+            ) {
+                (Some(dicom), ..) => (
+                    argv(&["dicom", "import-ct", "--series", dicom]),
+                    vec![dicom.clone()],
+                ),
+                (None, Some(hu), Some(labels), Some(names)) => (
+                    argv(&[
+                        "import",
+                        "ct-nifti",
+                        "--hu",
+                        hu,
+                        "--labels",
+                        labels,
+                        "--label-names",
+                        names,
+                    ]),
+                    vec![hu.clone(), labels.clone(), names.clone()],
+                ),
+                _ => return fail("project.toml: [imaging] names no CT source"),
+            };
+            command.extend(tail.iter().map(|part| (*part).to_owned()));
+            inputs.push(base_material);
+            StepPlan {
+                commands: vec![command],
+                inputs,
+                outputs: vec!["out/01-import".into()],
+                options: json!({}),
+            }
+        }
         1 => StepPlan {
             commands: vec![argv(&[
                 "dicom",
@@ -1555,12 +1684,27 @@ fn run_steps(project_arg: &Path, force: bool, from: Option<&str>) -> DynResult<(
     ] {
         resolve_spec(&project, spec)?;
     }
-    if !project.join(&config.imaging.dicom).is_dir() {
-        return fail(format!(
-            "project.toml: [imaging] dicom {:?} is not a directory (relative to {})",
-            config.imaging.dicom,
-            project.display()
-        ));
+    if let Some(dicom) = &config.imaging.dicom {
+        if !project.join(dicom).is_dir() {
+            return fail(format!(
+                "project.toml: [imaging] dicom {dicom:?} is not a directory (relative to {})",
+                project.display()
+            ));
+        }
+    } else {
+        for (key, value) in [
+            ("ct_nifti", &config.imaging.ct_nifti),
+            ("labels_nifti", &config.imaging.labels_nifti),
+            ("label_names", &config.imaging.label_names),
+        ] {
+            let value = value.as_deref().unwrap_or_default();
+            if !project.join(value).is_file() {
+                return fail(format!(
+                    "project.toml: [imaging] {key} {value:?} is not a file (relative to {})",
+                    project.display()
+                ));
+            }
+        }
     }
 
     let _cwd = CwdGuard(std::env::current_dir()?);

@@ -1,0 +1,28 @@
+{
+ "encoding": "bitmask",
+ "description": "Organ-at-risk labels are the radiographer/oncologist segmentations of the google-deepmind/tcia-ct-scan-dataset (CC BY 4.0). BODY, SKIN and RESEARCH_TARGET are derived by prepare.py. RESEARCH_TARGET is a SYNTHETIC sphere for exercising the workflow; it is not a tumor and represents no patient finding.",
+ "labels": {
+  "1": "Brain",
+  "2": "Brainstem",
+  "4": "Cochlea-Lt",
+  "8": "Cochlea-Rt",
+  "16": "Lacrimal-Lt",
+  "32": "Lacrimal-Rt",
+  "64": "Lens-Lt",
+  "128": "Lens-Rt",
+  "256": "Mandible",
+  "512": "Optic-Nerve-Lt",
+  "1024": "Optic-Nerve-Rt",
+  "2048": "Orbit-Lt",
+  "4096": "Orbit-Rt",
+  "8192": "Parotid-Lt",
+  "16384": "Parotid-Rt",
+  "32768": "Spinal-Canal",
+  "65536": "Spinal-Cord",
+  "131072": "Submandibular-Lt",
+  "262144": "Submandibular-Rt",
+  "524288": "BODY",
+  "1048576": "SKIN",
+  "2097152": "RESEARCH_TARGET"
+ }
+}

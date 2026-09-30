@@ -101,6 +101,28 @@ Have the CT as NRRD or MetaImage instead of DICOM? Convert it once with
 `openbnct import volume --input ct.nrrd --output ct.nii`; every command that
 takes a NIfTI volume also accepts `.nrrd`/`.nhdr`/`.mha`/`.mhd` directly.
 
+### From a NIfTI CT
+
+A CT that is already an HU-valued NIfTI (plus an optional integer labelmap from
+Slicer, TotalSegmentator or your own pipeline) takes the same route through
+`import ct-nifti`, which reuses the DICOM importer's grid, box-average HU
+downsampling and 50 % coverage mask rule:
+
+```text
+openbnct import ct-nifti --hu ct.nii.gz \
+  --labels labels.nii.gz --label-names label-names.json \
+  --spacing-mm 4 --case-id mylab.patient.v1 \
+  --base-material void.json \
+  --case-output case.json --hu-output hu.nii --masks-dir masks
+```
+
+`label-names.json` maps label values to ROI names: `{"1": "Brain"}` for disjoint
+labels, or `{"encoding": "bitmask", "labels": {"1": "Brain", "2": "Target"}}`
+when ROIs overlap (labels are powers of two). The HU volume must be axis-aligned
+in LPS and the labelmap must share its exact grid. The whole golden path accepts
+this input too: `openbnct project init --ct-nifti ct.nii.gz --labels-nifti
+labels.nii.gz --label-names label-names.json ...`.
+
 HU values become per-voxel materials via the calibration curve. PET/SUV uptake
 layers on top via `dicom import-pet`. See `docs/USAGE.md` for the full chain.
 

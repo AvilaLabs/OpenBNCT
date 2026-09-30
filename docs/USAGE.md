@@ -16,6 +16,19 @@ openbnct project init --dicom ./study --output ./p001 --target CORE --spacing-mm
 openbnct project run ./p001
 ```
 
+Already have the CT as NIfTI (an HU volume plus an integer labelmap from
+3D Slicer, TotalSegmentator, a Python pipeline)? Give `project init` the
+NIfTI trio instead of `--dicom`; the rest is identical:
+
+```text
+openbnct project init --ct-nifti hu.nii.gz --labels-nifti labels.nii.gz \
+  --label-names label-names.json --output ./p001 --target CORE --spacing-mm 4
+```
+
+`project.toml` then carries `ct_nifti`, `labels_nifti` and `label_names` under
+`[imaging]` in place of `dicom`, and the `import` step runs `import ct-nifti`
+(below). A real worked example is in `validation/real-anatomy/hn-head-ct/`.
+
 `project init` reads the study, lists the detected ROI names in a comment at
 the top of `p001/project.toml`, and copies every built-in artifact the project
 uses into `p001/inputs/` (with `SHA256SUMS`), so the project is self-contained
@@ -25,7 +38,7 @@ placeholder you must fill in.
 
 `project run` executes seven steps (an eighth, `verify`, is separate: see
 [Independent Monte Carlo check](#independent-monte-carlo-check-project-verify)), each the same code as the individual
-command it names: `import` (`dicom import-ct`), `calibrate` (`dicom
+command it names: `import` (`dicom import-ct`, or `import ct-nifti` for a NIfTI project), `calibrate` (`dicom
 calibrate`), `beam` (`beam bind --aim-mask`), `transport` (`sn solve --dose
 --boron-unit-output --source-weighting uniform_in_bin`, then, with
 `photon_transport = true`, `sn photon-solve --dose` and `sn merge-photon-dose`),
@@ -42,6 +55,10 @@ id = "mylab.p001"                          # case id
 
 [imaging]
 dicom = "../study"                         # one CT series (+ RTSTRUCT), relative to the project dir
+# or, instead of `dicom` (all three together):
+# ct_nifti = "../hu.nii.gz"                # HU-valued NIfTI CT
+# labels_nifti = "../labels.nii.gz"        # integer labelmap on the same grid
+# label_names = "../label-names.json"      # names the labels (see `import ct-nifti`)
 spacing_mm = 5.0
 
 [materials]                                # builtin:NAME or a path; `openbnct project builtins` lists names
@@ -820,6 +837,32 @@ grid is rebuilt from its Image Position/Orientation and Pixel Spacing (library
 
 Feed the output to the calibration below with `--hu-nifti NEW-HU.nii --case
 NEW-CASE.json`, then bind a real beam (`beam bind`).
+
+### NIfTI CT to transport case
+
+`openbnct import ct-nifti` is the same import for a CT that is already NIfTI:
+an HU-valued volume, plus optionally an integer labelmap on the same grid and a
+JSON naming the labels. It shares its code with `dicom import-ct`: the covering
+grid, the overlap-weighted box-mean HU downsampling, the 50 % volume-coverage ROI
+rule, the placeholder scaffold source and the `*.import-record.json`.
+
+```text
+openbnct import ct-nifti --hu HU.nii.gz \
+  --labels LABELS.nii.gz --label-names NAMES.json \
+  --spacing-mm 4 --case-id mylab.patient.v1 \
+  --base-material void.json \
+  --case-output NEW-CASE.json --hu-output NEW-HU.nii --masks-dir NEW-MASKS-DIR
+```
+
+`NAMES.json` is `{"1": "Brain", "2": "Skull"}` for disjoint labels (a voxel is
+in the ROI whose number equals its value), or, when ROIs overlap,
+`{"encoding": "bitmask", "labels": {"1": "Brain", "2": "Target"}}` where every
+label is a power of two and a voxel with value 3 is in both. Label 0 is
+background. The HU grid must be axis-aligned in LPS (identity direction cosines,
+as the transport stack requires) and the labelmap must have exactly the HU
+grid's shape, spacing and origin; nothing is reoriented or resampled beyond the
+box average, so do that upstream (nearest-neighbour for labels).
+`--labels` and `--label-names` go together; `--masks-dir` needs them.
 
 ### HU-to-material calibration
 

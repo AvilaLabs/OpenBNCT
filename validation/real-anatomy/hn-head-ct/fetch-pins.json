@@ -1,0 +1,138 @@
+{
+ "repo": "google-deepmind/tcia-ct-scan-dataset",
+ "commit": "2edb50947e50ef26e60b72dec89d36d71efe5549",
+ "files": [
+  {
+   "path": "nrrds/test/oncologist/0522c0226/CT_IMAGE.nrrd",
+   "bytes": 43643153,
+   "sha256": "c9398c6168154daebac909e5805c8ec70c4d4121b79e7729c83948da80c2d6bd",
+   "git_blob_sha1": "19756587dc1cbb628426ffb0d3bf58301934c614"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Brain.nrrd",
+   "bytes": 58978,
+   "sha256": "c7be727ac9b73e4d856777708a059fdbfaec055626f8be7b121281dd2365a390",
+   "git_blob_sha1": "9837d8f5128f24b350158bd6651f4460cf2a9a58"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Brainstem.nrrd",
+   "bytes": 43206,
+   "sha256": "c66ea985e2b3745c1c6a17e0bedf32b7b17d0b27d1495233158c454067cccf55",
+   "git_blob_sha1": "5061bbfdd1c6471d128b848ba4473f6fe5a50378"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Cochlea-Lt.nrrd",
+   "bytes": 41933,
+   "sha256": "3cbe3e86f831fa68c339bcbf1cfd65d47f7694c4b3480cafa9584ac406817a1b",
+   "git_blob_sha1": "9a8a7b7b6b11d8271ab94d3e53ea4090114bc0a3"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Cochlea-Rt.nrrd",
+   "bytes": 41925,
+   "sha256": "c7f488f2b2f4de79673bbe7c0ee5e9a85d61b28d5b09703420a957d32ad59b0a",
+   "git_blob_sha1": "f718895cda73dfaee137c38edf2ff1c98da43c05"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Lacrimal-Lt.nrrd",
+   "bytes": 42051,
+   "sha256": "9d5470bc5825a5d5ca42cb380e53ab4cf254674709a358b027a09de311c88386",
+   "git_blob_sha1": "8e2da3ec5aeb7a777430bd5ec20f3663dd60a68c"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Lacrimal-Rt.nrrd",
+   "bytes": 42035,
+   "sha256": "e0f952cff70919d63713577b786f8f71a71d690fb8762b737ce4c78f148a8fba",
+   "git_blob_sha1": "85248ed2a8b95865a6e504b783021026d7ad5e89"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Lens-Lt.nrrd",
+   "bytes": 41943,
+   "sha256": "59da234ff0bd5971b64872d793a5bd7ae7705a15101f10860c29e10b0d245265",
+   "git_blob_sha1": "188823045f31f44e31040d1c8b1d6d1bc6fc3a14"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Lens-Rt.nrrd",
+   "bytes": 41956,
+   "sha256": "1ea19f97d4899f428d6a9302d87300628a7d64aa1e484eabbc0b7d3f35c8db86",
+   "git_blob_sha1": "c20a1e6673a46bf186a5c65b8d566633a9bb05a0"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Lung-Lt.nrrd",
+   "bytes": 55390,
+   "sha256": "68515eae4bc385e00f25d9f82cf36fa3dbfe92429758d7cb974ae588a127bc21",
+   "git_blob_sha1": "de7d3d7443571c66232d1c0d08fb8ae628e25b8f"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Lung-Rt.nrrd",
+   "bytes": 56180,
+   "sha256": "a1e479fbfb20b7375c820a99b3126989d8ec571ca3a25748daea0c188a261ca5",
+   "git_blob_sha1": "21d5c1889ebd1c3be744156d77d5c363813d53df"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Mandible.nrrd",
+   "bytes": 47851,
+   "sha256": "bc734560e93369c06c01faa1bfe2ff743e6ec52a4a54b99f706cf74ae1f7b086",
+   "git_blob_sha1": "6617b5a7547b6a67a91abeda0b4c83c464587050"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Optic-Nerve-Lt.nrrd",
+   "bytes": 41996,
+   "sha256": "308a3ff466087ecb2ec60ebb8f0242448a6497659852248bbdf1e1327a3f9054",
+   "git_blob_sha1": "dce361b4a1f9c2d00c5ca921859bde39123b0775"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Optic-Nerve-Rt.nrrd",
+   "bytes": 42015,
+   "sha256": "e04e9546e1eaa256ae1a84752856e53b4ea652ded317053d186560e8714ba259",
+   "git_blob_sha1": "f1234a97c8750f8fb2fae106fcd72b2f497bca22"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Orbit-Lt.nrrd",
+   "bytes": 42397,
+   "sha256": "20d4be36c67d770d31e07b973fd7613f65b90f4ffc8b45a212df8edc48dd8761",
+   "git_blob_sha1": "fe6c27dec640b51ee6fbaaa137d8bcdeb50cc0df"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Orbit-Rt.nrrd",
+   "bytes": 42395,
+   "sha256": "9c9a99ffa1263fd1417cab1a40adf5a018ac3efb8a5334b9c82855779ea18e14",
+   "git_blob_sha1": "c039548ded46ab377a6044663fe91bb470711b5b"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Parotid-Lt.nrrd",
+   "bytes": 44375,
+   "sha256": "31fa23ae77e2549cedb8597261e16c85703b0bc371b50a6a35b434082c80b04c",
+   "git_blob_sha1": "a601086026c805cd383b519ec0455e89cf3f56ea"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Parotid-Rt.nrrd",
+   "bytes": 44416,
+   "sha256": "685a7ce371fc57e359a377d1d24fa1b18ea885f6108960533241dc68d84c9c83",
+   "git_blob_sha1": "e96aab16e6f04f86abe4794b30157f55e1449750"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Spinal-Canal.nrrd",
+   "bytes": 46491,
+   "sha256": "3325dd8a0e7765e334b61ef152087cfc3e50999e42f26fee32557b652d5921c4",
+   "git_blob_sha1": "35184b6a1be5289e44eca493ebb4332e33aa4976"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Spinal-Cord.nrrd",
+   "bytes": 44147,
+   "sha256": "7375d753d295c2f817e4a0ed8ad792395e2a5c36d2d79c050a92453db16dd36c",
+   "git_blob_sha1": "1fba7b8e31f3612251b1b11b3915f72b06ca73ee"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Submandibular-Lt.nrrd",
+   "bytes": 42692,
+   "sha256": "3180faf221c29ef3c75579bf2b68f6d0df7f37170a850c1038c2c017f0b526b3",
+   "git_blob_sha1": "cee96ce588ac6422a913fea24de7dd203a193781"
+  },
+  {
+   "path": "nrrds/test/oncologist/0522c0226/segmentations/Submandibular-Rt.nrrd",
+   "bytes": 42584,
+   "sha256": "c1e5b5e63258049da1f1c078edd6ac30e303976c064d1bb120959bdec5fa2e28",
+   "git_blob_sha1": "8c629ec1cf5fbc01832fa6b2a37de3e4e908a763"
+  }
+ ]
+}
