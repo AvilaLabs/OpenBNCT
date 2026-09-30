@@ -15,8 +15,10 @@ own versions independent of the crate version.
   `OPENBNCT_SIDECAR_MIN_VALUES` values (default 1,000,000; `0` always, `-1`
   never); all loaders verify length and SHA-256, `evidence export/verify` and
   `bench verify` treat sidecars as bound files. See `docs/ARCHITECTURE.md`.
-- **Opt-in fine-mesh multigroup CMFD for the S_N solver** (`sn solve --cmfd`,
-  `OPENBNCT_CMFD=1`; `--cmfd-inner-sweeps N`, default 2; `--cmfd-damping`).
+- **Fine-mesh multigroup CMFD for the S_N solver, on by default** in `sn solve`,
+  Python `sn_solve` and `openbnct project` (`--no-cmfd` / `OPENBNCT_CMFD=0` to opt out;
+  `--cmfd-inner-sweeps N`, default 2; `--cmfd-damping`). The library `SnOptions`
+  default stays off.
   Each outer does a few transport sweeps per group, builds the
   transport-consistent D-hat closure from the sweep's net face currents (od-CMFD
   stabilization after Zhu, Xu & Downar, Ann. Nucl. Energy 2016; the paper's

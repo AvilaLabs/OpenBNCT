@@ -159,8 +159,8 @@ openbnct sn solve --case benchmarks/synthetic/layered-head-phantom/case.json \
     --source-weighting uniform_in_bin --dose dose.json --output flux.json
 ```
 
-With the defaults (S4, P1, Anderson) this converges in ~21 outer iterations —
-about 3 minutes on 2 cores with a release build.
+With the defaults (S4, P1, CMFD acceleration) this converges in 14 outer
+iterations — under a minute on 2 cores with a release build.
 
 Or skip the terminal entirely: open
 [openbnct.avilalabs.org](https://openbnct.avilalabs.org) and press

@@ -3365,13 +3365,16 @@ enum SnCommand {
         /// `OPENBNCT_NO_CMR` also disables it.
         #[arg(long)]
         no_cmr: bool,
-        /// Fine-mesh multigroup CMFD acceleration (optimally-diffusive
-        /// stabilization): a few transport sweeps per group per outer plus
-        /// a low-order multigroup diffusion solve. Replaces the
-        /// coarse-mesh rebalance. `OPENBNCT_CMFD=1` also enables it.
+        /// Disable the fine-mesh multigroup CMFD acceleration (on by
+        /// default: a few transport sweeps per group per outer plus a
+        /// low-order multigroup diffusion solve with optimally-diffusive
+        /// stabilization, replacing the coarse-mesh rebalance). The
+        /// converged dose is unchanged (<= 4e-6 relative on the layered
+        /// head) and the solve loop is ~2x faster. `OPENBNCT_CMFD=0`
+        /// also disables it.
         #[arg(long)]
-        cmfd: bool,
-        /// Transport sweeps per group per outer under `--cmfd`.
+        no_cmfd: bool,
+        /// Transport sweeps per group per outer under CMFD.
         #[arg(long, default_value_t = 2)]
         cmfd_inner_sweeps: u32,
         /// CMFD prolongation damping in (0, 1].
@@ -11344,7 +11347,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 anisotropy,
                 anderson,
                 no_cmr,
-                cmfd,
+                no_cmfd,
                 cmfd_inner_sweeps,
                 cmfd_damping,
                 source_weighting,
@@ -11396,7 +11399,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: anisotropy,
                     anderson_depth: anderson,
                     coarse_rebalance: !no_cmr,
-                    cmfd,
+                    cmfd: !no_cmfd,
                     cmfd_inner_sweeps,
                     cmfd_damping,
                     stats: Some(solve_stats.clone()),

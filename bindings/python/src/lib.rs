@@ -4935,6 +4935,7 @@ fn sn_solve(
         assignment: assignment_model.clone(),
         p1_anisotropic: use_p1,
         exp_source: !use_p1,
+        cmfd: true,
         anisotropy_order: anisotropy,
         anderson_depth: anderson,
         ..openbnct_transport::SnOptions::default()
