@@ -1,0 +1,1021 @@
+{
+  "engine": {
+    "batches": 10,
+    "cross_sections": "/home/connoravila/nuclear-data/endfb-viii.1-hdf5/cross_sections.xml",
+    "executable": "/home/connoravila/micromamba/envs/openmc016/bin/openmc",
+    "histories": 6000000,
+    "openmc_commit": "617d35a5063c57796b43428bc401e627d2011046",
+    "particles_requested": 6000000,
+    "threads": 3,
+    "wall_seconds": 1687.04854869
+  },
+  "generated_utc": "2026-09-30T19:18:20Z",
+  "project_id": "openbnct.hn-head-ct.v1",
+  "schema_version": "openbnct.project-verify/0.1.0",
+  "statistics": {
+    "cutoff_percent": 10.0,
+    "median_rel_sigma_total": 0.9984704405528406,
+    "p95_rel_sigma_total": 0.9999696714693297,
+    "voxels_evaluated": 172
+  },
+  "structures": [
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Brain",
+      "quantities": [
+        {
+          "mc_mean": 1.3320411113566149e-14,
+          "mc_rel_sigma": 0.014718509803558748,
+          "quantity": "component:boron",
+          "ratio": 0.9511290930353022,
+          "sn_mean": 1.266943054130353e-14
+        },
+        {
+          "mc_mean": 4.523903877416659e-16,
+          "mc_rel_sigma": 0.016076138780234502,
+          "quantity": "component:nitrogen",
+          "ratio": 0.9548377757057677,
+          "sn_mean": 4.319594315819221e-16
+        },
+        {
+          "mc_mean": 3.6519360113116404e-16,
+          "mc_rel_sigma": 0.247274002103131,
+          "quantity": "component:hydrogen",
+          "ratio": 0.933048073684424,
+          "sn_mean": 3.407431860573105e-16
+        },
+        {
+          "mc_mean": 6.432775277022735e-15,
+          "mc_rel_sigma": 0.2923631678075698,
+          "quantity": "component:photon",
+          "ratio": 6.030939741449158,
+          "sn_mean": 3.879568006600803e-14
+        },
+        {
+          "mc_mean": 2.056989855600717e-14,
+          "mc_rel_sigma": 0.10231078530779283,
+          "quantity": "physical_total",
+          "ratio": 2.539527022105575,
+          "sn_mean": 5.223781322495066e-14
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 2.540 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 19291
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Brainstem",
+      "quantities": [
+        {
+          "mc_mean": 6.7268472850770454e-15,
+          "mc_rel_sigma": 0.020571050731479985,
+          "quantity": "component:boron",
+          "ratio": 0.981424805953416,
+          "sn_mean": 6.601894791435002e-15
+        },
+        {
+          "mc_mean": 1.1114906727887503e-16,
+          "mc_rel_sigma": 0.02256209284333554,
+          "quantity": "component:nitrogen",
+          "ratio": 0.9721821655517209,
+          "sn_mean": 1.0805714092623064e-16
+        },
+        {
+          "mc_mean": 2.383883312216269e-16,
+          "mc_rel_sigma": 0.32390972320110106,
+          "quantity": "component:hydrogen",
+          "ratio": 0.9612370847176135,
+          "sn_mean": 2.291477045341735e-16
+        },
+        {
+          "mc_mean": 6.004327173023143e-15,
+          "mc_rel_sigma": 0.3260757640123467,
+          "quantity": "component:photon",
+          "ratio": 4.337364411324509,
+          "sn_mean": 2.6042954994219275e-14
+        },
+        {
+          "mc_mean": 1.3071370916554543e-14,
+          "mc_rel_sigma": 0.16181401673064338,
+          "quantity": "physical_total",
+          "ratio": 2.5232284235270073,
+          "sn_mean": 3.298205463111469e-14
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 2.523 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 357
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Lacrimal-Lt",
+      "quantities": [
+        {
+          "mc_mean": 5.099708099604573e-16,
+          "mc_rel_sigma": 0.07392621117400434,
+          "quantity": "component:boron",
+          "ratio": 1.1456006351944188,
+          "sn_mean": 5.842228838213121e-16
+        },
+        {
+          "mc_mean": 4.626026717227377e-17,
+          "mc_rel_sigma": 0.07760646762277983,
+          "quantity": "component:nitrogen",
+          "ratio": 1.1566190276187969,
+          "sn_mean": 5.350550523418104e-17
+        },
+        {
+          "mc_mean": 4.068772298082281e-17,
+          "mc_rel_sigma": 0.6274446984039903,
+          "quantity": "component:hydrogen",
+          "ratio": 1.2447495180538433,
+          "sn_mean": 5.064602357108748e-17
+        },
+        {
+          "mc_mean": 1.848175921481052e-15,
+          "mc_rel_sigma": 0.514464416917195,
+          "quantity": "component:photon",
+          "ratio": 1.2676626341911783,
+          "sn_mean": 2.3428635570733786e-15
+        },
+        {
+          "mc_mean": 2.5221070723995157e-15,
+          "mc_rel_sigma": 0.4061206242573185,
+          "quantity": "physical_total",
+          "ratio": 1.2018672810809972,
+          "sn_mean": 3.0312379696999594e-15
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 1.202 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 7
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Lacrimal-Rt",
+      "quantities": [
+        {
+          "mc_mean": 8.978592293457895e-15,
+          "mc_rel_sigma": 0.02008874006734464,
+          "quantity": "component:boron",
+          "ratio": 0.9529416624947079,
+          "sn_mean": 8.556074666989939e-15
+        },
+        {
+          "mc_mean": 5.352724391313006e-16,
+          "mc_rel_sigma": 0.01998987788211959,
+          "quantity": "component:nitrogen",
+          "ratio": 0.9599042054520569,
+          "sn_mean": 5.138102653847156e-16
+        },
+        {
+          "mc_mean": 1.9080391854360475e-16,
+          "mc_rel_sigma": 0.3176535846128028,
+          "quantity": "component:hydrogen",
+          "ratio": 1.081295191801264,
+          "sn_mean": 2.0631535969803986e-16
+        },
+        {
+          "mc_mean": 6.3499502260562356e-15,
+          "mc_rel_sigma": 0.25541588618254696,
+          "quantity": "component:photon",
+          "ratio": 5.396397460724279,
+          "sn_mean": 3.426685527561543e-14
+        },
+        {
+          "mc_mean": 1.63102703676226e-14,
+          "mc_rel_sigma": 0.11846199272471573,
+          "quantity": "physical_total",
+          "ratio": 2.669670985597217,
+          "sn_mean": 4.3543055567688114e-14
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 2.670 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 6
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Lens-Lt",
+      "quantities": [
+        {
+          "mc_mean": 6.1709546348444e-16,
+          "mc_rel_sigma": 0.05645609040278116,
+          "quantity": "component:boron",
+          "ratio": 1.046774151146183,
+          "sn_mean": 6.45959579965085e-16
+        },
+        {
+          "mc_mean": 3.614364418021597e-17,
+          "mc_rel_sigma": 0.05644068096598939,
+          "quantity": "component:nitrogen",
+          "ratio": 1.0463652064553008,
+          "sn_mean": 3.781945170467862e-17
+        },
+        {
+          "mc_mean": 2.4696673955483395e-17,
+          "mc_rel_sigma": 0.6082587877546514,
+          "quantity": "component:hydrogen",
+          "ratio": 1.228561903558813,
+          "sn_mean": 3.034139276632004e-17
+        },
+        {
+          "mc_mean": 2.115210031483949e-15,
+          "mc_rel_sigma": 0.3912108146312993,
+          "quantity": "component:photon",
+          "ratio": 1.3498752204427096,
+          "sn_mean": 2.8552696075320266e-15
+        },
+        {
+          "mc_mean": 2.7747031654721208e-15,
+          "mc_rel_sigma": 0.3126557573468454,
+          "quantity": "physical_total",
+          "ratio": 1.286404281504747,
+          "sn_mean": 3.56939003196811e-15
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 1.286 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 1
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Lens-Rt",
+      "quantities": [
+        {
+          "mc_mean": 3.6590292532416345e-15,
+          "mc_rel_sigma": 0.02768690642324416,
+          "quantity": "component:boron",
+          "ratio": 1.0190898281895908,
+          "sn_mean": 3.728879493026704e-15
+        },
+        {
+          "mc_mean": 1.6503539692824395e-16,
+          "mc_rel_sigma": 0.027839260556937605,
+          "quantity": "component:nitrogen",
+          "ratio": 1.0180773692353813,
+          "sn_mean": 1.6801880273542354e-16
+        },
+        {
+          "mc_mean": 4.646701559069222e-17,
+          "mc_rel_sigma": 0.673336856151951,
+          "quantity": "component:hydrogen",
+          "ratio": 1.1855916331885523,
+          "sn_mean": 5.5090904903566706e-17
+        },
+        {
+          "mc_mean": 2.925561854537555e-15,
+          "mc_rel_sigma": 0.4440456370047943,
+          "quantity": "component:photon",
+          "ratio": 5.777458455816346,
+          "sn_mean": 1.6902312074511746e-14
+        },
+        {
+          "mc_mean": 6.765896562021113e-15,
+          "mc_rel_sigma": 0.20686183774802713,
+          "quantity": "physical_total",
+          "ratio": 3.0822672330284386,
+          "sn_mean": 2.0854301275177443e-14
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 3.082 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 2
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Mandible",
+      "quantities": [
+        {
+          "mc_mean": 1.7382319382941259e-15,
+          "mc_rel_sigma": 0.030937936028908514,
+          "quantity": "component:boron",
+          "ratio": 0.995959938984064,
+          "sn_mean": 1.7312093752035688e-15
+        },
+        {
+          "mc_mean": 2.76609269143259e-16,
+          "mc_rel_sigma": 0.030792892197298,
+          "quantity": "component:nitrogen",
+          "ratio": 1.0077061005867132,
+          "sn_mean": 2.7874084799449417e-16
+        },
+        {
+          "mc_mean": 2.9196460923667917e-17,
+          "mc_rel_sigma": 0.5833360916983379,
+          "quantity": "component:hydrogen",
+          "ratio": 1.0485007769284067,
+          "sn_mean": 3.061251196202568e-17
+        },
+        {
+          "mc_mean": 1.8823281924171253e-15,
+          "mc_rel_sigma": 0.4143100827592562,
+          "quantity": "component:photon",
+          "ratio": 3.380419596716345,
+          "sn_mean": 6.3630591090985054e-15
+        },
+        {
+          "mc_mean": 3.926299794500214e-15,
+          "mc_rel_sigma": 0.2130111246389385,
+          "quantity": "physical_total",
+          "ratio": 2.1403413605935078,
+          "sn_mean": 8.403621844258598e-15
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 2.140 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 1222
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Optic-Nerve-Lt",
+      "quantities": [
+        {
+          "mc_mean": 2.3004755873109947e-15,
+          "mc_rel_sigma": 0.04094395139497756,
+          "quantity": "component:boron",
+          "ratio": 1.0215244883384105,
+          "sn_mean": 2.349992147262868e-15
+        },
+        {
+          "mc_mean": 1.7073411145669264e-17,
+          "mc_rel_sigma": 0.04375265172474359,
+          "quantity": "component:nitrogen",
+          "ratio": 1.0794681454128736,
+          "sn_mean": 1.8430203465287088e-17
+        },
+        {
+          "mc_mean": 1.4158500684842085e-16,
+          "mc_rel_sigma": 0.38715273023144886,
+          "quantity": "component:hydrogen",
+          "ratio": 1.0135759179121608,
+          "sn_mean": 1.4350715327898775e-16
+        },
+        {
+          "mc_mean": 4.178444145548395e-15,
+          "mc_rel_sigma": 0.31562923353995576,
+          "quantity": "component:photon",
+          "ratio": 2.1723408149012444,
+          "sn_mean": 9.077004760159934e-15
+        },
+        {
+          "mc_mean": 6.692463945094916e-15,
+          "mc_rel_sigma": 0.21399286638690052,
+          "quantity": "physical_total",
+          "ratio": 1.731639402056236,
+          "sn_mean": 1.1588934264167078e-14
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 1.732 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 5
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Optic-Nerve-Rt",
+      "quantities": [
+        {
+          "mc_mean": 1.0037752884767096e-14,
+          "mc_rel_sigma": 0.01925295666754712,
+          "quantity": "component:boron",
+          "ratio": 0.9573965469138758,
+          "sn_mean": 9.610109950650812e-15
+        },
+        {
+          "mc_mean": 2.753320025149385e-16,
+          "mc_rel_sigma": 0.018514656073327498,
+          "quantity": "component:nitrogen",
+          "ratio": 0.9810727050025912,
+          "sn_mean": 2.70120712481111e-16
+        },
+        {
+          "mc_mean": 3.9455923090670133e-16,
+          "mc_rel_sigma": 0.32159698193351477,
+          "quantity": "component:hydrogen",
+          "ratio": 0.9038395173426073,
+          "sn_mean": 3.5661822482578326e-16
+        },
+        {
+          "mc_mean": 7.381823549692372e-15,
+          "mc_rel_sigma": 0.26314118799323755,
+          "quantity": "component:photon",
+          "ratio": 5.028574599208193,
+          "sn_mean": 3.712005039781992e-14
+        },
+        {
+          "mc_mean": 1.8422376556038637e-14,
+          "mc_rel_sigma": 0.12589635902817312,
+          "quantity": "physical_total",
+          "ratio": 2.570618353268574,
+          "sn_mean": 4.7356899285777626e-14
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 2.571 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 5
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Orbit-Lt",
+      "quantities": [
+        {
+          "mc_mean": 9.750193904844846e-16,
+          "mc_rel_sigma": 0.05401527295831861,
+          "quantity": "component:boron",
+          "ratio": 1.038077289232578,
+          "sn_mean": 1.0121454858233342e-15
+        },
+        {
+          "mc_mean": 7.331299652166398e-18,
+          "mc_rel_sigma": 0.058248763425195256,
+          "quantity": "component:nitrogen",
+          "ratio": 1.0406831009687407,
+          "sn_mean": 7.629559656147578e-18
+        },
+        {
+          "mc_mean": 5.1216796498650844e-17,
+          "mc_rel_sigma": 0.5952045812888984,
+          "quantity": "component:hydrogen",
+          "ratio": 1.0054103243986223,
+          "sn_mean": 5.149389598236677e-17
+        },
+        {
+          "mc_mean": 1.8829009810153907e-15,
+          "mc_rel_sigma": 0.5253954349480684,
+          "quantity": "component:photon",
+          "ratio": 2.041049535171322,
+          "sn_mean": 3.84309417207509e-15
+        },
+        {
+          "mc_mean": 2.933796628109712e-15,
+          "mc_rel_sigma": 0.3583443725192576,
+          "quantity": "physical_total",
+          "ratio": 1.675086495925021,
+          "sn_mean": 4.914363113536939e-15
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 1.675 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 116
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Orbit-Rt",
+      "quantities": [
+        {
+          "mc_mean": 5.731907972161665e-15,
+          "mc_rel_sigma": 0.02196764447680972,
+          "quantity": "component:boron",
+          "ratio": 0.972606040672271,
+          "sn_mean": 5.574888318301983e-15
+        },
+        {
+          "mc_mean": 6.09267938768839e-17,
+          "mc_rel_sigma": 0.024057821305340826,
+          "quantity": "component:nitrogen",
+          "ratio": 0.9775865588475909,
+          "sn_mean": 5.95612147677194e-17
+        },
+        {
+          "mc_mean": 9.94210366142385e-17,
+          "mc_rel_sigma": 0.38445895861968216,
+          "quantity": "component:hydrogen",
+          "ratio": 1.0490380125957397,
+          "sn_mean": 1.0429644666000903e-16
+        },
+        {
+          "mc_mean": 4.535106398626405e-15,
+          "mc_rel_sigma": 0.3613910427900063,
+          "quantity": "component:photon",
+          "ratio": 4.7360160746444455,
+          "sn_mean": 2.1478336804117535e-14
+        },
+        {
+          "mc_mean": 1.0420303437199284e-14,
+          "mc_rel_sigma": 0.16985557342361654,
+          "quantity": "physical_total",
+          "ratio": 2.611928044886426,
+          "sn_mean": 2.721708278384723e-14
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 2.612 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 116
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Parotid-Lt",
+      "quantities": [
+        {
+          "mc_mean": 2.3731214500822606e-16,
+          "mc_rel_sigma": 0.11539464690152325,
+          "quantity": "component:boron",
+          "ratio": 1.1495048941888806,
+          "sn_mean": 2.7279147213741717e-16
+        },
+        {
+          "mc_mean": 7.181329691674792e-18,
+          "mc_rel_sigma": 0.08739145801005771,
+          "quantity": "component:nitrogen",
+          "ratio": 1.131500859858301,
+          "sn_mean": 8.125680721055975e-18
+        },
+        {
+          "mc_mean": 1.9978514595237734e-17,
+          "mc_rel_sigma": 0.7767327671381291,
+          "quantity": "component:hydrogen",
+          "ratio": 1.2326561980719646,
+          "sn_mean": 2.4626639844090998e-17
+        },
+        {
+          "mc_mean": 1.2156671711322893e-15,
+          "mc_rel_sigma": 0.6165160275869644,
+          "quantity": "component:photon",
+          "ratio": 0.8899966803702097,
+          "sn_mean": 1.0819397467427811e-15
+        },
+        {
+          "mc_mean": 1.4827401419203904e-15,
+          "mc_rel_sigma": 0.5270770418759806,
+          "quantity": "physical_total",
+          "ratio": 0.9357563744435541,
+          "sn_mean": 1.3874835394453454e-15
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 0.936 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 520
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Parotid-Rt",
+      "quantities": [
+        {
+          "mc_mean": 8.211725896820583e-15,
+          "mc_rel_sigma": 0.01844044871579883,
+          "quantity": "component:boron",
+          "ratio": 0.9837749819042214,
+          "sn_mean": 8.078490495547096e-15
+        },
+        {
+          "mc_mean": 1.6536649009810349e-16,
+          "mc_rel_sigma": 0.016545884931098095,
+          "quantity": "component:nitrogen",
+          "ratio": 0.9793269645747255,
+          "sn_mean": 1.6194786279015208e-16
+        },
+        {
+          "mc_mean": 2.32842363708648e-16,
+          "mc_rel_sigma": 0.20166231997261466,
+          "quantity": "component:hydrogen",
+          "ratio": 1.065356180341392,
+          "sn_mean": 2.4806005122230637e-16
+        },
+        {
+          "mc_mean": 5.0006712423352545e-15,
+          "mc_rel_sigma": 0.346676488751083,
+          "quantity": "component:photon",
+          "ratio": 6.3025865516218875,
+          "sn_mean": 3.151716332102449e-14
+        },
+        {
+          "mc_mean": 1.3612641392941504e-14,
+          "mc_rel_sigma": 0.1397123982730075,
+          "quantity": "physical_total",
+          "ratio": 2.9388610612579584,
+          "sn_mean": 4.000566173058408e-14
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 2.939 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 579
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Spinal-Canal",
+      "quantities": [
+        {
+          "mc_mean": 1.4155397636750893e-15,
+          "mc_rel_sigma": 0.04365823791457549,
+          "quantity": "component:boron",
+          "ratio": 1.0589372882664438,
+          "sn_mean": 1.4989678387794217e-15
+        },
+        {
+          "mc_mean": 8.823277337011236e-17,
+          "mc_rel_sigma": 0.04653134056044353,
+          "quantity": "component:nitrogen",
+          "ratio": 1.0585246871756055,
+          "sn_mean": 9.339656883023429e-17
+        },
+        {
+          "mc_mean": 2.1082225440721814e-17,
+          "mc_rel_sigma": 0.7467549975613326,
+          "quantity": "component:hydrogen",
+          "ratio": 1.2301642402407702,
+          "sn_mean": 2.5934599841870185e-17
+        },
+        {
+          "mc_mean": 2.260072663864531e-15,
+          "mc_rel_sigma": 0.4669535759042387,
+          "quantity": "component:photon",
+          "ratio": 2.738937543900965,
+          "sn_mean": 6.19019787100283e-15
+        },
+        {
+          "mc_mean": 3.789166720600755e-15,
+          "mc_rel_sigma": 0.2964257176806051,
+          "quantity": "physical_total",
+          "ratio": 2.060742494121863,
+          "sn_mean": 7.80849687845436e-15
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 2.061 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 277
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Spinal-Cord",
+      "quantities": [
+        {
+          "mc_mean": 1.2937834169731696e-15,
+          "mc_rel_sigma": 0.04165880118518172,
+          "quantity": "component:boron",
+          "ratio": 1.07652289868843,
+          "sn_mean": 1.3927874743149782e-15
+        },
+        {
+          "mc_mean": 2.833673267063261e-17,
+          "mc_rel_sigma": 0.04455548420082924,
+          "quantity": "component:nitrogen",
+          "ratio": 1.0746881808956688,
+          "sn_mean": 3.0453151686329025e-17
+        },
+        {
+          "mc_mean": 1.9869610305816985e-17,
+          "mc_rel_sigma": 0.6755251070244545,
+          "quantity": "component:hydrogen",
+          "ratio": 1.2465508932561022,
+          "sn_mean": 2.476848047536682e-17
+        },
+        {
+          "mc_mean": 2.371234836043488e-15,
+          "mc_rel_sigma": 0.4739478950189691,
+          "quantity": "component:photon",
+          "ratio": 2.396858067684416,
+          "sn_mean": 5.683513347145167e-15
+        },
+        {
+          "mc_mean": 3.707303019212731e-15,
+          "mc_rel_sigma": 0.3188693173111968,
+          "quantity": "physical_total",
+          "ratio": 1.9236416383185924,
+          "sn_mean": 7.131522453621843e-15
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 1.924 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 73
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Submandibular-Lt",
+      "quantities": [
+        {
+          "mc_mean": 1.6779565136146543e-16,
+          "mc_rel_sigma": 0.13314008013137338,
+          "quantity": "component:boron",
+          "ratio": 1.0768396028061429,
+          "sn_mean": 1.8068900256467847e-16
+        },
+        {
+          "mc_mean": 3.785144029644311e-18,
+          "mc_rel_sigma": 0.12091363654194658,
+          "quantity": "component:nitrogen",
+          "ratio": 1.055109857287218,
+          "sn_mean": 3.9937427769295744e-18
+        },
+        {
+          "mc_mean": 7.794942172760017e-18,
+          "mc_rel_sigma": 0.9473174565199869,
+          "quantity": "component:hydrogen",
+          "ratio": 0.8373848929897781,
+          "sn_mean": 6.527366817198156e-18
+        },
+        {
+          "mc_mean": 9.911364614475606e-16,
+          "mc_rel_sigma": 0.6628039529342433,
+          "quantity": "component:photon",
+          "ratio": 0.7433328986607246,
+          "sn_mean": 7.367443388561488e-16
+        },
+        {
+          "mc_mean": 1.1708968100792659e-15,
+          "mc_rel_sigma": 0.5817564758839401,
+          "quantity": "physical_total",
+          "ratio": 0.792515995454916,
+          "sn_mean": 9.279544510149552e-16
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 0.793 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 115
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "Submandibular-Rt",
+      "quantities": [
+        {
+          "mc_mean": 4.940287102253033e-16,
+          "mc_rel_sigma": 0.07813470740607854,
+          "quantity": "component:boron",
+          "ratio": 1.1129871106761675,
+          "sn_mean": 5.498475867847339e-16
+        },
+        {
+          "mc_mean": 1.5489843939955315e-17,
+          "mc_rel_sigma": 0.07396725293970301,
+          "quantity": "component:nitrogen",
+          "ratio": 1.1026352791963285,
+          "sn_mean": 1.7079648397440186e-17
+        },
+        {
+          "mc_mean": 1.0516669899223725e-17,
+          "mc_rel_sigma": 0.9434548485248101,
+          "quantity": "component:hydrogen",
+          "ratio": 0.8570970755597515,
+          "sn_mean": 9.01380701525192e-18
+        },
+        {
+          "mc_mean": 1.5225218556480049e-15,
+          "mc_rel_sigma": 0.581428509308062,
+          "quantity": "component:photon",
+          "ratio": 1.5236018707890875,
+          "sn_mean": 2.319717147582573e-15
+        },
+        {
+          "mc_mean": 2.034632192922029e-15,
+          "mc_rel_sigma": 0.4541359967383149,
+          "quantity": "physical_total",
+          "ratio": 1.423185084681773,
+          "sn_mean": 2.8956581897799994e-15
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 1.423 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 95
+    },
+    {
+      "gamma_evaluated": 1,
+      "gamma_pass_rate": 0.0,
+      "name": "BODY",
+      "quantities": [
+        {
+          "mc_mean": 6.712515241760275e-15,
+          "mc_rel_sigma": 0.017885728814537597,
+          "quantity": "component:boron",
+          "ratio": 0.9757884003324789,
+          "sn_mean": 6.549994509964642e-15
+        },
+        {
+          "mc_mean": 3.9885593661975294e-16,
+          "mc_rel_sigma": 0.019280612152852702,
+          "quantity": "component:nitrogen",
+          "ratio": 1.1359291184139855,
+          "sn_mean": 4.530720724586604e-16
+        },
+        {
+          "mc_mean": 2.269909301609942e-16,
+          "mc_rel_sigma": 0.2427094665686587,
+          "quantity": "component:hydrogen",
+          "ratio": 0.9882419381859309,
+          "sn_mean": 2.2432195677292816e-16
+        },
+        {
+          "mc_mean": 4.0432739666570615e-15,
+          "mc_rel_sigma": 0.3487345249629164,
+          "quantity": "component:photon",
+          "ratio": 5.283058558142557,
+          "sn_mean": 2.136085313246259e-14
+        },
+        {
+          "mc_mean": 1.1382445292160038e-14,
+          "mc_rel_sigma": 0.13679045123526445,
+          "quantity": "physical_total",
+          "ratio": 2.511608089287225,
+          "sn_mean": 2.858824167165844e-14
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 2.512 is outside 1 +- 5.0%",
+        "gamma pass rate 0.0% is below 95.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 66852
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "SKIN",
+      "quantities": [
+        {
+          "mc_mean": 4.4758884152327705e-15,
+          "mc_rel_sigma": 0.022052986114942646,
+          "quantity": "component:boron",
+          "ratio": 1.0640295390134635,
+          "sn_mean": 4.7624774871358264e-15
+        },
+        {
+          "mc_mean": 1.504525924388761e-16,
+          "mc_rel_sigma": 0.023062265488696825,
+          "quantity": "component:nitrogen",
+          "ratio": 1.5580198397026435,
+          "sn_mean": 2.344081239544649e-16
+        },
+        {
+          "mc_mean": 2.988980550699986e-16,
+          "mc_rel_sigma": 0.17200040675760803,
+          "quantity": "component:hydrogen",
+          "ratio": 1.0565786413190716,
+          "sn_mean": 3.1580930091877217e-16
+        },
+        {
+          "mc_mean": 2.7246587526394487e-15,
+          "mc_rel_sigma": 0.45345768975611894,
+          "quantity": "component:photon",
+          "ratio": 4.811836373036415,
+          "sn_mean": 1.3110612090062527e-14
+        },
+        {
+          "mc_mean": 7.661863206660294e-15,
+          "mc_rel_sigma": 0.1825267762551298,
+          "quantity": "physical_total",
+          "ratio": 2.4045465841855203,
+          "sn_mean": 1.8423307002071725e-14
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 2.405 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 10415
+    },
+    {
+      "gamma_evaluated": 0,
+      "gamma_pass_rate": null,
+      "name": "RESEARCH_TARGET",
+      "quantities": [
+        {
+          "mc_mean": 9.864944676332038e-14,
+          "mc_rel_sigma": 0.010547785384773344,
+          "quantity": "component:boron",
+          "ratio": 0.941296124502494,
+          "sn_mean": 9.285834192262858e-14
+        },
+        {
+          "mc_mean": 9.935843057920787e-16,
+          "mc_rel_sigma": 0.010122152949557506,
+          "quantity": "component:nitrogen",
+          "ratio": 0.9427495571091137,
+          "sn_mean": 9.367011642360484e-16
+        },
+        {
+          "mc_mean": 7.586674388922066e-16,
+          "mc_rel_sigma": 0.17073482583814245,
+          "quantity": "component:hydrogen",
+          "ratio": 0.9316055130505344,
+          "sn_mean": 7.067787686439091e-16
+        },
+        {
+          "mc_mean": 1.3497192178426741e-14,
+          "mc_rel_sigma": 0.21384652488037145,
+          "quantity": "component:photon",
+          "ratio": 8.103686758318334,
+          "sn_mean": 1.0937701753079457e-13
+        },
+        {
+          "mc_mean": 1.1389994684672023e-13,
+          "mc_rel_sigma": 0.03471758671596628,
+          "quantity": "physical_total",
+          "ratio": 1.7899818659324878,
+          "sn_mean": 2.0387883938630344e-13
+        }
+      ],
+      "reasons": [
+        "total-dose ratio 1.790 is outside 1 +- 5.0%"
+      ],
+      "status": "unresolved",
+      "voxels": 959
+    }
+  ],
+  "thermal_scattering": {
+    "consistent": true,
+    "mc": [
+      "H1=c_H_in_H2O"
+    ],
+    "sn": [
+      "H1"
+    ]
+  },
+  "thresholds": {
+    "gamma_cutoff_percent": 10.0,
+    "gamma_dose_percent": 3.0,
+    "gamma_dta_mm": 3.0,
+    "gamma_pass_min": 0.95,
+    "ratio_tolerance": 0.05
+  },
+  "verdict": {
+    "label": "INCONCLUSIVE",
+    "text": "INCONCLUSIVE: no structure with resolved MC statistics disagrees, but Brain, Brainstem, Lacrimal-Lt, Lacrimal-Rt, Lens-Lt, Lens-Rt, Mandible, Optic-Nerve-Lt, Optic-Nerve-Rt, Orbit-Lt, Orbit-Rt, Parotid-Lt, Parotid-Rt, Spinal-Canal, Spinal-Cord, Submandibular-Lt, Submandibular-Rt, BODY, SKIN, RESEARCH_TARGET could not be tested at +-5.0% (2 sigma of the MC structure mean exceeds the tolerance); rerun with more particles"
+  },
+  "whole_volume": [
+    {
+      "gamma_evaluated": 11674,
+      "gamma_pass_rate": 0.925304094569128,
+      "max_normalized_difference": 0.09086331736650827,
+      "quantity": "component:boron",
+      "within_sigma_fraction": null
+    },
+    {
+      "gamma_evaluated": 16114,
+      "gamma_pass_rate": 0.6684870299118779,
+      "max_normalized_difference": 0.8611513463951989,
+      "quantity": "component:nitrogen",
+      "within_sigma_fraction": null
+    },
+    {
+      "gamma_evaluated": 21189,
+      "gamma_pass_rate": 0.4168200481381849,
+      "max_normalized_difference": 0.6626872816360014,
+      "quantity": "component:hydrogen",
+      "within_sigma_fraction": null
+    },
+    {
+      "gamma_evaluated": 168,
+      "gamma_pass_rate": 0.0,
+      "max_normalized_difference": 0.9994150377583106,
+      "quantity": "component:photon",
+      "within_sigma_fraction": null
+    },
+    {
+      "gamma_evaluated": 172,
+      "gamma_pass_rate": 0.0,
+      "max_normalized_difference": 0.9982941409226301,
+      "quantity": "physical_total",
+      "within_sigma_fraction": null
+    }
+  ]
+}

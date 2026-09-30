@@ -1,0 +1,67 @@
+{
+  "schema_version": "openbnct.dose-comparison/0.1.0",
+  "case_id": "openbnct.hn-head-ct.v1",
+  "inputs": [
+    {
+      "role": "reference",
+      "content": {
+        "id": "out/08-verify/mc-dose.json",
+        "sha256": "62855dd3b9645640a2ded8bcadb0ad342dc52287e7123f9439768858f4a65428"
+      },
+      "provenance_id": "openmc-input-manifest:7e26f39a5e1d1e146d2564c36075c7811eb2ef2417c65b0cd9c0f7c6bdc17a0f+statepoint:1a556d9bc241f2846a30407fe60426e2d3af7b76bb98c3fbab680e471b745264|posthoc-boron[blood 25 ug/g; ratios [RESEARCH_TARGET=3.5, SKIN=1.5]; default ratio 1; unit_dose=openmc-input-manifest:7e26f39a5e1d1e146d2564c36075c7811eb2ef2417c65b0cd9c0f7c6bdc17a0f+statepoint:1a556d9bc241f2846a30407fe60426e2d3af7b76bb98c3fbab680e471b745264; trace-10B: applied 10B does not perturb the flux]"
+    },
+    {
+      "role": "candidate",
+      "content": {
+        "id": "out/05-boron/dose.json",
+        "sha256": "ba5b07cea1c441caa6a3425fa82d59342a6aca3402c04868fda205bfe80063f8"
+      },
+      "provenance_id": "sn-s4-openbnct.hn-head-ct.v1|posthoc-boron[blood 25 ug/g; ratios [RESEARCH_TARGET=3.5, SKIN=1.5]; default ratio 1; unit_dose=sn-s4-openbnct.hn-head-ct.v1; trace-10B: applied 10B does not perturb the flux]"
+    }
+  ],
+  "sigma_level": 2.0,
+  "voxel_count": 206226,
+  "quantities": [
+    {
+      "quantity": "component:boron",
+      "unit": "gray_per_source_particle",
+      "max_abs_difference": 1.0883000391516088e-14,
+      "mean_abs_difference": 1.8683577608540266e-16,
+      "rms_difference": 5.198727476346067e-16,
+      "max_normalized_difference": 0.09086331736650827
+    },
+    {
+      "quantity": "component:nitrogen",
+      "unit": "gray_per_source_particle",
+      "max_abs_difference": 3.65860487615888e-14,
+      "mean_abs_difference": 3.4664496561432365e-16,
+      "rms_difference": 1.3322103186763683e-15,
+      "max_normalized_difference": 0.8611513463951989
+    },
+    {
+      "quantity": "component:hydrogen",
+      "unit": "gray_per_source_particle",
+      "max_abs_difference": 1.6334594989037884e-15,
+      "mean_abs_difference": 2.6391896827282013e-17,
+      "rms_difference": 9.054277138596668e-17,
+      "max_normalized_difference": 0.6626872816360014
+    },
+    {
+      "quantity": "component:photon",
+      "unit": "gray_per_source_particle",
+      "max_abs_difference": 2.5659212506163004e-12,
+      "mean_abs_difference": 7.593766704213411e-15,
+      "rms_difference": 2.6898992051269568e-14,
+      "max_normalized_difference": 0.9994150377583106
+    },
+    {
+      "quantity": "physical_total",
+      "unit": "gray_per_source_particle",
+      "max_abs_difference": 2.563811255890947e-12,
+      "mean_abs_difference": 9.005709432458654e-15,
+      "rms_difference": 2.7384953025438505e-14,
+      "max_normalized_difference": 0.9982941409226301
+    }
+  ],
+  "qualification": "research cross-code comparison; reports measured voxelwise agreement — no equivalence, clinical, or commissioning claim"
+}

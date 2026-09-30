@@ -1,0 +1,1342 @@
+{
+  "schema_version": "openbnct.project-run/0.1.0",
+  "project_id": "openbnct.hn-head-ct.v1",
+  "openbnct_version": "0.2.2",
+  "project_toml_sha256": "d52ada99ae2f16c58c9742a949bc97d3ba70c4ea2482655e91ad5bc368a31f19",
+  "steps": [
+    {
+      "id": "01-import",
+      "status": "complete",
+      "commands": [
+        "openbnct import ct-nifti --hu ../data/hu.nii.gz --labels ../data/labels.nii.gz --label-names ../data/label-names.json --spacing-mm 4 --case-id openbnct.hn-head-ct.v1 --base-material inputs/material-air-dry.json --case-output out/01-import/case.json --hu-output out/01-import/hu.nii --masks-dir out/01-import/masks"
+      ],
+      "options": {},
+      "inputs": [
+        {
+          "path": "../data/hu.nii.gz",
+          "sha256": "29d191c9ad04fd61468a4fa889c7b9c70f256eff2de44d946ee7b6435252924e"
+        },
+        {
+          "path": "../data/labels.nii.gz",
+          "sha256": "a29a6a99a52918b60cb9ffb98a38321b75a57972fa9b2faa74e4d5ae9958ae06"
+        },
+        {
+          "path": "../data/label-names.json",
+          "sha256": "752f276db7d1575004081574c52efbaebc3f7d316f234330270b49f8bf72b1a0"
+        },
+        {
+          "path": "inputs/material-air-dry.json",
+          "sha256": "d32ecf9ab0ce18161843be4c57393c1e9f2bb208514a8aaffa3738acb49567d2"
+        }
+      ],
+      "outputs": [
+        {
+          "path": "out/01-import/case.import-record.json",
+          "sha256": "9fc55b9eca615ab9008ea2e3bab992e91035ac7cc1d77969fe675ad3c5ae89c5"
+        },
+        {
+          "path": "out/01-import/case.json",
+          "sha256": "fcd8e27ec9aa7f3ef7eac9aafafee97bf6d5775ab8eb44e8e989e98d91c68bfd"
+        },
+        {
+          "path": "out/01-import/hu.nii",
+          "sha256": "a8a2ca1da9dc27555abfc57436743e64562575b65ebfa42050558d606a9bb846"
+        },
+        {
+          "path": "out/01-import/masks/001-Brain.json",
+          "sha256": "8f90376603bb8ba09db8a128fd928124604bef4208982b4bba2fdb2975fa73fe"
+        },
+        {
+          "path": "out/01-import/masks/002-Brainstem.json",
+          "sha256": "029c9fe645423573cfef6b36bc1a0e894744704ad70fcece5c1dd08a9a5c7bee"
+        },
+        {
+          "path": "out/01-import/masks/003-Cochlea-Lt.json",
+          "sha256": "0b88eb1d9934d2ca2321e430da42f1df8b5344084db94c5f96031a2ebd08ef0f"
+        },
+        {
+          "path": "out/01-import/masks/004-Cochlea-Rt.json",
+          "sha256": "817b02a83cf6b518d893a3ff847e025147ea5b1e1482ad6d236ff120921a503a"
+        },
+        {
+          "path": "out/01-import/masks/005-Lacrimal-Lt.json",
+          "sha256": "c67be0e13ef28d8fe62bb14faed0637d6f4f0ca7a4d79db4664f134c77e2723a"
+        },
+        {
+          "path": "out/01-import/masks/006-Lacrimal-Rt.json",
+          "sha256": "034795f7c63fc556ddf1063d7019d59357e8f9bbd02a5123a7fb6aafb3d7d62a"
+        },
+        {
+          "path": "out/01-import/masks/007-Lens-Lt.json",
+          "sha256": "11bebfffc70760840a6f512fe3c684b08943d1c6baafbcaf25c371640f963b5e"
+        },
+        {
+          "path": "out/01-import/masks/008-Lens-Rt.json",
+          "sha256": "8b1306542753c2bf4c269a7b8413d150b8171f3ad36848f6778ac6c68e8b9289"
+        },
+        {
+          "path": "out/01-import/masks/009-Mandible.json",
+          "sha256": "08f74c2454cff47f6fe22c6f29bbddce8ac29403db542d4bbf645d22a49b80ac"
+        },
+        {
+          "path": "out/01-import/masks/010-Optic-Nerve-Lt.json",
+          "sha256": "2afdd8d82c5e85af1ac211cfc47ce172808cbf2915b915bf9199cfeaf1a97beb"
+        },
+        {
+          "path": "out/01-import/masks/011-Optic-Nerve-Rt.json",
+          "sha256": "8c75bd66ff598b57337e0d49850951082477abcc6640cb0808f11976f4b4df7d"
+        },
+        {
+          "path": "out/01-import/masks/012-Orbit-Lt.json",
+          "sha256": "ff1127b43231628e1c2e81953cff209b589612a602d14639074ed4c930030414"
+        },
+        {
+          "path": "out/01-import/masks/013-Orbit-Rt.json",
+          "sha256": "cecb36abab8dbf8d028c6a35dcbf56a65bb05d712506fbe702ce4863522ecf35"
+        },
+        {
+          "path": "out/01-import/masks/014-Parotid-Lt.json",
+          "sha256": "3c38dda2e5f324ddb666e511f9c967a7ee6c20eb1548465d5976af939ca1e398"
+        },
+        {
+          "path": "out/01-import/masks/015-Parotid-Rt.json",
+          "sha256": "9966b354add7ff95fc3a4bc2b9dc06183f71ddb6b5f85ab0891bea400fe492f0"
+        },
+        {
+          "path": "out/01-import/masks/016-Spinal-Canal.json",
+          "sha256": "158b831aab871a4d2d1fe3f2aef5b66a80fceb762e013eeb0b392bd2b5244dc8"
+        },
+        {
+          "path": "out/01-import/masks/017-Spinal-Cord.json",
+          "sha256": "eea01a62f361885294162d9aec7eca9a8a931551c2a38f352fcebbc35f1f907b"
+        },
+        {
+          "path": "out/01-import/masks/018-Submandibular-Lt.json",
+          "sha256": "530be549347b1fcd07fa1bb886e2f2179ed5a84e7c6ed92f08a7fccbdccf7528"
+        },
+        {
+          "path": "out/01-import/masks/019-Submandibular-Rt.json",
+          "sha256": "f49c8938746bbd59b55bc27b242732c5306aa53fbdfd33accb00e02a8fbfba10"
+        },
+        {
+          "path": "out/01-import/masks/020-BODY.json",
+          "sha256": "cef0762eab5b5d8e8a66a6b56007cc40dba3fb80ff025a81acef70502b88b7ed"
+        },
+        {
+          "path": "out/01-import/masks/021-SKIN.json",
+          "sha256": "4b36cf2c7f86da34c2e73bf19b9e7ff4aea5c38532b1d9c61d0fae1c745d8280"
+        },
+        {
+          "path": "out/01-import/masks/022-RESEARCH_TARGET.json",
+          "sha256": "a8a00ce34899b830ffe231a13e3f83519df0572cb648438f2c0fc6c83ffce171"
+        },
+        {
+          "path": "out/01-import/masks/index.json",
+          "sha256": "983925ee98df75400396e6bb5b72cd78278ec0f51ae10547f0b6ded96b19ea11"
+        }
+      ],
+      "started_utc": "2026-09-30T16:54:09Z",
+      "seconds": 2.6825406320000003
+    },
+    {
+      "id": "02-calibrate",
+      "status": "complete",
+      "commands": [
+        "openbnct dicom calibrate --calibration inputs/hu-calibration-generic-head-ct.json --hu-nifti out/01-import/hu.nii --case out/01-import/case.json --output out/02-calibrate/assignment.json --report out/02-calibrate/report.json"
+      ],
+      "options": {},
+      "inputs": [
+        {
+          "path": "inputs/hu-calibration-generic-head-ct.json",
+          "sha256": "00949f2280409e7387670bfe474265d1481d160075284e31ba3e302c69505a1d"
+        },
+        {
+          "path": "out/01-import/hu.nii",
+          "sha256": "a8a2ca1da9dc27555abfc57436743e64562575b65ebfa42050558d606a9bb846"
+        },
+        {
+          "path": "out/01-import/case.json",
+          "sha256": "fcd8e27ec9aa7f3ef7eac9aafafee97bf6d5775ab8eb44e8e989e98d91c68bfd"
+        }
+      ],
+      "outputs": [
+        {
+          "path": "out/02-calibrate/assignment.json",
+          "sha256": "300f4b36adf668bdcd1da19d8e4e1d8cd64227ae38d84d6ce30ab315fb984e13"
+        },
+        {
+          "path": "out/02-calibrate/report.json",
+          "sha256": "c648f0879df2239def3c2b107c028b6d9ece7bf5f1b5d0f5ffd277908a528207"
+        }
+      ],
+      "started_utc": "2026-09-30T16:54:12Z",
+      "seconds": 0.360349287
+    },
+    {
+      "id": "03-beam",
+      "status": "complete",
+      "commands": [
+        "openbnct beam bind --beam inputs/beam-fir1-k63-ineel.json --case out/01-import/case.json --output out/03-beam/case.json --aim-mask out/01-import/masks/022-RESEARCH_TARGET.json --approach=+x"
+      ],
+      "options": {},
+      "inputs": [
+        {
+          "path": "inputs/beam-fir1-k63-ineel.json",
+          "sha256": "20be38efa8275e06c2e20bb0c75ba587f7d2b74bb760702ea97d6858e3f277e3"
+        },
+        {
+          "path": "out/01-import/case.json",
+          "sha256": "fcd8e27ec9aa7f3ef7eac9aafafee97bf6d5775ab8eb44e8e989e98d91c68bfd"
+        },
+        {
+          "path": "out/01-import/masks/022-RESEARCH_TARGET.json",
+          "sha256": "a8a00ce34899b830ffe231a13e3f83519df0572cb648438f2c0fc6c83ffce171"
+        }
+      ],
+      "outputs": [
+        {
+          "path": "out/03-beam/case.json",
+          "sha256": "5f3e3f49a67ccf4cb2192c6ef26084aeca67daec3b1c80b10d6eaf78fa623aa3"
+        }
+      ],
+      "started_utc": "2026-09-30T16:54:12Z",
+      "seconds": 0.016811392
+    },
+    {
+      "id": "04-transport",
+      "status": "complete",
+      "commands": [
+        "openbnct sn solve --case out/03-beam/case.json --data inputs/multigroup-data-28g-tsl.json --assignment out/02-calibrate/assignment.json --order 4 --max-outer 128 --anderson 3 --source-weighting uniform_in_bin --dose out/04-transport/dose.json --boron-unit-output out/04-transport/boron-unit.json --output out/04-transport/flux.json"
+      ],
+      "options": {
+        "photon_transport": false,
+        "source_weighting": "uniform_in_bin"
+      },
+      "inputs": [
+        {
+          "path": "out/03-beam/case.json",
+          "sha256": "5f3e3f49a67ccf4cb2192c6ef26084aeca67daec3b1c80b10d6eaf78fa623aa3"
+        },
+        {
+          "path": "inputs/multigroup-data-28g-tsl.json",
+          "sha256": "c664332337cdacfe28f4141e916fcc400c61155b027adccea54053c8b709e490"
+        },
+        {
+          "path": "out/02-calibrate/assignment.json",
+          "sha256": "300f4b36adf668bdcd1da19d8e4e1d8cd64227ae38d84d6ce30ab315fb984e13"
+        }
+      ],
+      "outputs": [
+        {
+          "path": "out/04-transport/boron-unit.json",
+          "sha256": "c705bade7e5f4c0de4a1dfc01b08ab351848ac27bfc4107f9217bb231c9fae77"
+        },
+        {
+          "path": "out/04-transport/dose.json",
+          "sha256": "bdd3932521184f52a03f4cbd1edeec5c9751bd1cb188baa5e4b39c6295f68b3b"
+        },
+        {
+          "path": "out/04-transport/flux.flux.f64le",
+          "sha256": "32555ee25e24fe9304fc9f4c428e72fc5fa8d4d1dcb19575ab72f6c321520e49"
+        },
+        {
+          "path": "out/04-transport/flux.json",
+          "sha256": "32f47926d15cae57ff2239c358ecc036cafdc483c2e38ef15d358a0a52984f22"
+        }
+      ],
+      "started_utc": "2026-09-30T18:19:25Z",
+      "seconds": 1538.542635242
+    },
+    {
+      "id": "05-boron",
+      "status": "complete",
+      "commands": [
+        "openbnct boron dose --physical-bundle out/04-transport/dose.json --unit-dose out/04-transport/boron-unit.json --blood-ug-g 25 --default-ratio 1 --ratio RESEARCH_TARGET=3.5 --mask RESEARCH_TARGET=out/01-import/masks/022-RESEARCH_TARGET.json --ratio SKIN=1.5 --mask SKIN=out/01-import/masks/021-SKIN.json --output out/05-boron/dose.json"
+      ],
+      "options": {},
+      "inputs": [
+        {
+          "path": "out/04-transport/dose.json",
+          "sha256": "bdd3932521184f52a03f4cbd1edeec5c9751bd1cb188baa5e4b39c6295f68b3b"
+        },
+        {
+          "path": "out/04-transport/boron-unit.json",
+          "sha256": "c705bade7e5f4c0de4a1dfc01b08ab351848ac27bfc4107f9217bb231c9fae77"
+        },
+        {
+          "path": "out/01-import/masks/022-RESEARCH_TARGET.json",
+          "sha256": "a8a00ce34899b830ffe231a13e3f83519df0572cb648438f2c0fc6c83ffce171"
+        },
+        {
+          "path": "out/01-import/masks/021-SKIN.json",
+          "sha256": "4b36cf2c7f86da34c2e73bf19b9e7ff4aea5c38532b1d9c61d0fae1c745d8280"
+        }
+      ],
+      "outputs": [
+        {
+          "path": "out/05-boron/dose.json",
+          "sha256": "ba5b07cea1c441caa6a3425fa82d59342a6aca3402c04868fda205bfe80063f8"
+        }
+      ],
+      "started_utc": "2026-09-30T18:45:04Z",
+      "seconds": 0.247831285
+    },
+    {
+      "id": "06-metrics",
+      "status": "complete",
+      "commands": [
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/001-Brain.json --dx 95,50,2 --output out/06-metrics/Brain.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/001-Brain.json --dx 95,50,2 --output out/06-metrics/Brain.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/001-Brain.json --dx 95,50,2 --output out/06-metrics/Brain.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/001-Brain.json --dx 95,50,2 --output out/06-metrics/Brain.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/001-Brain.json --dx 95,50,2 --output out/06-metrics/Brain.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/001-Brain.json --bins 100 --output out/06-metrics/Brain.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/002-Brainstem.json --dx 95,50,2 --output out/06-metrics/Brainstem.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/002-Brainstem.json --dx 95,50,2 --output out/06-metrics/Brainstem.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/002-Brainstem.json --dx 95,50,2 --output out/06-metrics/Brainstem.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/002-Brainstem.json --dx 95,50,2 --output out/06-metrics/Brainstem.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/002-Brainstem.json --dx 95,50,2 --output out/06-metrics/Brainstem.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/002-Brainstem.json --bins 100 --output out/06-metrics/Brainstem.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/005-Lacrimal-Lt.json --dx 95,50,2 --output out/06-metrics/Lacrimal-Lt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/005-Lacrimal-Lt.json --dx 95,50,2 --output out/06-metrics/Lacrimal-Lt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/005-Lacrimal-Lt.json --dx 95,50,2 --output out/06-metrics/Lacrimal-Lt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/005-Lacrimal-Lt.json --dx 95,50,2 --output out/06-metrics/Lacrimal-Lt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/005-Lacrimal-Lt.json --dx 95,50,2 --output out/06-metrics/Lacrimal-Lt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/005-Lacrimal-Lt.json --bins 100 --output out/06-metrics/Lacrimal-Lt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/006-Lacrimal-Rt.json --dx 95,50,2 --output out/06-metrics/Lacrimal-Rt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/006-Lacrimal-Rt.json --dx 95,50,2 --output out/06-metrics/Lacrimal-Rt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/006-Lacrimal-Rt.json --dx 95,50,2 --output out/06-metrics/Lacrimal-Rt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/006-Lacrimal-Rt.json --dx 95,50,2 --output out/06-metrics/Lacrimal-Rt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/006-Lacrimal-Rt.json --dx 95,50,2 --output out/06-metrics/Lacrimal-Rt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/006-Lacrimal-Rt.json --bins 100 --output out/06-metrics/Lacrimal-Rt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/007-Lens-Lt.json --dx 95,50,2 --output out/06-metrics/Lens-Lt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/007-Lens-Lt.json --dx 95,50,2 --output out/06-metrics/Lens-Lt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/007-Lens-Lt.json --dx 95,50,2 --output out/06-metrics/Lens-Lt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/007-Lens-Lt.json --dx 95,50,2 --output out/06-metrics/Lens-Lt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/007-Lens-Lt.json --dx 95,50,2 --output out/06-metrics/Lens-Lt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/007-Lens-Lt.json --bins 100 --output out/06-metrics/Lens-Lt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/008-Lens-Rt.json --dx 95,50,2 --output out/06-metrics/Lens-Rt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/008-Lens-Rt.json --dx 95,50,2 --output out/06-metrics/Lens-Rt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/008-Lens-Rt.json --dx 95,50,2 --output out/06-metrics/Lens-Rt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/008-Lens-Rt.json --dx 95,50,2 --output out/06-metrics/Lens-Rt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/008-Lens-Rt.json --dx 95,50,2 --output out/06-metrics/Lens-Rt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/008-Lens-Rt.json --bins 100 --output out/06-metrics/Lens-Rt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/009-Mandible.json --dx 95,50,2 --output out/06-metrics/Mandible.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/009-Mandible.json --dx 95,50,2 --output out/06-metrics/Mandible.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/009-Mandible.json --dx 95,50,2 --output out/06-metrics/Mandible.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/009-Mandible.json --dx 95,50,2 --output out/06-metrics/Mandible.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/009-Mandible.json --dx 95,50,2 --output out/06-metrics/Mandible.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/009-Mandible.json --bins 100 --output out/06-metrics/Mandible.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/010-Optic-Nerve-Lt.json --dx 95,50,2 --output out/06-metrics/Optic-Nerve-Lt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/010-Optic-Nerve-Lt.json --dx 95,50,2 --output out/06-metrics/Optic-Nerve-Lt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/010-Optic-Nerve-Lt.json --dx 95,50,2 --output out/06-metrics/Optic-Nerve-Lt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/010-Optic-Nerve-Lt.json --dx 95,50,2 --output out/06-metrics/Optic-Nerve-Lt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/010-Optic-Nerve-Lt.json --dx 95,50,2 --output out/06-metrics/Optic-Nerve-Lt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/010-Optic-Nerve-Lt.json --bins 100 --output out/06-metrics/Optic-Nerve-Lt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/011-Optic-Nerve-Rt.json --dx 95,50,2 --output out/06-metrics/Optic-Nerve-Rt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/011-Optic-Nerve-Rt.json --dx 95,50,2 --output out/06-metrics/Optic-Nerve-Rt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/011-Optic-Nerve-Rt.json --dx 95,50,2 --output out/06-metrics/Optic-Nerve-Rt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/011-Optic-Nerve-Rt.json --dx 95,50,2 --output out/06-metrics/Optic-Nerve-Rt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/011-Optic-Nerve-Rt.json --dx 95,50,2 --output out/06-metrics/Optic-Nerve-Rt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/011-Optic-Nerve-Rt.json --bins 100 --output out/06-metrics/Optic-Nerve-Rt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/012-Orbit-Lt.json --dx 95,50,2 --output out/06-metrics/Orbit-Lt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/012-Orbit-Lt.json --dx 95,50,2 --output out/06-metrics/Orbit-Lt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/012-Orbit-Lt.json --dx 95,50,2 --output out/06-metrics/Orbit-Lt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/012-Orbit-Lt.json --dx 95,50,2 --output out/06-metrics/Orbit-Lt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/012-Orbit-Lt.json --dx 95,50,2 --output out/06-metrics/Orbit-Lt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/012-Orbit-Lt.json --bins 100 --output out/06-metrics/Orbit-Lt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/013-Orbit-Rt.json --dx 95,50,2 --output out/06-metrics/Orbit-Rt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/013-Orbit-Rt.json --dx 95,50,2 --output out/06-metrics/Orbit-Rt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/013-Orbit-Rt.json --dx 95,50,2 --output out/06-metrics/Orbit-Rt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/013-Orbit-Rt.json --dx 95,50,2 --output out/06-metrics/Orbit-Rt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/013-Orbit-Rt.json --dx 95,50,2 --output out/06-metrics/Orbit-Rt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/013-Orbit-Rt.json --bins 100 --output out/06-metrics/Orbit-Rt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/014-Parotid-Lt.json --dx 95,50,2 --output out/06-metrics/Parotid-Lt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/014-Parotid-Lt.json --dx 95,50,2 --output out/06-metrics/Parotid-Lt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/014-Parotid-Lt.json --dx 95,50,2 --output out/06-metrics/Parotid-Lt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/014-Parotid-Lt.json --dx 95,50,2 --output out/06-metrics/Parotid-Lt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/014-Parotid-Lt.json --dx 95,50,2 --output out/06-metrics/Parotid-Lt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/014-Parotid-Lt.json --bins 100 --output out/06-metrics/Parotid-Lt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/015-Parotid-Rt.json --dx 95,50,2 --output out/06-metrics/Parotid-Rt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/015-Parotid-Rt.json --dx 95,50,2 --output out/06-metrics/Parotid-Rt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/015-Parotid-Rt.json --dx 95,50,2 --output out/06-metrics/Parotid-Rt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/015-Parotid-Rt.json --dx 95,50,2 --output out/06-metrics/Parotid-Rt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/015-Parotid-Rt.json --dx 95,50,2 --output out/06-metrics/Parotid-Rt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/015-Parotid-Rt.json --bins 100 --output out/06-metrics/Parotid-Rt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/016-Spinal-Canal.json --dx 95,50,2 --output out/06-metrics/Spinal-Canal.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/016-Spinal-Canal.json --dx 95,50,2 --output out/06-metrics/Spinal-Canal.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/016-Spinal-Canal.json --dx 95,50,2 --output out/06-metrics/Spinal-Canal.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/016-Spinal-Canal.json --dx 95,50,2 --output out/06-metrics/Spinal-Canal.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/016-Spinal-Canal.json --dx 95,50,2 --output out/06-metrics/Spinal-Canal.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/016-Spinal-Canal.json --bins 100 --output out/06-metrics/Spinal-Canal.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/017-Spinal-Cord.json --dx 95,50,2 --output out/06-metrics/Spinal-Cord.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/017-Spinal-Cord.json --dx 95,50,2 --output out/06-metrics/Spinal-Cord.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/017-Spinal-Cord.json --dx 95,50,2 --output out/06-metrics/Spinal-Cord.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/017-Spinal-Cord.json --dx 95,50,2 --output out/06-metrics/Spinal-Cord.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/017-Spinal-Cord.json --dx 95,50,2 --output out/06-metrics/Spinal-Cord.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/017-Spinal-Cord.json --bins 100 --output out/06-metrics/Spinal-Cord.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/018-Submandibular-Lt.json --dx 95,50,2 --output out/06-metrics/Submandibular-Lt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/018-Submandibular-Lt.json --dx 95,50,2 --output out/06-metrics/Submandibular-Lt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/018-Submandibular-Lt.json --dx 95,50,2 --output out/06-metrics/Submandibular-Lt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/018-Submandibular-Lt.json --dx 95,50,2 --output out/06-metrics/Submandibular-Lt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/018-Submandibular-Lt.json --dx 95,50,2 --output out/06-metrics/Submandibular-Lt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/018-Submandibular-Lt.json --bins 100 --output out/06-metrics/Submandibular-Lt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/019-Submandibular-Rt.json --dx 95,50,2 --output out/06-metrics/Submandibular-Rt.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/019-Submandibular-Rt.json --dx 95,50,2 --output out/06-metrics/Submandibular-Rt.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/019-Submandibular-Rt.json --dx 95,50,2 --output out/06-metrics/Submandibular-Rt.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/019-Submandibular-Rt.json --dx 95,50,2 --output out/06-metrics/Submandibular-Rt.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/019-Submandibular-Rt.json --dx 95,50,2 --output out/06-metrics/Submandibular-Rt.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/019-Submandibular-Rt.json --bins 100 --output out/06-metrics/Submandibular-Rt.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/020-BODY.json --dx 95,50,2 --output out/06-metrics/BODY.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/020-BODY.json --dx 95,50,2 --output out/06-metrics/BODY.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/020-BODY.json --dx 95,50,2 --output out/06-metrics/BODY.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/020-BODY.json --dx 95,50,2 --output out/06-metrics/BODY.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/020-BODY.json --dx 95,50,2 --output out/06-metrics/BODY.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/020-BODY.json --bins 100 --output out/06-metrics/BODY.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/021-SKIN.json --dx 95,50,2 --output out/06-metrics/SKIN.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/021-SKIN.json --dx 95,50,2 --output out/06-metrics/SKIN.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/021-SKIN.json --dx 95,50,2 --output out/06-metrics/SKIN.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/021-SKIN.json --dx 95,50,2 --output out/06-metrics/SKIN.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/021-SKIN.json --dx 95,50,2 --output out/06-metrics/SKIN.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/021-SKIN.json --bins 100 --output out/06-metrics/SKIN.physical_total.dvh.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:boron --mask out/01-import/masks/022-RESEARCH_TARGET.json --dx 95,50,2 --output out/06-metrics/RESEARCH_TARGET.component-boron.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:nitrogen --mask out/01-import/masks/022-RESEARCH_TARGET.json --dx 95,50,2 --output out/06-metrics/RESEARCH_TARGET.component-nitrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:hydrogen --mask out/01-import/masks/022-RESEARCH_TARGET.json --dx 95,50,2 --output out/06-metrics/RESEARCH_TARGET.component-hydrogen.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity component:photon --mask out/01-import/masks/022-RESEARCH_TARGET.json --dx 95,50,2 --output out/06-metrics/RESEARCH_TARGET.component-photon.metrics.json",
+        "openbnct metrics --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/022-RESEARCH_TARGET.json --dx 95,50,2 --output out/06-metrics/RESEARCH_TARGET.physical_total.metrics.json",
+        "openbnct dvh --dose out/05-boron/dose.json --quantity physical_total --mask out/01-import/masks/022-RESEARCH_TARGET.json --bins 100 --output out/06-metrics/RESEARCH_TARGET.physical_total.dvh.json"
+      ],
+      "options": {},
+      "inputs": [
+        {
+          "path": "out/05-boron/dose.json",
+          "sha256": "ba5b07cea1c441caa6a3425fa82d59342a6aca3402c04868fda205bfe80063f8"
+        },
+        {
+          "path": "out/01-import/masks/001-Brain.json",
+          "sha256": "8f90376603bb8ba09db8a128fd928124604bef4208982b4bba2fdb2975fa73fe"
+        },
+        {
+          "path": "out/01-import/masks/002-Brainstem.json",
+          "sha256": "029c9fe645423573cfef6b36bc1a0e894744704ad70fcece5c1dd08a9a5c7bee"
+        },
+        {
+          "path": "out/01-import/masks/005-Lacrimal-Lt.json",
+          "sha256": "c67be0e13ef28d8fe62bb14faed0637d6f4f0ca7a4d79db4664f134c77e2723a"
+        },
+        {
+          "path": "out/01-import/masks/006-Lacrimal-Rt.json",
+          "sha256": "034795f7c63fc556ddf1063d7019d59357e8f9bbd02a5123a7fb6aafb3d7d62a"
+        },
+        {
+          "path": "out/01-import/masks/007-Lens-Lt.json",
+          "sha256": "11bebfffc70760840a6f512fe3c684b08943d1c6baafbcaf25c371640f963b5e"
+        },
+        {
+          "path": "out/01-import/masks/008-Lens-Rt.json",
+          "sha256": "8b1306542753c2bf4c269a7b8413d150b8171f3ad36848f6778ac6c68e8b9289"
+        },
+        {
+          "path": "out/01-import/masks/009-Mandible.json",
+          "sha256": "08f74c2454cff47f6fe22c6f29bbddce8ac29403db542d4bbf645d22a49b80ac"
+        },
+        {
+          "path": "out/01-import/masks/010-Optic-Nerve-Lt.json",
+          "sha256": "2afdd8d82c5e85af1ac211cfc47ce172808cbf2915b915bf9199cfeaf1a97beb"
+        },
+        {
+          "path": "out/01-import/masks/011-Optic-Nerve-Rt.json",
+          "sha256": "8c75bd66ff598b57337e0d49850951082477abcc6640cb0808f11976f4b4df7d"
+        },
+        {
+          "path": "out/01-import/masks/012-Orbit-Lt.json",
+          "sha256": "ff1127b43231628e1c2e81953cff209b589612a602d14639074ed4c930030414"
+        },
+        {
+          "path": "out/01-import/masks/013-Orbit-Rt.json",
+          "sha256": "cecb36abab8dbf8d028c6a35dcbf56a65bb05d712506fbe702ce4863522ecf35"
+        },
+        {
+          "path": "out/01-import/masks/014-Parotid-Lt.json",
+          "sha256": "3c38dda2e5f324ddb666e511f9c967a7ee6c20eb1548465d5976af939ca1e398"
+        },
+        {
+          "path": "out/01-import/masks/015-Parotid-Rt.json",
+          "sha256": "9966b354add7ff95fc3a4bc2b9dc06183f71ddb6b5f85ab0891bea400fe492f0"
+        },
+        {
+          "path": "out/01-import/masks/016-Spinal-Canal.json",
+          "sha256": "158b831aab871a4d2d1fe3f2aef5b66a80fceb762e013eeb0b392bd2b5244dc8"
+        },
+        {
+          "path": "out/01-import/masks/017-Spinal-Cord.json",
+          "sha256": "eea01a62f361885294162d9aec7eca9a8a931551c2a38f352fcebbc35f1f907b"
+        },
+        {
+          "path": "out/01-import/masks/018-Submandibular-Lt.json",
+          "sha256": "530be549347b1fcd07fa1bb886e2f2179ed5a84e7c6ed92f08a7fccbdccf7528"
+        },
+        {
+          "path": "out/01-import/masks/019-Submandibular-Rt.json",
+          "sha256": "f49c8938746bbd59b55bc27b242732c5306aa53fbdfd33accb00e02a8fbfba10"
+        },
+        {
+          "path": "out/01-import/masks/020-BODY.json",
+          "sha256": "cef0762eab5b5d8e8a66a6b56007cc40dba3fb80ff025a81acef70502b88b7ed"
+        },
+        {
+          "path": "out/01-import/masks/021-SKIN.json",
+          "sha256": "4b36cf2c7f86da34c2e73bf19b9e7ff4aea5c38532b1d9c61d0fae1c745d8280"
+        },
+        {
+          "path": "out/01-import/masks/022-RESEARCH_TARGET.json",
+          "sha256": "a8a00ce34899b830ffe231a13e3f83519df0572cb648438f2c0fc6c83ffce171"
+        }
+      ],
+      "outputs": [
+        {
+          "path": "out/06-metrics/BODY.component-boron.metrics.json",
+          "sha256": "8bb5adbf1a578ff83e5d4e2d1ffb8c64e0c6303c9734c6e53f32edf1fdb9314b"
+        },
+        {
+          "path": "out/06-metrics/BODY.component-hydrogen.metrics.json",
+          "sha256": "9d8d26b1938056f578990d93bcc9d9dcd1b2aac84a62ea2f6afc93ca7a48e386"
+        },
+        {
+          "path": "out/06-metrics/BODY.component-nitrogen.metrics.json",
+          "sha256": "8bfcfa512d8b51d163b98dbfb262f06304587fe3643890f6ae38c1e5a74daeb4"
+        },
+        {
+          "path": "out/06-metrics/BODY.component-photon.metrics.json",
+          "sha256": "ae98a8118f68dbbc79ddd44e178fd4aefbfcc218c3e80bbf06e7526c6dabd9dc"
+        },
+        {
+          "path": "out/06-metrics/BODY.physical_total.dvh.json",
+          "sha256": "0995aae17537c2520413263fffbe666ce00e18ad5e9672f2bd22d71dc7516657"
+        },
+        {
+          "path": "out/06-metrics/BODY.physical_total.metrics.json",
+          "sha256": "39d98c960674ff9c25a44277d9094ccd6b5fdcda5622fe87e9e2c54a8fd100dd"
+        },
+        {
+          "path": "out/06-metrics/Brain.component-boron.metrics.json",
+          "sha256": "ad165e28c47c8373fc86c69c13d1304f430cc7536e297faeb3c9956a7a71fefb"
+        },
+        {
+          "path": "out/06-metrics/Brain.component-hydrogen.metrics.json",
+          "sha256": "e638fd518805bacffda77f89e71dac914186071d5f4d8e55d54d81eba4ebc196"
+        },
+        {
+          "path": "out/06-metrics/Brain.component-nitrogen.metrics.json",
+          "sha256": "56ea31dd1a9d7c3ef779e3f117ac7fef009dd5eaf7fe32f82d507b9abfa43b26"
+        },
+        {
+          "path": "out/06-metrics/Brain.component-photon.metrics.json",
+          "sha256": "8c2ce2d11437849be6f161b135623ea42fc9959288a1f3e3b631e13406002636"
+        },
+        {
+          "path": "out/06-metrics/Brain.physical_total.dvh.json",
+          "sha256": "f7d7cbbec04048e0f3e990bff2f814a1679c4cace62a0ae08140f31c9302c400"
+        },
+        {
+          "path": "out/06-metrics/Brain.physical_total.metrics.json",
+          "sha256": "c48e22d3ab4cfbc0c21bb98fccd44bf1c0ae2599b1c5eefdf2e0b90dea4d8ae1"
+        },
+        {
+          "path": "out/06-metrics/Brainstem.component-boron.metrics.json",
+          "sha256": "d3609897646835ea64d6a35a85edbd8af87c93cc7dc310dc2aef4c5e92195801"
+        },
+        {
+          "path": "out/06-metrics/Brainstem.component-hydrogen.metrics.json",
+          "sha256": "7820e9aabe7bcd7830ae291a6cc7e88f046ec671aed437de71038301c39e9763"
+        },
+        {
+          "path": "out/06-metrics/Brainstem.component-nitrogen.metrics.json",
+          "sha256": "aebf0a95d2543c40bf82bbb17cdfabe8c64df7a323b2d9af25d63b9d193ebb86"
+        },
+        {
+          "path": "out/06-metrics/Brainstem.component-photon.metrics.json",
+          "sha256": "0815885ba4c5c4b888b84f7dd8ec87c01a544f4a50cde8971beb56b30ace33d1"
+        },
+        {
+          "path": "out/06-metrics/Brainstem.physical_total.dvh.json",
+          "sha256": "ab5f1371e17e0d6f922fcd45cc7c65f52aef692532d8f8588f39564674d5e100"
+        },
+        {
+          "path": "out/06-metrics/Brainstem.physical_total.metrics.json",
+          "sha256": "d70372e4baa5a52cba9e16d18edc8683171d239c285e5e46fed1a254a4b5b8e6"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Lt.component-boron.metrics.json",
+          "sha256": "086664976b21033512e89721d4d5f9d59a4749a036724d1f44d05b4220410b07"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Lt.component-hydrogen.metrics.json",
+          "sha256": "6ff574ee3f1d257be220b93b444228f0d43edec1425a6cb295d289a8063870e0"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Lt.component-nitrogen.metrics.json",
+          "sha256": "91f65a97ff2fd2d5e0710d72689a4e746d28fdb1e9704f98841bae80d7c6dadb"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Lt.component-photon.metrics.json",
+          "sha256": "192be681ba1aec5a77442296ecd7c621117856690e2fc69c34ad1c07b85404dd"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Lt.physical_total.dvh.json",
+          "sha256": "aa585722c4273c66635673c35b6f99746ca89d3e59eb845343dbd27021c7a99d"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Lt.physical_total.metrics.json",
+          "sha256": "375d8011a6059886c5d4908a30a3ac67cfd352c7a9e9a1022b7247f08644f906"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Rt.component-boron.metrics.json",
+          "sha256": "023814dc99d6b71f5a66f3a1d3623c7adcb1078de4c2aa16413e9cd9342030d1"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Rt.component-hydrogen.metrics.json",
+          "sha256": "d9806f203d824701c0e55316b17181bd6b97f96b62ac901222e0db4e6f1fbc1e"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Rt.component-nitrogen.metrics.json",
+          "sha256": "bde42948944be159c475f55ef088a2b2a736d95ca88a7945221558901bdb1be1"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Rt.component-photon.metrics.json",
+          "sha256": "9182ab5990fb8f7d6fb71d49f74347644d84c510b45e28cd42e27d260247a1b9"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Rt.physical_total.dvh.json",
+          "sha256": "23ae65d4446046fd78fed39b0e66c286366c2369439de615db26238d822c0f3e"
+        },
+        {
+          "path": "out/06-metrics/Lacrimal-Rt.physical_total.metrics.json",
+          "sha256": "c0cec0b8f4e5df4ee92e69cf440ec7fa278d9547cb373d89860ab1b3c56b81f2"
+        },
+        {
+          "path": "out/06-metrics/Lens-Lt.component-boron.metrics.json",
+          "sha256": "6a6a09a66c32697e6ae3c8b98b95c4f5af34f4759cf6c1ba679c5e32eb2c3fb0"
+        },
+        {
+          "path": "out/06-metrics/Lens-Lt.component-hydrogen.metrics.json",
+          "sha256": "8f0190ac499230ba81db808dbc4ee2f2aa30352d0799946598581121ac15115c"
+        },
+        {
+          "path": "out/06-metrics/Lens-Lt.component-nitrogen.metrics.json",
+          "sha256": "754e3446844fe62f4cbdf855ed14e1b463718555df1b9a44934a3e2ca198df0b"
+        },
+        {
+          "path": "out/06-metrics/Lens-Lt.component-photon.metrics.json",
+          "sha256": "17d9452dca0b3d3786549b35e7fdef90afcd79b54a15df95288af92dc8161e7e"
+        },
+        {
+          "path": "out/06-metrics/Lens-Lt.physical_total.dvh.json",
+          "sha256": "2133aaf489afdd6e27be655a71f0229b069d8b0c5f373a36dd1ce4fc5a598d6b"
+        },
+        {
+          "path": "out/06-metrics/Lens-Lt.physical_total.metrics.json",
+          "sha256": "02a3ef3e0236a4680f6dfb2c276cbc123dd3ab3801090c20e8c41ba5b6a9bd25"
+        },
+        {
+          "path": "out/06-metrics/Lens-Rt.component-boron.metrics.json",
+          "sha256": "956681ca83fb165c8bda8ec82f6655f6aa53edf08cb9b45a8d2cb27330a0c669"
+        },
+        {
+          "path": "out/06-metrics/Lens-Rt.component-hydrogen.metrics.json",
+          "sha256": "637c8c7f4781c3b23f475a5eefaef6a3b8bbdac18cb2b373f4f920e19c14e137"
+        },
+        {
+          "path": "out/06-metrics/Lens-Rt.component-nitrogen.metrics.json",
+          "sha256": "159f25f067050ff42db2a38cbfbdc321460be641b511510923ff59b36831f4c0"
+        },
+        {
+          "path": "out/06-metrics/Lens-Rt.component-photon.metrics.json",
+          "sha256": "a2f6c1755a0bedcf3c5464c8b6d599792253ef1848f034ee6e5a07276764ff98"
+        },
+        {
+          "path": "out/06-metrics/Lens-Rt.physical_total.dvh.json",
+          "sha256": "8942ad4b0ea4248753bea2afca2092ec9b9c5879cddb47c327ab2ce876feaef4"
+        },
+        {
+          "path": "out/06-metrics/Lens-Rt.physical_total.metrics.json",
+          "sha256": "9d1bcacb17fc2c508e9abe3a00c0788c3f7cfb2c7bb8edd4d1b01313bffb68d8"
+        },
+        {
+          "path": "out/06-metrics/Mandible.component-boron.metrics.json",
+          "sha256": "84c8ca412645319854fc57007270afcb08a6e45f0ce514e065442cc50e532f76"
+        },
+        {
+          "path": "out/06-metrics/Mandible.component-hydrogen.metrics.json",
+          "sha256": "41b43bf5d005cd39445ff5b19d2704d4aa4f490e89bc442d4bb428d7d7680ec0"
+        },
+        {
+          "path": "out/06-metrics/Mandible.component-nitrogen.metrics.json",
+          "sha256": "10205c62ad051ffa3867a19c34ffbe8486967cf028e107e433a2782c80e1f8e5"
+        },
+        {
+          "path": "out/06-metrics/Mandible.component-photon.metrics.json",
+          "sha256": "bc061fa62a4eec77cf27f274b7781c422aa2afa497e96994078842809f0405bf"
+        },
+        {
+          "path": "out/06-metrics/Mandible.physical_total.dvh.json",
+          "sha256": "3497a68d31bd12f959c05c2a07acda54902e1cecb00a788865e6fdfe9ab8203a"
+        },
+        {
+          "path": "out/06-metrics/Mandible.physical_total.metrics.json",
+          "sha256": "1b973f1e2d49578875db4eed48a21b80b7cb5447ea8b7b57f77fd6fa9dcef92f"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Lt.component-boron.metrics.json",
+          "sha256": "d472b38e53658767e97e83da0a108d43dd3ff048074ae414d5d8ef867a86b30e"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Lt.component-hydrogen.metrics.json",
+          "sha256": "4a6787dc6b29a94495c95a9b6ddd29190d09309447d0d1baaf32e08e3c2a9ce0"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Lt.component-nitrogen.metrics.json",
+          "sha256": "00bc72389929ae8d19ad5f7d7a491cbecc07c8cfb6e8e9558d72065ef79d8aaf"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Lt.component-photon.metrics.json",
+          "sha256": "c82ca4ec1e36d41444048a9a8944613790019811668dc606ae38382d406c9351"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Lt.physical_total.dvh.json",
+          "sha256": "e8b612b65aa9d8437567b451a179d749374fbb1775f39bcbc85c156d459ecde9"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Lt.physical_total.metrics.json",
+          "sha256": "37bdc64bedc040e1e8a58be3a7d30f8fb6c68db9a96bbe0bb0e64583ffa97b42"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Rt.component-boron.metrics.json",
+          "sha256": "44db008b5a8922b4c4856d08dbfc2cbc091797e96b4d3391e9363a05060bb3e7"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Rt.component-hydrogen.metrics.json",
+          "sha256": "7436e990d2a9796959a5037b0e47003926821e2448895dac4f2d8f19bc0524a5"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Rt.component-nitrogen.metrics.json",
+          "sha256": "1827927dabb7d7c5a5d231e0bcc8710165dca5ffe3bb17ed363a4555ff403c49"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Rt.component-photon.metrics.json",
+          "sha256": "e190e5914eefb92edfec526a3090283cc39ce42d82add8a23d9dc6baa4947a44"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Rt.physical_total.dvh.json",
+          "sha256": "76c86f2d4454610359a01ce1952f1e4dd0992f25b9580df3f9e90912e8ae837d"
+        },
+        {
+          "path": "out/06-metrics/Optic-Nerve-Rt.physical_total.metrics.json",
+          "sha256": "185582a7e50ba9fcea2cf7c2d3dcfc956c79b11f8aaf9c75bd1493fa93814b4a"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Lt.component-boron.metrics.json",
+          "sha256": "f8dda1d13996094955675a3d97eec0cfd7e5cd27ba13b3d1c34674c25d747417"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Lt.component-hydrogen.metrics.json",
+          "sha256": "190bb78eccd0a3f5e30334f3242dc736586256239dcb332f6d3b9d19880c6e75"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Lt.component-nitrogen.metrics.json",
+          "sha256": "b61fb1c788df839cda30328d984bd9f6d8f2a27eaa98616c405ad2eccc80999c"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Lt.component-photon.metrics.json",
+          "sha256": "8f514d7ceed010555a4a90e14312044738d2006443321446668cdca7c1220b08"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Lt.physical_total.dvh.json",
+          "sha256": "8fb84969d3bc10cfe1afeea986d51218ab6c9e4eca29fab53afa5d3c6fa20f78"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Lt.physical_total.metrics.json",
+          "sha256": "d2b85f1ff27d878fd3b43042bebb07ee40cb3e1121e3564185ad594168a1a623"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Rt.component-boron.metrics.json",
+          "sha256": "8b937ab946b50f76a1f52ca7955b91e378ef2e6fc475c3c2884b5ea6f793d386"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Rt.component-hydrogen.metrics.json",
+          "sha256": "076f8125c0758503678fe3e004e16a28ac1518dc8477ca03a82a3973a3591712"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Rt.component-nitrogen.metrics.json",
+          "sha256": "797c8d98dd6165302978d908951dd73acebe891b17c0e1ee8527b218a8782e67"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Rt.component-photon.metrics.json",
+          "sha256": "210011a09bb2e170ea36abac5a0bd414fea4d540e6e636b5d946f730845ebe90"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Rt.physical_total.dvh.json",
+          "sha256": "279613ab48aaee6864605c94d824f08d987b4c89acb1b0b85b2d18d3b7e2d6aa"
+        },
+        {
+          "path": "out/06-metrics/Orbit-Rt.physical_total.metrics.json",
+          "sha256": "3a460da827e9648cc68ed00b53040421014af19198d5d30d09d122d267c181b6"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Lt.component-boron.metrics.json",
+          "sha256": "b1060f594f4ba37f09a09391ea42ad0a711adaa324c2fe8cc50dec6a95530701"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Lt.component-hydrogen.metrics.json",
+          "sha256": "92928d87be91abf76617a18a44c0963f4f1a92a4532b19f32ff3761a898c6885"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Lt.component-nitrogen.metrics.json",
+          "sha256": "54d3b3cdd68d9bc67556f2da4c3cc2b240824f184057990a3425482cae2ab379"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Lt.component-photon.metrics.json",
+          "sha256": "4898e4a843380215ec88adde1be1428e93c4ff93bcb1e664b0913eca65cf5ce2"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Lt.physical_total.dvh.json",
+          "sha256": "fd235b32537deca4a1bc187bf10f14971bbf47edde76ee3931d17c65ba17e0ce"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Lt.physical_total.metrics.json",
+          "sha256": "46134e2e77d1b498a7ef1bb7cad40529bdebee74b3fb7c1fca4dd721c73c5a76"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Rt.component-boron.metrics.json",
+          "sha256": "7c819fe710ea0dab69c54359833ed0cf0a1851e02c26a3fd1c866fc8db3a3e0c"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Rt.component-hydrogen.metrics.json",
+          "sha256": "6b65a87d89e9743a520fd246101366e150cf41e029b41c6cf83181bd5fbbabc8"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Rt.component-nitrogen.metrics.json",
+          "sha256": "9af2ef959927c9af1f315a26215f6c5ef98ca3362488642d74745aeb159f6c5b"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Rt.component-photon.metrics.json",
+          "sha256": "eea0ede085b99819235579164005549db39a6d6e847e0c1a44a1b6ef7df75c6f"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Rt.physical_total.dvh.json",
+          "sha256": "bb91c6996916299b33b5d752a1891548a1f8319e0d427bb8a024118eb295e788"
+        },
+        {
+          "path": "out/06-metrics/Parotid-Rt.physical_total.metrics.json",
+          "sha256": "25dfbb02658f09efb79cf289f1d78c4e4ed254ac437f6a6fb5abded1ff50f172"
+        },
+        {
+          "path": "out/06-metrics/RESEARCH_TARGET.component-boron.metrics.json",
+          "sha256": "a299af49500cf46380af59b3957dc821f716425b167652f9b84d8bb8455d8462"
+        },
+        {
+          "path": "out/06-metrics/RESEARCH_TARGET.component-hydrogen.metrics.json",
+          "sha256": "a39d00aaac057ce016e157001dc5f4b3de65edcb1de582374b3fb2256b75fb10"
+        },
+        {
+          "path": "out/06-metrics/RESEARCH_TARGET.component-nitrogen.metrics.json",
+          "sha256": "c812ebcf308abe29e0ffac2cbae97adc0782f3b96010fb07c852a03a9c36f521"
+        },
+        {
+          "path": "out/06-metrics/RESEARCH_TARGET.component-photon.metrics.json",
+          "sha256": "be57a57534b76c1e41ea22d89eece10602757002a8389e44a8e09f943f2d891c"
+        },
+        {
+          "path": "out/06-metrics/RESEARCH_TARGET.physical_total.dvh.json",
+          "sha256": "252a1c05ee63001b038fcc78f996ef34183c97e822dc622ed1328a55a5da8645"
+        },
+        {
+          "path": "out/06-metrics/RESEARCH_TARGET.physical_total.metrics.json",
+          "sha256": "8deb5b7149f353ecbe6a4ba44b355d81fe0283652a17a672011a6060c9c105b2"
+        },
+        {
+          "path": "out/06-metrics/SKIN.component-boron.metrics.json",
+          "sha256": "9a918a81b3d13c34eb4d74f8a0add9af5d5a5742a868ae27fda39c2056c3e15b"
+        },
+        {
+          "path": "out/06-metrics/SKIN.component-hydrogen.metrics.json",
+          "sha256": "1d787562badacbcf616697c31d54794707c0cb4eb112334abc2d5d1d5740fbeb"
+        },
+        {
+          "path": "out/06-metrics/SKIN.component-nitrogen.metrics.json",
+          "sha256": "502162e61c1fe1465850f101d6813ae9187a673bea9dc76c05c3d118366b700f"
+        },
+        {
+          "path": "out/06-metrics/SKIN.component-photon.metrics.json",
+          "sha256": "96e639e1f9401336e2770c2833655df5556a3bec4c53bd3343ad07b17b297077"
+        },
+        {
+          "path": "out/06-metrics/SKIN.physical_total.dvh.json",
+          "sha256": "44799cdb0b8c5ddc8fc6e23bb9c6fbbcfcb9b2d8d3699b8325a0598a30452b52"
+        },
+        {
+          "path": "out/06-metrics/SKIN.physical_total.metrics.json",
+          "sha256": "e966b1dce2c4fe6d85861e0fd07040e962ea037a0ab0397f1230b449cae77ae9"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Canal.component-boron.metrics.json",
+          "sha256": "8b4b5e359ce54fbd0f62a230fcb12bd94ac8847d6e2ab46694ad6870a4d70d5e"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Canal.component-hydrogen.metrics.json",
+          "sha256": "3f7d142429fd5278f78705d2214d6bdb67804ea3e3d1b13aaf3fa9ca9c15bbeb"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Canal.component-nitrogen.metrics.json",
+          "sha256": "92f77deae12eaf81747d46c50306f7aa0867f6bbbcd3308a49f0a1ecb1ec40d5"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Canal.component-photon.metrics.json",
+          "sha256": "80ec9f7aadedd87b981ec9be223eb4accca8a6040e3d6449c89d8d622fb3bdc0"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Canal.physical_total.dvh.json",
+          "sha256": "add822937204a14d2038151341ed9d27644a1665c27eb17c541911c94f989a6d"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Canal.physical_total.metrics.json",
+          "sha256": "d98eda6d311be77a682aefcb0b0bfa836455a7a521427aae452a5a841a47a438"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Cord.component-boron.metrics.json",
+          "sha256": "50d6cae888533d2f9bc7e7eb5ebda91709bbeb9247c5fcdf06fd861f8a2d6f23"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Cord.component-hydrogen.metrics.json",
+          "sha256": "77aab0f8819b005a617c1a12a65c44f8c7513a5d7be28503aba24a9aa9e80bd4"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Cord.component-nitrogen.metrics.json",
+          "sha256": "1cb124de30b645bad057ef80f60ade6292e876788a97a6dc44756ac14deb4e71"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Cord.component-photon.metrics.json",
+          "sha256": "1f4048065c8f3f4add30cd8cb8a8b953110672f202cc3d9c285a4591b20f4b34"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Cord.physical_total.dvh.json",
+          "sha256": "5c35929cde9e87af5f3e5ea1e61089a6d98d75f71f904d8db968019ba9616d46"
+        },
+        {
+          "path": "out/06-metrics/Spinal-Cord.physical_total.metrics.json",
+          "sha256": "a8a09d735bc507a4ad5d2124c7f2b0ade9f34185b45919a947cab3084c58c31d"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Lt.component-boron.metrics.json",
+          "sha256": "340fb752940d3d0f732202ff5ffa5eb34ca1d151a7c0a3a97c6212f3becd8993"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Lt.component-hydrogen.metrics.json",
+          "sha256": "d894657850578b6b45cf2352ba2027e515ead3e7361f49ee87a4f8dc7b7cf9d0"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Lt.component-nitrogen.metrics.json",
+          "sha256": "037fbe03231460eb6c2db35ecf58916f13e81b6cc853a2fbb0bd5daf82664c18"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Lt.component-photon.metrics.json",
+          "sha256": "aaf92ca25e06a0f332b5e859f610efbd1f7a278aa30b135599e629036797619c"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Lt.physical_total.dvh.json",
+          "sha256": "9ff1ac96fbbcea88c752975c247f105aa382544de3e90ae5d8595c11857b1f25"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Lt.physical_total.metrics.json",
+          "sha256": "7082a35e2152996a6ea990a637586ff65cc3b808c0c52aa048a2793fe11d2ecc"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Rt.component-boron.metrics.json",
+          "sha256": "456f6b995605b24b0e58cd4ebc7b1afb64691b1c2d0ca86f2a12eaef0430f860"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Rt.component-hydrogen.metrics.json",
+          "sha256": "058dc5caa35f258eb4b58c6ea912a05681f54e8de80dde684abf553ff6b75e02"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Rt.component-nitrogen.metrics.json",
+          "sha256": "cded0d821d3a1f19853ab1642d21efcb25982853824c8c5b91bd9d0d9f63e506"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Rt.component-photon.metrics.json",
+          "sha256": "ac09af3ccab49db2a71ed2bea94ae554222b73ac2d04b03d3866c7ee2d976a48"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Rt.physical_total.dvh.json",
+          "sha256": "5b356da330e9d5e87ec6c9461b8264e28d40f177b9bb0acd20e708ecb8273623"
+        },
+        {
+          "path": "out/06-metrics/Submandibular-Rt.physical_total.metrics.json",
+          "sha256": "0f43814f59050a6841da4aa0ae90a74255ef0ab69f64991f412c3ee2f60eae56"
+        }
+      ],
+      "started_utc": "2026-09-30T18:45:04Z",
+      "seconds": 29.423973814
+    },
+    {
+      "id": "07-report",
+      "status": "complete",
+      "commands": [],
+      "options": {
+        "allow_unconverged": false,
+        "irradiation_time_s": null,
+        "project_id": "openbnct.hn-head-ct.v1",
+        "source_strength_per_s": null,
+        "structures": [
+          "Brain",
+          "Brainstem",
+          "Lacrimal-Lt",
+          "Lacrimal-Rt",
+          "Lens-Lt",
+          "Lens-Rt",
+          "Mandible",
+          "Optic-Nerve-Lt",
+          "Optic-Nerve-Rt",
+          "Orbit-Lt",
+          "Orbit-Rt",
+          "Parotid-Lt",
+          "Parotid-Rt",
+          "Spinal-Canal",
+          "Spinal-Cord",
+          "Submandibular-Lt",
+          "Submandibular-Rt",
+          "BODY",
+          "SKIN",
+          "RESEARCH_TARGET"
+        ]
+      },
+      "inputs": [
+        {
+          "path": "out/06-metrics",
+          "sha256": "6a2ba2df40f3e62a2e9fb4f74478a3eb191432f7d1c6761aafc265030ff7e1ed",
+          "files": 120
+        },
+        {
+          "path": "out/04-transport/flux.json",
+          "sha256": "32f47926d15cae57ff2239c358ecc036cafdc483c2e38ef15d358a0a52984f22"
+        },
+        {
+          "path": "out/08-verify/verification.json",
+          "sha256": "43b7b173cdf002cef60868caa0818e97ac0bc352672b3917932a8e74b1836127"
+        }
+      ],
+      "outputs": [
+        {
+          "path": "out/dvh/BODY.csv",
+          "sha256": "2e048915ad7e9513da48fd744a5d13b00b50f7e2622e659879b124281c9e5506"
+        },
+        {
+          "path": "out/dvh/Brain.csv",
+          "sha256": "fd10df570a4ceb7eab477cffc56aa9fdf374065ade7319a346e5f5b45dcdeed0"
+        },
+        {
+          "path": "out/dvh/Brainstem.csv",
+          "sha256": "5d481d902565755688e47391afd95afcaa2132f18969535c046ffd1673e73c01"
+        },
+        {
+          "path": "out/dvh/Lacrimal-Lt.csv",
+          "sha256": "94ababb5853a7d5b92d934b4c5cfede5c77b5f339a104899a87803ceb49e1bea"
+        },
+        {
+          "path": "out/dvh/Lacrimal-Rt.csv",
+          "sha256": "3eecbc6ac7c371e6bd1f084db3cb08d818fab30824bcb7db68ff6e1678ed3b21"
+        },
+        {
+          "path": "out/dvh/Lens-Lt.csv",
+          "sha256": "9599cfcc45dc6e0d68c30f253e6c449e8462191d34fa709dce39a6603e7eda51"
+        },
+        {
+          "path": "out/dvh/Lens-Rt.csv",
+          "sha256": "3c3fedd660e94215bc1a125656337cee3b6bd4334814a5929d7ad9439bdc0ee1"
+        },
+        {
+          "path": "out/dvh/Mandible.csv",
+          "sha256": "155dfd818a5f2a2bc223de880bd5aee6d117594e5f1c31c0917b0a1be9cba638"
+        },
+        {
+          "path": "out/dvh/Optic-Nerve-Lt.csv",
+          "sha256": "5e2aa80cdb04b100591be9956f8bfb6a47eebe48484dca85d81cf66ac3efe8db"
+        },
+        {
+          "path": "out/dvh/Optic-Nerve-Rt.csv",
+          "sha256": "f61d5c253c09a6d833d760efdeab8ec0df112f3e8ea14be633cad0b64fb877f3"
+        },
+        {
+          "path": "out/dvh/Orbit-Lt.csv",
+          "sha256": "75dbb4b41e8c8cc6000e2a794c7941328933e0775faafd3012a4c1131839bf43"
+        },
+        {
+          "path": "out/dvh/Orbit-Rt.csv",
+          "sha256": "818f94304cec4cf710eef6cbe8c94bc2539be37b3b0b3a5e3d68d03f2874a6c4"
+        },
+        {
+          "path": "out/dvh/Parotid-Lt.csv",
+          "sha256": "9e68f4199c63076fc0105bd90071a913d46afdba5170e98c9acd7e1e8391e830"
+        },
+        {
+          "path": "out/dvh/Parotid-Rt.csv",
+          "sha256": "1a0fee6b36c7eda05a22c315e9c6768ebbba7d4421a7bd774857efeb3c1f4f9b"
+        },
+        {
+          "path": "out/dvh/RESEARCH_TARGET.csv",
+          "sha256": "344c0ab94bdaa5222deba66e0791222b9e4f8d8fb5fc59d457c59b503bc70ed5"
+        },
+        {
+          "path": "out/dvh/SKIN.csv",
+          "sha256": "16c9eb17b8ecde8307b80c78dd90ba18cd95ec0b669a7884b6e72a47aae86764"
+        },
+        {
+          "path": "out/dvh/Spinal-Canal.csv",
+          "sha256": "efeb04053338d94dc7fe9ca8ede00e0d5823a4734fd50989d4833f3b48b24986"
+        },
+        {
+          "path": "out/dvh/Spinal-Cord.csv",
+          "sha256": "b19a7a3fa84458ac9300adc0280506e08e07ac3e8f7b3ff36931ad61159cd08b"
+        },
+        {
+          "path": "out/dvh/Submandibular-Lt.csv",
+          "sha256": "1db8839819b3068e035f665b91ba281501a747a6daa79478e3ce75d22df5ed85"
+        },
+        {
+          "path": "out/dvh/Submandibular-Rt.csv",
+          "sha256": "4a1b84291a2b47183e97e954be339f0027d7fe6fdd2f7851163e241184863d4a"
+        },
+        {
+          "path": "out/report.json",
+          "sha256": "65f9706242fc70318d37bebf1a64a0fa1a05a8895b2b3a55c1223d806b6609d4"
+        },
+        {
+          "path": "out/report.md",
+          "sha256": "46d7e3a48b4db21444727a362b0b03f5b3700c27d87634e3b4bc4f9c755934c6"
+        }
+      ],
+      "started_utc": "2026-09-30T18:45:33Z",
+      "seconds": 0.00614189
+    },
+    {
+      "id": "08-verify",
+      "status": "complete",
+      "commands": [
+        "# internal: write out/08-verify/source.json (the \"source\" member of out/03-beam/case.json) and out/08-verify/case.json (that case with this source); the port plane is moved 0.001 cm inside the grid if it sits on the boundary",
+        "# internal: write out/08-verify/execution-profile.json = inputs/openmc-execution-profile-smoke.json with the requested histories and batches",
+        "openbnct openmc data select-manifest --base-manifest inputs/openmc-endfb81-base-manifest.json --data-root /home/connoravila/nuclear-data/endfb-viii.1-hdf5 --assignment out/02-calibrate/assignment.json --manifest-id openbnct.hn-head-ct.v1.openmc-verify.endfb81 --output out/08-verify/nuclear-data-manifest.json",
+        "openbnct openmc run --case out/08-verify/case.json --component-profile inputs/openmc-component-profile-unit-mass-fraction.json --material inputs/material-air-dry.json --source out/08-verify/source.json --response-set inputs/openmc-response-set-nf-bnct-001.json --nuclear-data-manifest out/08-verify/nuclear-data-manifest.json --execution-profile out/08-verify/execution-profile.json --assignment out/02-calibrate/assignment.json --unit-source-component-profile inputs/openmc-unit-source-component-profile.json --unit-source-material inputs/openmc-unit-source-material.json --unit-source-nuclear-data-manifest inputs/openmc-endfb81-base-manifest.json --mixture-levels 20 --thermal-scattering H1=c_H_in_H2O --nuclear-data-root /home/connoravila/nuclear-data/endfb-viii.1-hdf5 --openmc /home/connoravila/micromamba/envs/openmc016/bin/openmc --env OPENMC_CROSS_SECTIONS=/home/connoravila/nuclear-data/endfb-viii.1-hdf5/cross_sections.xml --threads 3 --timeout-seconds 14400 --working-directory out/08-verify/openmc-run --dose-output out/08-verify/mc-physical-dose.json --boron-unit-dose-output out/08-verify/mc-boron-unit.json",
+        "openbnct boron dose --physical-bundle out/08-verify/mc-physical-dose.json --unit-dose out/08-verify/mc-boron-unit.json --blood-ug-g 25 --default-ratio 1 --ratio RESEARCH_TARGET=3.5 --mask RESEARCH_TARGET=out/01-import/masks/022-RESEARCH_TARGET.json --ratio SKIN=1.5 --mask SKIN=out/01-import/masks/021-SKIN.json --output out/08-verify/mc-dose.json",
+        "openbnct compare --reference out/08-verify/mc-dose.json --candidate out/05-boron/dose.json --output out/08-verify/comparison.json",
+        "openbnct gamma --reference out/08-verify/mc-dose.json --candidate out/05-boron/dose.json --dose-difference-percent 3 --distance-to-agreement-mm 3 --dose-threshold-percent 10 --gamma-volume --output out/08-verify/gamma.json",
+        "# internal: compare structure means, gamma per structure and ratio volumes -> out/08-verify/verification.json, out/08-verify/ratio-<component>.nii"
+      ],
+      "options": {
+        "batches": 10,
+        "cross_sections": "/home/connoravila/nuclear-data/endfb-viii.1-hdf5/cross_sections.xml",
+        "cross_sections_sha256": "b8ffb6104a946bf951dc0f3b9a1f57a60f7f57c4b308cd66df4fd3dd4bc557ce",
+        "histories": 6000000,
+        "openmc": "/home/connoravila/micromamba/envs/openmc016/bin/openmc",
+        "openmc_sha256": "0221b9ef9acacab9739a4d334d89a49841c6e04b89401a56872fa4f4ba5bc9ed",
+        "particles": 6000000,
+        "structures": [
+          "Brain",
+          "Brainstem",
+          "Lacrimal-Lt",
+          "Lacrimal-Rt",
+          "Lens-Lt",
+          "Lens-Rt",
+          "Mandible",
+          "Optic-Nerve-Lt",
+          "Optic-Nerve-Rt",
+          "Orbit-Lt",
+          "Orbit-Rt",
+          "Parotid-Lt",
+          "Parotid-Rt",
+          "Spinal-Canal",
+          "Spinal-Cord",
+          "Submandibular-Lt",
+          "Submandibular-Rt",
+          "BODY",
+          "SKIN",
+          "RESEARCH_TARGET"
+        ],
+        "thermal_scattering": [
+          "H1=c_H_in_H2O"
+        ],
+        "threads": 3,
+        "thresholds": {
+          "gamma_cutoff_percent": 10.0,
+          "gamma_dose_percent": 3.0,
+          "gamma_dta_mm": 3.0,
+          "gamma_pass_min": 0.95,
+          "ratio_tolerance": 0.05
+        },
+        "timeout_seconds": 14400
+      },
+      "inputs": [
+        {
+          "path": "inputs/material-air-dry.json",
+          "sha256": "d32ecf9ab0ce18161843be4c57393c1e9f2bb208514a8aaffa3738acb49567d2"
+        },
+        {
+          "path": "inputs/multigroup-data-28g-tsl.json",
+          "sha256": "c664332337cdacfe28f4141e916fcc400c61155b027adccea54053c8b709e490"
+        },
+        {
+          "path": "inputs/openmc-response-set-nf-bnct-001.json",
+          "sha256": "bfc48efe75f470cd8f1f78c35e4589cba8853655cc9cf9f709f5cece4a8a9afd"
+        },
+        {
+          "path": "inputs/openmc-component-profile-unit-mass-fraction.json",
+          "sha256": "7659e2f50a0999167ffb1017e1285ee20ce769f61d67fea00b68f6a4b4fcde50"
+        },
+        {
+          "path": "inputs/openmc-unit-source-component-profile.json",
+          "sha256": "a35b26c0134ae02d3b1b0ede5b8c6f38e86966e86c65e1727b4c7f38677ab41a"
+        },
+        {
+          "path": "inputs/openmc-unit-source-material.json",
+          "sha256": "096e236d234acabc18f3027ae53be3c94f5608a86a1dec866cefc8bb330db813"
+        },
+        {
+          "path": "inputs/openmc-endfb81-base-manifest.json",
+          "sha256": "3eaae09921172199c34f3fb236ae082ea5ace4567e0e04d2afcce357add73fb1"
+        },
+        {
+          "path": "inputs/openmc-execution-profile-smoke.json",
+          "sha256": "73c644e483e9b9008a88be93d0f47ede174e5180f4c137c208fd7cc62be23e07"
+        },
+        {
+          "path": "out/02-calibrate/assignment.json",
+          "sha256": "300f4b36adf668bdcd1da19d8e4e1d8cd64227ae38d84d6ce30ab315fb984e13"
+        },
+        {
+          "path": "out/03-beam/case.json",
+          "sha256": "5f3e3f49a67ccf4cb2192c6ef26084aeca67daec3b1c80b10d6eaf78fa623aa3"
+        },
+        {
+          "path": "out/05-boron/dose.json",
+          "sha256": "ba5b07cea1c441caa6a3425fa82d59342a6aca3402c04868fda205bfe80063f8"
+        },
+        {
+          "path": "out/01-import/masks",
+          "sha256": "20eb3045e8386fefaa1c87a8fe9d5ef88430a93a2dc4d7487c72cf454bb93e12",
+          "files": 23
+        }
+      ],
+      "outputs": [
+        {
+          "path": "out/08-verify/case.json",
+          "sha256": "c1ea0959d1293058dedf1a025540c48c03ca17decee72917a1e69fbf7f49a5ff"
+        },
+        {
+          "path": "out/08-verify/comparison.json",
+          "sha256": "e62ec51d65b953bd9fab7f5397ba7282653c63ecd4e0690988f85dd42dd8b875"
+        },
+        {
+          "path": "out/08-verify/execution-profile.json",
+          "sha256": "b07e1cafb7700a0f4e3d9fa02557d1c7d6a86e2e5c73f8df27b818bf679c080a"
+        },
+        {
+          "path": "out/08-verify/gamma.json",
+          "sha256": "107249a3e406b22b413b6aa4415f23be3a7b4eca7185c8549d0e8f7c62d1858a"
+        },
+        {
+          "path": "out/08-verify/mc-boron-unit.json",
+          "sha256": "5fdc96e7b82cb27c3da6829c0546c01bc285e9f29dfaf17ee3ae7d8d18cf5cac"
+        },
+        {
+          "path": "out/08-verify/mc-dose.json",
+          "sha256": "62855dd3b9645640a2ded8bcadb0ad342dc52287e7123f9439768858f4a65428"
+        },
+        {
+          "path": "out/08-verify/mc-physical-dose.json",
+          "sha256": "e518ba228cfe9f6e15f1872fe9bea4d65284715bda1ba4047742a00d64d84af8"
+        },
+        {
+          "path": "out/08-verify/nuclear-data-manifest.json",
+          "sha256": "eba361da5af70bea6b10567693cdd12d944c19fe6272f8c68349f047a6fff389"
+        },
+        {
+          "path": "out/08-verify/openmc-run/geometry.xml",
+          "sha256": "04c2ed202ab2e925a7a56cde5c5e441c8ce2c35c109549f5b2d606f820416339"
+        },
+        {
+          "path": "out/08-verify/openmc-run/materials.xml",
+          "sha256": "33ca0c38c23e43a063840a95ec9fd2e7d7c5fb88c969c249e96693717f949b8b"
+        },
+        {
+          "path": "out/08-verify/openmc-run/openbnct-component-profile.json",
+          "sha256": "7659e2f50a0999167ffb1017e1285ee20ce769f61d67fea00b68f6a4b4fcde50"
+        },
+        {
+          "path": "out/08-verify/openmc-run/openbnct-input-manifest.json",
+          "sha256": "7e26f39a5e1d1e146d2564c36075c7811eb2ef2417c65b0cd9c0f7c6bdc17a0f"
+        },
+        {
+          "path": "out/08-verify/openmc-run/openbnct-material-assignment.json",
+          "sha256": "300f4b36adf668bdcd1da19d8e4e1d8cd64227ae38d84d6ce30ab315fb984e13"
+        },
+        {
+          "path": "out/08-verify/openmc-run/openbnct-openmc-run-receipt.json",
+          "sha256": "28826c3778a7a088fca1aa13530911916ee337e8a4e174e1391165f1a741a675"
+        },
+        {
+          "path": "out/08-verify/openmc-run/openmc.stderr.log",
+          "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        },
+        {
+          "path": "out/08-verify/openmc-run/openmc.stdout.log",
+          "sha256": "e2734bc031ce4703fc385083ed4d449e5f07f385f01a955b6a44c8fe87d757bc"
+        },
+        {
+          "path": "out/08-verify/openmc-run/settings.xml",
+          "sha256": "56cbd72033354574511a0b1163a844b258b5ff69e5301cbfdc122a8711ec02b7"
+        },
+        {
+          "path": "out/08-verify/openmc-run/statepoint.10.h5",
+          "sha256": "1a556d9bc241f2846a30407fe60426e2d3af7b76bb98c3fbab680e471b745264"
+        },
+        {
+          "path": "out/08-verify/openmc-run/summary.h5",
+          "sha256": "35af89d29d5212cc3d07e0c4b26ea4f2184aabb085f980b3cc3d002d73fe38b4"
+        },
+        {
+          "path": "out/08-verify/openmc-run/tallies.xml",
+          "sha256": "3bef18b1f412d52caf729d2cc43a64ab1e9af9059cc205c1dd39f6cf41a32a8d"
+        },
+        {
+          "path": "out/08-verify/ratio-boron.nii",
+          "sha256": "b14ff8a2e9bfbcef1edbf420b8946d02bd4250b279e88ebf492e36e720aaac1f"
+        },
+        {
+          "path": "out/08-verify/ratio-hydrogen.nii",
+          "sha256": "f952c294339ae26ba25d721c477b14d0025d08d2a4f8b815377519c8e5e998b2"
+        },
+        {
+          "path": "out/08-verify/ratio-nitrogen.nii",
+          "sha256": "867bc697ad27d6d956864e0bfc0625e32f6fd412f7dc382bfc12ddf4ccb453bb"
+        },
+        {
+          "path": "out/08-verify/ratio-photon.nii",
+          "sha256": "64f5fff95053b1af8ebce03132d620133577b54bff411f763eae5a597f528dec"
+        },
+        {
+          "path": "out/08-verify/ratio-total.nii",
+          "sha256": "429605e559239fd1af1b5af687b6c5ad2d689e0500e0fea64d197804444af234"
+        },
+        {
+          "path": "out/08-verify/source.json",
+          "sha256": "208c92dfc5dfa9b2a8c5ccff242eb9712df6289163a51cc6d52a863555394f28"
+        },
+        {
+          "path": "out/08-verify/verification.json",
+          "sha256": "43b7b173cdf002cef60868caa0818e97ac0bc352672b3917932a8e74b1836127"
+        }
+      ],
+      "started_utc": "2026-09-30T18:50:12Z",
+      "seconds": 1687.452180177
+    }
+  ]
+}
