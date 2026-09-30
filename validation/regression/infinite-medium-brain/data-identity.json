@@ -1,0 +1,21 @@
+{
+ "schema_version": "openbnct.regression-data-identity/0.1.0",
+ "case": "infinite-medium-brain",
+ "openmc_version": "0.16.0",
+ "neutron_library_dir": "/home/connoravila/Documents/Avila-Labs/.nctforge-data/nctforge/openmc-endfb81-official-library/selected/endfb-viii.1-hdf5",
+ "library_cross_sections_xml_sha256": "b8ffb6104a946bf951dc0f3b9a1f57a60f7f57c4b308cd66df4fd3dd4bc557ce",
+ "generated_cross_sections_xml_sha256": "2f9d0c054b6cf65a90b7bfee332530d33f4c79ff714ff2d319969b1261949af0",
+ "sab_table": "c_H_in_H2O",
+ "sab_file": "/home/connoravila/nuclear-data/endfb-viii.1-hdf5/thermal/c_H_in_H2O.h5",
+ "sab_file_sha256": "52d106ff05b03257eb184a61b6ab01d7aac550017a8ef98a83d3a7ea30f98253",
+ "material_temperature_k": 293.6,
+ "sn_multigroup_data": "benchmarks/synthetic/layered-head-phantom/multigroup-data-28g-v5-tsl.json",
+ "sn_multigroup_data_sha256": "f28ded9cd159a46e0b8bac1169abe01974cb403c5f9505e3a62dbd54ae1437f0",
+ "particles_per_batch": 100000,
+ "batches": 10,
+ "total_histories": 1000000,
+ "seed": 20260929,
+ "materials": [
+  "benchmarks/synthetic/layered-head-phantom/materials/brain.json"
+ ]
+}
