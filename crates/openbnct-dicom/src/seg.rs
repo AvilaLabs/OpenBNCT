@@ -128,7 +128,7 @@ struct Frame {
     fraction: Vec<f32>,
 }
 
-fn optional_items<'a>(obj: &'a InMemDicomObject, tag: Tag) -> Option<&'a [InMemDicomObject]> {
+fn optional_items(obj: &InMemDicomObject, tag: Tag) -> Option<&[InMemDicomObject]> {
     obj.get(tag).and_then(|e| e.items())
 }
 
@@ -275,12 +275,11 @@ fn seg_from_object(
     if let Some(Ok(lossy)) = obj
         .get(tags::LOSSY_IMAGE_COMPRESSION)
         .map(|e| e.to_str().map(|s| s.trim().to_owned()))
+        && lossy == "01"
     {
-        if lossy == "01" {
-            return Err(seg_error(
-                "lossy-compressed SEG pixel data is not supported",
-            ));
-        }
+        return Err(seg_error(
+            "lossy-compressed SEG pixel data is not supported",
+        ));
     }
     let pixel_bytes = obj
         .element(tags::PIXEL_DATA)
@@ -302,7 +301,7 @@ fn seg_from_object(
     // Functional groups.
     let shared = optional_items(obj, tags::SHARED_FUNCTIONAL_GROUPS_SEQUENCE)
         .and_then(|items| items.first());
-    let shared_orientation = shared.and_then(|s| plane_orientation(s));
+    let shared_orientation = shared.and_then(plane_orientation);
     let (shared_pixel_spacing, shared_thickness, shared_spacing_between) = match shared
         .and_then(|s| optional_items(s, tags::PIXEL_MEASURES_SEQUENCE))
         .and_then(|i| i.first())

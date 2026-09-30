@@ -123,7 +123,11 @@ fn nrrd_types_endians_and_encodings_match_nifti() {
         for big in [false, true] {
             let endian = if big { "big" } else { "little" };
             let raw = encode(ty, &truth(), big);
-            std::fs::write(&path, attach(nrrd_header(ty, "raw", Some(endian), ""), &raw)).unwrap();
+            std::fs::write(
+                &path,
+                attach(nrrd_header(ty, "raw", Some(endian), ""), &raw),
+            )
+            .unwrap();
             assert_same(&read_nrrd_file(&path).unwrap(), &want);
             assert_same(&read_volume(&path).unwrap(), &want);
             let zipped = gzip(&raw);
@@ -141,7 +145,11 @@ fn nrrd_types_endians_and_encodings_match_nifti() {
         for big in [false, true] {
             let endian = if big { "big" } else { "little" };
             let raw = encode_unsigned(width, &pos, big);
-            std::fs::write(&path, attach(nrrd_header(ty, "raw", Some(endian), ""), &raw)).unwrap();
+            std::fs::write(
+                &path,
+                attach(nrrd_header(ty, "raw", Some(endian), ""), &raw),
+            )
+            .unwrap();
             assert_same(&read_nrrd_file(&path).unwrap(), &want_pos);
         }
     }
@@ -284,7 +292,10 @@ fn metaimage_types_endians_compression_and_detached() {
             let mut z = ZlibEncoder::new(Vec::new(), Compression::fast());
             z.write_all(&raw).unwrap();
             let z = z.finish().unwrap();
-            let extra = format!("{msb}CompressedData = True\nCompressedDataSize = {}\n", z.len());
+            let extra = format!(
+                "{msb}CompressedData = True\nCompressedDataSize = {}\n",
+                z.len()
+            );
             let mut bytes = mha_header(ty, &extra, "LOCAL").into_bytes();
             bytes.extend_from_slice(&z);
             std::fs::write(&path, &bytes).unwrap();

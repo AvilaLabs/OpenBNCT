@@ -138,7 +138,9 @@ fn checked_voxels(shape: [usize; 3]) -> Result<usize, NiftiError> {
         .and_then(|v| v.checked_mul(shape[2]))
         .ok_or_else(|| fmt_err("volume size overflows"))?;
     if n > MAX_VOXELS {
-        return Err(fmt_err(format!("volume of {n} voxels exceeds the size limit")));
+        return Err(fmt_err(format!(
+            "volume of {n} voxels exceeds the size limit"
+        )));
     }
     Ok(n)
 }
@@ -473,22 +475,25 @@ fn read_nrrd_impl(bytes: &[u8], path: Option<&Path>) -> Result<NiftiImage, Nifti
     if dimension != 3 {
         return Err(NiftiError::UnsupportedDimensions(dimension as i16, 1));
     }
-    let sizes = parse_floats(get("sizes").ok_or_else(|| fmt_err("NRRD has no sizes"))?, 3, "sizes")?;
+    let sizes = parse_floats(
+        get("sizes").ok_or_else(|| fmt_err("NRRD has no sizes"))?,
+        3,
+        "sizes",
+    )?;
     if sizes.iter().any(|s| *s < 1.0 || s.fract() != 0.0) {
         return Err(fmt_err("bad NRRD sizes"));
     }
     let shape = [sizes[0] as usize, sizes[1] as usize, sizes[2] as usize];
     let count = checked_voxels(shape)?;
     let scalar = nrrd_scalar(get("type").ok_or_else(|| fmt_err("NRRD has no type"))?)?;
-    if let Some(kinds) = get("kinds") {
-        if kinds
+    if let Some(kinds) = get("kinds")
+        && kinds
             .split_whitespace()
             .any(|k| !matches!(k, "domain" | "space" | "none"))
-        {
-            return Err(fmt_err(format!(
-                "NRRD kinds {kinds:?} are not a scalar 3-D volume"
-            )));
-        }
+    {
+        return Err(fmt_err(format!(
+            "NRRD kinds {kinds:?} are not a scalar 3-D volume"
+        )));
     }
     let encoding = get("encoding")
         .ok_or_else(|| fmt_err("NRRD has no encoding"))?
@@ -710,10 +715,12 @@ fn read_metaimage_impl(bytes: &[u8], path: Option<&Path>) -> Result<NiftiImage, 
     };
     let first_of = |keys: &[&str]| keys.iter().find_map(|k| get(k));
 
-    if let Some(kind) = get("objecttype") {
-        if !kind.eq_ignore_ascii_case("image") {
-            return Err(fmt_err(format!("MetaImage ObjectType {kind:?} is not Image")));
-        }
+    if let Some(kind) = get("objecttype")
+        && !kind.eq_ignore_ascii_case("image")
+    {
+        return Err(fmt_err(format!(
+            "MetaImage ObjectType {kind:?} is not Image"
+        )));
     }
     let ndims: usize = get("ndims")
         .ok_or_else(|| fmt_err("MetaImage has no NDims"))?
@@ -733,15 +740,20 @@ fn read_metaimage_impl(bytes: &[u8], path: Option<&Path>) -> Result<NiftiImage, 
     let shape = [dims[0] as usize, dims[1] as usize, dims[2] as usize];
     let count = checked_voxels(shape)?;
     let scalar = meta_scalar(get("elementtype").ok_or_else(|| fmt_err("no ElementType"))?)?;
-    if let Some(ch) = get("elementnumberofchannels") {
-        if ch.trim() != "1" {
-            return Err(fmt_err("multi-channel MetaImage volumes are not supported"));
-        }
+    if let Some(ch) = get("elementnumberofchannels")
+        && ch.trim() != "1"
+    {
+        return Err(fmt_err("multi-channel MetaImage volumes are not supported"));
     }
-    for key in ["elementtointensityfieldslope", "elementtointensityfieldoffset"] {
+    for key in [
+        "elementtointensityfieldslope",
+        "elementtointensityfieldoffset",
+    ] {
         if let Some(v) = get(key) {
             let expected = if key.ends_with("slope") { 1.0 } else { 0.0 };
-            let x: f64 = v.parse().map_err(|_| fmt_err("bad MetaImage intensity map"))?;
+            let x: f64 = v
+                .parse()
+                .map_err(|_| fmt_err("bad MetaImage intensity map"))?;
             if x != expected {
                 return Err(fmt_err(format!("MetaImage {key} is not supported")));
             }
@@ -772,16 +784,14 @@ fn read_metaimage_impl(bytes: &[u8], path: Option<&Path>) -> Result<NiftiImage, 
     };
     let mut axes = [[0.0; 3]; 3];
     for a in 0..3 {
-        for r in 0..3 {
-            // File lists the direction vector of each voxel axis in turn.
-            axes[a][r] = matrix[a * 3 + r];
-        }
+        // File lists the direction vector of each voxel axis in turn.
+        axes[a].copy_from_slice(&matrix[a * 3..a * 3 + 3]);
         let norm = (axes[a][0].powi(2) + axes[a][1].powi(2) + axes[a][2].powi(2)).sqrt();
-        if !(norm > 0.0) {
+        if norm.is_nan() || norm <= 0.0 {
             return Err(fmt_err("zero-length TransformMatrix axis"));
         }
-        for r in 0..3 {
-            axes[a][r] = axes[a][r] / norm * spacing[a];
+        for component in &mut axes[a] {
+            *component = *component / norm * spacing[a];
         }
     }
 
@@ -815,8 +825,8 @@ fn read_metaimage_impl(bytes: &[u8], path: Option<&Path>) -> Result<NiftiImage, 
                 "multi-file MetaImage data (LIST or printf patterns) is not supported",
             ));
         }
-        let header_path = path
-            .ok_or_else(|| fmt_err("detached MetaImage needs a file path to locate its data"))?;
+        let header_path =
+            path.ok_or_else(|| fmt_err("detached MetaImage needs a file path to locate its data"))?;
         detached = std::fs::read(safe_sibling(header_path, data_file)?)?;
         (&detached, header_size)
     };
@@ -854,7 +864,9 @@ impl VolumeFormat {
 /// Decide the format from magic bytes first, extension second.
 pub fn sniff_volume_format(path: &Path) -> Result<VolumeFormat, NiftiError> {
     let mut head = Vec::new();
-    std::fs::File::open(path)?.take(2048).read_to_end(&mut head)?;
+    std::fs::File::open(path)?
+        .take(2048)
+        .read_to_end(&mut head)?;
     if head.starts_with(b"NRRD000") {
         return Ok(VolumeFormat::Nrrd);
     }
