@@ -16,6 +16,12 @@ own versions independent of the crate version.
   uses, now shared as `openbnct_transport::quantize_fractions`), giving ~150
   materials; the same solve converges in 18 outers (~20 min on 6 threads, 2.3 GB).
   `OPENBNCT_MIXTURE_LEVELS=0` restores exact fractions.
+- **`sn photon-solve` converges on real anatomy.** On the same head the coupled photon
+  solve stalled (residual 0.52 after 8 outers): Compton-dominated groups 11–12 did
+  not finish their inner iterations in a pass. CMFD is now on by default for the
+  photon solve (`--no-cmfd`), the exponential closure is off (`--exp-source`), the
+  outer budget is 32 and per-outer progress prints (`--quiet`). The head converges
+  in 12 outers.
 
 ## Unreleased — deterministic-transport accuracy fixes (2026-09-29)
 

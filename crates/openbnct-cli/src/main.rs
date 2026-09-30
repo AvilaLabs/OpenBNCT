@@ -3729,8 +3729,10 @@ enum SnCommand {
         /// Within-group iterations per group pass.
         #[arg(long, default_value_t = 64)]
         max_inner: u32,
-        /// Outer sweeps (downscatter-only: converges in one pass).
-        #[arg(long, default_value_t = 8)]
+        /// Outer sweeps. Downscatter-only in principle, but high-scattering
+        /// Compton groups in tissue do not finish their inner iterations
+        /// in one pass on real anatomy (a 206k-voxel head needed 12).
+        #[arg(long, default_value_t = 32)]
         max_outer: u32,
         /// Axis treated as periodic; repeatable or comma-separated.
         #[arg(long, value_delimiter = ',')]
@@ -3749,6 +3751,20 @@ enum SnCommand {
         /// the Klein–Nishina collapse).
         #[arg(long, default_value_t = 0)]
         anisotropy: u32,
+        /// Disable CMFD acceleration (on by default: without it the
+        /// within-group source iteration of Compton-dominated groups
+        /// stalls on real anatomy — residual 0.5 after 8 outers on a
+        /// 206k-voxel head, converged in 12 with it).
+        #[arg(long)]
+        no_cmfd: bool,
+        /// Enable the exponential within-cell source closure (off by
+        /// default for photons: its λ refits keep outer iterations from
+        /// settling within the photon outer budget).
+        #[arg(long)]
+        exp_source: bool,
+        /// Suppress per-outer progress lines on stderr.
+        #[arg(long)]
+        quiet: bool,
         /// Also write a folded `openbnct.physical-dose-bundle/0.2.0`
         /// photon dose to this path (the data must declare
         /// `dose_response_gy_cm2` and a `component_profile` binding).
@@ -12128,6 +12144,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 no_transport_correction,
                 p1,
                 anisotropy,
+                no_cmfd,
+                exp_source,
+                quiet,
                 dose,
                 output,
             } => {
@@ -12160,7 +12179,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic_axes[index] = true;
                 }
                 let options = openbnct_transport::SnOptions {
-                    progress: false,
+                    progress: !quiet,
                     quadrature_order: order,
                     convergence,
                     max_inner_iterations: max_inner,
@@ -12173,13 +12192,13 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     anisotropy_order: anisotropy,
                     anderson_depth: 0,
                     coarse_rebalance: true,
-                    cmfd: false,
+                    cmfd: !no_cmfd,
                     cmfd_inner_sweeps: 2,
                     cmfd_damping: 1.0,
                     stats: None,
                     inner_convergence: None,
                     theta_repair: true,
-                    exp_source: true,
+                    exp_source,
                     source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
                 };
                 let data_ref = openbnct_core::ContentReference {
