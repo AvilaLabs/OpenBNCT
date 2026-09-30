@@ -561,6 +561,12 @@
       "module": "src/prompt_gamma.rs"
     },
     {
+      "token": "openbnct.phase-space-source/0.1.0",
+      "constant": "PHASE_SPACE_SOURCE_SCHEMA",
+      "crate": "openbnct-transport",
+      "module": "src/phase_space_source.rs"
+    },
+    {
       "token": "openbnct.physical-dose-bundle/0.2.0",
       "constant": "PHYSICAL_DOSE_BUNDLE_SCHEMA",
       "crate": "openbnct-core",
