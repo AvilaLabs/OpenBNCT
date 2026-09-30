@@ -1956,7 +1956,7 @@ already have.
 - **R18-11 — Tier 2, beam realism.**
   - IAEA phase-space (`.IAEAheader`/`.IAEAphsp`) beam sources, binned onto the
     source plane × direction × energy for the deterministic solver and converted
-    for OpenMC so `verify` stays apples-to-apples. **(landed, PHSP_COMMIT)**
+    for OpenMC so `verify` stays apples-to-apples. **(landed, 89127b7)**
     `beam phsp-info` / `beam phsp-bin`, the `phase_space` source space, and the
     OpenMC source-bank conversion in `openmc generate`. Neutrons only; photons
     are counted and reported. Source planes are case faces. Validation numbers
