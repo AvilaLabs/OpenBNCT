@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 
-//! NIfTI-1 image import and export with explicit affine semantics.
+//! NIfTI-1 image import and export with explicit affine semantics, plus
+//! NRRD/MetaImage readers and a sniffing `read_volume` (see `volume_io`).
 //!
 //! Scope is deliberately bounded: `.nii` single-file volumes (`n+1` magic),
 //! optionally gzip-compressed (`.nii.gz`), with a 3-dimensional spatial
@@ -28,6 +29,12 @@ use openbnct_core::{
 use serde::{Deserialize, Serialize};
 use sha2::Digest;
 use thiserror::Error;
+
+mod volume_io;
+pub use volume_io::{
+    VolumeFormat, read_metaimage, read_metaimage_file, read_nrrd, read_nrrd_file, read_volume,
+    sniff_volume_format,
+};
 
 const HEADER_LEN: usize = 348;
 const MAGIC_OFFSET: usize = 344;
@@ -679,6 +686,8 @@ pub enum NiftiError {
     NoSpatialTransform,
     #[error("header parse failed")]
     Header,
+    #[error("{0}")]
+    Format(String),
     #[error("invalid resample target: {0}")]
     InvalidTarget(String),
     #[error("component-dose import requires exactly 4 sources, got {0}")]
@@ -744,7 +753,7 @@ pub fn interchange_from_niftis(
     let mut components = Vec::new();
     let mut file_map = Vec::new();
     for source in sources {
-        let image = read_nifti_file(&source.file)?;
+        let image = read_volume(&source.file)?;
         if let Some(existing) = &geometry {
             if !grid_geometry_equivalent(existing, &image.geometry) {
                 return Err(NiftiError::GeometryDisagreement(source.component));
@@ -757,7 +766,7 @@ pub fn interchange_from_niftis(
         }
         let absolute_standard_uncertainty = match &source.sigma_file {
             Some(sigma_path) => {
-                let sigma = read_nifti_file(sigma_path)?;
+                let sigma = read_volume(sigma_path)?;
                 if !grid_geometry_equivalent(&image.geometry, &sigma.geometry) {
                     return Err(NiftiError::SigmaGeometryDisagreement(source.component));
                 }
