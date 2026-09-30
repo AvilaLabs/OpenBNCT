@@ -1,0 +1,40 @@
+{
+  "schema_version": "nctforge.openmc-execution-profile/0.1.0",
+  "id": "nctforge.nf-bnct-001.openmc-0.16.0.smoke.v1",
+  "purpose": "smoke_only",
+  "openmc_version": "0.16.0",
+  "openmc_source_commit": "617d35a5063c57796b43428bc401e627d2011046",
+  "run_mode": "fixed_source",
+  "batches": 5,
+  "seed": 20260831,
+  "stride": 152917,
+  "photon_transport": true,
+  "atomic_relaxation": true,
+  "electron_treatment": "led",
+  "energy_mode": "continuous-energy",
+  "probability_tables": true,
+  "survival_biasing": false,
+  "temperature_method": "nearest",
+  "temperature_tolerance_k": 0.5,
+  "temperature_multipole": false,
+  "confidence_intervals": false,
+  "write_summary": true,
+  "write_ascii_tallies": false,
+  "write_sourcepoint": false,
+  "event_based": false,
+  "neutron_diagnostic_energy_grid_ev": [
+    0.0,
+    0.5,
+    1000.0,
+    10000.0,
+    20000000.0
+  ],
+  "photon_diagnostic_energy_grid_ev": [
+    0.0,
+    477000.0,
+    479000.0,
+    2223000.0,
+    2225000.0,
+    20000000.0
+  ]
+}

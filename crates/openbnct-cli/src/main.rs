@@ -19438,6 +19438,10 @@ fn cmd_dicom_import_ct(
                 .collect::<Vec<_>>()
         ),
     );
+    provenance.insert(
+        "structures_source".into(),
+        serde_json::json!(import.structure_source.map(|source| source.name())),
+    );
     provenance.insert("ignored_inputs".into(), serde_json::json!(import.ignored));
     let source = ct_import::CtImportSource {
         geometry: ct.geometry.clone(),

@@ -3,3 +3,4 @@ data/*
 !data/label-names.json
 project/out/
 __pycache__/
+!data/derived.json

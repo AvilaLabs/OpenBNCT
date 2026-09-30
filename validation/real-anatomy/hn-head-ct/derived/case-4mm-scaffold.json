@@ -1,0 +1,100 @@
+{
+  "schema_version": "openbnct.transport-case/0.1.0",
+  "case_id": "openbnct.hn-head-ct.v1",
+  "geometry": {
+    "shape": [
+      54,
+      67,
+      57
+    ],
+    "spacing_mm": [
+      4.0,
+      4.0,
+      4.0
+    ],
+    "origin_mm": [
+      -98.87999939918518,
+      243.59999632835388,
+      -395.25
+    ],
+    "direction": [
+      1.0,
+      -0.0,
+      -0.0,
+      -0.0,
+      1.0,
+      -0.0,
+      0.0,
+      0.0,
+      1.0
+    ]
+  },
+  "material": {
+    "schema_version": "openbnct.material-definition/0.1.0",
+    "id": "openbnct.tissue-library.air-dry.v1",
+    "density_g_cm3": 0.001205,
+    "temperature_k": 293.6,
+    "nuclides": [
+      {
+        "name": "C12",
+        "mass_fraction": 0.00012415609780012447
+      },
+      {
+        "name": "C13",
+        "mass_fraction": 1.4551172553926138e-6
+      },
+      {
+        "name": "N14",
+        "mass_fraction": 0.7620992906828383
+      },
+      {
+        "name": "N15",
+        "mass_fraction": 0.002982412321599649
+      },
+      {
+        "name": "O16",
+        "mass_fraction": 0.2341564040602067
+      },
+      {
+        "name": "O17",
+        "mass_fraction": 0.00009479623097506501
+      },
+      {
+        "name": "O18",
+        "mass_fraction": 0.0005414854893247443
+      }
+    ],
+    "neutron_thermal_treatment": "free_gas"
+  },
+  "source": {
+    "schema_version": "openbnct.fixed-source-definition/0.1.0",
+    "id": "openbnct.hn-head-ct.v1.scaffold-source",
+    "particle": "neutron",
+    "source_sites_per_history": 1,
+    "statistical_weight_per_site": 1.0,
+    "space": {
+      "kind": "uniform_disk",
+      "axis": "z",
+      "offset_cm": -39.525,
+      "center_uv_cm": [
+        0.0,
+        0.0
+      ],
+      "radius_cm": 10.8
+    },
+    "angle": {
+      "kind": "isotropic_cone",
+      "axis_unit_vector": [
+        0.0,
+        0.0,
+        1.0
+      ],
+      "half_angle_rad": 0.15
+    },
+    "energy": {
+      "kind": "monoenergetic",
+      "energy_ev": 0.0253
+    }
+  },
+  "requested_histories": 1
+}

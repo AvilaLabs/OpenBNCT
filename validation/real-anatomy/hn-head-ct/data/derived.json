@@ -1,0 +1,76 @@
+{
+ "scan": "tcia-ct-scan-dataset 0522c0226 (test, oncologist segmentations)",
+ "grid": {
+  "shape": [
+   218,
+   272,
+   91
+  ],
+  "spacing_mm": [
+   0.98,
+   0.98,
+   2.5
+  ],
+  "origin_lps_mm": [
+   -100.38999938964844,
+   242.09000061035158,
+   -396.0
+  ]
+ },
+ "beam_approach": "+x",
+ "scalp_entry_x_mm": -71.47999938964844,
+ "target_center_lps_mm": [
+  -36.47999938964844,
+  402.81000061035155,
+  -261.0
+ ],
+ "target_radius_mm": 25.0,
+ "target_depth_mm": 35.0,
+ "target_volume_cm3": 62.308350999999995,
+ "target_ball_volume_cm3": 65.357621,
+ "cropped_index_box": {
+  "lo": [
+   150,
+   76,
+   71
+  ],
+  "hi": [
+   368,
+   348,
+   162
+  ]
+ },
+ "dropped_empty_after_crop": [
+  "Lung-Lt",
+  "Lung-Rt"
+ ],
+ "structure_volumes_cm3": {
+  "Brain": 1236.430965,
+  "Brainstem": 23.681062999999998,
+  "Cochlea-Lt": 0.069629,
+  "Cochlea-Rt": 0.055223,
+  "Lacrimal-Lt": 0.605052,
+  "Lacrimal-Rt": 0.52822,
+  "Lens-Lt": 0.153664,
+  "Lens-Rt": 0.242501,
+  "Mandible": 79.68198699999999,
+  "Optic-Nerve-Lt": 0.665077,
+  "Optic-Nerve-Rt": 0.689087,
+  "Orbit-Lt": 7.764834,
+  "Orbit-Rt": 7.990527999999999,
+  "Parotid-Lt": 34.497568,
+  "Parotid-Rt": 37.784537,
+  "Spinal-Canal": 18.324431999999998,
+  "Spinal-Cord": 5.097323,
+  "Submandibular-Lt": 7.625576,
+  "Submandibular-Rt": 6.444284,
+  "BODY": 4286.622949,
+  "SKIN": 676.083184,
+  "RESEARCH_TARGET": 62.308350999999995
+ },
+ "outputs_sha256": {
+  "hu.nii.gz": "29d191c9ad04fd61468a4fa889c7b9c70f256eff2de44d946ee7b6435252924e",
+  "labels.nii.gz": "a29a6a99a52918b60cb9ffb98a38321b75a57972fa9b2faa74e4d5ae9958ae06",
+  "label-names.json": "752f276db7d1575004081574c52efbaebc3f7d316f234330270b49f8bf72b1a0"
+ }
+}

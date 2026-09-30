@@ -1,0 +1,183 @@
+{
+  "case_id": "openbnct.hn-head-ct.v1",
+  "masks": [
+    {
+      "ct_voxels": 514965,
+      "file": "001-Brain.json",
+      "grid_voxels": 19291,
+      "name": "Brain",
+      "roi_number": 1,
+      "sha256": "8f90376603bb8ba09db8a128fd928124604bef4208982b4bba2fdb2975fa73fe"
+    },
+    {
+      "ct_voxels": 9863,
+      "file": "002-Brainstem.json",
+      "grid_voxels": 357,
+      "name": "Brainstem",
+      "roi_number": 2,
+      "sha256": "029c9fe645423573cfef6b36bc1a0e894744704ad70fcece5c1dd08a9a5c7bee"
+    },
+    {
+      "ct_voxels": 29,
+      "file": "003-Cochlea-Lt.json",
+      "grid_voxels": 0,
+      "name": "Cochlea-Lt",
+      "roi_number": 3,
+      "sha256": "0b88eb1d9934d2ca2321e430da42f1df8b5344084db94c5f96031a2ebd08ef0f"
+    },
+    {
+      "ct_voxels": 23,
+      "file": "004-Cochlea-Rt.json",
+      "grid_voxels": 0,
+      "name": "Cochlea-Rt",
+      "roi_number": 4,
+      "sha256": "817b02a83cf6b518d893a3ff847e025147ea5b1e1482ad6d236ff120921a503a"
+    },
+    {
+      "ct_voxels": 252,
+      "file": "005-Lacrimal-Lt.json",
+      "grid_voxels": 7,
+      "name": "Lacrimal-Lt",
+      "roi_number": 5,
+      "sha256": "c67be0e13ef28d8fe62bb14faed0637d6f4f0ca7a4d79db4664f134c77e2723a"
+    },
+    {
+      "ct_voxels": 220,
+      "file": "006-Lacrimal-Rt.json",
+      "grid_voxels": 6,
+      "name": "Lacrimal-Rt",
+      "roi_number": 6,
+      "sha256": "034795f7c63fc556ddf1063d7019d59357e8f9bbd02a5123a7fb6aafb3d7d62a"
+    },
+    {
+      "ct_voxels": 64,
+      "file": "007-Lens-Lt.json",
+      "grid_voxels": 1,
+      "name": "Lens-Lt",
+      "roi_number": 7,
+      "sha256": "11bebfffc70760840a6f512fe3c684b08943d1c6baafbcaf25c371640f963b5e"
+    },
+    {
+      "ct_voxels": 101,
+      "file": "008-Lens-Rt.json",
+      "grid_voxels": 2,
+      "name": "Lens-Rt",
+      "roi_number": 8,
+      "sha256": "8b1306542753c2bf4c269a7b8413d150b8171f3ad36848f6778ac6c68e8b9289"
+    },
+    {
+      "ct_voxels": 33187,
+      "file": "009-Mandible.json",
+      "grid_voxels": 1222,
+      "name": "Mandible",
+      "roi_number": 9,
+      "sha256": "08f74c2454cff47f6fe22c6f29bbddce8ac29403db542d4bbf645d22a49b80ac"
+    },
+    {
+      "ct_voxels": 277,
+      "file": "010-Optic-Nerve-Lt.json",
+      "grid_voxels": 5,
+      "name": "Optic-Nerve-Lt",
+      "roi_number": 10,
+      "sha256": "2afdd8d82c5e85af1ac211cfc47ce172808cbf2915b915bf9199cfeaf1a97beb"
+    },
+    {
+      "ct_voxels": 287,
+      "file": "011-Optic-Nerve-Rt.json",
+      "grid_voxels": 5,
+      "name": "Optic-Nerve-Rt",
+      "roi_number": 11,
+      "sha256": "8c75bd66ff598b57337e0d49850951082477abcc6640cb0808f11976f4b4df7d"
+    },
+    {
+      "ct_voxels": 3234,
+      "file": "012-Orbit-Lt.json",
+      "grid_voxels": 116,
+      "name": "Orbit-Lt",
+      "roi_number": 12,
+      "sha256": "ff1127b43231628e1c2e81953cff209b589612a602d14639074ed4c930030414"
+    },
+    {
+      "ct_voxels": 3328,
+      "file": "013-Orbit-Rt.json",
+      "grid_voxels": 116,
+      "name": "Orbit-Rt",
+      "roi_number": 13,
+      "sha256": "cecb36abab8dbf8d028c6a35dcbf56a65bb05d712506fbe702ce4863522ecf35"
+    },
+    {
+      "ct_voxels": 14368,
+      "file": "014-Parotid-Lt.json",
+      "grid_voxels": 520,
+      "name": "Parotid-Lt",
+      "roi_number": 14,
+      "sha256": "3c38dda2e5f324ddb666e511f9c967a7ee6c20eb1548465d5976af939ca1e398"
+    },
+    {
+      "ct_voxels": 15737,
+      "file": "015-Parotid-Rt.json",
+      "grid_voxels": 579,
+      "name": "Parotid-Rt",
+      "roi_number": 15,
+      "sha256": "9966b354add7ff95fc3a4bc2b9dc06183f71ddb6b5f85ab0891bea400fe492f0"
+    },
+    {
+      "ct_voxels": 7632,
+      "file": "016-Spinal-Canal.json",
+      "grid_voxels": 277,
+      "name": "Spinal-Canal",
+      "roi_number": 16,
+      "sha256": "158b831aab871a4d2d1fe3f2aef5b66a80fceb762e013eeb0b392bd2b5244dc8"
+    },
+    {
+      "ct_voxels": 2123,
+      "file": "017-Spinal-Cord.json",
+      "grid_voxels": 73,
+      "name": "Spinal-Cord",
+      "roi_number": 17,
+      "sha256": "eea01a62f361885294162d9aec7eca9a8a931551c2a38f352fcebbc35f1f907b"
+    },
+    {
+      "ct_voxels": 3176,
+      "file": "018-Submandibular-Lt.json",
+      "grid_voxels": 115,
+      "name": "Submandibular-Lt",
+      "roi_number": 18,
+      "sha256": "530be549347b1fcd07fa1bb886e2f2179ed5a84e7c6ed92f08a7fccbdccf7528"
+    },
+    {
+      "ct_voxels": 2684,
+      "file": "019-Submandibular-Rt.json",
+      "grid_voxels": 95,
+      "name": "Submandibular-Rt",
+      "roi_number": 19,
+      "sha256": "f49c8938746bbd59b55bc27b242732c5306aa53fbdfd33accb00e02a8fbfba10"
+    },
+    {
+      "ct_voxels": 1785349,
+      "file": "020-BODY.json",
+      "grid_voxels": 66852,
+      "name": "BODY",
+      "roi_number": 20,
+      "sha256": "cef0762eab5b5d8e8a66a6b56007cc40dba3fb80ff025a81acef70502b88b7ed"
+    },
+    {
+      "ct_voxels": 281584,
+      "file": "021-SKIN.json",
+      "grid_voxels": 10415,
+      "name": "SKIN",
+      "roi_number": 21,
+      "sha256": "4b36cf2c7f86da34c2e73bf19b9e7ff4aea5c38532b1d9c61d0fae1c745d8280"
+    },
+    {
+      "ct_voxels": 25951,
+      "file": "022-RESEARCH_TARGET.json",
+      "grid_voxels": 959,
+      "name": "RESEARCH_TARGET",
+      "roi_number": 22,
+      "sha256": "a8a00ce34899b830ffe231a13e3f83519df0572cb648438f2c0fc6c83ffce171"
+    }
+  ],
+  "membership": "voxel is in the ROI when >= 50% of its volume is covered by CT voxels whose centers lie inside the contour polygon",
+  "schema_version": "openbnct.roi-mask-index/0.1.0"
+}

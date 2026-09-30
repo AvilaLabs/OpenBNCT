@@ -1,0 +1,59 @@
+{
+  "anchor_coverage": [
+    {
+      "hu": -1000.0,
+      "material_id": "openbnct.tissue-library.air-dry.v1",
+      "voxels": 130494,
+      "volume_fraction_total": 124437.9606642689
+    },
+    {
+      "hu": -740.0,
+      "material_id": "openbnct.tissue-library.lung-inflated-declared.v1",
+      "voxels": 31678,
+      "volume_fraction_total": 13481.327694109763
+    },
+    {
+      "hu": -100.0,
+      "material_id": "openbnct.tissue-library.adipose-icrp.v1",
+      "voxels": 28605,
+      "volume_fraction_total": 13310.20618527616
+    },
+    {
+      "hu": 0.0,
+      "material_id": "openbnct.tissue-library.water-liquid.v1",
+      "voxels": 33525,
+      "volume_fraction_total": 17688.536106637774
+    },
+    {
+      "hu": 30.0,
+      "material_id": "openbnct.tissue-library.brain-icrp.v1",
+      "voxels": 25971,
+      "volume_fraction_total": 13702.440659867849
+    },
+    {
+      "hu": 50.0,
+      "material_id": "openbnct.tissue-library.muscle-skeletal-icrp.v1",
+      "voxels": 7126,
+      "volume_fraction_total": 3050.9624196662025
+    },
+    {
+      "hu": 60.0,
+      "material_id": "openbnct.tissue-library.skin-icrp.v1",
+      "voxels": 20473,
+      "volume_fraction_total": 12676.347917083976
+    },
+    {
+      "hu": 1200.0,
+      "material_id": "openbnct.tissue-library.cortical-bone-icrp.v1",
+      "voxels": 20047,
+      "volume_fraction_total": 7878.218353089341
+    }
+  ],
+  "clamped_low": 113850,
+  "clamped_high": 683,
+  "interpolated": 91693,
+  "hu_range": [
+    -1024.0,
+    2955.976074218752
+  ]
+}
