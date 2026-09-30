@@ -20,7 +20,7 @@ use dicom_core::{DataElement, Length, Tag, VR};
 use dicom_dictionary_std::{tags, uids};
 use dicom_object::InMemDicomObject;
 use dicom_object::meta::FileMetaTableBuilder;
-use openbnct_core::{DoseComponent, DoseUnit, PhysicalDoseBundle};
+use openbnct_core::{DoseComponent, DoseUnit, GridGeometry, PhysicalDoseBundle};
 use uuid::Uuid;
 
 use crate::error::{DicomError, Result};
@@ -407,6 +407,299 @@ fn ds_values(values: &[f64]) -> String {
         .join("\\")
 }
 
+/// A decoded RT Dose grid on a patient-LPS `GridGeometry`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RtDoseVolume {
+    /// Grid in patient LPS millimeters. Axis 0 follows the columns, axis 1
+    /// the rows, axis 2 the frame stack (signed by the Grid Frame Offset
+    /// Vector direction).
+    pub geometry: GridGeometry,
+    /// `pixel * DoseGridScaling`, columns fastest, then rows, then frames.
+    /// Gray when `dose_units == "GY"`.
+    pub values: Vec<f64>,
+    /// DICOM Dose Units: `GY` or `RELATIVE`.
+    pub dose_units: String,
+    pub dose_grid_scaling: f64,
+    pub dose_type: Option<String>,
+    pub dose_summation_type: Option<String>,
+    pub dose_comment: Option<String>,
+    pub manufacturer: Option<String>,
+    pub frame_of_reference_uid: Option<String>,
+    pub sop_instance_uid: String,
+    pub study_instance_uid: Option<String>,
+    pub series_instance_uid: Option<String>,
+}
+
+const MAX_DOSE_VOXELS: usize = 1 << 30;
+
+fn dose_error(message: impl Into<String>) -> DicomError {
+    DicomError::RtDose(message.into())
+}
+
+/// Import a Part-10 RT Dose file.
+///
+/// Reads Dose Grid Scaling, 16/32-bit unsigned pixel data, Image
+/// Position/Orientation (Patient), Pixel Spacing, the Grid Frame Offset
+/// Vector, and Dose Units. Only `GY` and `RELATIVE` are accepted, and the
+/// frame offsets must be uniform. Compressed transfer syntaxes are refused.
+pub fn import_rt_dose(path: &Path) -> Result<RtDoseVolume> {
+    let obj = dicom_object::open_file(path).map_err(|source| DicomError::Read {
+        path: path.to_path_buf(),
+        source: Box::new(source),
+    })?;
+    rt_dose_from_object(&obj, path)
+}
+
+/// In-memory variant of [`import_rt_dose`].
+pub fn import_rt_dose_bytes(bytes: &[u8]) -> Result<RtDoseVolume> {
+    let label = Path::new("rtdose.dcm");
+    let obj = dicom_object::DefaultDicomObject::from_reader(std::io::Cursor::new(bytes)).map_err(
+        |source| DicomError::Read {
+            path: label.to_path_buf(),
+            source: Box::new(source),
+        },
+    )?;
+    rt_dose_from_object(&obj, label)
+}
+
+fn opt_text(obj: &InMemDicomObject, tag: Tag) -> Option<String> {
+    obj.get(tag)
+        .and_then(|e| e.to_str().ok())
+        .map(|s| s.trim_end_matches([' ', '\0']).trim().to_owned())
+        .filter(|s| !s.is_empty())
+}
+
+fn rt_dose_from_object(
+    obj: &dicom_object::DefaultDicomObject,
+    path: &Path,
+) -> Result<RtDoseVolume> {
+    use crate::rtstruct::{attribute_error, dot, floats, integer, require_string, string};
+    let ts = obj.meta().transfer_syntax();
+    if ts != uids::EXPLICIT_VR_LITTLE_ENDIAN && ts != uids::IMPLICIT_VR_LITTLE_ENDIAN {
+        return Err(attribute_error(
+            path,
+            "Transfer Syntax UID",
+            format!("only uncompressed little-endian RT Dose is supported, found {ts}"),
+        ));
+    }
+    require_string(
+        obj,
+        path,
+        tags::SOP_CLASS_UID,
+        "SOP Class UID",
+        RT_DOSE_SOP_CLASS,
+    )?;
+    let dose_units = string(obj, path, tags::DOSE_UNITS, "Dose Units")?;
+    if dose_units != "GY" && dose_units != "RELATIVE" {
+        return Err(dose_error(format!(
+            "Dose Units {dose_units:?} is not GY or RELATIVE"
+        )));
+    }
+    let scaling: f64 = floats(obj, path, tags::DOSE_GRID_SCALING, "Dose Grid Scaling")?
+        .first()
+        .copied()
+        .ok_or_else(|| dose_error("Dose Grid Scaling is empty"))?;
+    if !scaling.is_finite() || scaling <= 0.0 {
+        return Err(dose_error("Dose Grid Scaling must be positive and finite"));
+    }
+    let rows = integer(obj, path, tags::ROWS, "Rows")?;
+    let columns = integer(obj, path, tags::COLUMNS, "Columns")?;
+    let frames = match obj.get(tags::NUMBER_OF_FRAMES) {
+        Some(_) => integer(obj, path, tags::NUMBER_OF_FRAMES, "Number of Frames")?,
+        None => 1,
+    };
+    if rows <= 0 || columns <= 0 || frames <= 0 {
+        return Err(dose_error(
+            "Rows, Columns and Number of Frames must be positive",
+        ));
+    }
+    let (rows, columns, frames) = (rows as usize, columns as usize, frames as usize);
+    let voxels = rows
+        .checked_mul(columns)
+        .and_then(|v| v.checked_mul(frames))
+        .filter(|v| *v <= MAX_DOSE_VOXELS)
+        .ok_or_else(|| dose_error("dose grid is too large"))?;
+    let samples = integer(obj, path, tags::SAMPLES_PER_PIXEL, "Samples per Pixel")?;
+    let bits = integer(obj, path, tags::BITS_ALLOCATED, "Bits Allocated")?;
+    let representation = integer(
+        obj,
+        path,
+        tags::PIXEL_REPRESENTATION,
+        "Pixel Representation",
+    )?;
+    if samples != 1 || representation != 0 || (bits != 16 && bits != 32) {
+        return Err(dose_error(format!(
+            "unsupported pixel format: {samples} samples, {bits} bits, representation \
+             {representation}; need 1 sample of unsigned 16 or 32 bits"
+        )));
+    }
+    let width = (bits / 8) as usize;
+    let pixel_bytes = obj
+        .element(tags::PIXEL_DATA)
+        .map_err(|e| attribute_error(path, "Pixel Data", e.to_string()))?
+        .to_bytes()
+        .map_err(|e| attribute_error(path, "Pixel Data", e.to_string()))?;
+    if pixel_bytes.len() < voxels * width {
+        return Err(dose_error(format!(
+            "Pixel Data holds {} bytes, {} required",
+            pixel_bytes.len(),
+            voxels * width
+        )));
+    }
+    let values: Vec<f64> = if width == 2 {
+        pixel_bytes[..voxels * 2]
+            .chunks_exact(2)
+            .map(|c| f64::from(u16::from_le_bytes([c[0], c[1]])) * scaling)
+            .collect()
+    } else {
+        pixel_bytes[..voxels * 4]
+            .chunks_exact(4)
+            .map(|c| f64::from(u32::from_le_bytes([c[0], c[1], c[2], c[3]])) * scaling)
+            .collect()
+    };
+
+    let position = floats(
+        obj,
+        path,
+        tags::IMAGE_POSITION_PATIENT,
+        "Image Position (Patient)",
+    )?;
+    let orientation = floats(
+        obj,
+        path,
+        tags::IMAGE_ORIENTATION_PATIENT,
+        "Image Orientation (Patient)",
+    )?;
+    let pixel_spacing = floats(obj, path, tags::PIXEL_SPACING, "Pixel Spacing")?;
+    if position.len() != 3 || orientation.len() != 6 || pixel_spacing.len() != 2 {
+        return Err(dose_error(
+            "Image Position, Image Orientation and Pixel Spacing have the wrong length",
+        ));
+    }
+    if position
+        .iter()
+        .chain(&orientation)
+        .chain(&pixel_spacing)
+        .any(|v| !v.is_finite())
+        || pixel_spacing.iter().any(|v| *v <= 0.0)
+    {
+        return Err(dose_error("non-finite or non-positive geometry attribute"));
+    }
+    let u = [orientation[0], orientation[1], orientation[2]];
+    let v = [orientation[3], orientation[4], orientation[5]];
+    let norm = |a: [f64; 3]| dot(a, a).sqrt();
+    if (norm(u) - 1.0).abs() > 1.0e-3 || (norm(v) - 1.0).abs() > 1.0e-3 || dot(u, v).abs() > 1.0e-3
+    {
+        return Err(dose_error("Image Orientation is not an orthonormal pair"));
+    }
+    let normal = [
+        u[1] * v[2] - u[2] * v[1],
+        u[2] * v[0] - u[0] * v[2],
+        u[0] * v[1] - u[1] * v[0],
+    ];
+    // Frame stack: offsets along the plane normal relative to the position.
+    let offsets = match obj.get(tags::GRID_FRAME_OFFSET_VECTOR) {
+        Some(element) => element
+            .to_multi_float64()
+            .map_err(|e| attribute_error(path, "Grid Frame Offset Vector", e.to_string()))?,
+        None => Vec::new(),
+    };
+    let (first_offset, step) = if offsets.is_empty() {
+        if frames != 1 {
+            return Err(dose_error(
+                "multi-frame RT Dose needs a Grid Frame Offset Vector",
+            ));
+        }
+        let thickness = obj
+            .get(tags::SLICE_THICKNESS)
+            .and_then(|e| e.to_float64().ok())
+            .filter(|t| t.is_finite() && *t > 0.0)
+            .ok_or_else(|| {
+                dose_error("single-frame RT Dose without offsets needs a Slice Thickness")
+            })?;
+        (0.0, thickness)
+    } else {
+        if offsets.len() != frames {
+            return Err(dose_error(format!(
+                "Grid Frame Offset Vector has {} entries for {frames} frames",
+                offsets.len()
+            )));
+        }
+        if offsets.iter().any(|o| !o.is_finite()) {
+            return Err(dose_error("Grid Frame Offset Vector is not finite"));
+        }
+        if frames == 1 {
+            let thickness = obj
+                .get(tags::SLICE_THICKNESS)
+                .and_then(|e| e.to_float64().ok())
+                .filter(|t| t.is_finite() && *t > 0.0)
+                .ok_or_else(|| {
+                    dose_error("single-frame RT Dose needs a Slice Thickness for its spacing")
+                })?;
+            (offsets[0], thickness)
+        } else {
+            let step = offsets[1] - offsets[0];
+            if step == 0.0 {
+                return Err(dose_error("Grid Frame Offset Vector repeats a position"));
+            }
+            for w in offsets.windows(2) {
+                if ((w[1] - w[0]) - step).abs() > 1.0e-3 * step.abs().max(1.0) {
+                    return Err(dose_error(
+                        "Grid Frame Offset Vector spacing is not uniform",
+                    ));
+                }
+            }
+            (offsets[0], step)
+        }
+    };
+    // GridGeometry is right-handed, so axis 2 is always +normal. A stack
+    // stored in descending offset order is reversed frame-wise and its
+    // origin is the last stored frame.
+    let mut values = values;
+    let start_offset = if step < 0.0 {
+        let plane = rows * columns;
+        let mut reversed = Vec::with_capacity(values.len());
+        for frame in (0..frames).rev() {
+            reversed.extend_from_slice(&values[frame * plane..(frame + 1) * plane]);
+        }
+        values = reversed;
+        first_offset + step * (frames - 1) as f64
+    } else {
+        first_offset
+    };
+    let origin = [
+        position[0] + start_offset * normal[0],
+        position[1] + start_offset * normal[1],
+        position[2] + start_offset * normal[2],
+    ];
+    let axis2 = normal;
+    let geometry = GridGeometry {
+        shape: [columns as u32, rows as u32, frames as u32],
+        spacing_mm: [pixel_spacing[1], pixel_spacing[0], step.abs()],
+        origin_mm: origin,
+        direction: [
+            u[0], v[0], axis2[0], u[1], v[1], axis2[1], u[2], v[2], axis2[2],
+        ],
+    };
+    geometry
+        .voxel_count()
+        .map_err(|e| DicomError::Geometry(format!("dose grid: {e}")))?;
+    Ok(RtDoseVolume {
+        geometry,
+        values,
+        dose_units,
+        dose_grid_scaling: scaling,
+        dose_type: opt_text(obj, tags::DOSE_TYPE),
+        dose_summation_type: opt_text(obj, tags::DOSE_SUMMATION_TYPE),
+        dose_comment: opt_text(obj, tags::DOSE_COMMENT),
+        manufacturer: opt_text(obj, tags::MANUFACTURER),
+        frame_of_reference_uid: opt_text(obj, tags::FRAME_OF_REFERENCE_UID),
+        sop_instance_uid: string(obj, path, tags::SOP_INSTANCE_UID, "SOP Instance UID")?,
+        study_instance_uid: opt_text(obj, tags::STUDY_INSTANCE_UID),
+        series_instance_uid: opt_text(obj, tags::SERIES_INSTANCE_UID),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -562,5 +855,79 @@ mod tests {
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn export_then_import_round_trips_values_and_grid() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dose.dcm");
+        let source = bundle();
+        let result = export_rt_dose(
+            &source,
+            DoseSelection::PhysicalTotal,
+            &RtDoseExportOptions::default(),
+            &path,
+        )
+        .unwrap();
+        let imported = import_rt_dose(&path).unwrap();
+        assert_eq!(imported.dose_units, "GY");
+        assert_eq!(imported.geometry.shape, source.geometry.shape);
+        assert_eq!(imported.geometry.spacing_mm, source.geometry.spacing_mm);
+        assert_eq!(imported.geometry.origin_mm, source.geometry.origin_mm);
+        assert_eq!(imported.geometry.direction, source.geometry.direction);
+        assert_eq!(
+            imported.frame_of_reference_uid.as_deref(),
+            Some("1.2.3.4.5")
+        );
+        assert!((imported.dose_grid_scaling - result.dose_grid_scaling).abs() < 1e-24);
+        assert_eq!(imported.values.len(), 24);
+        for (got, want) in imported.values.iter().zip(&source.physical_total.values) {
+            assert!(
+                (got - want).abs() <= 0.5 * result.dose_grid_scaling * 1.0001,
+                "{got} vs {want}"
+            );
+        }
+        // Bytes path agrees.
+        let again = import_rt_dose_bytes(&std::fs::read(&path).unwrap()).unwrap();
+        assert_eq!(again, imported);
+    }
+
+    #[test]
+    fn import_handles_descending_frames_and_refuses_bad_units() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("dose.dcm");
+        export_rt_dose(
+            &bundle(),
+            DoseSelection::PhysicalTotal,
+            &RtDoseExportOptions::default(),
+            &path,
+        )
+        .unwrap();
+        // Rewrite with descending frame offsets: the stack runs -z.
+        let mut obj = dicom_object::open_file(&path).unwrap();
+        obj.put(DataElement::new(
+            tags::GRID_FRAME_OFFSET_VECTOR,
+            VR::DS,
+            PrimitiveValue::from("0.0\\-4.0"),
+        ));
+        let flipped = dir.path().join("flipped.dcm");
+        obj.write_to_file(&flipped).unwrap();
+        let imported = import_rt_dose(&flipped).unwrap();
+        assert_eq!(imported.geometry.spacing_mm[2], 4.0);
+        assert_eq!(imported.geometry.direction[8], 1.0);
+        assert_eq!(imported.geometry.origin_mm, [10.0, 20.0, 26.0]);
+        // Stored frame 0 (z = 30) is now the last frame.
+        let original = import_rt_dose(&path).unwrap();
+        assert_eq!(imported.values[..12], original.values[12..]);
+        assert_eq!(imported.values[12..], original.values[..12]);
+
+        obj.put(DataElement::new(
+            tags::DOSE_UNITS,
+            VR::CS,
+            PrimitiveValue::from("PERCENT"),
+        ));
+        let bad = dir.path().join("bad.dcm");
+        obj.write_to_file(&bad).unwrap();
+        assert!(import_rt_dose(&bad).is_err());
     }
 }

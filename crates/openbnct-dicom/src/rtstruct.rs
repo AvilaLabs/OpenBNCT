@@ -542,7 +542,7 @@ fn point_on_segment(point: [f64; 2], start: [f64; 2], end: [f64; 2]) -> bool {
     dot <= 1.0e-10
 }
 
-fn sequence<'a>(
+pub(crate) fn sequence<'a>(
     obj: &'a InMemDicomObject,
     path: &Path,
     tag: Tag,
@@ -554,7 +554,10 @@ fn sequence<'a>(
         .ok_or_else(|| attribute_error(path, name, "expected a data set sequence"))
 }
 
-fn exactly_one<'a>(items: &'a [InMemDicomObject], name: &str) -> Result<&'a InMemDicomObject> {
+pub(crate) fn exactly_one<'a>(
+    items: &'a [InMemDicomObject],
+    name: &str,
+) -> Result<&'a InMemDicomObject> {
     if items.len() != 1 {
         return Err(DicomError::StructureSet(format!(
             "{name} contains {} items; expected exactly one",
@@ -564,7 +567,12 @@ fn exactly_one<'a>(items: &'a [InMemDicomObject], name: &str) -> Result<&'a InMe
     Ok(&items[0])
 }
 
-fn string(obj: &InMemDicomObject, path: &Path, tag: Tag, name: &'static str) -> Result<String> {
+pub(crate) fn string(
+    obj: &InMemDicomObject,
+    path: &Path,
+    tag: Tag,
+    name: &'static str,
+) -> Result<String> {
     obj.element(tag)
         .map_err(|error| attribute_error(path, name, error.to_string()))?
         .to_str()
@@ -572,7 +580,7 @@ fn string(obj: &InMemDicomObject, path: &Path, tag: Tag, name: &'static str) -> 
         .map_err(|error| attribute_error(path, name, error.to_string()))
 }
 
-fn require_string(
+pub(crate) fn require_string(
     obj: &InMemDicomObject,
     path: &Path,
     tag: Tag,
@@ -590,21 +598,35 @@ fn require_string(
     Ok(())
 }
 
-fn integer(obj: &InMemDicomObject, path: &Path, tag: Tag, name: &'static str) -> Result<i32> {
+pub(crate) fn integer(
+    obj: &InMemDicomObject,
+    path: &Path,
+    tag: Tag,
+    name: &'static str,
+) -> Result<i32> {
     obj.element(tag)
         .map_err(|error| attribute_error(path, name, error.to_string()))?
         .to_int::<i32>()
         .map_err(|error| attribute_error(path, name, error.to_string()))
 }
 
-fn floats(obj: &InMemDicomObject, path: &Path, tag: Tag, name: &'static str) -> Result<Vec<f64>> {
+pub(crate) fn floats(
+    obj: &InMemDicomObject,
+    path: &Path,
+    tag: Tag,
+    name: &'static str,
+) -> Result<Vec<f64>> {
     obj.element(tag)
         .map_err(|error| attribute_error(path, name, error.to_string()))?
         .to_multi_float64()
         .map_err(|error| attribute_error(path, name, error.to_string()))
 }
 
-fn attribute_error(path: &Path, attribute: &'static str, detail: impl Into<String>) -> DicomError {
+pub(crate) fn attribute_error(
+    path: &Path,
+    attribute: &'static str,
+    detail: impl Into<String>,
+) -> DicomError {
     DicomError::Attribute {
         path: PathBuf::from(path),
         attribute,
@@ -612,7 +634,7 @@ fn attribute_error(path: &Path, attribute: &'static str, detail: impl Into<Strin
     }
 }
 
-fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
+pub(crate) fn dot(left: [f64; 3], right: [f64; 3]) -> f64 {
     left[0].mul_add(right[0], left[1].mul_add(right[1], left[2] * right[2]))
 }
 

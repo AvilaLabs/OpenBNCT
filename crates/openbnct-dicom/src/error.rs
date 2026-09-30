@@ -34,6 +34,10 @@ pub enum DicomError {
     Geometry(String),
     #[error("invalid RT Structure Set: {0}")]
     StructureSet(String),
+    #[error("invalid DICOM Segmentation: {0}")]
+    Segmentation(String),
+    #[error("invalid DICOM RT Dose: {0}")]
+    RtDose(String),
     #[error("NF-BNCT-001 verification failed: {0}")]
     Benchmark(String),
     #[error("study import failed: {0}")]

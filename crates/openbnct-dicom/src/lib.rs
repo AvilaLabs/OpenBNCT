@@ -12,6 +12,7 @@ mod pet;
 mod rtdose;
 mod rtplan;
 mod rtstruct;
+mod seg;
 mod study;
 pub mod synthetic;
 
@@ -23,13 +24,20 @@ pub use ct::{CtVolume, import_ct_series, import_ct_series_from_bytes};
 pub use error::{DicomError, Result};
 pub use mr::{MrVolume, import_mr_series, import_mr_series_from_bytes};
 pub use pet::{PetVolume, import_pet_series, import_pet_series_from_bytes};
-pub use rtdose::{DoseSelection, RtDoseExportOptions, RtDoseExportResult, export_rt_dose};
+pub use rtdose::{
+    DoseSelection, RtDoseExportOptions, RtDoseExportResult, RtDoseVolume, export_rt_dose,
+    import_rt_dose, import_rt_dose_bytes,
+};
 pub use rtplan::{
     RTPLAN_SUMMARY_SCHEMA, RtPlanBeamSpec, RtPlanBeamSummary, RtPlanControlPoint,
     RtPlanExportOptions, RtPlanFractionGroup, RtPlanSummary, export_rt_plan, summarize_rt_plan,
 };
 pub use rtstruct::{RoiMask, StructureSet, import_rtstruct, import_rtstruct_bytes};
+pub use seg::{
+    SegImportOptions, SegmentInfo, SegmentationImport, SegmentationType, import_seg,
+    import_seg_bytes,
+};
 pub use study::{
-    CtContourImport, ImportedStudy, collect_study_paths, import_ct_contours_from_paths,
-    import_study_from_files, import_study_from_paths,
+    CtContourImport, ImportedStudy, StructureSource, collect_study_paths,
+    import_ct_contours_from_paths, import_study_from_files, import_study_from_paths,
 };

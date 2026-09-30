@@ -19,9 +19,64 @@ use dicom_object::DefaultDicomObject;
 use openbnct_evidence::sha256_hex;
 
 use crate::{
-    CtVolume, DicomError, PetVolume, RoiReport, StructureSet, import_ct_series_from_bytes,
-    import_pet_series_from_bytes, import_rtstruct_bytes,
+    CtVolume, DicomError, PetVolume, RoiReport, SegImportOptions, StructureSet,
+    import_ct_series_from_bytes, import_pet_series_from_bytes, import_rtstruct_bytes,
+    import_seg_bytes,
 };
+
+/// Which kind of object supplied a study's region masks.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum StructureSource {
+    /// RT Structure Set (contours rasterized onto the CT).
+    RtStruct,
+    /// DICOM Segmentation (bitmaps mapped onto the CT lattice; fractional
+    /// frames thresholded at 0.5).
+    Segmentation,
+}
+
+impl StructureSource {
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            StructureSource::RtStruct => "rtstruct",
+            StructureSource::Segmentation => "seg",
+        }
+    }
+}
+
+/// Build masks from the single structure-bearing member (RTSTRUCT xor SEG).
+fn structures_from_member(
+    rtstruct: &[(String, Vec<u8>)],
+    seg: &[(String, Vec<u8>)],
+    ct: &CtVolume,
+) -> Result<Option<(StructureSet, StructureSource)>, DicomError> {
+    if let Some((_, bytes)) = rtstruct.first() {
+        return Ok(Some((
+            import_rtstruct_bytes(bytes, ct)?,
+            StructureSource::RtStruct,
+        )));
+    }
+    if let Some((_, bytes)) = seg.first() {
+        let import = import_seg_bytes(bytes, Some(ct), &SegImportOptions::default())?;
+        return Ok(Some((import.structures, StructureSource::Segmentation)));
+    }
+    Ok(None)
+}
+
+fn check_single_structure_source(
+    rtstruct: &[(String, Vec<u8>)],
+    seg: &[(String, Vec<u8>)],
+) -> Result<(), DicomError> {
+    if rtstruct.len() + seg.len() > 1 {
+        return Err(study_error(format!(
+            "multiple structure objects present ({} RT Structure Sets, {} Segmentations) — \
+             import one at a time",
+            rtstruct.len(),
+            seg.len()
+        )));
+    }
+    Ok(())
+}
 
 /// One imported research case: geometry, contours, optional PET, and the
 /// content binding of every member that fed it.
@@ -37,6 +92,8 @@ pub struct ImportedStudy {
     pub ignored: Vec<String>,
     pub ct: CtVolume,
     pub structures: StructureSet,
+    /// Whether `structures` came from an RTSTRUCT or a SEG.
+    pub structure_source: StructureSource,
     /// Computed per-ROI measurements (voxels, volume, centroid) — the
     /// general form of the benchmark's frozen comparisons.
     pub rois: Vec<RoiReport>,
@@ -87,6 +144,7 @@ pub fn import_study_from_files(files: &[(String, Vec<u8>)]) -> Result<ImportedSt
     let mut ct_series: BTreeMap<String, Vec<(String, Vec<u8>)>> = BTreeMap::new();
     let mut pet_series: BTreeMap<String, Vec<(String, Vec<u8>)>> = BTreeMap::new();
     let mut rtstruct: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut seg: Vec<(String, Vec<u8>)> = Vec::new();
     let mut ignored: Vec<String> = Vec::new();
 
     for (name, bytes) in files {
@@ -106,6 +164,9 @@ pub fn import_study_from_files(files: &[(String, Vec<u8>)]) -> Result<ImportedSt
             Some((sop, _)) if sop == uids::RT_STRUCTURE_SET_STORAGE => {
                 rtstruct.push((name.clone(), bytes.clone()));
             }
+            Some((sop, _)) if sop == uids::SEGMENTATION_STORAGE => {
+                seg.push((name.clone(), bytes.clone()));
+            }
             Some(_) => ignored.push(name.clone()),
             None => ignored.push(name.clone()),
         }
@@ -124,17 +185,12 @@ pub fn import_study_from_files(files: &[(String, Vec<u8>)]) -> Result<ImportedSt
             "multiple CT series present — import one at a time: {detail}"
         )));
     }
-    if rtstruct.is_empty() {
+    if rtstruct.is_empty() && seg.is_empty() {
         return Err(study_error(
-            "no RT Structure Set found — a BNCT case needs contours",
+            "no RT Structure Set or Segmentation found — a BNCT case needs contours",
         ));
     }
-    if rtstruct.len() > 1 {
-        return Err(study_error(format!(
-            "multiple RT Structure Sets present ({}) — import one at a time",
-            rtstruct.len()
-        )));
-    }
+    check_single_structure_source(&rtstruct, &seg)?;
     if pet_series.len() > 1 {
         return Err(study_error(format!(
             "multiple PET series present — import one at a time ({})",
@@ -145,8 +201,8 @@ pub fn import_study_from_files(files: &[(String, Vec<u8>)]) -> Result<ImportedSt
     let (ct_uid, ct_files) = ct_series.into_iter().next().expect("checked non-empty");
     let ct = import_ct_series_from_bytes(&ct_files)
         .map_err(|error| study_error(format!("CT series {ct_uid}: {error}")))?;
-    let (_rt_name, rt_bytes) = rtstruct.into_iter().next().expect("checked non-empty");
-    let structures = import_rtstruct_bytes(&rt_bytes, &ct)?;
+    let (structures, structure_source) =
+        structures_from_member(&rtstruct, &seg, &ct)?.expect("checked non-empty");
     let pet = pet_series
         .into_iter()
         .next()
@@ -188,6 +244,7 @@ pub fn import_study_from_files(files: &[(String, Vec<u8>)]) -> Result<ImportedSt
         ignored,
         ct,
         structures,
+        structure_source,
         rois,
         pet,
     })
@@ -220,6 +277,8 @@ pub struct CtContourImport {
     pub ct: CtVolume,
     /// `Some` when exactly one RT Structure Set was present.
     pub structures: Option<StructureSet>,
+    /// Source of `structures` when present.
+    pub structure_source: Option<StructureSource>,
     /// `(file name, sha256)` of every accepted member, sorted by name.
     pub members: Vec<(String, String)>,
     /// Members skipped by bucketing (not Part-10, other modality).
@@ -227,11 +286,13 @@ pub struct CtContourImport {
 }
 
 /// Import one CT series plus an optional RT Structure Set from a pile of
-/// files. Multiple CT series or multiple structure sets are refused, never
-/// merged.
+/// files. The structure object may be an RT Structure Set or a DICOM
+/// Segmentation. Multiple CT series or multiple structure objects are
+/// refused, never merged.
 pub fn import_ct_contours_from_paths(paths: &[PathBuf]) -> Result<CtContourImport, DicomError> {
     let mut ct_series: BTreeMap<String, Vec<(String, Vec<u8>)>> = BTreeMap::new();
     let mut rtstruct: Vec<(String, Vec<u8>)> = Vec::new();
+    let mut seg: Vec<(String, Vec<u8>)> = Vec::new();
     let mut ignored: Vec<String> = Vec::new();
     for path in paths {
         let bytes = std::fs::read(path).map_err(|source| DicomError::Io {
@@ -245,6 +306,9 @@ pub fn import_ct_contours_from_paths(paths: &[PathBuf]) -> Result<CtContourImpor
             }
             Some((sop, _)) if sop == uids::RT_STRUCTURE_SET_STORAGE => {
                 rtstruct.push((name, bytes));
+            }
+            Some((sop, _)) if sop == uids::SEGMENTATION_STORAGE => {
+                seg.push((name, bytes));
             }
             _ => ignored.push(name),
         }
@@ -262,29 +326,25 @@ pub fn import_ct_contours_from_paths(paths: &[PathBuf]) -> Result<CtContourImpor
             "multiple CT series present — import one at a time: {detail}"
         )));
     }
-    if rtstruct.len() > 1 {
-        return Err(study_error(format!(
-            "multiple RT Structure Sets present ({}) — import one at a time",
-            rtstruct.len()
-        )));
-    }
+    check_single_structure_source(&rtstruct, &seg)?;
     let (ct_uid, ct_files) = ct_series.into_iter().next().expect("checked non-empty");
     let ct = import_ct_series_from_bytes(&ct_files)
         .map_err(|error| study_error(format!("CT series {ct_uid}: {error}")))?;
     let mut members: Vec<(String, String)> = ct_files
         .iter()
         .chain(rtstruct.iter())
+        .chain(seg.iter())
         .map(|(name, bytes)| (name.clone(), sha256_hex(bytes)))
         .collect();
     members.sort();
-    let structures = rtstruct
-        .into_iter()
-        .next()
-        .map(|(_, bytes)| import_rtstruct_bytes(&bytes, &ct))
-        .transpose()?;
+    let (structures, structure_source) = match structures_from_member(&rtstruct, &seg, &ct)? {
+        Some((set, source)) => (Some(set), Some(source)),
+        None => (None, None),
+    };
     Ok(CtContourImport {
         ct,
         structures,
+        structure_source,
         members,
         ignored,
     })

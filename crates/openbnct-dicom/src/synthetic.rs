@@ -1010,3 +1010,282 @@ pub fn validate_part10_files(case: &GeneratedCase) -> Result<()> {
     }
     Ok(())
 }
+
+/// One segment of a synthetic SEG: `values` holds a per-voxel fraction in
+/// [0, 1] over the whole grid (columns fastest). BINARY objects store
+/// `values >= 0.5` as set bits; FRACTIONAL objects quantize to
+/// `max_fractional`.
+#[derive(Debug, Clone)]
+pub struct SyntheticSegment {
+    pub number: i32,
+    pub label: String,
+    pub values: Vec<f64>,
+}
+
+/// Description of a synthetic DICOM Segmentation object. The grid must be
+/// orthonormal; frames are emitted only for slices where a segment has a
+/// nonzero voxel, like real SEG writers.
+#[derive(Debug, Clone)]
+pub struct SyntheticSegSpec {
+    pub geometry: GridGeometry,
+    pub frame_of_reference_uid: String,
+    pub study_instance_uid: String,
+    /// Series the SEG claims to segment; `None` omits the reference.
+    pub referenced_series_uid: Option<String>,
+    /// `Some(max)` writes FRACTIONAL (8-bit, MaximumFractionalValue = max,
+    /// max <= 255); `None` writes BINARY.
+    pub max_fractional: Option<u16>,
+    pub segments: Vec<SyntheticSegment>,
+    /// Put Image Orientation in the shared groups (typical) rather than per
+    /// frame.
+    pub shared_orientation: bool,
+}
+
+/// Write a synthetic SEG per `spec`.
+pub fn write_seg(path: &Path, spec: &SyntheticSegSpec) -> Result<()> {
+    let g = &spec.geometry;
+    let [nx, ny, nz] = g.shape.map(|v| v as usize);
+    let plane = nx * ny;
+    let d = g.direction;
+    let orientation = [d[0], d[3], d[6], d[1], d[4], d[7]];
+    let normal = [d[2], d[5], d[8]];
+    let mut obj = InMemDicomObject::new_empty();
+    put_str(&mut obj, tags::SPECIFIC_CHARACTER_SET, VR::CS, "ISO_IR 192");
+    put_str(
+        &mut obj,
+        tags::SOP_CLASS_UID,
+        VR::UI,
+        uids::SEGMENTATION_STORAGE,
+    );
+    let sop = format!(
+        "2.25.{}",
+        Uuid::new_v5(
+            &Uuid::NAMESPACE_URL,
+            format!("seg-{}-{}", spec.segments.len(), spec.study_instance_uid).as_bytes()
+        )
+        .as_u128()
+    );
+    put_str(&mut obj, tags::SOP_INSTANCE_UID, VR::UI, &sop);
+    put_str(&mut obj, tags::STUDY_DATE, VR::DA, FROZEN_DATE);
+    put_str(&mut obj, tags::SERIES_DATE, VR::DA, FROZEN_DATE);
+    put_str(&mut obj, tags::CONTENT_DATE, VR::DA, FROZEN_DATE);
+    put_str(&mut obj, tags::STUDY_TIME, VR::TM, FROZEN_TIME);
+    put_str(&mut obj, tags::SERIES_TIME, VR::TM, FROZEN_TIME);
+    put_str(&mut obj, tags::CONTENT_TIME, VR::TM, FROZEN_TIME);
+    put_str(&mut obj, tags::ACCESSION_NUMBER, VR::SH, "");
+    put_str(&mut obj, tags::MODALITY, VR::CS, "SEG");
+    put_str(&mut obj, tags::MANUFACTURER, VR::LO, "Avila Labs");
+    put_str(&mut obj, tags::PATIENT_NAME, VR::PN, "SYNTHETIC^SEG");
+    put_str(&mut obj, tags::PATIENT_ID, VR::LO, "SYNTHETIC");
+    put_str(
+        &mut obj,
+        tags::STUDY_INSTANCE_UID,
+        VR::UI,
+        &spec.study_instance_uid,
+    );
+    put_str(
+        &mut obj,
+        tags::SERIES_INSTANCE_UID,
+        VR::UI,
+        "2.25.271828182845904523536028747135266249775",
+    );
+    put_str(&mut obj, tags::SERIES_NUMBER, VR::IS, "901");
+    put_str(&mut obj, tags::INSTANCE_NUMBER, VR::IS, "1");
+    put_str(
+        &mut obj,
+        tags::FRAME_OF_REFERENCE_UID,
+        VR::UI,
+        &spec.frame_of_reference_uid,
+    );
+    put_str(&mut obj, tags::IMAGE_TYPE, VR::CS, "DERIVED\\PRIMARY");
+    put_str(&mut obj, tags::CONTENT_LABEL, VR::CS, "SEGMENTATION");
+    put_str(&mut obj, tags::LOSSY_IMAGE_COMPRESSION, VR::CS, "00");
+    put_u16(&mut obj, tags::SAMPLES_PER_PIXEL, VR::US, 1);
+    put_str(
+        &mut obj,
+        tags::PHOTOMETRIC_INTERPRETATION,
+        VR::CS,
+        "MONOCHROME2",
+    );
+    put_u16(&mut obj, tags::ROWS, VR::US, ny as u16);
+    put_u16(&mut obj, tags::COLUMNS, VR::US, nx as u16);
+    let fractional = spec.max_fractional.is_some();
+    put_u16(
+        &mut obj,
+        tags::BITS_ALLOCATED,
+        VR::US,
+        if fractional { 8 } else { 1 },
+    );
+    put_u16(
+        &mut obj,
+        tags::BITS_STORED,
+        VR::US,
+        if fractional { 8 } else { 1 },
+    );
+    put_u16(
+        &mut obj,
+        tags::HIGH_BIT,
+        VR::US,
+        if fractional { 7 } else { 0 },
+    );
+    put_u16(&mut obj, tags::PIXEL_REPRESENTATION, VR::US, 0);
+    put_str(
+        &mut obj,
+        tags::SEGMENTATION_TYPE,
+        VR::CS,
+        if fractional { "FRACTIONAL" } else { "BINARY" },
+    );
+    if let Some(max) = spec.max_fractional {
+        put_str(
+            &mut obj,
+            tags::SEGMENTATION_FRACTIONAL_TYPE,
+            VR::CS,
+            "PROBABILITY",
+        );
+        put_u16(&mut obj, tags::MAXIMUM_FRACTIONAL_VALUE, VR::US, max);
+    }
+
+    let segment_items: Vec<InMemDicomObject> = spec
+        .segments
+        .iter()
+        .map(|s| {
+            let mut item = InMemDicomObject::new_empty();
+            put_u16(&mut item, tags::SEGMENT_NUMBER, VR::US, s.number as u16);
+            put_str(&mut item, tags::SEGMENT_LABEL, VR::LO, &s.label);
+            put_str(&mut item, tags::SEGMENT_ALGORITHM_TYPE, VR::CS, "MANUAL");
+            item
+        })
+        .collect();
+    put_sequence(&mut obj, tags::SEGMENT_SEQUENCE, segment_items);
+
+    if let Some(series) = &spec.referenced_series_uid {
+        let mut item = InMemDicomObject::new_empty();
+        put_str(&mut item, tags::SERIES_INSTANCE_UID, VR::UI, series);
+        put_sequence(&mut obj, tags::REFERENCED_SERIES_SEQUENCE, vec![item]);
+    }
+
+    let orientation_item = || {
+        let mut item = InMemDicomObject::new_empty();
+        put_str(
+            &mut item,
+            tags::IMAGE_ORIENTATION_PATIENT,
+            VR::DS,
+            &ds_values(&orientation),
+        );
+        item
+    };
+    let mut shared = InMemDicomObject::new_empty();
+    let mut measures = InMemDicomObject::new_empty();
+    put_str(
+        &mut measures,
+        tags::PIXEL_SPACING,
+        VR::DS,
+        &ds_values(&[g.spacing_mm[1], g.spacing_mm[0]]),
+    );
+    put_str(
+        &mut measures,
+        tags::SLICE_THICKNESS,
+        VR::DS,
+        &g.spacing_mm[2].to_string(),
+    );
+    put_sequence(&mut shared, tags::PIXEL_MEASURES_SEQUENCE, vec![measures]);
+    if spec.shared_orientation {
+        put_sequence(
+            &mut shared,
+            tags::PLANE_ORIENTATION_SEQUENCE,
+            vec![orientation_item()],
+        );
+    }
+    put_sequence(
+        &mut obj,
+        tags::SHARED_FUNCTIONAL_GROUPS_SEQUENCE,
+        vec![shared],
+    );
+
+    let mut per_frame = Vec::new();
+    let mut frame_fractions: Vec<f64> = Vec::new();
+    for segment in &spec.segments {
+        for k in 0..nz {
+            let slice = &segment.values[k * plane..(k + 1) * plane];
+            if slice.iter().all(|v| *v <= 0.0) {
+                continue;
+            }
+            let position = [
+                g.origin_mm[0] + normal[0] * g.spacing_mm[2] * k as f64,
+                g.origin_mm[1] + normal[1] * g.spacing_mm[2] * k as f64,
+                g.origin_mm[2] + normal[2] * g.spacing_mm[2] * k as f64,
+            ];
+            let mut item = InMemDicomObject::new_empty();
+            let mut position_item = InMemDicomObject::new_empty();
+            put_str(
+                &mut position_item,
+                tags::IMAGE_POSITION_PATIENT,
+                VR::DS,
+                &ds_values(&position),
+            );
+            put_sequence(
+                &mut item,
+                tags::PLANE_POSITION_SEQUENCE,
+                vec![position_item],
+            );
+            if !spec.shared_orientation {
+                put_sequence(
+                    &mut item,
+                    tags::PLANE_ORIENTATION_SEQUENCE,
+                    vec![orientation_item()],
+                );
+            }
+            let mut ident = InMemDicomObject::new_empty();
+            put_u16(
+                &mut ident,
+                tags::REFERENCED_SEGMENT_NUMBER,
+                VR::US,
+                segment.number as u16,
+            );
+            put_sequence(
+                &mut item,
+                tags::SEGMENT_IDENTIFICATION_SEQUENCE,
+                vec![ident],
+            );
+            per_frame.push(item);
+            frame_fractions.extend_from_slice(slice);
+        }
+    }
+    put_str(
+        &mut obj,
+        tags::NUMBER_OF_FRAMES,
+        VR::IS,
+        &per_frame.len().to_string(),
+    );
+    put_sequence(
+        &mut obj,
+        tags::PER_FRAME_FUNCTIONAL_GROUPS_SEQUENCE,
+        per_frame,
+    );
+
+    // Pixel data: bit-packed (LSB first, frames back to back) or 8-bit.
+    let mut bytes: Vec<u8> = match spec.max_fractional {
+        Some(max) => frame_fractions
+            .iter()
+            .map(|v| (v.clamp(0.0, 1.0) * f64::from(max)).round() as u8)
+            .collect(),
+        None => {
+            let mut packed = vec![0_u8; frame_fractions.len().div_ceil(8)];
+            for (i, v) in frame_fractions.iter().enumerate() {
+                if *v >= 0.5 {
+                    packed[i / 8] |= 1 << (i % 8);
+                }
+            }
+            packed
+        }
+    };
+    if bytes.len() % 2 == 1 {
+        bytes.push(0);
+    }
+    obj.put(DataElement::new(
+        tags::PIXEL_DATA,
+        if fractional { VR::OB } else { VR::OW },
+        PrimitiveValue::U8(bytes.into()),
+    ));
+    write_file(path, obj)
+}
