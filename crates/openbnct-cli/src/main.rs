@@ -3355,6 +3355,16 @@ enum SnCommand {
         /// mode bound-atom S(α,β) upscatter introduces.
         #[arg(long, default_value_t = 3)]
         anderson: usize,
+        /// Disable the coarse-mesh rebalance of the upscatter block. It
+        /// is on by default: without it the layered-head solve needs
+        /// ~3x the outer iterations (68 vs 21 at 25^3) and does not
+        /// reach the default target inside `--max-outer 32`, although
+        /// each outer is ~25 % cheaper and ~30 % less memory is held
+        /// (the per-cell face-current buffers are never allocated). The
+        /// converged dose is unchanged to <= 4e-7 relative.
+        /// `OPENBNCT_NO_CMR` also disables it.
+        #[arg(long)]
+        no_cmr: bool,
         /// Within-bin spread of a tabulated-histogram source spectrum:
         /// `collapse_consistent` (Maxwellian below 0.5 eV, 1/E above —
         /// the default) or `uniform_in_bin` (uniform per eV — the
@@ -11304,6 +11314,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 exp_source,
                 anisotropy,
                 anderson,
+                no_cmr,
                 source_weighting,
                 allow_unconverged,
                 dose,
@@ -11351,7 +11362,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     p1_anisotropic: use_p1,
                     anisotropy_order: anisotropy,
                     anderson_depth: anderson,
-                    coarse_rebalance: true,
+                    coarse_rebalance: !no_cmr,
                     inner_convergence,
                     theta_repair: true,
                     exp_source: exp_source || !use_p1,

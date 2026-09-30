@@ -461,7 +461,11 @@ pub struct SnOptions {
     /// balance equations built on the sweep's measured partial
     /// currents, with the recorded clamp defect carried on the balance
     /// RHS so f = 1 stays an exact solution at the transport fixed
-    /// point. `OPENBNCT_NO_CMR` also disables it (A/B diagnostics).
+    /// point. On by default: switching it off cuts each outer by ~25 %
+    /// and the memory by ~30 % (the face-current buffers are then not
+    /// allocated) but the layered head needs ~3x the outers (68 vs 21 at
+    /// 25^3); the converged dose agrees to <= 4e-7. `OPENBNCT_NO_CMR`
+    /// also disables it (A/B diagnostics).
     pub coarse_rebalance: bool,
     /// Within-group sweep break tolerance, overriding `convergence`
     /// when set. The outer residual cannot descend far below the inner
@@ -3589,14 +3593,16 @@ pub(crate) fn solve_sn_problem(
         }
         (start < groups).then_some(start)
     };
-    let mut block_faces: Vec<FaceCurrents> = upscatter_block_start
-        .map(|bs| vec![vec![[0.0; 13]; n_cells]; groups - bs])
-        .unwrap_or_default();
-
     // CMR stall detection: when the rebalance is active but the sweep
     // residual stops improving, the composed map is in its limit cycle —
     // disable CMR permanently and let bare sweeps finish.
     let mut cmr_enabled = options.coarse_rebalance && std::env::var_os("OPENBNCT_NO_CMR").is_none();
+    // The per-cell face-current buffers (13 f64 per cell per block
+    // group) exist only when the rebalance can run.
+    let mut block_faces: Vec<FaceCurrents> = upscatter_block_start
+        .filter(|_| cmr_enabled)
+        .map(|bs| vec![vec![[0.0; 13]; n_cells]; groups - bs])
+        .unwrap_or_default();
     let theta_repair =
         options.theta_repair && std::env::var_os("OPENBNCT_NO_THETA_REPAIR").is_none();
     let exp_source = options.exp_source && std::env::var_os("OPENBNCT_NO_EXP_SOURCE").is_none();
