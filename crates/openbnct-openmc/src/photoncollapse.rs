@@ -274,15 +274,20 @@ fn load_photon_element(dir: &Path, elem: &str) -> Result<PhotonElement, Collapse
 
 /// Nuclide → photon-atomic element symbol. Photon interaction is
 /// electronic (atomic), so all isotopes of an element share one table.
-fn element_of(nuclide: &str) -> Option<&'static str> {
-    Some(match nuclide {
-        "H1" | "H2" => "H",
-        "B10" | "B11" => "B",
-        "C12" | "C13" => "C",
-        "N14" | "N15" => "N",
-        "O16" | "O17" | "O18" => "O",
-        _ => return None,
-    })
+/// The symbol is the leading letters of the nuclide name (`Ca40` -> `Ca`,
+/// `Am242_m1` -> `Am`); the photon-atomic library decides whether that
+/// element exists.
+fn element_of(nuclide: &str) -> Option<String> {
+    let symbol: String = nuclide
+        .chars()
+        .take_while(|c| c.is_ascii_alphabetic())
+        .collect();
+    let mut chars = symbol.chars();
+    let first = chars.next()?;
+    if !first.is_ascii_uppercase() || chars.any(|c| !c.is_ascii_lowercase()) || symbol.len() > 2 {
+        return None;
+    }
+    Some(symbol)
 }
 
 /// Read a 2-row (E, y) table: flat `read_f64` plus `shape` reshape.
@@ -497,11 +502,11 @@ pub fn collapse_photon(
             let dens = rho * nuc.mass_fraction / mass_g_mol * N_A * BARN_CM2;
             let elem = element_of(&nuc.name)
                 .ok_or_else(|| invalid(format!("no photon-atomic element for {:?}", nuc.name)))?;
-            let pe = match elements.get(elem) {
+            let pe = match elements.get(&elem) {
                 Some(e) => e,
                 None => {
-                    let e = load_photon_element(&opts.photon_library_dir, elem)?;
-                    elements.entry(elem.to_string()).or_insert(e)
+                    let e = load_photon_element(&opts.photon_library_dir, &elem)?;
+                    elements.entry(elem.clone()).or_insert(e)
                 }
             };
 

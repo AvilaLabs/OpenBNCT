@@ -1006,7 +1006,7 @@ impl OpenMcInputDeck {
                 .collect(),
         };
         for source_ev in source_edges_ev {
-            if source_ev < data_energy_range[0] || source_ev >= data_energy_range[1] {
+            if source_ev < data_energy_range[0] || source_ev > data_energy_range[1] {
                 return Err(OpenMcInputError::SourceEnergyOutsideDataRange {
                     source_ev,
                     data_ev: data_energy_range,

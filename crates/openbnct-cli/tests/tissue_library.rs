@@ -109,3 +109,34 @@ fn library_multigroup_data_is_hash_bound_and_carries_boron_unit() {
         assert!(names.contains(&id), "multigroup data lacks {id}");
     }
 }
+
+#[test]
+fn library_photon_data_is_hash_bound_and_covers_every_material() {
+    let dir = lib_dir();
+    let manifest = read_json(&dir.join("manifest.json"));
+    let entry = &manifest["photon_data"];
+    let file = dir.join(entry["file"].as_str().unwrap());
+    assert_eq!(
+        openbnct_evidence::sha256_file(&file).unwrap(),
+        entry["sha256"].as_str().unwrap()
+    );
+    let profile = dir.join(entry["component_profile"]["file"].as_str().unwrap());
+    assert_eq!(
+        openbnct_evidence::sha256_file(&profile).unwrap(),
+        entry["component_profile"]["sha256"].as_str().unwrap()
+    );
+    let data = read_json(&file);
+    let neutron = read_json(&dir.join("multigroup-data-28g-tsl.json"));
+    assert_eq!(
+        data["neutron_energy_boundaries_ev"], neutron["energy_boundaries_ev"],
+        "photon data must be bound to the default neutron group structure"
+    );
+    let names: Vec<&str> = data["materials"]
+        .as_array()
+        .map(|m| m.iter().filter_map(|x| x["material_id"].as_str()).collect())
+        .unwrap_or_default();
+    for m in manifest["materials"].as_array().unwrap() {
+        let id = m["id"].as_str().unwrap();
+        assert!(names.contains(&id), "photon data lacks {id}");
+    }
+}

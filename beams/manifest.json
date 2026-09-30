@@ -14,6 +14,12 @@
       "file": "fir1-k63-ineel-spectrum.json",
       "facility": "FiR 1 (VTT, Espoo)",
       "provenance": "published_literature (digitized INEEL/EXT-01-00204 Fig.5 + VTT LSL-M2 anchors)"
+    },
+    {
+      "id": "nctforge.beam.fir1-k63-ineel-20mev.v1",
+      "file": "fir1-k63-ineel-20mev.json",
+      "facility": "FiR 1 (VTT, Espoo)",
+      "provenance": "published_literature (fir1-k63-ineel-spectrum clipped at 20 MeV, the ENDF/B-VIII.1 upper edge; project default builtin:beams/fir1-k63-ineel)"
     }
   ]
 }

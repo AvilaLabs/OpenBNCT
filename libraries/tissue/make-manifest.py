@@ -72,7 +72,21 @@ ntb = {
         "nuclear_data": "ENDF/B-VIII.1: H/C/N/O/Fe56/B10 from 294 K OpenMC-HDF5; Na/Mg/P/S/Cl/K/Ca from NJOY 293.6 K PENDF; H-in-H2O S(alpha,beta) tsl_H(H2O)_0001 on hydrogen",
         "component_profile": "benchmarks/synthetic/nf-bnct-001/transport/component-profile-local-kerma.json",
     },
-    "generators": {f: sha(f) for f in ("generate.py", "collapse-28g.sh", "make-manifest.py")},
+    "photon_data": {
+        "id": "openbnct.tissue-library.photon-data-16g.v1",
+        "file": "multigroup-photon-data-16g.json",
+        "sha256": sha("multigroup-photon-data-16g.json"),
+        "note": ("Coupled photon data for `sn photon-solve` / project photon_transport: 16 photon groups "
+                 "(10 MeV to 1 keV) bound to the 28-group neutron structure of multigroup-data-28g-tsl.json; "
+                 "photon-atomic tables and n->gamma production from the FULL ENDF/B-VIII.1 OpenMC HDF5 library "
+                 "(the repo's selected/ subset has photon data for H/B/C/N/O only). Local charged-particle "
+                 "kerma; no bremsstrahlung or fluorescence."),
+        "recipe": "collapse-photon-16g.sh",
+        "neutron_data": "multigroup-data-28g-tsl.json",
+        "component_profile": {"file": "component-profile-transported-photon.json",
+                              "sha256": sha("component-profile-transported-photon.json")},
+    },
+    "generators": {f: sha(f) for f in ("generate.py", "collapse-28g.sh", "collapse-photon-16g.sh", "make-manifest.py")},
 }
 with open(os.path.join(HERE, "manifest.json"), "w") as f:
     json.dump(ntb, f, indent=1)

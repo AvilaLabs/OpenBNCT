@@ -27,7 +27,9 @@ placeholder you must fill in.
 [Independent Monte Carlo check](#independent-monte-carlo-check-project-verify)), each the same code as the individual
 command it names: `import` (`dicom import-ct`), `calibrate` (`dicom
 calibrate`), `beam` (`beam bind --aim-mask`), `transport` (`sn solve --dose
---boron-unit-output`), `boron` (`boron dose`), `metrics` (`metrics` and `dvh`
+--boron-unit-output --source-weighting uniform_in_bin`, then, with
+`photon_transport = true`, `sn photon-solve --dose` and `sn merge-photon-dose`),
+`boron` (`boron dose`), `metrics` (`metrics` and `dvh`
 per structure) and `report`. Artifacts land in `p001/out/01-import` ...
 `06-metrics`; the report is `out/report.md` and `out/report.json`
 (`openbnct.project-report/0.1.0`) with DVH curves in `out/dvh/*.csv`.
@@ -45,10 +47,11 @@ spacing_mm = 5.0
 [materials]                                # builtin:NAME or a path; `openbnct project builtins` lists names
 calibration = "builtin:tissue/hu-calibration-generic-head-ct"
 multigroup_data = "builtin:tissue/multigroup-data-28g-tsl"
+photon_data = "builtin:tissue/multigroup-photon-data-16g"   # coupled photon data, bound to the 28-group neutron structure
 base_material = "builtin:tissue/material-air-dry"
 
 [beam]
-description = "builtin:beams/fir1-k63"     # or a path to an openbnct.beam-description
+description = "builtin:beams/fir1-k63-ineel"   # 120-bin FiR 1 spectrum; builtin:beams/fir1-k63 is the 3-bin version; or a path to an openbnct.beam-description
 target = "GTV"                             # RTSTRUCT ROI whose centroid the beam axis passes through
 approach = "+x"                            # +x -x +y -y +z -z
 
@@ -57,6 +60,8 @@ engine = "sn"
 order = 8
 max_outer = 128
 anderson = 3                               # Anderson depth (passed to sn solve --anderson)
+source_weighting = "uniform_in_bin"        # histogram beam bins uniform per eV (OpenMC/MCNP convention); or "collapse_consistent" (1/E above 0.5 eV)
+photon_transport = true                    # transport capture photons; false = deposit their energy where it is born
 allow_unconverged = false                  # demos/tests only; the report is then marked PROVISIONAL if it did not converge
 
 [boron]

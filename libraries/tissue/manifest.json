@@ -411,9 +411,22 @@
   "nuclear_data": "ENDF/B-VIII.1: H/C/N/O/Fe56/B10 from 294 K OpenMC-HDF5; Na/Mg/P/S/Cl/K/Ca from NJOY 293.6 K PENDF; H-in-H2O S(alpha,beta) tsl_H(H2O)_0001 on hydrogen",
   "component_profile": "benchmarks/synthetic/nf-bnct-001/transport/component-profile-local-kerma.json"
  },
+ "photon_data": {
+  "id": "openbnct.tissue-library.photon-data-16g.v1",
+  "file": "multigroup-photon-data-16g.json",
+  "sha256": "df59fb829c43b2b1e2306716c3ee0be6440a16107a6930dec7e4cc318e8ff23d",
+  "note": "Coupled photon data for `sn photon-solve` / project photon_transport: 16 photon groups (10 MeV to 1 keV) bound to the 28-group neutron structure of multigroup-data-28g-tsl.json; photon-atomic tables and n->gamma production from the FULL ENDF/B-VIII.1 OpenMC HDF5 library (the repo's selected/ subset has photon data for H/B/C/N/O only). Local charged-particle kerma; no bremsstrahlung or fluorescence.",
+  "recipe": "collapse-photon-16g.sh",
+  "neutron_data": "multigroup-data-28g-tsl.json",
+  "component_profile": {
+   "file": "component-profile-transported-photon.json",
+   "sha256": "3436d5e7d7cd1f142afa59d7c33c1a51bc6eb257889e0ab5c4342041718f3391"
+  }
+ },
  "generators": {
   "generate.py": "7e95a54fc8798a58803890334a3118348a6569d61bd2334a5428d205e37b76c0",
   "collapse-28g.sh": "e43480a5bad49cef5e13598f86e346d6f0d9c4a97609770e30caaacef63d4c31",
-  "make-manifest.py": "9f5578b5408a6a350a093634fdf29a756b65975c00543af28b4c94e6bc48ab78"
+  "collapse-photon-16g.sh": "6b8c64a8910b6ec011714b31a984e50ec88f49d9380699f3f48f8a15749b2468",
+  "make-manifest.py": "d9cb91ead1cc3dd20209fe9a27bca5a9b3c3aa2f4337e8d70182d976d10023eb"
  }
 }

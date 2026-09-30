@@ -3630,6 +3630,24 @@ enum SnCommand {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Replace the photon component of a neutron dose bundle with a
+    /// transported photon dose. `sn solve --dose` deposits capture-gamma
+    /// energy where it is born (local kerma); `sn photon-solve --dose`
+    /// transports those photons. This writes a copy of the neutron bundle
+    /// whose `photon` component is the transported one and whose physical
+    /// total is adjusted by the same difference, so total = sum of
+    /// components still holds. Boron, nitrogen and hydrogen are untouched.
+    MergePhotonDose {
+        /// `openbnct.physical-dose-bundle/0.2.0` from `sn solve --dose`.
+        #[arg(long)]
+        neutron_dose: PathBuf,
+        /// Photon bundle from `sn photon-solve --dose` (same case and grid).
+        #[arg(long)]
+        photon_dose: PathBuf,
+        /// Output bundle path.
+        #[arg(long)]
+        output: PathBuf,
+    },
     /// Place adaptive group boundaries by equal importance mass over
     /// lethargy (R17-04).
     ///
@@ -12008,6 +12026,71 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     write_new_json(&dose_path, &bundle)?;
                     println!("folded photon dose bundle at {}", dose_path.display());
                 }
+            }
+            SnCommand::MergePhotonDose {
+                neutron_dose,
+                photon_dose,
+                output,
+            } => {
+                let neutron_bytes = fs::read(&neutron_dose)?;
+                let photon_bytes = fs::read(&photon_dose)?;
+                let mut bundle: PhysicalDoseBundle = serde_json::from_slice(&neutron_bytes)?;
+                let photon: PhysicalDoseBundle = serde_json::from_slice(&photon_bytes)?;
+                bundle
+                    .validate()
+                    .map_err(|error| io::Error::other(format!("neutron dose bundle: {error}")))?;
+                if bundle.case_id != photon.case_id || bundle.geometry != photon.geometry {
+                    return Err(io::Error::other(
+                        "neutron and photon dose bundles differ in case_id or grid geometry",
+                    )
+                    .into());
+                }
+                let transported = photon
+                    .components
+                    .iter()
+                    .find(|c| c.component == openbnct_core::DoseComponent::Photon)
+                    .ok_or_else(|| {
+                        io::Error::other("photon dose bundle has no photon component")
+                    })?;
+                let slot = bundle
+                    .components
+                    .iter_mut()
+                    .find(|c| c.component == openbnct_core::DoseComponent::Photon)
+                    .ok_or_else(|| {
+                        io::Error::other("neutron dose bundle has no photon component")
+                    })?;
+                if slot.unit != transported.unit {
+                    return Err(io::Error::other("photon dose unit mismatch").into());
+                }
+                for ((total, old), new) in bundle
+                    .physical_total
+                    .values
+                    .iter_mut()
+                    .zip(&slot.values)
+                    .zip(&transported.values)
+                {
+                    *total = (*total - old + new).max(0.0);
+                }
+                slot.values = transported.values.clone();
+                slot.absolute_standard_uncertainty =
+                    transported.absolute_standard_uncertainty.clone();
+                bundle.physical_total.absolute_standard_uncertainty = None;
+                bundle.physical_total.uncertainty_method =
+                    openbnct_core::TotalUncertaintyMethod::Unavailable;
+                bundle.provenance_id = format!(
+                    "{}+transported-photon[{};local capture-gamma kerma of {} replaced]",
+                    bundle.provenance_id,
+                    photon.provenance_id,
+                    neutron_dose.display()
+                );
+                write_new_json(&output, &bundle)?;
+                println!(
+                    "physical dose bundle with transported photon component at {} \
+                     (neutron bundle sha256 {}, photon bundle sha256 {})",
+                    output.display(),
+                    openbnct_evidence::sha256_hex(&neutron_bytes),
+                    openbnct_evidence::sha256_hex(&photon_bytes)
+                );
             }
         },
         Some(Command::Plan(args)) => match args.command {

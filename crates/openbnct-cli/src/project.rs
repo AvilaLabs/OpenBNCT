@@ -250,6 +250,16 @@ const BUILTINS: &[Builtin] = &[
         bytes: include_bytes!("../builtins/openmc-execution-profile-smoke.json"),
     },
     Builtin {
+        name: "tissue/multigroup-photon-data-16g",
+        file: "multigroup-photon-data-16g.json",
+        bytes: include_bytes!("../builtins/multigroup-photon-data-16g.json"),
+    },
+    Builtin {
+        name: "beams/fir1-k63-ineel",
+        file: "beam-fir1-k63-ineel.json",
+        bytes: include_bytes!("../builtins/beam-fir1-k63-ineel.json"),
+    },
+    Builtin {
         name: "beams/fir1-k63",
         file: "beam-fir1-k63.json",
         bytes: include_bytes!("../builtins/beam-fir1-k63.json"),
@@ -340,6 +350,8 @@ struct MaterialsSection {
     calibration: String,
     #[serde(default = "default_multigroup")]
     multigroup_data: String,
+    #[serde(default = "default_photon_data")]
+    photon_data: String,
     #[serde(default = "default_base_material")]
     base_material: String,
 }
@@ -349,6 +361,7 @@ impl Default for MaterialsSection {
         Self {
             calibration: default_calibration(),
             multigroup_data: default_multigroup(),
+            photon_data: default_photon_data(),
             base_material: default_base_material(),
         }
     }
@@ -359,6 +372,9 @@ fn default_calibration() -> String {
 }
 fn default_multigroup() -> String {
     "builtin:tissue/multigroup-data-28g-tsl".into()
+}
+fn default_photon_data() -> String {
+    "builtin:tissue/multigroup-photon-data-16g".into()
 }
 fn default_base_material() -> String {
     "builtin:tissue/material-air-dry".into()
@@ -375,7 +391,7 @@ struct BeamSection {
 }
 
 fn default_beam() -> String {
-    "builtin:beams/fir1-k63".into()
+    "builtin:beams/fir1-k63-ineel".into()
 }
 fn default_approach() -> String {
     "+x".into()
@@ -394,6 +410,16 @@ struct TransportSection {
     anderson: u32,
     #[serde(default)]
     allow_unconverged: bool,
+    /// Within-bin spread of a histogram beam spectrum: `uniform_in_bin`
+    /// (uniform per eV, the OpenMC/MCNP convention; default) or
+    /// `collapse_consistent` (Maxwellian below 0.5 eV, 1/E above).
+    #[serde(default = "default_source_weighting")]
+    source_weighting: String,
+    /// Transport the capture and inelastic photons (`sn photon-solve`) and
+    /// use that photon dose (default). `false` keeps the local deposition
+    /// of photon energy where it is born.
+    #[serde(default = "default_photon_transport")]
+    photon_transport: bool,
 }
 
 impl Default for TransportSection {
@@ -404,10 +430,18 @@ impl Default for TransportSection {
             max_outer: default_max_outer(),
             anderson: default_anderson(),
             allow_unconverged: false,
+            source_weighting: default_source_weighting(),
+            photon_transport: default_photon_transport(),
         }
     }
 }
 
+fn default_source_weighting() -> String {
+    "uniform_in_bin".into()
+}
+fn default_photon_transport() -> bool {
+    true
+}
 fn default_engine() -> String {
     "sn".into()
 }
@@ -473,6 +507,15 @@ impl ProjectConfig {
         {
             return fail("project.toml: [transport] order must be even, 2-16");
         }
+        if !matches!(
+            self.transport.source_weighting.as_str(),
+            "uniform_in_bin" | "collapse_consistent"
+        ) {
+            return fail(format!(
+                "project.toml: [transport] source_weighting {:?} must be \"uniform_in_bin\" or \"collapse_consistent\"",
+                self.transport.source_weighting
+            ));
+        }
         if self.transport.max_outer == 0 {
             return fail("project.toml: [transport] max_outer must be at least 1");
         }
@@ -530,6 +573,7 @@ impl ProjectConfig {
         for spec in [
             &self.materials.calibration,
             &self.materials.multigroup_data,
+            &self.materials.photon_data,
             &self.materials.base_material,
             &self.beam.description,
         ] {
@@ -642,6 +686,7 @@ fn init_project(
     for spec in [
         &defaults.materials.calibration,
         &defaults.materials.multigroup_data,
+        &defaults.materials.photon_data,
         &defaults.materials.base_material,
         &defaults.beam.description,
     ] {
@@ -676,6 +721,7 @@ fn init_project(
          [materials]\n\
          calibration = {calibration:?}    # or a path to an openbnct.hu-calibration JSON\n\
          multigroup_data = {mg:?}    # or a path\n\
+         photon_data = {ph:?}    # coupled photon data for photon_transport (bound to the neutron group structure above)\n\
          base_material = {air:?}    # material outside the CT (air)\n\
          \n\
          [beam]\n\
@@ -688,6 +734,8 @@ fn init_project(
          order = 8\n\
          max_outer = 128\n\
          anderson = 3    # Anderson acceleration depth; thermal-scattering data need it to converge\n\
+         source_weighting = \"uniform_in_bin\"    # histogram beam bins spread uniformly per eV (OpenMC/MCNP); or \"collapse_consistent\" (1/E above 0.5 eV)\n\
+         photon_transport = true    # transport capture photons (sn photon-solve); false = deposit their energy where it is born\n\
          allow_unconverged = false    # true only for demos/tests; the report then says PROVISIONAL if it did not converge\n\
          \n\
          [boron]\n\
@@ -705,6 +753,7 @@ fn init_project(
         rois = rois.join(", "),
         calibration = defaults.materials.calibration,
         mg = defaults.materials.multigroup_data,
+        ph = defaults.materials.photon_data,
         air = defaults.materials.base_material,
         beam = defaults.beam.description,
     );
@@ -1125,6 +1174,7 @@ fn plan_step(
 ) -> DynResult<StepPlan> {
     let calibration = resolve_spec(project, &config.materials.calibration)?;
     let multigroup = resolve_spec(project, &config.materials.multigroup_data)?;
+    let photon_data = resolve_spec(project, &config.materials.photon_data)?;
     let base_material = resolve_spec(project, &config.materials.base_material)?;
     let beam = resolve_spec(project, &config.beam.description)?;
     let spacing = config.imaging.spacing_mm.to_string();
@@ -1216,14 +1266,24 @@ fn plan_step(
                 &max_outer,
                 "--anderson",
                 &anderson,
+                "--source-weighting",
+                &config.transport.source_weighting,
             ]);
             if config.transport.allow_unconverged {
                 command.push("--allow-unconverged".into());
             }
+            // With photon transport the solve's own dose keeps the local
+            // capture-gamma kerma; the merged bundle replaces that photon
+            // component and is the one later steps read (`dose.json`).
+            let neutron_dose = if config.transport.photon_transport {
+                "out/04-transport/dose-local-photon.json"
+            } else {
+                "out/04-transport/dose.json"
+            };
             command.extend(
                 [
                     "--dose",
-                    "out/04-transport/dose.json",
+                    neutron_dose,
                     "--boron-unit-output",
                     "out/04-transport/boron-unit.json",
                     "--output",
@@ -1231,15 +1291,51 @@ fn plan_step(
                 ]
                 .map(str::to_owned),
             );
+            let mut commands = vec![command];
+            let mut inputs = vec![
+                "out/03-beam/case.json".to_owned(),
+                multigroup,
+                "out/02-calibrate/assignment.json".to_owned(),
+            ];
+            if config.transport.photon_transport {
+                commands.push(argv(&[
+                    "sn",
+                    "photon-solve",
+                    "--case",
+                    "out/03-beam/case.json",
+                    "--photon-data",
+                    &photon_data,
+                    "--neutron-flux",
+                    "out/04-transport/flux.json",
+                    "--assignment",
+                    "out/02-calibrate/assignment.json",
+                    "--order",
+                    &order,
+                    "--dose",
+                    "out/04-transport/dose-photon.json",
+                    "--output",
+                    "out/04-transport/photon-flux.json",
+                ]));
+                commands.push(argv(&[
+                    "sn",
+                    "merge-photon-dose",
+                    "--neutron-dose",
+                    "out/04-transport/dose-local-photon.json",
+                    "--photon-dose",
+                    "out/04-transport/dose-photon.json",
+                    "--output",
+                    "out/04-transport/dose.json",
+                ]));
+                inputs.push(photon_data);
+            }
             StepPlan {
-                commands: vec![command],
-                inputs: vec![
-                    "out/03-beam/case.json".into(),
-                    multigroup,
-                    "out/02-calibrate/assignment.json".into(),
-                ],
+                commands,
+                inputs,
                 outputs: vec!["out/04-transport".into()],
-                options: json!({}),
+                options: json!({
+                    "source_weighting": config.transport.source_weighting,
+                    "photon_transport": config.transport.photon_transport,
+                }),
             }
         }
         4 => {
@@ -1453,6 +1549,7 @@ fn run_steps(project_arg: &Path, force: bool, from: Option<&str>) -> DynResult<(
     for spec in [
         &config.materials.calibration,
         &config.materials.multigroup_data,
+        &config.materials.photon_data,
         &config.materials.base_material,
         &config.beam.description,
     ] {
@@ -1626,12 +1723,14 @@ fn print_status(project_arg: &Path) -> DynResult<()> {
 
 /// Current, measured accuracy status of the default deterministic path —
 /// printed in every report so absolute numbers are never read in isolation.
-const ACCURACY_STATUS: &str = "Accuracy status: on the layered-head benchmark the \
-deterministic (S_N) boron and nitrogen doses are 0.87-0.95x continuous-energy OpenMC with \
-matching S(alpha,beta); the photon component is ~3-4x high (local capture-gamma deposition) \
-and the fast-neutron component ~0.3x, both under investigation. Treat absolute and \
-biologically weighted totals as research estimates; run `openbnct project verify` for an \
-independent Monte Carlo check.";
+const ACCURACY_STATUS: &str = "Accuracy status: on the synthetic layered-head benchmark, with \
+the default settings (histogram beam bins uniform per eV, transported photons), deterministic \
+(S_N) structure-mean boron, hydrogen (fast-neutron) and photon doses are within about 15% of \
+continuous-energy OpenMC with matching S(alpha,beta) (whole phantom 0.86 / 0.98 / 0.93, target \
+1.06 / 0.90 / 1.03 at 5e6 histories). Projects that set photon_transport = false deposit \
+capture-gamma energy where it is born, which over-predicts the photon dose ~3-4x. One synthetic \
+geometry is not a validation of your study: treat absolute and biologically weighted totals as \
+research estimates and run `openbnct project verify` for an independent Monte Carlo check.";
 
 const DISCLAIMER: &str = "Research software output. OpenBNCT is not a medical device and has \
 not been clinically validated or commissioned for any treatment facility; these results are \
@@ -1777,6 +1876,13 @@ fn write_report(
         .map(|s| (s.id.clone(), s.commands.clone()))
         .collect();
 
+    let photon_treatment = if config.transport.photon_transport {
+        "transported: capture photons solved with `sn photon-solve` (16-group coupled photon data); \
+         the neutron solve's local capture-gamma kerma is replaced by the transported photon dose"
+    } else {
+        "local deposition: capture-gamma energy is deposited where it is born (no photon transport; \
+         over-predicts photon dose in finite heads)"
+    };
     let generated = utc_now();
     let mut md = String::new();
     let _ = writeln!(
@@ -1801,6 +1907,16 @@ fn write_report(
         "| Transport | S{} discrete ordinates, {} outer iterations, residual {residual:.3e} |",
         config.transport.order, outer
     );
+    let _ = writeln!(
+        md,
+        "| Beam spectrum bins | spread {} within each histogram bin |",
+        if config.transport.source_weighting == "uniform_in_bin" {
+            "uniformly per eV (OpenMC/MCNP convention)"
+        } else {
+            "as Maxwellian below 0.5 eV and 1/E above (collapse-consistent)"
+        }
+    );
+    let _ = writeln!(md, "| Photon treatment | {photon_treatment} |");
     let _ = writeln!(
         md,
         "| Target / approach | {} / {} |",
@@ -1870,6 +1986,9 @@ fn write_report(
         "converged": converged,
         "provisional": !converged,
         "transport_status": status,
+        "source_weighting": config.transport.source_weighting,
+        "photon_transport": config.transport.photon_transport,
+        "photon_treatment": photon_treatment,
         "residual": residual,
         "outer_iterations": outer,
         "dose_unit": unit,
@@ -2002,6 +2121,11 @@ mod tests {
                 "libraries/tissue/materials/air-dry.json",
             ),
             ("beams/fir1-k63", "beams/fir1-k63.json"),
+            ("beams/fir1-k63-ineel", "beams/fir1-k63-ineel-20mev.json"),
+            (
+                "tissue/multigroup-photon-data-16g",
+                "libraries/tissue/multigroup-photon-data-16g.json",
+            ),
             (
                 "openmc/response-set-nf-bnct-001",
                 "benchmarks/synthetic/nf-bnct-001/transport/provenance/neutron-response-set.json",
