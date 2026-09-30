@@ -32,6 +32,19 @@ own versions independent of the crate version.
   investigation (finite-geometry deficit; uncollided-beam attenuation through void
   uses the destination tissue's σ_t). Treat deterministic absolute doses as
   unvalidated until that closes.
+- **Uncollided beam attenuated void as tissue.** The analytic uncollided beam used the
+  destination cell's σ_t over the whole path from the source plane, so off-axis rays
+  crossing air/void before the skin were attenuated as tissue. It now traverses the
+  voxel grid (Amanatides–Woo) and sums each material's σ_t·ℓ. Layered-head absorbed
+  fraction 0.055 → 0.165 (P0, S8).
+- **Scattering order matters for tissue.** A transverse-periodic brain column vs
+  OpenMC: P0 + transport correction absorbs 0.27 per source vs 0.43 (MC) and
+  under-penetrates with depth; `--p1` absorbs 0.45 and tracks MC to ~±15–25% over
+  20 cm. P1 does not yet converge on the 3-D layered head (residual 0.26 after 200
+  outers), so P0 remains the default for now.
+- Standard tissue library re-collapsed with the fixed collapse and H(H2O) S(α,β)
+  (now the `project init` default); project runner defaults `anderson = 3`,
+  `max_outer = 128`. Reports carry an accuracy-status line.
 
 ## [Unreleased]
 

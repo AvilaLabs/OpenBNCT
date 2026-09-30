@@ -1516,6 +1516,14 @@ fn print_status(project_arg: &Path) -> DynResult<()> {
 // Report
 // ---------------------------------------------------------------------------
 
+/// Current, measured accuracy status of the default deterministic path —
+/// printed in every report so absolute numbers are never read in isolation.
+const ACCURACY_STATUS: &str = "Accuracy status: absolute doses from the deterministic \
+(S_N) engine are not yet validated. On the layered-head benchmark the default P0 path \
+currently under-predicts thermal-component dose relative to continuous-energy OpenMC, \
+increasingly with depth (see CHANGELOG). Use these results for relative comparisons; \
+use the OpenMC path for absolute dose.";
+
 const DISCLAIMER: &str = "Research software output. OpenBNCT is not a medical device and has \
 not been clinically validated or commissioned for any treatment facility; these results are \
 not for diagnosis, treatment planning, or any clinical decision. See docs/DISCLAIMER.md.";
@@ -1665,6 +1673,7 @@ fn write_report(
         if converged { "" } else { " (PROVISIONAL)" }
     );
     let _ = writeln!(md, "> {DISCLAIMER}\n");
+    let _ = writeln!(md, "> {ACCURACY_STATUS}\n");
     let _ = writeln!(md, "| | |\n|---|---|");
     let _ = writeln!(md, "| Project id | {} |", config.project.id);
     let _ = writeln!(md, "| OpenBNCT version | {} |", env!("CARGO_PKG_VERSION"));

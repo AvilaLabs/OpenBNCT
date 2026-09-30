@@ -1392,6 +1392,9 @@ impl RayGrid {
     }
 }
 
+/// One cell's uncollided group fluence and group current vector.
+type CellUncollided = (Vec<f64>, Vec<[f64; 3]>);
+
 /// Analytic uncollided-flux ray-trace for an on-face disk source.
 /// Each cell's uncollided fluence is the cell average of the incident
 /// fluence: φ_unc(cell, g) = (R/A_disk)·w_g·⟨e^{−Σ_t·s}⟩/μ̄ where the
@@ -1564,7 +1567,7 @@ pub(crate) fn uncollided_beam_moments(
         }
     }
 
-    let per_cell: Vec<Option<(Vec<f64>, Vec<[f64; 3]>)>> = (0..n_cells)
+    let per_cell: Vec<Option<CellUncollided>> = (0..n_cells)
         .into_par_iter()
         .map(|cell| -> Result<_, MultigroupError> {
             let i = cell % nx;
