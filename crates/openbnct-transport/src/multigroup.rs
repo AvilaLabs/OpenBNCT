@@ -1318,13 +1318,42 @@ fn default_spectrum_weighting() -> String {
 }
 
 /// Default (rings in cos θ, azimuths) of the isotropic-cone direction
-/// grid used by the uncollided beam. Measured on the 25³ layered head
-/// against 8×16 (total uncollided fluence, cells above 1e-3 of max):
-/// 6×12 p99 3.9 % / max 15 %, 5×10 5.8 % / 28 %, 4×8 10.9 % / 38 %,
-/// 3×6 17.4 % / 59 % — no smaller grid reaches p99 < 0.5 %, so 8×16
-/// stays. Likewise a coarse 4×4 first pass with 8×8 refinement of
-/// mixed-coverage cells (`OPENBNCT_UNC_COARSE_POINTS=4`) differs by
-/// p99 7.1 % / max 53 % (6×6: 1.7 % / 34 %), so full 8×8 sampling stays.
+/// grid used by the uncollided beam.
+///
+/// Dose-criterion re-evaluation (layered head, 25³ at 8 mm, S4 28-group,
+/// `uniform_in_bin`, solved to convergence; every cell is relative to the
+/// 8×16 cone with 8×8 transverse points; hydrogen/total = voxel p99 / max
+/// over voxels above 10 % of the component max; every region mean was
+/// < 0.16 %). Acceptance was region mean < 0.2 %, p99 < 0.5 %, max < 2 %
+/// for every component. The hydrogen (proton-recoil) component, which
+/// tracks the fast uncollided beam directly, fails for every candidate:
+///
+/// | cone  | points | H p99 / max   | total p99 / max | wall (s) |
+/// |-------|--------|---------------|-----------------|----------|
+/// | 8×16  | 8×8    | reference     | reference       | 80       |
+/// | 8×16  | 6×6    | 1.35 / 2.15 % | 0.31 / 0.77 %   | 68       |
+/// | 8×16  | 4×4    | 2.94 / 14.2 % | 0.69 / 4.7 %    | 60       |
+/// | 8×16  | 4→8    | 3.42 / 4.27 % | 1.04 / 3.6 %    | 65       |
+/// | 6×12  | 8×8    | 1.46 / 1.81 % | 0.23 / 0.65 %   | 71       |
+/// | 6×12  | 6×6    | 2.18 / 2.37 % | 0.36 / 0.83 %   | 63       |
+/// | 6×12  | 4×4    | 3.84 / 14.3 % | 0.75 / 4.8 %    | 58       |
+/// | 6×12  | 4→8    | 4.60 / 6.58 % | 1.05 / 3.4 %    | 56       |
+/// | 4×8   | 8×8    | 1.87 / 3.33 % | 0.26 / 1.13 %   | 54       |
+/// | 4×8   | 6×6    | 2.27 / 2.52 % | 0.53 / 0.92 %   | 53       |
+/// | 4×8   | 4×4    | 5.13 / 14.4 % | 1.05 / 4.8 %    | 52       |
+/// | 4×8   | 4→8    | 4.10 / 7.54 % | 0.93 / 3.8 %    | 51       |
+/// | 3×6   | 8×8    | 2.68 / 3.79 % | 0.31 / 0.89 %   | 55       |
+/// | 3×6   | 6×6    | 3.87 / 9.42 % | 0.68 / 3.5 %    | 53       |
+/// | 3×6   | 4×4    | 8.37 / 15.0 % | 1.13 / 5.0 %    | 52       |
+/// | 3×6   | 4→8    | 3.70 / 8.36 % | 0.86 / 3.5 %    | 52       |
+///
+/// (Wall times were taken under machine contention with 6 threads.) No
+/// candidate meets the hydrogen criterion, so 8×16 with 8×8 sampling
+/// stays; the real-head case was therefore not run. The sampling can
+/// be overridden for studies with `OPENBNCT_CONE_GRID=RxP`,
+/// `OPENBNCT_UNC_POINTS=N` (full transverse points per cell edge) and
+/// `OPENBNCT_UNC_COARSE_POINTS=N` (coarse first pass, refined to the
+/// full count only in mixed-coverage cells).
 pub(crate) const CONE_GRID: (usize, usize) = (8, 16);
 
 /// Deterministic equal-area sample directions over an isotropic cone:
@@ -1546,15 +1575,31 @@ pub(crate) fn uncollided_beam_moments(
             Some((r.parse().ok()?, p.parse().ok()?))
         })
         .unwrap_or(CONE_GRID);
+    // OPENBNCT_UNC_POINTS=N sets the full transverse point count per
+    // cell edge (default TRANSVERSE_POINTS).
+    let full = std::env::var("OPENBNCT_UNC_POINTS")
+        .ok()
+        .and_then(|v| v.parse::<u32>().ok())
+        .filter(|n| *n >= 1)
+        .unwrap_or(TRANSVERSE_POINTS);
     let coarse = std::env::var("OPENBNCT_UNC_COARSE_POINTS")
         .ok()
         .and_then(|v| v.parse().ok())
-        .unwrap_or(TRANSVERSE_POINTS);
-    uncollided_beam_moments_grid(case, data, case_material, weighting, cone_grid, coarse)
+        .unwrap_or(full);
+    uncollided_beam_moments_points(
+        case,
+        data,
+        case_material,
+        weighting,
+        cone_grid,
+        coarse,
+        full,
+    )
 }
 
 /// [`uncollided_beam_moments`] with the cone direction grid and the
 /// coarse transverse point count explicit.
+#[cfg(test)]
 pub(crate) fn uncollided_beam_moments_grid(
     case: &TransportCase,
     data: &MultigroupData,
@@ -1562,6 +1607,28 @@ pub(crate) fn uncollided_beam_moments_grid(
     weighting: SourceWeighting,
     cone_grid: (usize, usize),
     coarse_points: u32,
+) -> Result<Option<UncollidedMoments>, MultigroupError> {
+    uncollided_beam_moments_points(
+        case,
+        data,
+        case_material,
+        weighting,
+        cone_grid,
+        coarse_points,
+        TRANSVERSE_POINTS,
+    )
+}
+
+/// [`uncollided_beam_moments_grid`] with the full (refined) transverse
+/// point count per cell edge explicit too.
+pub(crate) fn uncollided_beam_moments_points(
+    case: &TransportCase,
+    data: &MultigroupData,
+    case_material: &[usize],
+    weighting: SourceWeighting,
+    cone_grid: (usize, usize),
+    coarse_points: u32,
+    full_points: u32,
 ) -> Result<Option<UncollidedMoments>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
     let source = &case.source;
@@ -1759,8 +1826,8 @@ pub(crate) fn uncollided_beam_moments_grid(
                 if points.is_empty() {
                     continue;
                 }
-                if n_side < TRANSVERSE_POINTS && points.len() < (n_side * n_side) as usize {
-                    n_side = TRANSVERSE_POINTS;
+                if n_side < full_points && points.len() < (n_side * n_side) as usize {
+                    n_side = full_points;
                     points = lit_points(n_side);
                     if points.is_empty() {
                         continue;
