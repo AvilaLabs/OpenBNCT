@@ -3448,7 +3448,11 @@ fn sweep_group(
     // chunk's directions in index order (per cell: scalar, current,
     // kernel moments and face sums together). Bit-identical for any
     // thread count.
-    let chunk_len = n_dirs.div_ceil(rayon::current_num_threads().max(1)).max(1);
+    // One chunk sweeps as many directions as there are worker threads
+    // (balanced across the fewest chunks that fit): the chunk width is
+    // the parallelism, so it must scale *with* the thread count.
+    let n_chunks = n_dirs.div_ceil(rayon::current_num_threads().max(1)).max(1);
+    let chunk_len = n_dirs.div_ceil(n_chunks).max(1);
     let t_alloc = phase::start();
     let mut slots = SWEEP_POOL.with(|p| std::mem::take(&mut *p.borrow_mut()));
     while slots.len() < chunk_len {
@@ -3507,40 +3511,41 @@ fn sweep_group(
                 })
             })
             .collect();
-        let fold_cells = |start: usize, acc_blk: &mut [CellAccum], mut faces: Option<&mut [[f64; 14]]>| {
-            for (ci, acc) in acc_blk.iter_mut().enumerate() {
-                let cell = start + ci;
-                let mut ft = faces.as_ref().map(|f| f[ci]);
-                for s in 0..nd {
-                    let d = chunk_start + s;
-                    let (dir, w) = quadrature[d];
-                    let psi_d = rows[s][cell];
-                    acc.scalar += w * psi_d;
-                    for (jc, &mu) in acc.current.iter_mut().zip(dir.iter()) {
-                        *jc += w * mu * psi_d;
-                    }
-                    let mut kk = 0;
-                    for eigs in eigen.iter() {
-                        for (_, u) in eigs.iter() {
-                            acc.kernel[kk] += w * u[d] * psi_d;
-                            kk += 1;
+        let fold_cells =
+            |start: usize, acc_blk: &mut [CellAccum], mut faces: Option<&mut [[f64; 14]]>| {
+                for (ci, acc) in acc_blk.iter_mut().enumerate() {
+                    let cell = start + ci;
+                    let mut ft = faces.as_ref().map(|f| f[ci]);
+                    for s in 0..nd {
+                        let d = chunk_start + s;
+                        let (dir, w) = quadrature[d];
+                        let psi_d = rows[s][cell];
+                        acc.scalar += w * psi_d;
+                        for (jc, &mu) in acc.current.iter_mut().zip(dir.iter()) {
+                            *jc += w * mu * psi_d;
+                        }
+                        let mut kk = 0;
+                        for eigs in eigen.iter() {
+                            for (_, u) in eigs.iter() {
+                                acc.kernel[kk] += w * u[d] * psi_d;
+                                kk += 1;
+                            }
+                        }
+                        if let Some(ft) = ft.as_mut() {
+                            let pr = &parts[s][cell];
+                            for a in 0..3 {
+                                ft[face_slots[s][a].0] += pr[a];
+                                ft[face_slots[s][a].1] += pr[5 + a];
+                            }
+                            ft[12] += pr[3];
+                            ft[13] += pr[4];
                         }
                     }
-                    if let Some(ft) = ft.as_mut() {
-                        let pr = &parts[s][cell];
-                        for a in 0..3 {
-                            ft[face_slots[s][a].0] += pr[a];
-                            ft[face_slots[s][a].1] += pr[5 + a];
-                        }
-                        ft[12] += pr[3];
-                        ft[13] += pr[4];
+                    if let (Some(ft), Some(f)) = (ft, faces.as_mut()) {
+                        f[ci] = ft;
                     }
                 }
-                if let (Some(ft), Some(f)) = (ft, faces.as_mut()) {
-                    f[ci] = ft;
-                }
-            }
-        };
+            };
         match face_out.as_mut().map(|v| v.as_mut_slice()) {
             Some(out) => cell_acc
                 .par_chunks_mut(FOLD_BLOCK)
@@ -8635,10 +8640,17 @@ mod phase {
             .iter()
             .map(|a| a.load(Ordering::Relaxed) as f64 * 1e-9)
             .collect();
-        let wall_listed: f64 = [PAR_WALL, FOLD_WALL, PRELUDE_WALL, SOURCE_WALL, CMFD_WALL, UPDATE_WALL]
-            .iter()
-            .map(|&i| v[i])
-            .sum();
+        let wall_listed: f64 = [
+            PAR_WALL,
+            FOLD_WALL,
+            PRELUDE_WALL,
+            SOURCE_WALL,
+            CMFD_WALL,
+            UPDATE_WALL,
+        ]
+        .iter()
+        .map(|&i| v[i])
+        .sum();
         let mut line = format!("[phase] outer {outer} total={total_wall_s:.2}s");
         for (n, x) in NAMES.iter().zip(v.iter()) {
             line.push_str(&format!(" {n}={x:.2}"));
