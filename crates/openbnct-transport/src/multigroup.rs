@@ -3409,7 +3409,7 @@ fn sweep_group(
         phase::add(phase::KERNEL_CPU, t_kernel);
         // The wrap planes this direction's next iterate reads — the
         // far-side a-plane for each periodic axis.
-        let wrap_row = if periodic.iter().any(|p| *p) {
+        if periodic.iter().any(|p| *p) {
             std::array::from_fn(|a| {
                 if !periodic[a] {
                     return Vec::new();
@@ -3435,8 +3435,7 @@ fn sweep_group(
             })
         } else {
             [Vec::new(), Vec::new(), Vec::new()]
-        };
-        wrap_row
+        }
     };
     // Floating-point addition is not associative, so both the face
     // sums and the per-cell moment accumulations must be formed in an
