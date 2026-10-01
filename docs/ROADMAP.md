@@ -1934,9 +1934,18 @@ already have.
 - **R18-04 — Speed. (landed: 4ddcec4, 391a355, 7773c0f)** Uncollided-beam caching and
   ray fix; binary f64 sidecars for large arrays; CMFD on by default. A 4 mm head is
   ~3 min on 6 threads.
-- **R18-05 — Real-anatomy benchmark. (in progress)** A CC BY 4.0 public head CT
-  through `project run` at 4 mm plus `project verify`. Includes `import ct-nifti`
-  and `project init --ct-nifti`.
+- **R18-05 — Real-anatomy benchmark. (landed, f32bf54)**
+  - Case: `validation/real-anatomy/hn-head-ct/`, a CC BY 4.0 head CT (TCIA / DeepMind,
+    patient 0522c0226), cropped to 54×67×57 at 4 mm. It ships with `import ct-nifti`
+    and `project init --ct-nifti`.
+  - Run: `project run` takes ~16 min on 6 threads (neutron + photon) with a 2.3 GB peak.
+  - Check: `project verify` at 6e6 histories gives total-dose S_N/MC of 0.95 (synthetic
+    target), 0.98 (brain), 1.00 (body), and every structure the statistics can resolve
+    agrees within ±5 %.
+  - Fixes it forced:
+    - mixture quantization (91k blended materials → ~150);
+    - photon-solve CMFD;
+    - mass-fraction dose blending (skin nitrogen 1.56× → 1.04×).
 - **R18-06 — Open items.**
   - Uncollided setup is ~40 % of a 4 mm run.
   - Voxel-level gamma pass rates are limited by MC statistics.
@@ -1944,6 +1953,11 @@ already have.
     published fit).
   - The GUI does not read sidecar arrays.
   - The 11 % fast-flux deficit in the infinite medium is unexplained.
+  - Real-CT imports need an automatic body crop: the uncropped FOV is 1.6M voxels
+    at 4 mm.
+  - On the real head, uncollided setup is ~10 min of a 16-min run.
+  - `verify` needs more histories, or importance weighting, to resolve small
+    structures.
   - The exponential closure and P1 do not converge together.
 
 **Input/output formats:**
