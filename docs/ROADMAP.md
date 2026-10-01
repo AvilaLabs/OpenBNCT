@@ -1961,8 +1961,29 @@ already have.
       not touch it; it needs a track-length photon-kerma tally.
     - Open: the head adjoint (3–20 min under load) is re-solved on every verify;
       cache it.
-  - Open: sweep thread scaling and memory traffic (in progress); then decide on
-    a GPU sweep.
+  - Landed 2026-10-01 (real head, 54×67×57, S4, 8 threads on a shared laptop): from
+    ~16 min to ~4 min end to end.
+    - Sweep scratch reuse, fused fold and worker-sized chunks (0db13f1): neutron loop
+      300 s → ~160 s.
+    - Continuous set-to-zero fixup, which ends a photon limit cycle, plus
+      descending-only photon group order: photon solve 101 s → ~54 s.
+    - Metrics batch: 25 s → 1 s.
+    - `[transport] convergence` default 1e-4: 13 instead of 18 neutron outers, dose
+      within 4e-5 relative.
+  - Next, toward under 1 min, in measured order of payoff:
+    1. Sweep memory traffic. The kernel moves ~180 B per cell-direction; the 8-f64
+       CMFD face record, written and re-read, is the largest share. Steps:
+       - boundary-inflow slots out of the per-cell record;
+       - per-group contiguous gathers of fixed source, σ and material instead of
+         `Vec<Vec>` pointer chases;
+       - record faces only on the last inner sweep.
+       (perf is unavailable without root here, so timing is by `SN_PHASE_TIMING`.)
+    2. CMFD low-order solve (~45 s per neutron solve): it is solved to 1e-3 × the
+       transport residual. Try a looser factor (experiment started, not concluded),
+       then a multigrid or better preconditioner than Jacobi-BiCGSTAB.
+    3. Photon pair pass: fold the annihilation source into one solve (a lagged source
+       per outer) instead of a second solve (~25 s).
+    4. Then decide on a GPU sweep.
 - **R18-06 — Open items.**
   - Voxel-level gamma pass rates are limited by MC statistics.
   - The CMFD od-θ uses a smoothstep with the published limits (replace with the
