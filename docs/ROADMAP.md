@@ -1953,8 +1953,11 @@ already have.
     published fit).
   - The GUI does not read sidecar arrays.
   - The 11 % fast-flux deficit in the infinite medium is unexplained.
-  - Real-CT imports need an automatic body crop: the uncropped FOV is 1.6M voxels
-    at 4 mm.
+  - Real-CT imports crop to the body automatically (`--crop body`, default; see
+    USAGE "Cropping the CT"). Open: the body crop alone keeps the neck and
+    shoulders of a head scan; a head-only default needs `--crop-superior-of-mm`.
+  - Python project API: the project workflow (`project init`/`run`, including the
+    `[imaging] crop` keys) is CLI/GUI only; expose it from the `openbnct` package.
   - On the real head, uncollided setup is ~10 min of a 16-min run.
   - `verify` needs more histories, or importance weighting, to resolve small
     structures.

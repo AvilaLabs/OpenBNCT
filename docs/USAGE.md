@@ -60,6 +60,8 @@ dicom = "../study"                         # one CT series (+ RTSTRUCT), relativ
 # labels_nifti = "../labels.nii.gz"        # integer labelmap on the same grid
 # label_names = "../label-names.json"      # names the labels (see `import ct-nifti`)
 spacing_mm = 5.0
+crop = "body"                              # "body": crop the CT to the body + margin; "none": full field of view
+crop_margin_mm = 15.0                      # air margin around the body (also the beam-entry air gap)
 
 [materials]                                # builtin:NAME or a path; `openbnct project builtins` lists names
 calibration = "builtin:tissue/hu-calibration-generic-head-ct"
@@ -863,6 +865,32 @@ as the transport stack requires) and the labelmap must have exactly the HU
 grid's shape, spacing and origin; nothing is reoriented or resampled beyond the
 box average, so do that upstream (nearest-neighbour for labels).
 `--labels` and `--label-names` go together; `--masks-dir` needs them.
+
+### Cropping the CT
+
+Real CTs include shoulders, couch and air, and a whole-body field of view can exhaust
+memory (the benchmark head's full FOV is 1.6 M voxels at 4 mm). Both importers crop
+before the transport grid is built, and the covering grid, the HU downsampling and every
+ROI mask use the cropped box only.
+
+| Flag | Meaning |
+| --- | --- |
+| `--crop body` (default) | HU > -400 on the source CT, largest 26-connected component (this drops the couch), holes filled per axial slice, axis-aligned bounding box plus the margin, clipped to the CT. |
+| `--crop none` | Keep the full field of view. |
+| `--crop-margin-mm M` (default 15) | Margin around the body box, rounded out to whole CT voxels. |
+| `--crop-box-mm x0,x1,y0,y1,z0,z1` | Explicit box in patient LPS mm; replaces the body rule (no margin added). Keeps CT voxels whose centers lie in the box. Needs an axis-aligned CT. |
+| `--crop-superior-of-mm Z` | Keep only CT voxels with center z >= Z (LPS mm), on top of the body rule or the box. The body box is taken over the kept part, so shoulders below the cut do not widen it. This is how the benchmark head drops the shoulders. |
+
+`--crop none` cannot be combined with the box or the superior cut. The import record's
+`crop` block states the rule, its parameters, the original and cropped extents (LPS mm),
+CT shapes and voxel counts, and per ROI how many CT voxels the crop dropped. An ROI the
+crop clips prints a warning with the dropped count; widen the margin or use
+`--crop none`. In a project, set `[imaging] crop` and `crop_margin_mm`.
+
+`beam bind --hu NEW-HU.nii` checks that the beam entry face is outside the skin: it
+prints the air gap in front of the first tissue voxel (HU > -400) in the port
+footprint, and warns when the entry layer already touches tissue (the margin is too
+small, or the crop box cuts the body). `project run` passes the HU volume automatically.
 
 ### HU-to-material calibration
 

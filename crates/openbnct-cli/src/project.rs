@@ -377,6 +377,20 @@ struct ImagingSection {
     label_names: Option<String>,
     #[serde(default = "default_spacing")]
     spacing_mm: f64,
+    /// `"body"` (default): crop the CT to the body plus `crop_margin_mm`;
+    /// `"none"`: keep the full field of view.
+    #[serde(default = "default_crop")]
+    crop: String,
+    #[serde(default = "default_crop_margin")]
+    crop_margin_mm: f64,
+}
+
+fn default_crop() -> String {
+    "body".into()
+}
+
+fn default_crop_margin() -> f64 {
+    15.0
 }
 
 /// Where a project's CT and structures come from.
@@ -544,6 +558,12 @@ impl ProjectConfig {
         }
         if !(self.imaging.spacing_mm.is_finite() && self.imaging.spacing_mm > 0.0) {
             return fail("project.toml: [imaging] spacing_mm must be a positive number");
+        }
+        if !matches!(self.imaging.crop.as_str(), "body" | "none") {
+            return fail("project.toml: [imaging] crop must be \"body\" or \"none\"");
+        }
+        if !(self.imaging.crop_margin_mm.is_finite() && self.imaging.crop_margin_mm >= 0.0) {
+            return fail("project.toml: [imaging] crop_margin_mm must be a non-negative number");
         }
         let imaging = &self.imaging;
         match (
@@ -819,6 +839,8 @@ fn init_project(
          [imaging]\n\
          {imaging_lines}\
          spacing_mm = {spacing_mm:?}\n\
+         crop = \"body\"    # \"body\" crops the CT to the body plus the margin; \"none\" keeps the full field of view\n\
+         crop_margin_mm = 15.0    # air margin around the body, mm (also the beam-entry air gap)\n\
          \n\
          [materials]\n\
          calibration = {calibration:?}    # or a path to an openbnct.hu-calibration JSON\n\
@@ -1280,11 +1302,16 @@ fn plan_step(
     let base_material = resolve_spec(project, &config.materials.base_material)?;
     let beam = resolve_spec(project, &config.beam.description)?;
     let spacing = config.imaging.spacing_mm.to_string();
+    let crop_margin = config.imaging.crop_margin_mm.to_string();
     Ok(match index {
         0 => {
             let tail = [
                 "--spacing-mm",
                 &spacing,
+                "--crop",
+                &config.imaging.crop,
+                "--crop-margin-mm",
+                &crop_margin,
                 "--case-id",
                 &config.project.id,
                 "--base-material",
@@ -1370,8 +1397,15 @@ fn plan_step(
                     "--aim-mask",
                     &target,
                     &approach,
+                    "--hu",
+                    "out/01-import/hu.nii",
                 ])],
-                inputs: vec![beam, "out/01-import/case.json".into(), target],
+                inputs: vec![
+                    beam,
+                    "out/01-import/case.json".into(),
+                    target,
+                    "out/01-import/hu.nii".into(),
+                ],
                 outputs: vec!["out/03-beam".into()],
                 options: json!({}),
             }

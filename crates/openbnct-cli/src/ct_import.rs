@@ -20,6 +20,9 @@ use openbnct_transport::MaterialDefinition;
 use serde_json::{Map, Value, json};
 
 use super::{scaffold_case_from_geometry, write_new_json};
+use crate::ct_crop::{CropArgs, apply_crop, crop_record, plan_crop};
+
+pub(crate) use crate::ct_crop::BODY_HU_THRESHOLD;
 
 /// One ROI rasterized on the source lattice.
 pub(crate) struct CtImportRoi {
@@ -84,6 +87,7 @@ pub(crate) fn finish_ct_import(
     case_output: &Path,
     hu_output: &Path,
     masks_dir: Option<&Path>,
+    crop: &CropArgs,
 ) -> io::Result<()> {
     let record_path = case_output.with_extension("import-record.json");
     if masks_dir.is_some() && source.rois.is_none() {
@@ -105,9 +109,29 @@ pub(crate) fn finish_ct_import(
     if target_spacing.iter().any(|v| !v.is_finite() || *v <= 0.0) {
         return Err(io::Error::other("--spacing-mm must be positive and finite"));
     }
-    let grid = covering_grid(&source.geometry, target_spacing);
+    // Crop first: the covering grid, the HU downsampling and every ROI mask
+    // use the cropped lattice only.
+    let plan = plan_crop(&source.geometry, &source.hu, crop)?;
+    let cropped = plan.as_ref().map(|plan| apply_crop(source, plan));
+    let (ct_geometry, ct_hu, ct_rois) = match &cropped {
+        Some(c) => (&c.geometry, &c.hu, &c.rois),
+        None => (&source.geometry, &source.hu, &source.rois),
+    };
+    let clipping: &[crate::ct_crop::RoiClipping] =
+        cropped.as_ref().map_or(&[], |c| c.clipping.as_slice());
+    for c in clipping.iter().filter(|c| c.dropped > 0) {
+        eprintln!(
+            "warning: ROI {:?} is clipped by the crop: {} of {} CT voxels dropped ({:.1} %); \
+             widen --crop-margin-mm or use --crop none / --crop-box-mm",
+            c.name,
+            c.dropped,
+            c.ct_voxels,
+            100.0 * c.dropped as f64 / c.ct_voxels.max(1) as f64
+        );
+    }
+    let grid = covering_grid(ct_geometry, target_spacing);
     grid.voxel_count().map_err(io::Error::other)?;
-    let hu = box_average_to_grid(&source.hu, &source.geometry, &grid)
+    let hu = box_average_to_grid(ct_hu, ct_geometry, &grid)
         .ok_or_else(|| io::Error::other("internal: grid does not align with the CT lattice"))?;
 
     write_nifti(
@@ -127,7 +151,7 @@ pub(crate) fn finish_ct_import(
     write_new_json(case_output, &scaffold)?;
 
     let mut mask_records = Vec::new();
-    if let (Some(dir), Some(rois)) = (masks_dir, &source.rois) {
+    if let (Some(dir), Some(rois)) = (masks_dir, ct_rois) {
         fs::create_dir_all(dir)?;
         for roi in rois {
             let fractions = box_average_to_grid(
@@ -135,7 +159,7 @@ pub(crate) fn finish_ct_import(
                     .iter()
                     .map(|&v| if v { 1.0 } else { 0.0 })
                     .collect::<Vec<_>>(),
-                &source.geometry,
+                ct_geometry,
                 &grid,
             )
             .ok_or_else(|| io::Error::other("internal: mask grid misaligned"))?;
@@ -163,6 +187,10 @@ pub(crate) fn finish_ct_import(
                 "file": file,
                 "sha256": openbnct_evidence::sha256_file(&path)?,
                 "ct_voxels": roi.voxels.iter().filter(|v| **v).count(),
+                "ct_voxels_dropped_by_crop": clipping
+                    .iter()
+                    .find(|c| c.name == roi.name)
+                    .map_or(0, |c| c.dropped),
                 "grid_voxels": mask.included_voxel_count(),
             }));
         }
@@ -181,6 +209,7 @@ pub(crate) fn finish_ct_import(
         "schema_version": "openbnct.ct-import-record/0.1.0",
         "case_id": case_id,
         "ct_geometry": source.geometry,
+        "crop": crop_record(&source.geometry, ct_geometry, plan.as_ref(), clipping),
         "case_geometry": grid,
         "resampling": "hu: volume-weighted box mean of overlapping CT voxels (outside-CT parts excluded); masks: >= 50% volume fraction of CT-grid ROI voxels; no reorientation",
         "base_material_sha256": openbnct_evidence::sha256_file(base_material_path)?,
@@ -199,8 +228,19 @@ pub(crate) fn finish_ct_import(
 
     println!(
         "ct: {:?} @ {:?} mm -> case grid {:?} @ {:?} mm",
-        source.geometry.shape, native, grid.shape, grid.spacing_mm
+        ct_geometry.shape, native, grid.shape, grid.spacing_mm
     );
+    if plan.is_some() {
+        println!(
+            "crop: CT {:?} ({} voxels) -> {:?} ({} voxels); rule and extents in the record",
+            source.geometry.shape,
+            source.geometry.voxel_count().unwrap_or(0),
+            ct_geometry.shape,
+            ct_geometry.voxel_count().unwrap_or(0)
+        );
+    } else {
+        println!("crop: none (full CT field of view)");
+    }
     println!("case: {}", case_output.display());
     println!("hu: {}", hu_output.display());
     if let Some(dir) = masks_dir {
@@ -472,6 +512,7 @@ pub(crate) fn cmd_import_ct_nifti(
     case_output: &Path,
     hu_output: &Path,
     masks_dir: Option<&Path>,
+    crop: &CropArgs,
 ) -> io::Result<()> {
     if labels.is_some() != label_names.is_some() {
         return Err(io::Error::other(
@@ -495,5 +536,6 @@ pub(crate) fn cmd_import_ct_nifti(
         case_output,
         hu_output,
         masks_dir,
+        crop,
     )
 }

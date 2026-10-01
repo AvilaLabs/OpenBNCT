@@ -12,6 +12,31 @@ own versions independent of the crate version.
 
 
 
+## Unreleased — automatic CT crop (2026-10-01)
+
+- **`dicom import-ct` and `import ct-nifti` crop the CT to the body by default.** A real
+  scan includes shoulders, couch and air; the benchmark head's full field of view is
+  1.6 M voxels at 4 mm. `--crop body` (default) thresholds HU > -400, keeps the largest
+  26-connected component (the couch drops out), fills holes per axial slice and builds
+  the covering grid over its bounding box plus `--crop-margin-mm` (default 15, rounded
+  out to whole CT voxels). `--crop none` keeps the full field of view;
+  `--crop-box-mm x0,x1,y0,y1,z0,z1` gives an explicit LPS box; `--crop-superior-of-mm Z`
+  keeps only z >= Z (drops shoulders). ROI masks use the cropped grid; an ROI the crop
+  clips prints a warning with the number of dropped CT voxels. The import record has a
+  `crop` block (rule, parameters, original and cropped extents, shapes, voxel counts, per-ROI
+  dropped counts).
+- **Projects:** `project.toml` `[imaging]` gains `crop = "body" | "none"` and
+  `crop_margin_mm`; `project init` writes the defaults and `project run` passes them to
+  the import. A `project.toml` without the keys now crops (default `body`); set
+  `crop = "none"` to reproduce an earlier uncropped import.
+- **`beam bind --hu HU.nii`** reports the air gap in front of the first tissue voxel in the
+  port footprint and warns when the entry layer already touches tissue (margin too
+  small). `project run` passes the HU volume.
+- **Surfaces:** CLI only for the flags. The project keys are shared with the GUI project
+  workspace (wired separately). The Python package has no project API today (the project
+  workflow is CLI/GUI-only), so there is deliberately no Python surface for this change;
+  a Python project API is a roadmap item under R18-06.
+
 ## Unreleased — real-anatomy mixture quantization (2026-09-30)
 
 - **HU-calibrated mixtures are quantized before blending.** A real head CT at 4 mm

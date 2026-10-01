@@ -9,6 +9,7 @@ use std::io::{self, Write};
 use std::path::{Path, PathBuf};
 use std::process::ExitCode;
 
+mod ct_crop;
 mod ct_import;
 mod import_formats;
 mod phsp_cmd;
@@ -1783,6 +1784,13 @@ enum BeamCommand {
         /// Axis approach `+x|-x|+y|-y|+z|-z` used with `--aim-mask`.
         #[arg(long, requires = "aim_mask")]
         approach: Option<String>,
+        /// HU NIfTI on the case grid (the `hu` output of `import ct-nifti` /
+        /// `dicom import-ct`). When given, the entry face is checked for an
+        /// air gap: a warning is printed if tissue (HU > -400) touches the
+        /// port footprint on the entry layer, which means the crop margin
+        /// left no air in front of the skin.
+        #[arg(long)]
+        hu: Option<PathBuf>,
     },
     /// Describe an IAEA phase-space file (`.IAEAheader` + `.IAEAphsp`):
     /// header keys, per-particle-type counts and weight sums, energy and
@@ -2147,6 +2155,8 @@ enum DicomCommand {
         /// case grid plus `index.json`.
         #[arg(long)]
         masks_dir: Option<PathBuf>,
+        #[command(flatten)]
+        crop: ct_crop::CropArgs,
     },
     /// Apply an `openbnct.hu-calibration` anchor table to a CT HU
     /// volume, emitting an `openbnct.material-assignment` whose
@@ -2750,6 +2760,8 @@ enum ImportCommand {
         /// the case grid plus `index.json`.
         #[arg(long)]
         masks_dir: Option<PathBuf>,
+        #[command(flatten)]
+        crop: ct_crop::CropArgs,
     },
 }
 
@@ -5756,6 +5768,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 output,
                 aim_mask,
                 approach,
+                hu,
             } => {
                 let beam: openbnct_transport::BeamDescription =
                     serde_json::from_slice(&fs::read(&beam)?)?;
@@ -5769,6 +5782,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 bound
                     .validate()
                     .map_err(|error| io::Error::other(format!("bound case is invalid: {error}")))?;
+                if let Some(hu) = &hu {
+                    check_entry_air_gap(&bound, hu)?;
+                }
                 write_new_json(&output, &bound)?;
                 println!("bound {} onto {}", beam.id, bound.case_id);
                 println!("case: {}", output.display());
@@ -6868,6 +6884,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 case_output,
                 hu_output,
                 masks_dir,
+                crop,
             } => {
                 cmd_dicom_import_ct(
                     series,
@@ -6879,6 +6896,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     &case_output,
                     &hu_output,
                     masks_dir.as_deref(),
+                    &crop,
                 )?;
             }
             DicomCommand::Calibrate {
@@ -11182,6 +11200,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 case_output,
                 hu_output,
                 masks_dir,
+                crop,
             } => {
                 ct_import::cmd_import_ct_nifti(
                     &hu,
@@ -11193,6 +11212,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     &case_output,
                     &hu_output,
                     masks_dir.as_deref(),
+                    &crop,
                 )?;
             }
         },
@@ -18625,6 +18645,115 @@ fn aim_bound_source(
     Ok(aimed)
 }
 
+/// `beam bind --hu`: warn when the beam's entry face is not in air. The entry
+/// layer is the outermost voxel layer on the source's face; the footprint is
+/// the port aperture (disk or rectangle) on that layer. Prints the air gap
+/// (layers between the face and the first tissue voxel in the footprint).
+fn check_entry_air_gap(case: &TransportCase, hu_path: &Path) -> Result<(), io::Error> {
+    use openbnct_transport::SourceSpatialDistribution as Space;
+    let image = openbnct_nifti::read_volume(hu_path)
+        .map_err(|error| io::Error::other(format!("{}: {error}", hu_path.display())))?;
+    let g = &case.geometry;
+    if image.geometry.shape != g.shape {
+        return Err(io::Error::other(format!(
+            "beam bind --hu: {} has shape {:?} but the case grid is {:?}",
+            hu_path.display(),
+            image.geometry.shape,
+            g.shape
+        )));
+    }
+    type Footprint = Box<dyn Fn(f64, f64) -> bool>;
+    let (axis, offset_cm, uv_in): (_, f64, Footprint) = match &case.source.space {
+        Space::UniformDisk {
+            axis,
+            offset_cm,
+            center_uv_cm,
+            radius_cm,
+        } => {
+            let (c, r) = (*center_uv_cm, *radius_cm);
+            (
+                *axis,
+                *offset_cm,
+                Box::new(move |u, v| (u - c[0]).hypot(v - c[1]) <= r),
+            )
+        }
+        Space::UniformAxisPlane {
+            axis,
+            u_range_cm,
+            v_range_cm,
+            offset_cm,
+            ..
+        } => {
+            let (ur, vr) = (*u_range_cm, *v_range_cm);
+            (
+                *axis,
+                *offset_cm,
+                Box::new(move |u, v| u >= ur[0] && u <= ur[1] && v >= vr[0] && v <= vr[1]),
+            )
+        }
+        _ => return Ok(()),
+    };
+    let a = axis.index();
+    let (ua, va) = axis.in_plane_axes();
+    let n = [
+        g.shape[0] as usize,
+        g.shape[1] as usize,
+        g.shape[2] as usize,
+    ];
+    let (lo, hi) = g
+        .bounding_box_lps_mm()
+        .map_err(|error| io::Error::other(error.to_string()))?;
+    let from_low = (offset_cm * 10.0 - lo[a]).abs() <= (hi[a] - offset_cm * 10.0).abs();
+    // Footprint pixels in (u, v) voxel indices (identity direction).
+    let center =
+        |axis_i: usize, idx: usize| g.origin_mm[axis_i] + idx as f64 * g.spacing_mm[axis_i];
+    let mut footprint = Vec::new();
+    for iu in 0..n[ua] {
+        for iv in 0..n[va] {
+            if uv_in(center(ua, iu) / 10.0, center(va, iv) / 10.0) {
+                footprint.push((iu, iv));
+            }
+        }
+    }
+    if footprint.is_empty() {
+        return Ok(());
+    }
+    let at = |ia: usize, iu: usize, iv: usize| {
+        let mut idx = [0_usize; 3];
+        idx[a] = ia;
+        idx[ua] = iu;
+        idx[va] = iv;
+        idx[0] + n[0] * (idx[1] + n[1] * idx[2])
+    };
+    let mut gap_layers = None;
+    for depth in 0..n[a] {
+        let ia = if from_low { depth } else { n[a] - 1 - depth };
+        if footprint
+            .iter()
+            .any(|&(iu, iv)| image.values[at(ia, iu, iv)] > ct_import::BODY_HU_THRESHOLD)
+        {
+            gap_layers = Some(depth);
+            break;
+        }
+    }
+    let face = if from_low { "low" } else { "high" };
+    match gap_layers {
+        Some(0) => eprintln!(
+            "warning: the beam entry ({face} {} face) touches tissue (HU > {}) inside the port \
+             footprint: no air gap in front of the skin. Re-import with a larger \
+             --crop-margin-mm (project.toml [imaging] crop_margin_mm) or --crop none.",
+            ["x", "y", "z"][a],
+            ct_import::BODY_HU_THRESHOLD
+        ),
+        Some(depth) => println!(
+            "air gap at the beam entry: {} mm ({depth} voxel layer(s)) before tissue",
+            depth as f64 * g.spacing_mm[a]
+        ),
+        None => println!("air gap at the beam entry: the whole port footprint column is air"),
+    }
+    Ok(())
+}
+
 fn write_new_json<T: serde::Serialize>(path: &Path, value: &T) -> io::Result<()> {
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -19398,6 +19527,7 @@ fn cmd_dicom_import_ct(
     case_output: &Path,
     hu_output: &Path,
     masks_dir: Option<&Path>,
+    crop: &ct_crop::CropArgs,
 ) -> Result<(), io::Error> {
     if series.is_some() != slices.is_empty() {
         return Err(io::Error::other(
@@ -19473,6 +19603,7 @@ fn cmd_dicom_import_ct(
         case_output,
         hu_output,
         masks_dir,
+        crop,
     )
 }
 
