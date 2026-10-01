@@ -480,6 +480,12 @@ struct TransportSection {
     order: u32,
     #[serde(default = "default_max_outer")]
     max_outer: u32,
+    /// Outer-iteration tolerance (largest relative flux change between
+    /// outers) for the neutron and photon solves. The default 1e-4 moved
+    /// real-head dose by under 4e-5 relative against 1e-6, at 13 instead
+    /// of 18 neutron outers.
+    #[serde(default = "default_convergence")]
+    convergence: f64,
     #[serde(default = "default_anderson")]
     anderson: u32,
     #[serde(default)]
@@ -502,6 +508,7 @@ impl Default for TransportSection {
             engine: default_engine(),
             order: default_order(),
             max_outer: default_max_outer(),
+            convergence: default_convergence(),
             anderson: default_anderson(),
             allow_unconverged: false,
             source_weighting: default_source_weighting(),
@@ -524,6 +531,9 @@ fn default_order() -> u32 {
 }
 fn default_max_outer() -> u32 {
     128
+}
+fn default_convergence() -> f64 {
+    1e-4
 }
 fn default_anderson() -> u32 {
     3
@@ -613,6 +623,12 @@ impl ProjectConfig {
         }
         if self.transport.max_outer == 0 {
             return fail("project.toml: [transport] max_outer must be at least 1");
+        }
+        if !(self.transport.convergence > 0.0 && self.transport.convergence < 1.0) {
+            return fail(format!(
+                "project.toml: [transport] convergence {} must be in (0, 1)",
+                self.transport.convergence
+            ));
         }
         if self
             .beam
@@ -867,6 +883,7 @@ fn init_project(
          engine = \"sn\"\n\
          order = 8\n\
          max_outer = 128\n\
+         convergence = 1e-4    # outer tolerance (largest relative flux change); 1e-4 moves dose by < 1e-4 relative\n\
          anderson = 3    # Anderson acceleration depth; thermal-scattering data need it to converge\n\
          source_weighting = \"uniform_in_bin\"    # histogram beam bins spread uniformly per eV (OpenMC/MCNP); or \"collapse_consistent\" (1/E above 0.5 eV)\n\
          photon_transport = true    # transport capture photons (sn photon-solve); false = deposit their energy where it is born\n\
@@ -1426,6 +1443,7 @@ fn plan_step(
         3 => {
             let order = config.transport.order.to_string();
             let max_outer = config.transport.max_outer.to_string();
+            let convergence = config.transport.convergence.to_string();
             let anderson = config.transport.anderson.to_string();
             let mut command = argv(&[
                 "sn",
@@ -1440,6 +1458,8 @@ fn plan_step(
                 &order,
                 "--max-outer",
                 &max_outer,
+                "--convergence",
+                &convergence,
                 "--anderson",
                 &anderson,
                 "--source-weighting",
@@ -1487,6 +1507,8 @@ fn plan_step(
                     "out/02-calibrate/assignment.json",
                     "--order",
                     &order,
+                    "--convergence",
+                    &convergence,
                     "--dose",
                     "out/04-transport/dose-photon.json",
                     "--output",

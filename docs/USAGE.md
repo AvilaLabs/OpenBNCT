@@ -78,6 +78,7 @@ approach = "+x"                            # +x -x +y -y +z -z
 engine = "sn"
 order = 8
 max_outer = 128
+convergence = 1e-4                         # outer tolerance (largest relative flux change), neutron and photon solves; 1e-4 moved real-head dose by < 4e-5 relative vs 1e-6
 anderson = 3                               # Anderson depth (passed to sn solve --anderson)
 source_weighting = "uniform_in_bin"        # histogram beam bins uniform per eV (OpenMC/MCNP convention); or "collapse_consistent" (1/E above 0.5 eV)
 photon_transport = true                    # transport capture photons; false = deposit their energy where it is born

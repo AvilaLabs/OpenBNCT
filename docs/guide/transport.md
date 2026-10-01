@@ -6,7 +6,7 @@ OpenBNCT's deterministic solver uses multigroup discrete ordinates, with declare
 
 `project run` orchestrates imaging import, material calibration, beam binding, neutron transport, optional photon transport, boron scaling, metrics and reporting. Current defaults spread histogram bins uniformly per eV and transport capture photons with a separate photon solve.
 
-Inspect `[transport]` in `project.toml`: angular order, iteration budget, source weighting, photon policy and the allowed-unconverged setting. A solve that fails to converge requires diagnosis before its dose field is interpreted.
+Inspect `[transport]` in `project.toml`: angular order, iteration budget, convergence tolerance (`convergence`, default 1e-4: the largest relative flux change allowed between outer iterations), source weighting, photon policy and the allowed-unconverged setting. A solve that fails to converge requires diagnosis before its dose field is interpreted.
 
 ## A lower-level neutron example
 

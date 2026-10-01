@@ -18,6 +18,19 @@ own versions independent of the crate version.
 
 
 
+## Unreleased — project convergence tolerance (2026-10-01)
+
+- **New `[transport] convergence` key, default 1e-4.** It sets the outer-iteration
+  tolerance (largest relative flux change between outers) for the project's neutron and
+  photon solves. Previously the project used the CLI default of 1e-6.
+  - On the real head, 1e-4 needs 13 neutron outers instead of 18.
+  - The dose moves by at most 4e-5 relative in the body (photon 4e-5, nitrogen 2e-5,
+    hydrogen 2e-8), far inside the Monte Carlo agreement band.
+  - `sn solve` and `sn photon-solve` keep their 1e-6 default.
+- **Surfaces:** a CLI/project key. The GUI Project workspace does not expose it: it is
+  a numerical-precision setting whose default is right for dose, and it can be edited in
+  `project.toml`. Python has no project API yet (R18-06).
+
 ## Unreleased — photon solve convergence (2026-10-01)
 
 - **The real-head photon solve now converges instead of cycling.** It drops from 101 s to
