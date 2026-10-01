@@ -328,6 +328,41 @@ fn base_response(
             q
         }
         AdjointResponse::Global => vec![vec![1.0; groups]; n_cells],
+        AdjointResponse::VoxelDose { components, runs } => {
+            let mut q = vec![vec![0.0; groups]; n_cells];
+            let boron_unit = data.boron_unit_response_gy_cm2_per_ug_g.as_deref();
+            for run in runs {
+                let start = run.start as usize;
+                let end = start + run.len as usize;
+                if end > n_cells {
+                    return Err(invalid(format!(
+                        "voxel-dose run {start}..{end} exceeds the {n_cells}-voxel grid"
+                    )));
+                }
+                for cell in start..end {
+                    let material = &data.materials[case_material[cell]];
+                    let row = &mut q[cell];
+                    for name in components {
+                        if let Some(resp) = material.dose_response_gy_cm2.get(name) {
+                            for (r, v) in row.iter_mut().zip(resp) {
+                                *r += v;
+                            }
+                        }
+                    }
+                    if run.boron_ug_g > 0.0
+                        && let Some(unit) = boron_unit
+                    {
+                        for (r, v) in row.iter_mut().zip(unit) {
+                            *r += v * run.boron_ug_g;
+                        }
+                    }
+                    for r in row.iter_mut() {
+                        *r *= run.weight;
+                    }
+                }
+            }
+            q
+        }
     };
     if source.iter().all(|row| row.iter().all(|v| *v <= 0.0)) {
         return Err(invalid(
@@ -742,6 +777,41 @@ mod tests {
         assert_eq!(derivation.resolved.derivation.method, "cadis");
         assert_eq!(derivation.adjoint_fluxes.len(), 1);
         derivation.resolved.validate().unwrap();
+    }
+
+    /// A voxel-dose response is the weighted dose response of its runs:
+    /// listed components plus the boron unit response times the run's
+    /// concentration, zero elsewhere; a run past the grid is refused.
+    #[test]
+    fn voxel_dose_response_sums_components_and_boron() {
+        let case = slab_case();
+        let mut mg = slab_data(&[0.5], vec![0.0]);
+        mg.materials[0]
+            .dose_response_gy_cm2
+            .insert("nitrogen".into(), vec![2.0]);
+        mg.boron_unit_response_gy_cm2_per_ug_g = Some(vec![0.5]);
+        let n_cells = 4 * 4 * 20;
+        let (data, case_material) = material_composition_map(&case, &mg, None).unwrap();
+        let dose_run = |start, len| crate::variance_reduction::DoseRun {
+            start,
+            len,
+            weight: 3.0,
+            boron_ug_g: 4.0,
+        };
+        let response = AdjointResponse::VoxelDose {
+            components: vec!["nitrogen".into()],
+            runs: vec![dose_run(10, 5)],
+        };
+        let q = base_response(&case, &data, &case_material, &response, n_cells, 1, 0).unwrap();
+        // 3 x (2 + 0.5 x 4) inside the run, zero outside.
+        assert!((q[10][0] - 12.0).abs() < 1e-12 && (q[14][0] - 12.0).abs() < 1e-12);
+        assert_eq!(q[9][0], 0.0);
+        assert_eq!(q[15][0], 0.0);
+        let past = AdjointResponse::VoxelDose {
+            components: vec!["nitrogen".into()],
+            runs: vec![dose_run(n_cells as u32 - 2, 5)],
+        };
+        assert!(base_response(&case, &data, &case_material, &past, n_cells, 1, 0).is_err());
     }
 
     /// FW-CADIS needs the forward flux artifact and flattens the

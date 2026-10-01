@@ -22,6 +22,8 @@ A converged iterative solve has met its numerical stopping criterion. Mesh, ener
 | `DISAGREES` | At least one evaluated gate fails with adequate Monte Carlo precision. |
 | `INCONCLUSIVE` | Monte Carlo uncertainty prevents resolving a failing structure's comparison. |
 
+`project verify --variance-reduction cadis` (or `[verify] variance_reduction`) adds weight windows from the project's own adjoint solve. It leaves the estimate unbiased and mainly shortens the Monte Carlo uncertainty of the neutron-driven components, such as boron, in small structures; the photon part of the total dose is not reduced, so the default is analog (`none`). The report states the mode, histories and wall time used.
+
 Input changes make old verification stale. A 15% component agreement observation does not satisfy a 5% total-dose gate automatically; inspect the actual evaluated quantities and thresholds.
 
 ## Dose-volume and biological results

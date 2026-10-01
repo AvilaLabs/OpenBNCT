@@ -245,6 +245,33 @@ pub enum AdjointResponse {
     VoxelBox { lower: [u32; 3], upper: [u32; 3] },
     /// Unit response in every voxel — global importance.
     Global,
+    /// Total dose response inside a voxel set: per voxel, `weight` times
+    /// (the listed dose-response `components` of the voxel's material, plus
+    /// the data's boron unit response times that run's `boron_ug_g`). The
+    /// weight lets a caller balance several structures' relative errors
+    /// (for example `1 / structure total dose`). Voxels outside every run
+    /// carry no response.
+    VoxelDose {
+        /// Non-boron dose components summed into the response
+        /// (for example `nitrogen`, `hydrogen`, `photon`).
+        components: Vec<String>,
+        /// Runs of consecutive linear voxel indices (x fastest).
+        runs: Vec<DoseRun>,
+    },
+}
+
+/// A run of consecutive voxels sharing one response weight and boron
+/// concentration (see [`AdjointResponse::VoxelDose`]).
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct DoseRun {
+    /// First linear voxel index (x fastest).
+    pub start: u32,
+    pub len: u32,
+    /// Response weight, > 0.
+    pub weight: f64,
+    /// 10B concentration of the voxels, ug/g (0 = no boron term).
+    pub boron_ug_g: f64,
 }
 
 /// Resolved, backend-ready weight windows — concrete bounds plus the
@@ -650,6 +677,23 @@ fn validate_bounds(
                     }
                 }
                 AdjointResponse::Global => {}
+                AdjointResponse::VoxelDose { runs, .. } => {
+                    if runs.is_empty() {
+                        return Err(invalid("adjoint voxel-dose response has no runs".into()));
+                    }
+                    for run in runs {
+                        if run.len == 0
+                            || !(strictly_greater(run.weight, 0.0) && run.weight.is_finite())
+                            || !(run.boron_ug_g.is_finite() && run.boron_ug_g >= 0.0)
+                        {
+                            return Err(invalid(
+                                "adjoint voxel-dose runs need len > 0, a positive finite weight \
+                                 and a finite non-negative boron concentration"
+                                    .into(),
+                            ));
+                        }
+                    }
+                }
             }
         }
         WeightWindowBounds::ForwardFlux {

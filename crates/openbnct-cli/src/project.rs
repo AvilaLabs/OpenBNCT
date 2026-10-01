@@ -139,6 +139,14 @@ enum ProjectCommand {
         /// 14400); on expiry it is killed and the step fails.
         #[arg(long)]
         timeout_seconds: Option<u64>,
+        /// Variance reduction for the OpenMC run (else `[verify]
+        /// variance_reduction`, default none): `cadis` builds weight
+        /// windows from the project's own adjoint S_N solve toward the
+        /// dose in the verified structures; `fw-cadis` additionally
+        /// divides by the forward flux for a flatter relative error. The
+        /// estimate stays unbiased; only the statistics change.
+        #[arg(long, value_enum)]
+        variance_reduction: Option<verify::VrMode>,
         /// Rerun even when inputs, options and outputs are unchanged.
         #[arg(long)]
         force: bool,
@@ -191,6 +199,7 @@ pub fn run_project(args: ProjectArgs) -> DynResult<()> {
             openmc,
             cross_sections,
             timeout_seconds,
+            variance_reduction,
             force,
         } => verify::verify_project(
             &project,
@@ -201,6 +210,7 @@ pub fn run_project(args: ProjectArgs) -> DynResult<()> {
                 openmc,
                 cross_sections,
                 timeout_seconds,
+                variance_reduction,
                 force,
             },
         ),

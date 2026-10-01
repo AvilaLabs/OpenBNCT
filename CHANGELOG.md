@@ -102,6 +102,53 @@ own versions independent of the crate version.
   below 0.5 %. Uncollided setup on the real head: 33.7 s against 219 s for the
   reference mode on the same build and about 585 s before this change.
 
+## Unreleased — variance reduction for `project verify` (2026-10-01)
+
+- **`project verify --variance-reduction none|cadis|fw-cadis`**, with the project key
+  `[verify] variance_reduction` (same three values; the flag overrides the key; default
+  `none`). The GUI reads and writes the same key. `cadis` solves the adjoint S_N problem
+  (the project's own case, multigroup data, material assignment and transport settings)
+  with the dose response in the union of the verified structures as its source —
+  nitrogen, hydrogen, the boron term with step 05's per-voxel concentration and the local
+  photon kerma — each structure weighted by 1 / its S_N total dose, and passes the resulting
+  neutron weight windows (case grid, the 28 multigroup energy bins) to the OpenMC deck.
+  `fw-cadis` additionally divides the response by the forward flux. The windows, the adjoint
+  flux, the spec and their hashes are step `08-verify` outputs (`vr-spec.json`,
+  `weight-windows.json`, `adjoint-flux.0.json`); `verification.json` and the report state the
+  mode, histories, wall time, adjoint time and the median structure relative 1-sigma. The
+  adjoint is solved to 1e-3 (windows need not be tighter; the estimate is unbiased for any
+  windows). New `vr cadis` options `--anderson`, `--cmfd`, `--source-weighting`, a
+  `voxel_dose` adjoint response in the variance-reduction spec, and per-outer progress on
+  stderr.
+- **Measured, and why the default stays `none`.** Same seed, 3 OpenMP threads, figure of
+  merit 1/(sigma^2 t) with sigma the report's conservative structure-mean relative 1-sigma;
+  ratios vs analog, geometric mean over the structures of at most 1500 voxels, "MC" = OpenMC
+  time only, "all" = including the adjoint solve:
+
+  | case (analog run; windowed runs) | quantity | cadis MC / all | fw-cadis MC / all |
+  |---|---|---|---|
+  | synthetic 8 mm (3.2e6 histories, 391 s; 5e5, adjoint 46 s) | total dose | 1.35x / 1.10x | 0.63x / 0.55x |
+  | | boron | 10.5x / 8.5x | 3.2x / 2.8x |
+  | real head CT 4 mm (2e6, 415 s; 3.5e5, adjoint 1173 s / 659 s on a loaded machine) | total dose | 1.37x / 0.46x | 0.92x / 0.47x |
+  | | boron | 6.0x / 2.0x | 2.5x / 1.3x |
+
+  Boron in the small head structures improves a lot (lens 16x, left lacrimal 24x, left optic
+  nerve 17x MC-only) but BODY, SKIN and Brain lose (0.2 to 0.9x), a windowed history costs
+  3x (synthetic) to 8x (head) an analog one, and the total dose — the quantity the verdict
+  tests — is photon-noise-limited (photon 1-sigma 36 to 87 % against 2 to 23 % for boron in
+  the analog head run) and the adjoint is neutron-only. No mode reached 3x on the total dose,
+  so analog stays the default; use `cadis` to resolve the neutron components of small
+  structures. Unbiasedness: structure-mean total and component doses agree with the analog
+  run within the combined conservative 1-sigma for every structure (|z| <= 0.74 for cadis
+  and <= 1.52 for fw-cadis on the synthetic study, <= 1.23 on the head); voxel-wise z has rms 1.03 (synthetic) and 1.13 (head). A photon adjoint
+  coupled to the neutron one was tried and dropped: it did not change the photon noise on the
+  synthetic study and its outer iteration did not converge on the head. A track-length
+  photon-kerma tally would be the way to cut the photon noise (an estimator change, not
+  made here).
+- **Surfaces.** CLI flag and project key as above (GUI wiring is a parallel change that reads
+  `[verify] variance_reduction`). Python: the project workflow (`project init|run|verify`)
+  is CLI/GUI-only today, so there is no Python surface to extend.
+
 ## Unreleased — real-anatomy mixture quantization (2026-09-30)
 
 - **HU-calibrated mixtures are quantized before blending.** A real head CT at 4 mm

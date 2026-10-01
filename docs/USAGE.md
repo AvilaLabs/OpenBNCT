@@ -151,7 +151,28 @@ gamma_dta_mm = 3.0
 gamma_cutoff_percent = 10.0       # reference voxels below this % of the maximum are excluded
 # thermal_scattering = ["H1=c_H_in_H2O"]   # default: taken from the deterministic data
 # structures = []                 # verdict structures (default: the report structures)
+# variance_reduction = "none"     # "none" | "cadis" | "fw-cadis" (flag: --variance-reduction)
 ```
+
+`--variance-reduction cadis|fw-cadis` (or `[verify] variance_reduction`) builds
+weight windows from the project's own deterministic case, multigroup data and
+material assignment and passes them to the OpenMC deck. The adjoint source is
+the dose response (nitrogen, hydrogen, the post-hoc boron term with step 05's
+per-voxel concentration, and the photon kerma) in the union of the verified
+structures, each structure weighted by 1 / its S_N total dose so that every
+structure's mean carries equal relative weight (the deterministic adjoint is
+neutron-only: transported photons are not windowed, and their dose enters the
+adjoint source as the local capture-gamma kerma). `fw-cadis` divides the
+response by the forward neutron flux (`out/04-transport/flux.json`) to flatten
+the relative error. The windows only change which histories
+are followed and at what weight, so the estimate stays unbiased; they cost one
+adjoint solve (a few minutes on a 4 mm head, counted in the reported wall
+time) and slow each history. The windows (`weight-windows.json`), the
+adjoint flux(es) and the spec are written to `out/08-verify/` and hashed in the
+step's outputs; `verification.json` records the mode, the adjoint wall time and
+the artifact hashes, and the report states the mode, the histories, the wall
+time and the median structure-mean relative 1-sigma. The default is `none`;
+see the changelog for the measured figures of merit.
 
 Step `08-verify` writes `out/08-verify/`: the OpenMC deck, run receipt and
 statepoint (`openmc-run/`), the MC dose bundle `mc-dose.json` (post-hoc

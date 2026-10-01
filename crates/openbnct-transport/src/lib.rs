@@ -132,7 +132,7 @@ pub use uq::{
     MultigroupCovariance, UqDerivation, UqError, propagate_uncertainty,
 };
 pub use variance_reduction::{
-    AdjointMethod, AdjointResponse, ResolvedWeightWindow, ResolvedWeightWindows,
+    AdjointMethod, AdjointResponse, DoseRun, ResolvedWeightWindow, ResolvedWeightWindows,
     VARIANCE_REDUCTION_SCHEMA, VarianceReductionError, VarianceReductionSpec,
     WEIGHT_WINDOWS_SCHEMA, WeightWindowBounds, WeightWindowDerivation, WeightWindowMesh,
     WeightWindowParameters, WeightWindowSpec,

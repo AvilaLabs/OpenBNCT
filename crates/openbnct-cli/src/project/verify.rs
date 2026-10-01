@@ -33,6 +33,34 @@ use super::{
     save_manifest, utc_now, write_report,
 };
 
+/// Variance reduction applied to the OpenMC check. It changes statistical
+/// efficiency only; every mode estimates the same dose.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default, Serialize, Deserialize, clap::ValueEnum)]
+#[serde(rename_all = "kebab-case")]
+#[value(rename_all = "kebab-case")]
+pub enum VrMode {
+    /// Analog transport.
+    #[default]
+    None,
+    /// CADIS weight windows from a deterministic adjoint solve whose source
+    /// is the dose response in the union of the verified structures,
+    /// each structure weighted by 1 / its S_N total dose.
+    Cadis,
+    /// FW-CADIS: the same response divided by the deterministic forward
+    /// flux, flattening the population toward uniform relative error.
+    FwCadis,
+}
+
+impl VrMode {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Cadis => "cadis",
+            Self::FwCadis => "fw-cadis",
+        }
+    }
+}
+
 /// Run-manifest id of the verification step.
 pub const VERIFY_STEP_ID: &str = "08-verify";
 
@@ -41,6 +69,9 @@ pub const VERIFY_SCHEMA: &str = "openbnct.project-verify/0.1.0";
 
 const VERIFY_DIR: &str = "out/08-verify";
 const SUMMARY_PATH: &str = "out/08-verify/verification.json";
+const VR_SPEC_PATH: &str = "out/08-verify/vr-spec.json";
+const VR_WINDOWS_PATH: &str = "out/08-verify/weight-windows.json";
+const VR_ADJOINT_PREFIX: &str = "out/08-verify/adjoint-flux";
 
 const DEFAULT_PARTICLES: u64 = 1_000_000;
 const DEFAULT_BATCHES: u32 = 10;
@@ -94,6 +125,10 @@ pub struct VerifySection {
     /// Structures the verdict covers (default: the report structures).
     #[serde(default)]
     pub structures: Vec<String>,
+    /// Variance reduction for the OpenMC run: `none` (default), `cadis` or
+    /// `fw-cadis`. Weight windows come from the project's own deterministic
+    /// adjoint solve; the estimate stays unbiased.
+    pub variance_reduction: Option<VrMode>,
 }
 
 fn de_count<'de, D: serde::Deserializer<'de>>(deserializer: D) -> Result<Option<u64>, D::Error> {
@@ -190,6 +225,7 @@ pub struct VerifyOverrides {
     pub openmc: Option<PathBuf>,
     pub cross_sections: Option<PathBuf>,
     pub timeout_seconds: Option<u64>,
+    pub variance_reduction: Option<VrMode>,
     pub force: bool,
 }
 
@@ -211,6 +247,7 @@ pub struct Resolved {
     /// Nuclides carrying bound-atom scattering in the deterministic data.
     pub sn_thermal: Vec<String>,
     pub structures: Vec<String>,
+    pub variance_reduction: VrMode,
 }
 
 /// The agreement thresholds (all reported with the verdict).
@@ -373,6 +410,10 @@ pub fn resolve_settings(
         thermal,
         sn_thermal,
         structures,
+        variance_reduction: overrides
+            .variance_reduction
+            .or(section.variance_reduction)
+            .unwrap_or_default(),
     })
 }
 
@@ -634,6 +675,38 @@ pub struct McStatistics {
     pub cutoff_percent: f64,
     pub median_rel_sigma_total: f64,
     pub p95_rel_sigma_total: f64,
+    /// Median over the verified structures of the conservative relative
+    /// 1-sigma of the structure-mean total dose.
+    #[serde(default)]
+    pub median_structure_rel_sigma_total: Option<f64>,
+}
+
+/// Variance-reduction record of one verification.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct VrInfo {
+    /// `none`, `cadis` or `fw-cadis`.
+    pub mode: String,
+    /// Wall time of the spec, adjoint solve and weight-window resolution.
+    pub adjoint_wall_seconds: f64,
+    pub spec_sha256: Option<String>,
+    pub weight_windows_sha256: Option<String>,
+    pub adjoint_flux_sha256: Option<String>,
+    pub mesh_dimensions: Option<[u32; 3]>,
+    pub energy_groups: Option<u32>,
+}
+
+impl Default for VrInfo {
+    fn default() -> Self {
+        Self {
+            mode: "none".into(),
+            adjoint_wall_seconds: 0.0,
+            spec_sha256: None,
+            weight_windows_sha256: None,
+            adjoint_flux_sha256: None,
+            mesh_dimensions: None,
+            energy_groups: None,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -664,6 +737,8 @@ pub struct VerifySummary {
     pub generated_utc: String,
     pub engine: EngineInfo,
     pub thermal_scattering: ThermalInfo,
+    #[serde(default)]
+    pub variance_reduction: VrInfo,
     pub thresholds: Thresholds,
     pub statistics: McStatistics,
     pub structures: Vec<StructureResult>,
@@ -820,7 +895,40 @@ pub fn render_section(state: &VerifyState) -> String {
                     "NOT consistent: the two sides use different scattering physics"
                 }
             );
+            let vr = &s.variance_reduction;
+            if vr.mode == "none" {
+                let _ = writeln!(md, "| Variance reduction | none (analog transport) |");
+            } else {
+                let mesh = vr.mesh_dimensions.map_or(String::new(), |m| {
+                    format!(
+                        ", {}x{}x{} mesh x {} groups",
+                        m[0],
+                        m[1],
+                        m[2],
+                        vr.energy_groups.unwrap_or(0)
+                    )
+                });
+                let _ = writeln!(
+                    md,
+                    "| Variance reduction | {} weight windows from the deterministic adjoint \
+                     solve ({:.0} s of the wall time{mesh}); unbiased, changes statistics only \
+                     (spec, windows and adjoint flux are hashed in `out/08-verify/`) |",
+                    vr.mode, vr.adjoint_wall_seconds
+                );
+            }
             let st = &s.statistics;
+            if let Some(median) = st.median_structure_rel_sigma_total {
+                let _ = writeln!(
+                    md,
+                    "| Structure statistics | {} histories in {:.0} s wall: median structure-mean \
+                     total-dose relative 1-sigma {:.1}% (conservative); figure of merit \
+                     1/(sigma^2 t) = {:.3e} per s |",
+                    e.histories,
+                    e.wall_seconds,
+                    median * 100.0,
+                    1.0 / (median * median * e.wall_seconds.max(1e-9))
+                );
+            }
             let _ = writeln!(
                 md,
                 "| MC statistical uncertainty | total dose, voxels above {}% of the maximum \
@@ -948,13 +1056,20 @@ enum Action {
     Command(Vec<String>),
     WriteSource,
     WriteExecutionProfile,
+    /// Write the adjoint-source variance-reduction spec.
+    WriteVrSpec,
+    /// A command that is part of the weight-window generation (timed).
+    VrCommand(Vec<String>),
     Analyze,
 }
 
 impl Action {
     fn text(&self) -> String {
         match self {
-            Self::Command(argv) => command_line(argv),
+            Self::Command(argv) | Self::VrCommand(argv) => command_line(argv),
+            Self::WriteVrSpec => format!(
+                "# internal: write {VR_SPEC_PATH} (adjoint source = dose response in the union of the verified structures, each weighted by 1 / its S_N total dose; mesh = case grid, energy = the multigroup structure)"
+            ),
             Self::WriteSource => format!(
                 "# internal: write {VERIFY_DIR}/source.json (the \"source\" member of out/03-beam/case.json) and {VERIFY_DIR}/case.json (that case with this source); the port plane is moved {SOURCE_INSET_CM} cm inside the grid if it sits on the boundary"
             ),
@@ -1101,8 +1216,66 @@ fn plan_verify(
         .map(str::to_owned),
     );
 
+    let mut vr_actions = Vec::new();
+    let mut inputs = inputs;
+    if resolved.variance_reduction != VrMode::None {
+        let data: Value = serde_json::from_slice(&fs::read(project.join(&multigroup))?)?;
+        let p1 = data_supports_p1(&data);
+        let mut command = args([
+            "openbnct",
+            "vr",
+            "cadis",
+            "--spec",
+            VR_SPEC_PATH,
+            "--case",
+            &dir("case.json"),
+            "--data",
+            &multigroup,
+            "--assignment",
+            "out/02-calibrate/assignment.json",
+            "--order",
+            &config.transport.order.to_string(),
+            "--max-outer",
+            &config.transport.max_outer.to_string(),
+            "--anderson",
+            &config.transport.anderson.to_string(),
+            // Weight windows only need the importance map to a few
+            // percent (the estimate is unbiased for any windows), so the
+            // adjoint is not driven to the forward solve's 1e-6.
+            "--convergence",
+            "1e-3",
+            "--source-weighting",
+            &config.transport.source_weighting,
+            "--id",
+            &format!(
+                "{}.verify-ww.{}",
+                config.project.id,
+                resolved.variance_reduction.as_str()
+            ),
+            "--output",
+            VR_WINDOWS_PATH,
+            "--adjoint-flux",
+            VR_ADJOINT_PREFIX,
+        ]);
+        command.push("--cmfd".into());
+        if p1 {
+            command.push("--p1".into());
+        }
+        if resolved.variance_reduction == VrMode::FwCadis {
+            command.extend([
+                "--forward-flux".to_owned(),
+                "out/04-transport/flux.json".into(),
+            ]);
+            inputs.push("out/04-transport/flux.json".into());
+        }
+
+        vr_actions.push(Action::WriteVrSpec);
+        vr_actions.push(Action::VrCommand(command));
+        run.extend(["--vr".to_owned(), VR_WINDOWS_PATH.to_owned()]);
+    }
+
     let th = &resolved.thresholds;
-    let actions = vec![
+    let mut actions = vec![
         Action::WriteSource,
         Action::WriteExecutionProfile,
         Action::Command(args([
@@ -1121,6 +1294,9 @@ fn plan_verify(
             "--output",
             &dir("nuclear-data-manifest.json"),
         ])),
+    ];
+    actions.extend(vr_actions);
+    actions.extend([
         Action::Command(run),
         Action::Command(boron),
         Action::Command(args([
@@ -1151,9 +1327,9 @@ fn plan_verify(
             &dir("gamma.json"),
         ])),
         Action::Analyze,
-    ];
+    ]);
 
-    let options = json!({
+    let mut options = json!({
         "particles": resolved.particles,
         "histories": resolved.histories,
         "batches": resolved.batches,
@@ -1167,6 +1343,9 @@ fn plan_verify(
         "thresholds": resolved.thresholds,
         "structures": resolved.structures,
     });
+    if resolved.variance_reduction != VrMode::None {
+        options["variance_reduction"] = json!(resolved.variance_reduction.as_str());
+    }
     Ok(Plan {
         actions,
         inputs,
@@ -1345,10 +1524,21 @@ pub fn verify_project(project_arg: &Path, overrides: &VerifyOverrides) -> DynRes
     for path in &plan.inputs {
         inputs.push(hash_path(&project, path)?);
     }
+    let mut vr_seconds = 0.0_f64;
     let outcome: DynResult<()> = (|| {
         for action in &plan.actions {
             match action {
                 Action::Command(argv) => execute_command(argv)?,
+                Action::VrCommand(argv) => {
+                    let started = Instant::now();
+                    execute_command(argv)?;
+                    vr_seconds += started.elapsed().as_secs_f64();
+                }
+                Action::WriteVrSpec => {
+                    let started = Instant::now();
+                    write_vr_spec(&project, &config, &resolved, &rois)?;
+                    vr_seconds += started.elapsed().as_secs_f64();
+                }
                 Action::WriteSource => {
                     let case: Value =
                         serde_json::from_slice(&fs::read(project.join("out/03-beam/case.json"))?)?;
@@ -1378,6 +1568,7 @@ pub fn verify_project(project_arg: &Path, overrides: &VerifyOverrides) -> DynRes
                         &resolved,
                         &rois,
                         timer.elapsed().as_secs_f64(),
+                        vr_seconds,
                     )?;
                 }
             }
@@ -1443,6 +1634,235 @@ pub fn verify_project(project_arg: &Path, overrides: &VerifyOverrides) -> DynRes
 }
 
 // ---------------------------------------------------------------------------
+// Variance reduction
+// ---------------------------------------------------------------------------
+
+/// P1 scattering is used by the forward solve whenever the data carries P1
+/// moments on every scattering material (`sn solve`'s default); the adjoint
+/// solve mirrors it.
+fn data_supports_p1(data: &Value) -> bool {
+    data["materials"].as_array().is_some_and(|materials| {
+        materials.iter().all(|m| {
+            !m["scatter_p1_matrix_per_cm"].is_null()
+                || m["scatter_matrix_per_cm"]
+                    .as_array()
+                    .is_some_and(|v| v.iter().all(|x| x.as_f64() == Some(0.0)))
+        })
+    })
+}
+
+/// Voxel runs of the adjoint response: the union of the verified
+/// structures, each voxel weighted by `sum over containing structures of
+/// 1 / (structure total S_N dose)` so every structure's mean carries equal
+/// relative weight, with the project's per-voxel 10B concentration.
+fn write_vr_spec(
+    project: &Path,
+    config: &ProjectConfig,
+    resolved: &Resolved,
+    rois: &[RoiEntry],
+) -> DynResult<()> {
+    let case: Value =
+        serde_json::from_slice(&fs::read(project.join(VERIFY_DIR).join("case.json"))?)?;
+    let geometry = &case["geometry"];
+    let shape: Vec<u32> = (0..3)
+        .map(|a| geometry["shape"][a].as_u64().map(|v| v as u32))
+        .collect::<Option<_>>()
+        .ok_or_else(|| io::Error::other("case geometry has no shape"))?;
+    let origin: Vec<f64> = (0..3)
+        .map(|a| geometry["origin_mm"][a].as_f64())
+        .collect::<Option<_>>()
+        .ok_or_else(|| io::Error::other("case geometry has no origin_mm"))?;
+    let spacing: Vec<f64> = (0..3)
+        .map(|a| geometry["spacing_mm"][a].as_f64())
+        .collect::<Option<_>>()
+        .ok_or_else(|| io::Error::other("case geometry has no spacing_mm"))?;
+    let n_cells = shape.iter().map(|d| *d as usize).product::<usize>();
+    let mut lower = [0.0; 3];
+    let mut upper = [0.0; 3];
+    for a in 0..3 {
+        lower[a] = (origin[a] - 0.5 * spacing[a]) / 10.0;
+        upper[a] = lower[a] + spacing[a] * f64::from(shape[a]) / 10.0;
+    }
+
+    let multigroup = resolve_spec(project, &config.materials.multigroup_data)?;
+    let data: Value = serde_json::from_slice(&fs::read(project.join(&multigroup))?)?;
+    let mut energy: Vec<f64> = data["energy_boundaries_ev"]
+        .as_array()
+        .ok_or_else(|| io::Error::other("multigroup data has no energy_boundaries_ev"))?
+        .iter()
+        .filter_map(Value::as_f64)
+        .collect();
+    energy.reverse();
+    let mut components: BTreeSet<String> = BTreeSet::new();
+    if let Some(materials) = data["materials"].as_array() {
+        for material in materials {
+            if let Some(map) = material["dose_response_gy_cm2"].as_object() {
+                components.extend(map.keys().filter(|k| *k != "boron").cloned());
+            }
+        }
+    }
+
+    let sn: PhysicalDoseBundle =
+        serde_json::from_slice(&fs::read(project.join("out/05-boron/dose.json"))?)?;
+    if sn.physical_total.values.len() != n_cells {
+        return fail("S_N dose and case grids differ");
+    }
+    let total = &sn.physical_total.values;
+    let mut weight = vec![0.0_f64; n_cells];
+    let mut covered = Vec::new();
+    for roi in rois
+        .iter()
+        .filter(|r| resolved.structures.contains(&r.name))
+    {
+        let mask: RegionMask = serde_json::from_slice(&fs::read(project.join(mask_path(roi)))?)?;
+        if mask.voxels.len() != n_cells {
+            return fail(format!("mask {} does not match the case grid", roi.name));
+        }
+        let dose: f64 = mask
+            .voxels
+            .iter()
+            .zip(total)
+            .filter(|(inside, _)| **inside)
+            .map(|(_, d)| *d)
+            .sum();
+        if dose > 0.0 {
+            for (w, inside) in weight.iter_mut().zip(&mask.voxels) {
+                if *inside {
+                    *w += 1.0 / dose;
+                }
+            }
+            covered.push(roi.name.clone());
+        }
+    }
+    if covered.is_empty() {
+        return fail(
+            "no verified structure carries S_N dose: nothing to build an adjoint source from",
+        );
+    }
+
+    // 10B concentration per voxel: blood x ratio, the smaller ROI winning
+    // an overlap, as in the boron step.
+    let mut conc = vec![config.boron.blood_ug_g * config.boron.default_ratio; n_cells];
+    let mut listed: Vec<&RoiEntry> = config
+        .boron
+        .ratios
+        .keys()
+        .map(|name| find_roi(rois, name))
+        .collect::<DynResult<_>>()?;
+    listed.sort_by(|a, b| b.voxels.cmp(&a.voxels).then_with(|| b.name.cmp(&a.name)));
+    for roi in listed {
+        let mask: RegionMask = serde_json::from_slice(&fs::read(project.join(mask_path(roi)))?)?;
+        let value = config.boron.blood_ug_g * config.boron.ratios[&roi.name];
+        for (c, inside) in conc.iter_mut().zip(&mask.voxels) {
+            if *inside {
+                *c = value;
+            }
+        }
+    }
+
+    let mut runs: Vec<openbnct_transport::DoseRun> = Vec::new();
+    let mut v = 0usize;
+    while v < n_cells {
+        if weight[v] <= 0.0 {
+            v += 1;
+            continue;
+        }
+        let start = v;
+        while v < n_cells && weight[v] == weight[start] && conc[v] == conc[start] {
+            v += 1;
+        }
+        runs.push(openbnct_transport::DoseRun {
+            start: start as u32,
+            len: (v - start) as u32,
+            weight: weight[start],
+            boron_ug_g: conc[start],
+        });
+    }
+
+    let mode = resolved.variance_reduction;
+    let method = match mode {
+        VrMode::FwCadis => openbnct_transport::AdjointMethod::FwCadis,
+        _ => openbnct_transport::AdjointMethod::Cadis,
+    };
+    let mesh = openbnct_transport::WeightWindowMesh {
+        dimensions: [shape[0], shape[1], shape[2]],
+        lower_left_cm: lower,
+        upper_right_cm: upper,
+    };
+    // The response includes the photon kerma component of the data (the
+    // capture-gamma energy deposited where it is born): the deterministic
+    // adjoint is neutron-only, so photons are not windowed.
+    let windows = vec![openbnct_transport::WeightWindowSpec {
+        particle: openbnct_transport::ParticleType::Neutron,
+        mesh,
+        energy_bounds_ev: Some(energy),
+        parameters: openbnct_transport::WeightWindowParameters::default(),
+        bounds: openbnct_transport::WeightWindowBounds::Adjoint {
+            method,
+            response: openbnct_transport::AdjointResponse::VoxelDose {
+                components: components.into_iter().collect(),
+                runs,
+            },
+            target_cap: None,
+        },
+        bound_boosts: Vec::new(),
+    }];
+    let spec = openbnct_transport::VarianceReductionSpec {
+        schema_version: openbnct_transport::VARIANCE_REDUCTION_SCHEMA.into(),
+        id: format!("{}.verify-vr.{}", config.project.id, mode.as_str()),
+        description: format!(
+            "{} weight windows for the OpenMC verification of {}: neutron adjoint source = dose \
+             response in {} (union of the verified structures), weighted by 1 / structure S_N \
+             total dose",
+            mode.as_str(),
+            config.project.id,
+            covered.join(", ")
+        ),
+        case_id: case["case_id"].as_str().map(str::to_owned),
+        windows,
+        provenance_note: "derived by `openbnct project verify` from the project's own \
+            deterministic case, multigroup data, material assignment and S_N dose"
+            .into(),
+        qualification: "research verification machinery: variance reduction changes the \
+            statistical efficiency of the OpenMC check only, not the estimator"
+            .into(),
+    };
+    spec.validate()
+        .map_err(|e| io::Error::other(e.to_string()))?;
+    write_pretty(&project.join(VR_SPEC_PATH), &serde_json::to_value(&spec)?)?;
+    Ok(())
+}
+
+/// The variance-reduction record of the summary, from the files on disk.
+fn vr_info(project: &Path, resolved: &Resolved, vr_seconds: f64) -> DynResult<VrInfo> {
+    if resolved.variance_reduction == VrMode::None {
+        return Ok(VrInfo::default());
+    }
+    let spec: Value = serde_json::from_slice(&fs::read(project.join(VR_SPEC_PATH))?)?;
+    let window = &spec["windows"][0];
+    let mesh_dimensions = (0..3)
+        .map(|a| window["mesh"]["dimensions"][a].as_u64().map(|v| v as u32))
+        .collect::<Option<Vec<u32>>>()
+        .map(|d| [d[0], d[1], d[2]]);
+    let energy_groups = window["energy_bounds_ev"]
+        .as_array()
+        .map(|b| b.len().saturating_sub(1) as u32);
+    Ok(VrInfo {
+        mode: resolved.variance_reduction.as_str().into(),
+        adjoint_wall_seconds: vr_seconds,
+        spec_sha256: Some(openbnct_evidence::sha256_file(&project.join(VR_SPEC_PATH))?),
+        weight_windows_sha256: Some(openbnct_evidence::sha256_file(
+            &project.join(VR_WINDOWS_PATH),
+        )?),
+        adjoint_flux_sha256: Some(openbnct_evidence::sha256_file(
+            &project.join(format!("{VR_ADJOINT_PREFIX}.0.json")),
+        )?),
+        mesh_dimensions,
+        energy_groups,
+    })
+}
+
+// ---------------------------------------------------------------------------
 // Analysis
 // ---------------------------------------------------------------------------
 
@@ -1452,6 +1872,7 @@ fn analyze(
     resolved: &Resolved,
     rois: &[RoiEntry],
     wall_seconds: f64,
+    vr_seconds: f64,
 ) -> DynResult<()> {
     let sn: PhysicalDoseBundle =
         serde_json::from_slice(&fs::read(project.join("out/05-boron/dose.json"))?)?;
@@ -1545,6 +1966,14 @@ fn analyze(
         cutoff_percent: resolved.thresholds.gamma_cutoff_percent,
         median_rel_sigma_total: percentile(&rel, 0.5),
         p95_rel_sigma_total: percentile(&rel, 0.95),
+        median_structure_rel_sigma_total: {
+            let mut sigmas: Vec<f64> = structure_results
+                .iter()
+                .filter_map(|r| r.quantities.last().and_then(|q| q.mc_rel_sigma))
+                .collect();
+            sigmas.sort_by(f64::total_cmp);
+            (!sigmas.is_empty()).then(|| percentile(&sigmas, 0.5))
+        },
     };
 
     // Whole-volume agreement from the comparison and gamma records.
@@ -1626,6 +2055,7 @@ fn analyze(
             mc: resolved.thermal.clone(),
             consistent: thermal_consistent,
         },
+        variance_reduction: vr_info(project, resolved, vr_seconds)?,
         thresholds: resolved.thresholds,
         statistics,
         structures: structure_results,
@@ -1887,6 +2317,70 @@ mod tests {
     }
 
     #[test]
+    fn variance_reduction_key_parses_and_flag_overrides_it() {
+        let section: VerifySection =
+            toml::from_str("variance_reduction = \"fw-cadis\"\n").expect("parses");
+        assert_eq!(section.variance_reduction, Some(VrMode::FwCadis));
+        for (text, mode) in [("none", VrMode::None), ("cadis", VrMode::Cadis)] {
+            let section: VerifySection =
+                toml::from_str(&format!("variance_reduction = \"{text}\"\n")).unwrap();
+            assert_eq!(section.variance_reduction, Some(mode));
+            assert_eq!(mode.as_str(), text);
+        }
+        assert!(toml::from_str::<VerifySection>("variance_reduction = \"magic\"\n").is_err());
+
+        let dir = tempfile::tempdir().unwrap();
+        let (openmc, xs) = fake_files(dir.path());
+        let env_openmc = openmc.to_string_lossy().into_owned();
+        let env_xs = xs.to_string_lossy().into_owned();
+        let env = move |key: &str| match key {
+            "OPENBNCT_OPENMC" => Some(env_openmc.clone()),
+            "OPENMC_CROSS_SECTIONS" => Some(env_xs.clone()),
+            _ => None,
+        };
+        let resolve = |section: &VerifySection, flag: Option<VrMode>| {
+            resolve_settings(
+                section,
+                &VerifyOverrides {
+                    variance_reduction: flag,
+                    ..VerifyOverrides::default()
+                },
+                vec![],
+                vec![],
+                &env,
+            )
+            .unwrap()
+            .variance_reduction
+        };
+        assert_eq!(resolve(&VerifySection::default(), None), VrMode::None);
+        assert_eq!(resolve(&section, None), VrMode::FwCadis);
+        assert_eq!(resolve(&section, Some(VrMode::Cadis)), VrMode::Cadis);
+    }
+
+    #[test]
+    fn variance_reduction_summary_is_optional_for_older_results() {
+        let mut value = serde_json::to_value(summary("AGREES")).unwrap();
+        value.as_object_mut().unwrap().remove("variance_reduction");
+        value["statistics"]
+            .as_object_mut()
+            .unwrap()
+            .remove("median_structure_rel_sigma_total");
+        let old: VerifySummary = serde_json::from_value(value).unwrap();
+        assert_eq!(old.variance_reduction.mode, "none");
+        assert_eq!(old.statistics.median_structure_rel_sigma_total, None);
+    }
+
+    #[test]
+    fn p1_follows_the_data_like_the_forward_solve() {
+        let with_p1 = json!({"materials": [{"scatter_matrix_per_cm": [1.0], "scatter_p1_matrix_per_cm": [0.1]}]});
+        let without = json!({"materials": [{"scatter_matrix_per_cm": [1.0]}]});
+        let absorber = json!({"materials": [{"scatter_matrix_per_cm": [0.0]}]});
+        assert!(data_supports_p1(&with_p1));
+        assert!(!data_supports_p1(&without));
+        assert!(data_supports_p1(&absorber));
+    }
+
+    #[test]
     fn missing_openmc_or_nuclear_data_is_a_clear_error() {
         let none = |_: &str| None;
         let err = resolve_settings(
@@ -1949,12 +2443,14 @@ mod tests {
                 mc: vec!["H1=c_H_in_H2O".into()],
                 consistent: true,
             },
+            variance_reduction: VrInfo::default(),
             thresholds: th(),
             statistics: McStatistics {
                 voxels_evaluated: 100,
                 cutoff_percent: 10.0,
                 median_rel_sigma_total: 0.01,
                 p95_rel_sigma_total: 0.03,
+                median_structure_rel_sigma_total: Some(0.02),
             },
             structures: vec![StructureResult {
                 name: "CORE".into(),
@@ -1995,6 +2491,15 @@ mod tests {
         assert!(md.contains("| CORE | 27 | 1.020 | 0.980 | 1.100 | 0.900 | 1.030 | 2.0% | 99.0% (27 vox) | agrees |"), "{md}");
         assert!(
             md.contains("median relative 1-sigma 1.0%, 95th percentile 3.0%"),
+            "{md}"
+        );
+        // The variance-reduction mode and the figure-of-merit numbers.
+        assert!(
+            md.contains("| Variance reduction | none (analog transport) |"),
+            "{md}"
+        );
+        assert!(
+            md.contains("1000000 histories in 12 s wall: median structure-mean total-dose relative 1-sigma 2.0%"),
             "{md}"
         );
         assert!(

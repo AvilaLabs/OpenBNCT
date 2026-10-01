@@ -1473,6 +1473,19 @@ enum VrCommand {
         /// scatter — requires `--p1` and `scatter_legendre_moments_per_cm`.
         #[arg(long, requires = "p1", default_value_t = 0)]
         anisotropy: u32,
+        /// Anderson acceleration depth for the adjoint outer iteration
+        /// (0 = plain sweeps); thermal-scattering data need it to
+        /// converge, as in `sn solve`.
+        #[arg(long, default_value_t = 0)]
+        anderson: usize,
+        /// Fine-mesh multigroup CMFD acceleration of the adjoint solve.
+        #[arg(long)]
+        cmfd: bool,
+        /// Within-bin spread of a tabulated-histogram source spectrum
+        /// (`collapse_consistent` or `uniform_in_bin`), as in `sn solve`;
+        /// it sets the source-birth weighting of the window targets.
+        #[arg(long, default_value = "collapse_consistent")]
+        source_weighting: String,
         /// Resolved artifact id, e.g. `openbnct.nf-bnct-003.ww.cadis.v1`.
         #[arg(long)]
         id: String,
@@ -17970,6 +17983,9 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 periodic,
                 p1,
                 anisotropy,
+                anderson,
+                cmfd,
+                source_weighting,
                 id,
                 output,
                 adjoint_flux,
@@ -18009,7 +18025,7 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     periodic_axes[index] = true;
                 }
                 let options = openbnct_transport::SnOptions {
-                    progress: false,
+                    progress: true,
                     quadrature_order: order,
                     convergence,
                     max_inner_iterations: max_inner,
@@ -18020,16 +18036,28 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                     transport_correction: true,
                     p1_anisotropic: p1,
                     anisotropy_order: anisotropy,
-                    anderson_depth: 0,
+                    anderson_depth: anderson,
                     coarse_rebalance: true,
-                    cmfd: false,
+                    cmfd,
                     cmfd_inner_sweeps: 2,
                     cmfd_damping: 1.0,
                     stats: None,
                     inner_convergence: None,
                     theta_repair: true,
-                    exp_source: true,
-                    source_weighting: openbnct_transport::SourceWeighting::CollapseConsistent,
+                    exp_source: !p1,
+                    source_weighting: match source_weighting.as_str() {
+                        "collapse_consistent" => {
+                            openbnct_transport::SourceWeighting::CollapseConsistent
+                        }
+                        "uniform_in_bin" => openbnct_transport::SourceWeighting::UniformInBin,
+                        other => {
+                            return Err(io::Error::other(format!(
+                                "--source-weighting {other:?} must be \
+                                 collapse_consistent or uniform_in_bin"
+                            ))
+                            .into());
+                        }
+                    },
                 };
                 let forward = forward_flux
                     .as_ref()
