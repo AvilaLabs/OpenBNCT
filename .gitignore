@@ -43,3 +43,7 @@ crates/openbnct-gui/dist/
 
 # Claude Code agent worktrees
 /.claude/
+
+# Built handbook and browser-check dependencies
+/dist/
+/docs/checks/node_modules/

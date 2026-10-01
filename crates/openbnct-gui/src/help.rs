@@ -399,6 +399,7 @@ impl GuidedHelp {
                 let (title, body) = workspace_help(workspace, language);
                 ui.heading(title);
                 ui.label(body);
+                ui.hyperlink_to("OpenBNCT Handbook", "https://openbnct.avilalabs.org/docs/");
 
                 ui.add_space(12.0);
                 ui.separator();

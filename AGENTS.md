@@ -41,6 +41,8 @@ identity.
 
 # Project invariants
 
+The maintained user handbook is `docs/guide/`, built with mdBook 0.5.4 using `book.toml`. Update task pages with behavior changes; keep frozen evidence and dated investigations separate. Preserve source/release distinctions and research qualification boundaries. Publishing and checks are in `docs/maintainers/DOCUMENTATION.md`.
+
 - Rust crates under `crates/` are authoritative; the Python package and
   the GUI are surfaces over the same implementation, never parallel
   engines (ADR 0015, ADR 0027).

@@ -1,0 +1,8 @@
+{
+  "name": "openbnct-handbook-checks",
+  "private": true,
+  "type": "module",
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}

@@ -20,6 +20,11 @@ on:
       - "crates/openbnct-openmc/**"
       - "Cargo.toml"
       - "Cargo.lock"
+      - "book.toml"
+      - "docs/guide/**"
+      - "docs/checks/**"
+      - "scripts/check_handbook.py"
+      - "scripts/docs_smoke.mjs"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -56,6 +61,11 @@ jobs:
         with:
           tool: wasm-bindgen-cli@0.2.127
 
+      - name: Install mdBook
+        uses: taiki-e/install-action@7623a79cdfecb99d681017af368ca353d9f49bb5 # v2.87.19
+        with:
+          tool: mdbook@0.5.4
+
       # cargo metadata --offline (inside the notices script) reads every
       # package in Cargo.lock, including other targets' cfg-gated
       # dependencies, so fetch the whole lockfile first: `cargo fetch`
@@ -77,6 +87,31 @@ jobs:
       # input, since dist/ only needs to be complete right before upload.
       - name: Add license and third-party notices to the web bundle
         run: cp LICENSE THIRD_PARTY_NOTICES.txt crates/openbnct-gui/dist/
+
+      - name: Build and validate handbook
+        run: |
+          mdbook build
+          python3 scripts/check_handbook.py
+          rm -rf crates/openbnct-gui/dist/docs
+          cp -R dist/docs crates/openbnct-gui/dist/docs
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Check handbook in the complete web bundle
+        run: |
+          npm ci --prefix docs/checks --ignore-scripts
+          docs/checks/node_modules/.bin/playwright install --with-deps chromium
+          python3 -m http.server 8080 --directory crates/openbnct-gui/dist --bind 127.0.0.1 &
+          server_pid=$!
+          trap 'kill "$server_pid"; wait "$server_pid" || true' EXIT
+          timeout 120s node scripts/docs_smoke.mjs
+
+      - name: Upload complete web bundle
+        uses: actions/upload-artifact@v4
+        with:
+          name: openbnct-web
+          path: crates/openbnct-gui/dist
 
       - uses: actions/upload-pages-artifact@56afc609e74202658d3ffba0e8f6dda462b719fa # v3.0.1
         with:

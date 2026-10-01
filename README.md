@@ -17,6 +17,8 @@ It combines a deterministic neutron/photon transport solver with OpenMC
 integration and MCNP/PHITS interchange. The Rust implementation powers the
 CLI, Python bindings, desktop app, and browser workbench.
 
+[Handbook](https://openbnct.avilalabs.org/docs/) · [First study](https://openbnct.avilalabs.org/docs/quick-start.html) · [Benchmarks explained](https://openbnct.avilalabs.org/docs/benchmarks.html)
+
 <p align="left">
   <a href="https://openbnct.avilalabs.org"><img src="https://img.shields.io/badge/open%20in%20browser-openbnct.avilalabs.org-0d9488?style=for-the-badge" alt="Open in browser"></a>
   <a href="https://github.com/AvilaLabs/OpenBNCT/releases/latest"><img src="https://img.shields.io/badge/download-desktop%20app-1f2937?style=for-the-badge" alt="Download desktop app"></a>
@@ -57,10 +59,13 @@ The research layers have explicit limits. Scenario positioning currently
 shifts existing dose fields; it does not re-solve transport through moved
 anatomy. Optimization's `isoeffective` objectives use fixed component
 weights, while full nonlinear biological evaluation is a separate path.
-The uncertainty tools do not yet form a joint end-to-end patient uncertainty
-model, and PK-map uncertainty is not yet propagated. Prompt-gamma
-reconstruction is an imaging research model; synchronized machine-log
-replay and measurement-updated 4-D boron estimation remain future work.
+Current-source joint ensembles propagate explicitly declared shared/correlated
+sources and supported PK draws; they do not infer a complete patient uncertainty
+model. Retrospective delivery and measurement-informed boron workflows also
+require explicit clocks, calibration, observations and reduced-model assumptions.
+Prompt-gamma reconstruction remains an imaging research model. See the
+[uncertainty guide](https://openbnct.avilalabs.org/docs/uncertainty.html) and
+[usage reference](docs/USAGE.md) for current scope and remaining limits.
 
 Cases, models, plans, and result artifacts are versioned and SHA-256-bound
 to their inputs. CLI, GUI, and Python surfaces reuse the Rust crates;
@@ -184,6 +189,10 @@ extensions for joint uncertainty, delivery replay, and measurement-informed
 boron estimation.
 
 ## Documentation
+
+Start with the **[OpenBNCT Handbook](https://openbnct.avilalabs.org/docs/)** for installation, first studies, transport, boron/biology, planning, uncertainty, Python and [benchmark interpretation](https://openbnct.avilalabs.org/docs/benchmarks.html). Its source is [`docs/guide/`](docs/guide/). It describes current-source capabilities and distinguishes them from older packaged releases and frozen evidence.
+
+Detailed research records and reference material:
 
 - [`docs/USAGE.md`](docs/USAGE.md) — command and workflow reference
 - [`benchmarks/synthetic/nf-bnct-001/SPECIFICATION.md`](benchmarks/synthetic/nf-bnct-001/SPECIFICATION.md)

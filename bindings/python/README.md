@@ -1,6 +1,7 @@
 # Python bindings
 
-`pip install openbnct` is the planned primary entry point for scientific users.
+`pip install openbnct` installs the published scientific package. For the current
+workflow, start with the [Python handbook chapter](https://openbnct.avilalabs.org/docs/python.html).
 The package uses PyO3 and maturin to wrap the authoritative Rust crates; it
 does not implement a second dose, geometry, evidence, or QA engine (ADR 0015).
 
@@ -113,6 +114,7 @@ wheel under `target/wheels`. The extension targets the CPython stable ABI
 (`cp310-abi3-*`). CI builds the wheel, installs it into a clean
 virtual environment, and runs the parity suite there; the same build +
 clean-venv parity run has been verified locally on CPython 3.14.
-Publication of the platform matrix through TestPyPI remains a pending
-release gate — see [ADR 0015](../../docs/adr/0015-python-and-native-distribution.md)
-and [ADR 0027](../../docs/adr/0027-first-bounded-python-api.md).
+Platform wheels are published on PyPI. Packaged releases can lag this source
+tree; build current source to use later API additions. [ADR 0015](../../docs/adr/0015-python-and-native-distribution.md)
+and [ADR 0027](../../docs/adr/0027-first-bounded-python-api.md) retain the original
+distribution and API decisions.

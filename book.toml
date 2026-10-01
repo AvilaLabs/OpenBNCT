@@ -1,0 +1,21 @@
+[book]
+title = "OpenBNCT Handbook"
+authors = ["Avila Labs"]
+description = "Calculate BNCT research dose, compare models, and understand benchmark evidence."
+language = "en"
+src = "docs/guide"
+
+[build]
+build-dir = "dist/docs"
+create-missing = false
+
+[output.html]
+default-theme = "rust"
+preferred-dark-theme = "navy"
+mathjax-support = true
+git-repository-url = "https://github.com/AvilaLabs/OpenBNCT"
+edit-url-template = "https://github.com/AvilaLabs/OpenBNCT/edit/main/{path}"
+site-url = "/docs/"
+
+[output.html.playground]
+runnable = false
