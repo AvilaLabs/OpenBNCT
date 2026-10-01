@@ -43,7 +43,7 @@ calibrate`), `beam` (`beam bind --aim-mask`), `transport` (`sn solve --dose
 --boron-unit-output --source-weighting uniform_in_bin`, then, with
 `photon_transport = true`, `sn photon-solve --dose` and `sn merge-photon-dose`),
 `boron` (`boron dose`), `metrics` (`metrics` and `dvh`
-per structure) and `report`. Artifacts land in `p001/out/01-import` ...
+per structure, run as one internal `metrics-batch` that parses the dose and masks once) and `report`. Artifacts land in `p001/out/01-import` ...
 `06-metrics`; the report is `out/report.md` and `out/report.json`
 (`openbnct.project-report/0.1.0`) with DVH curves in `out/dvh/*.csv`.
 Everything underneath stays the existing hash-bound artifacts; the runner only

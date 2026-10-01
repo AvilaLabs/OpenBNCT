@@ -326,6 +326,17 @@ enum Command {
         #[arg(long)]
         output: PathBuf,
     },
+    /// Run many `metrics`/`dvh` jobs against one dose bundle, parsing the
+    /// bundle once and each mask once (internal plumbing for the project
+    /// runner; outputs are byte-identical to the single commands).
+    MetricsBatch {
+        /// Physical or biological dose bundle JSON.
+        #[arg(long)]
+        dose: PathBuf,
+        /// `openbnct.metrics-batch-plan/0.1.0` JSON listing the jobs.
+        #[arg(long)]
+        plan: PathBuf,
+    },
     /// Score a TCP/NTCP endpoint model over a dose volume, or combine a
     /// TCP and NTCP evaluation into a UTCP report.
     Endpoint(EndpointArgs),
@@ -16114,6 +16125,11 @@ fn run(cli: Cli) -> Result<(), Box<dyn Error>> {
                 );
             }
         },
+        Some(Command::MetricsBatch { dose, plan }) => {
+            let jobs = read_metrics_batch_plan(&plan)?;
+            run_metrics_batch(&dose, &jobs)?;
+            println!("metrics batch: wrote {} outputs", jobs.len());
+        }
         Some(Command::Metrics {
             dose,
             quantity,
@@ -18525,59 +18541,41 @@ fn compute_dvh_file(
     output: &Path,
 ) -> Result<openbnct_evidence::DoseVolumeHistogram, Box<dyn Error>> {
     let dose_bytes = fs::read(dose)?;
-    let schema: serde_json::Value = serde_json::from_slice(&dose_bytes)?;
+    let bundle = load_dose_bundle(&dose_bytes, dose)?;
     let mask: RegionMask = serde_json::from_slice(&fs::read(mask)?)?;
-    let source = openbnct_core::ContentReference {
+    let source = dose_source_reference(dose)?;
+    dvh_from_loaded(&bundle, &source, quantity, &mask, bins, output)
+}
+
+/// The content reference a derived artifact records for its dose bundle.
+fn dose_source_reference(dose: &Path) -> io::Result<openbnct_core::ContentReference> {
+    Ok(openbnct_core::ContentReference {
         id: dose.display().to_string(),
         sha256: openbnct_evidence::sha256_file(dose)?,
-    };
-    let dose_schema = openbnct_core::normalize_contract_id(
-        schema
-            .get("schema_version")
-            .and_then(|v| v.as_str())
-            .unwrap_or_default(),
-    );
-    let histogram = match dose_schema.as_str() {
-        openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
-            let bundle: PhysicalDoseBundle =
-                openbnct_core::sidecar::from_slice_at(&dose_bytes, dose)?;
-            let (values, unit) = dose_values(&bundle, quantity)?;
-            let voxel_volume = bundle.geometry.spacing_mm.iter().product();
-            openbnct_evidence::DoseVolumeHistogram::compute(
-                &bundle.case_id,
-                &mask.name,
-                quantity,
-                source,
-                unit,
-                values,
-                &mask.voxels,
-                voxel_volume,
-                bins,
-            )?
-        }
-        openbnct_bio::BIOLOGICAL_DOSE_BUNDLE_SCHEMA => {
-            let bundle: openbnct_bio::BiologicalDoseBundle =
-                openbnct_core::sidecar::from_slice_at(&dose_bytes, dose)?;
-            let (values, unit) = biological_dose_values(&bundle, quantity)?;
-            let voxel_volume = bundle.geometry.spacing_mm.iter().product();
-            openbnct_evidence::DoseVolumeHistogram::compute(
-                &bundle.case_id,
-                &mask.name,
-                quantity,
-                source,
-                unit,
-                values,
-                &mask.voxels,
-                voxel_volume,
-                bins,
-            )?
-        }
-        other => {
-            return Err(
-                io::Error::other(format!("unsupported dose bundle schema {other:?}")).into(),
-            );
-        }
-    };
+    })
+}
+
+/// DVH over an already-loaded bundle and mask.
+fn dvh_from_loaded(
+    bundle: &DoseBundle,
+    source: &openbnct_core::ContentReference,
+    quantity: &str,
+    mask: &RegionMask,
+    bins: usize,
+    output: &Path,
+) -> Result<openbnct_evidence::DoseVolumeHistogram, Box<dyn Error>> {
+    let selection = bundle.select(quantity)?;
+    let histogram = openbnct_evidence::DoseVolumeHistogram::compute(
+        selection.case_id,
+        &mask.name,
+        quantity,
+        source.clone(),
+        selection.unit,
+        selection.values,
+        &mask.voxels,
+        selection.voxel_volume_mm3,
+        bins,
+    )?;
     let json = serde_json::to_vec_pretty(&histogram)?;
     let mut file = fs::OpenOptions::new()
         .write(true)
@@ -18604,16 +18602,28 @@ fn compute_metrics_file(
     let dose_bytes = fs::read(dose)?;
     let bundle = load_dose_bundle(&dose_bytes, dose)?;
     let mask: RegionMask = serde_json::from_slice(&fs::read(mask)?)?;
-    let source = openbnct_core::ContentReference {
-        id: dose.display().to_string(),
-        sha256: openbnct_evidence::sha256_file(dose)?,
-    };
+    let source = dose_source_reference(dose)?;
+    metrics_from_loaded(&bundle, &source, quantity, &mask, dx, vx, eud, output)
+}
+
+/// Dose metrics over an already-loaded bundle and mask.
+#[allow(clippy::too_many_arguments)]
+fn metrics_from_loaded(
+    bundle: &DoseBundle,
+    source: &openbnct_core::ContentReference,
+    quantity: &str,
+    mask: &RegionMask,
+    dx: &[f64],
+    vx: &[f64],
+    eud: &[f64],
+    output: &Path,
+) -> Result<openbnct_evidence::RegionDoseMetrics, Box<dyn Error>> {
     let selection = bundle.select(quantity)?;
     let metrics = openbnct_evidence::RegionDoseMetrics::compute(
         selection.case_id,
         &mask.name,
         quantity,
-        source,
+        source.clone(),
         selection.unit,
         selection.values,
         &mask.voxels,
@@ -18624,6 +18634,94 @@ fn compute_metrics_file(
     )?;
     write_new_json(output, &metrics)?;
     Ok(metrics)
+}
+
+/// One job of a `metrics-batch` plan.
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MetricsBatchJob {
+    /// `metrics` or `dvh`.
+    kind: String,
+    quantity: String,
+    mask: PathBuf,
+    #[serde(default)]
+    dx: Vec<f64>,
+    #[serde(default)]
+    vx: Vec<f64>,
+    #[serde(default)]
+    eud_a: Vec<f64>,
+    bins: Option<usize>,
+    output: PathBuf,
+}
+
+#[derive(serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+struct MetricsBatchPlan {
+    schema_version: String,
+    jobs: Vec<MetricsBatchJob>,
+}
+
+const METRICS_BATCH_PLAN_SCHEMA: &str = "openbnct.metrics-batch-plan/0.1.0";
+
+fn read_metrics_batch_plan(path: &Path) -> Result<Vec<MetricsBatchJob>, Box<dyn Error>> {
+    let plan: MetricsBatchPlan = serde_json::from_slice(&fs::read(path)?)
+        .map_err(|error| io::Error::other(format!("{}: {error}", path.display())))?;
+    if plan.schema_version != METRICS_BATCH_PLAN_SCHEMA {
+        return Err(io::Error::other(format!(
+            "{}: unsupported plan schema {:?} (expected {METRICS_BATCH_PLAN_SCHEMA})",
+            path.display(),
+            plan.schema_version
+        ))
+        .into());
+    }
+    Ok(plan.jobs)
+}
+
+/// Run every job against one dose bundle, parsing the bundle and each
+/// distinct mask once. Each output is the file the single command writes.
+fn run_metrics_batch(dose: &Path, jobs: &[MetricsBatchJob]) -> Result<(), Box<dyn Error>> {
+    let dose_bytes = fs::read(dose)?;
+    let bundle = load_dose_bundle(&dose_bytes, dose)?;
+    let source = dose_source_reference(dose)?;
+    let mut masks: std::collections::HashMap<&Path, RegionMask> = std::collections::HashMap::new();
+    for job in jobs {
+        if !masks.contains_key(job.mask.as_path()) {
+            let mask: RegionMask = serde_json::from_slice(&fs::read(&job.mask)?)?;
+            masks.insert(job.mask.as_path(), mask);
+        }
+        let mask = &masks[job.mask.as_path()];
+        match job.kind.as_str() {
+            "metrics" => {
+                metrics_from_loaded(
+                    &bundle,
+                    &source,
+                    &job.quantity,
+                    mask,
+                    &job.dx,
+                    &job.vx,
+                    &job.eud_a,
+                    &job.output,
+                )?;
+            }
+            "dvh" => {
+                dvh_from_loaded(
+                    &bundle,
+                    &source,
+                    &job.quantity,
+                    mask,
+                    job.bins.unwrap_or(100),
+                    &job.output,
+                )?;
+            }
+            other => {
+                return Err(io::Error::other(format!(
+                    "metrics-batch: unknown job kind {other:?} (expected metrics or dvh)"
+                ))
+                .into());
+            }
+        }
+    }
+    Ok(())
 }
 
 /// `beam bind --aim-mask`: re-aim a face-centered bound disk source so the

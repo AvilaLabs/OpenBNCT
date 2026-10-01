@@ -1228,6 +1228,9 @@ const QUANTITIES: [&str; 5] = [
     "physical_total",
 ];
 
+/// The metrics step's batch plan, written before the step runs.
+const METRICS_PLAN_PATH: &str = "out/06-metrics/metrics-batch-plan.json";
+
 struct StepPlan {
     commands: Vec<Vec<String>>,
     /// Paths (relative to the project directory) whose content the step consumes.
@@ -1555,50 +1558,47 @@ fn plan_step(
             }
         }
         5 => {
-            let mut commands = Vec::new();
+            let mut jobs = Vec::new();
             let mut inputs = vec!["out/05-boron/dose.json".to_owned()];
             for roi in report_structures(config, rois) {
                 let mask = mask_path(roi);
                 inputs.push(mask.clone());
                 let stem = safe_name(&roi.name);
                 for quantity in QUANTITIES {
-                    let output = format!(
-                        "out/06-metrics/{stem}.{}.metrics.json",
-                        quantity.replace(':', "-")
-                    );
-                    commands.push(argv(&[
-                        "metrics",
-                        "--dose",
-                        "out/05-boron/dose.json",
-                        "--quantity",
-                        quantity,
-                        "--mask",
-                        &mask,
-                        "--dx",
-                        "95,50,2",
-                        "--output",
-                        &output,
-                    ]));
+                    jobs.push(json!({
+                        "kind": "metrics",
+                        "quantity": quantity,
+                        "mask": mask,
+                        "dx": [95.0, 50.0, 2.0],
+                        "output": format!(
+                            "out/06-metrics/{stem}.{}.metrics.json",
+                            quantity.replace(':', "-")
+                        ),
+                    }));
                 }
-                commands.push(argv(&[
-                    "dvh",
+                jobs.push(json!({
+                    "kind": "dvh",
+                    "quantity": "physical_total",
+                    "mask": mask,
+                    "bins": 100,
+                    "output": format!("out/06-metrics/{stem}.physical_total.dvh.json"),
+                }));
+            }
+            let plan = json!({
+                "schema_version": "openbnct.metrics-batch-plan/0.1.0",
+                "jobs": jobs,
+            });
+            StepPlan {
+                commands: vec![argv(&[
+                    "metrics-batch",
                     "--dose",
                     "out/05-boron/dose.json",
-                    "--quantity",
-                    "physical_total",
-                    "--mask",
-                    &mask,
-                    "--bins",
-                    "100",
-                    "--output",
-                    &format!("out/06-metrics/{stem}.physical_total.dvh.json"),
-                ]));
-            }
-            StepPlan {
-                commands,
+                    "--plan",
+                    METRICS_PLAN_PATH,
+                ])],
                 inputs,
                 outputs: vec!["out/06-metrics".into()],
-                options: json!({}),
+                options: json!({ "batch_plan": plan }),
             }
         }
         6 => StepPlan {
@@ -1658,6 +1658,11 @@ fn execute_command(command: &[String]) -> DynResult<()> {
             output,
         }) => {
             super::compute_metrics_file(&dose, &quantity, &mask, &dx, &vx, &eud, &output)?;
+            Ok(())
+        }
+        Some(super::Command::MetricsBatch { dose, plan }) => {
+            let jobs = super::read_metrics_batch_plan(&plan)?;
+            super::run_metrics_batch(&dose, &jobs)?;
             Ok(())
         }
         Some(super::Command::Dvh {
@@ -1804,6 +1809,13 @@ fn run_steps(project_arg: &Path, force: bool, from: Option<&str>) -> DynResult<(
         let outcome: DynResult<()> = (|| {
             if index == 6 {
                 return write_report(&project, &config, &manifest, &rois);
+            }
+            if index == 5 {
+                // The plan is part of the step's recorded options; write it
+                // beside the outputs so the step reproduces by hand.
+                let mut text = serde_json::to_string_pretty(&plan.options["batch_plan"])?;
+                text.push('\n');
+                fs::write(project.join(METRICS_PLAN_PATH), text)?;
             }
             // `sn solve` prints per-outer-iteration progress by default.
             for command in &plan.commands {

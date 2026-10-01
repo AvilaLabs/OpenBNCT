@@ -4,6 +4,11 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
+## Unreleased — faster project metrics step (2026-10-01)
+
+- **`openbnct project run` finishes its metrics step in about 1.4 s instead of 25.7 s on the 54x67x57 real-head project (20 structures).** The step parses the dose bundle and each mask once instead of once per structure and quantity. Every metrics and DVH file is byte-identical to before (checked by sha256).
+- Internal plumbing only, with no new user-facing capability: the GUI and Python surfaces are unchanged. The step now records one `metrics-batch` command (its plan is written to `out/06-metrics/metrics-batch-plan.json`) in the run manifest instead of 120 separate `metrics` and `dvh` lines. `openbnct metrics` and `openbnct dvh` work as before.
+
 ## Unreleased — user handbook (2026-10-01)
 
 - Added the hosted handbook at `https://openbnct.avilalabs.org/docs/`, with current task guides, source/release distinctions and benchmark interpretation. README and GUI Help link to it; the Pages bundle publishes it beside the workbench.

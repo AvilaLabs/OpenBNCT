@@ -319,6 +319,76 @@ fn sidecar_artifacts_are_consumed_with_identical_numbers() {
         object.remove("dose");
     }
     assert_eq!(a, b);
+
+    // `metrics-batch` writes byte-identical files to the single commands,
+    // for the inline and the sidecar-backed bundle alike.
+    for (tag, bundle) in [("inline", &bundle_i), ("side", &bundle_s)] {
+        let mut jobs = Vec::new();
+        let mut pairs = Vec::new();
+        for quantity in ["physical_total", "component:boron"] {
+            let stem = quantity.replace(':', "-");
+            let single = d.join(format!("single-{tag}-{stem}.metrics.json"));
+            let batch = d.join(format!("batch-{tag}-{stem}.metrics.json"));
+            ok(&[
+                "metrics",
+                "--dose",
+                s(bundle),
+                "--quantity",
+                quantity,
+                "--mask",
+                s(&mask_path),
+                "--dx",
+                "95,50,2",
+                "--output",
+                s(&single),
+            ]);
+            jobs.push(serde_json::json!({
+                "kind": "metrics", "quantity": quantity, "mask": s(&mask_path),
+                "dx": [95.0, 50.0, 2.0], "output": s(&batch),
+            }));
+            pairs.push((single, batch));
+        }
+        let single = d.join(format!("single-{tag}.dvh.json"));
+        let batch = d.join(format!("batch-{tag}.dvh.json"));
+        ok(&[
+            "dvh",
+            "--dose",
+            s(bundle),
+            "--quantity",
+            "physical_total",
+            "--mask",
+            s(&mask_path),
+            "--bins",
+            "100",
+            "--output",
+            s(&single),
+        ]);
+        jobs.push(serde_json::json!({
+            "kind": "dvh", "quantity": "physical_total", "mask": s(&mask_path),
+            "bins": 100, "output": s(&batch),
+        }));
+        pairs.push((single, batch));
+        let plan = d.join(format!("plan-{tag}.json"));
+        std::fs::write(
+            &plan,
+            serde_json::to_vec(&serde_json::json!({
+                "schema_version": "openbnct.metrics-batch-plan/0.1.0",
+                "jobs": jobs,
+            }))
+            .unwrap(),
+        )
+        .unwrap();
+        ok(&["metrics-batch", "--dose", s(bundle), "--plan", s(&plan)]);
+        for (single, batch) in &pairs {
+            assert_eq!(
+                std::fs::read(single).unwrap(),
+                std::fs::read(batch).unwrap(),
+                "{} differs from {}",
+                batch.display(),
+                single.display()
+            );
+        }
+    }
     let nii_i = d.join("dose-inline.nii");
     let nii_s = d.join("dose-side.nii");
     for (bundle, out) in [(&bundle_i, &nii_i), (&bundle_s, &nii_s)] {
