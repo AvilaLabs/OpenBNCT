@@ -472,13 +472,16 @@ pub struct SnOptions {
     /// accuracy floor, so a deep outer target needs a tighter inner
     /// one; `None` keeps them equal (historic behavior).
     pub inner_convergence: Option<f64>,
-    /// Positive-preserving θ repair: when an axis outflow edge would
-    /// go negative, bump that axis's weight to the step closure (θ=1,
-    /// ψ_out = ψ̄ ≥ 0 identically) rather than clamping the computed
-    /// value — a different weight solving the same balance, so no
-    /// particles are fabricated. Engages only where the sweep source
-    /// is nonnegative (pure-P0 cells). `OPENBNCT_NO_THETA_REPAIR`
-    /// disables it (A/B diagnostics vs the legacy clamp).
+    /// Positive-preserving negative-flux fixup: when an axis outflow
+    /// edge would go negative, that edge is set to zero and ψ̄ is
+    /// re-solved from the cell balance with it held, so particles are
+    /// conserved, not clamped away. Engages only where the sweep source
+    /// is nonnegative (pure-P0 cells). The fixup is continuous at its
+    /// switch (at ψ_out = 0 both branches agree), so the outer iteration
+    /// converges where the earlier θ-to-step repair could cycle (the
+    /// real-head photon solve did, with a 1.8 % period-5 orbit in
+    /// boundary air). `OPENBNCT_FIXUP=theta` selects that earlier repair
+    /// and `OPENBNCT_NO_THETA_REPAIR` disables both (A/B diagnostics).
     pub theta_repair: bool,
     /// Within-cell exponential source: reconstruct the per-axis rate of
     /// each source component toward each outflow edge and uses the
@@ -2925,6 +2928,7 @@ fn sweep_group(
     let n_dirs = quadrature.len();
     let n_cells = nx * ny * nz;
     let t_prelude = phase::start();
+    let fixup_zero = std::env::var("OPENBNCT_FIXUP").map_or(true, |v| v != "theta");
 
     // Each ordinate's sweep is independent given the lagged iterate, so
     // every direction owns its row with no shared writes. Per-ordinate
@@ -3180,23 +3184,51 @@ fn sweep_group(
                     // weights are then exactly those it evaluated, so its
                     // ψ̄ is reused instead of recomputed.
                     let mut settled_psi: Option<f64> = None;
+                    // Set-to-zero fixup (default; `OPENBNCT_FIXUP=theta`
+                    // restores the θ-to-step repair): a negative outflow
+                    // edge is fixed at 0 and ψ̄ re-solved from the cell
+                    // balance with that edge held, so the map stays
+                    // continuous at the switch.
+                    let mut zeroed = [false; 3];
                     for _ in 0..4 {
                         if !theta_repair || signed_source {
                             break;
                         }
-                        let denom_w = st * volume + w_a.iter().sum::<f64>();
-                        let numer_w = q * volume
-                            + w_a
-                                .iter()
-                                .zip(psi_in.iter())
-                                .map(|(w, pin)| w * pin)
-                                .sum::<f64>();
+                        let mut denom_w = st * volume;
+                        let mut numer_w = q * volume;
+                        for a in 0..3 {
+                            if zeroed[a] {
+                                numer_w += area[a] * psi_in[a];
+                            } else {
+                                denom_w += w_a[a];
+                                numer_w += w_a[a] * psi_in[a];
+                            }
+                        }
                         let psi_avg_ideal = numer_w / denom_w.max(1e-30);
                         let mut repaired = false;
                         for a in 0..3 {
+                            if zeroed[a] {
+                                continue;
+                            }
                             let out_ideal =
                                 (psi_avg_ideal - (1.0 - theta[a]) * psi_in[a]) / theta[a];
-                            if out_ideal < 0.0 && theta[a] < 1.0 - f64::EPSILON {
+                            if fixup_zero && out_ideal < 0.0 {
+                                // Never zero all three edges: with no
+                                // outflow left, ψ̄ = (qV + ΣAψ_in)/σV
+                                // blows up in near-void cells. The last
+                                // axis takes the step closure instead
+                                // (ψ_out = ψ̄ ≥ 0).
+                                if zeroed.iter().filter(|z| **z).count() == 2 {
+                                    theta[a] = 1.0;
+                                    w_a[a] = area[a];
+                                } else {
+                                    zeroed[a] = true;
+                                }
+                                repaired = true;
+                            } else if !fixup_zero
+                                && out_ideal < 0.0
+                                && theta[a] < 1.0 - f64::EPSILON
+                            {
                                 theta[a] = 1.0;
                                 w_a[a] = area[a];
                                 repaired = true;
@@ -3210,13 +3242,16 @@ fn sweep_group(
                     let psi_avg_ideal = match settled_psi {
                         Some(v) => v,
                         None => {
-                            let denom_w = st * volume + w_a.iter().sum::<f64>();
-                            let numer_w = q * volume
-                                + w_a
-                                    .iter()
-                                    .zip(psi_in.iter())
-                                    .map(|(w, pin)| w * pin)
-                                    .sum::<f64>();
+                            let mut denom_w = st * volume;
+                            let mut numer_w = q * volume;
+                            for a in 0..3 {
+                                if zeroed[a] {
+                                    numer_w += area[a] * psi_in[a];
+                                } else {
+                                    denom_w += w_a[a];
+                                    numer_w += w_a[a] * psi_in[a];
+                                }
+                            }
                             numer_w / denom_w.max(1e-30)
                         }
                     };
@@ -3231,9 +3266,13 @@ fn sweep_group(
                     let mut psi_out_ideal = [0.0_f64; 3];
                     let mut out_shift = 0.0_f64;
                     for a in 0..3 {
-                        let mut o = (psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a];
+                        let mut o = if zeroed[a] {
+                            0.0
+                        } else {
+                            (psi_avg - (1.0 - theta[a]) * psi_in[a]) / theta[a]
+                        };
                         let o_theta = o;
-                        if let Some(recon) = source_lambda {
+                        if let (false, Some(recon)) = (zeroed[a], source_lambda) {
                             let mu = dir[a].abs().max(1e-30);
                             // Only engage where the flat-source defect
                             // exists: optically thick cells. Gate on
@@ -4544,6 +4583,41 @@ pub(crate) fn solve_sn_problem(
     data_ref: ContentReference,
     case_ref: ContentReference,
 ) -> Result<MultigroupFlux, MultigroupError> {
+    solve_sn_problem_from(
+        case,
+        data,
+        options,
+        case_material,
+        quadrature,
+        boundary,
+        fixed_source,
+        uncollided_current,
+        source_weights,
+        data_ref,
+        case_ref,
+        None,
+    )
+}
+
+/// [`solve_sn_problem`] started from `initial` (`[cell][group]` scalar
+/// flux) instead of zero — for a re-solve after a small source change,
+/// such as the photon pair-production pass. Currents and kernel moments
+/// still start at zero.
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn solve_sn_problem_from(
+    case: &TransportCase,
+    data: &MultigroupData,
+    options: &SnOptions,
+    case_material: &[usize],
+    quadrature: &[([f64; 3], f64)],
+    boundary: &BoundarySource,
+    fixed_source: &[Vec<f64>],
+    uncollided_current: Option<&[Vec<[f64; 3]>]>,
+    source_weights: Option<&[f64]>,
+    data_ref: ContentReference,
+    case_ref: ContentReference,
+    initial: Option<Vec<Vec<f64>>>,
+) -> Result<MultigroupFlux, MultigroupError> {
     let invalid = |m: String| MultigroupError::Solve(m);
     let geometry = &case.geometry;
     let n_cells = geometry.voxel_count()?;
@@ -4685,7 +4759,15 @@ pub(crate) fn solve_sn_problem(
         })
         .collect();
 
-    let mut flux = vec![vec![0.0; groups]; n_cells];
+    let mut flux = match initial {
+        Some(f) if f.len() == n_cells && f.iter().all(|row| row.len() == groups) => f,
+        Some(_) => {
+            return Err(invalid(
+                "warm-start flux does not match the case grid and group count".into(),
+            ));
+        }
+        None => vec![vec![0.0; groups]; n_cells],
+    };
     // P1: angle-averaged cell currents J_a[cell][group][axis] —
     // J_a = (1/4π)·Σ_d w_d·Ω_{d,a}·ψ_d, iterated Jacobi-style with the
     // scalar flux.
@@ -4865,8 +4947,11 @@ pub(crate) fn solve_sn_problem(
         // sweep direction each outer iteration. Downscatter-only
         // ordering converges one-coupling-per-sweep under bound-atom
         // (S(α,β)) upscatter; alternating carries upscatter information
-        // at full speed on the ascending pass.
-        let ascending = outer % 2 == 1;
+        // at full speed on the ascending pass. Without upscatter
+        // (photons, fast-only data) one descending pass per outer is
+        // already exact block Gauss-Seidel, and an ascending pass would
+        // sweep every group on stale higher-group sources.
+        let ascending = upscatter_block_start.is_some() && outer % 2 == 1;
         for g in 0..groups {
             let g = if ascending { groups - 1 - g } else { g };
             // Within-group Jacobi iteration on the scatter source.

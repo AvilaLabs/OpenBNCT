@@ -28,7 +28,7 @@ use crate::model::TransportCase;
 use crate::multigroup::{
     BoundarySource, MultigroupData, MultigroupError, MultigroupFlux, MultigroupMaterial, SnOptions,
     cell_compositions, level_symmetric_quadrature, material_composition_map,
-    solve_multigroup_adjoint, solve_sn_problem,
+    solve_multigroup_adjoint,
 };
 
 /// Versioned contract id for `MultigroupPhotonData`.
@@ -391,7 +391,10 @@ pub fn solve_photon(
                 }
             }
         }
-        let solved = solve_sn_problem(
+        // Each pair pass starts from the previous pass's flux: only the
+        // small annihilation source changed, so a warm start needs a few
+        // outers where a cold one repeats the whole solve.
+        let solved = crate::multigroup::solve_sn_problem_from(
             case,
             &transport,
             options,
@@ -403,6 +406,7 @@ pub fn solve_photon(
             None,
             data_ref.clone(),
             case_ref.clone(),
+            flux.as_ref().map(|f: &MultigroupFlux| f.flux.clone()),
         )?;
         if !has_pair {
             return Ok(solved);

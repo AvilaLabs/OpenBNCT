@@ -18,6 +18,28 @@ own versions independent of the crate version.
 
 
 
+## Unreleased — photon solve convergence (2026-10-01)
+
+- **The real-head photon solve now converges instead of cycling.** It drops from 101 s to
+  ~54 s, two passes of 9 and 8 outers.
+- **Cause:** the positivity repair switched an axis from θ-weighted to step (θ = 1) the
+  moment its outflow edge went negative. That discontinuous switch made the outer
+  iteration cycle in near-void boundary cells: a 1.8 % period-5 orbit in group 12 that
+  ran all 32 outers without converging.
+- **Fixes:**
+  - The fixup is now set-to-zero with rebalance. A negative outflow edge is held at 0 and
+    ψ̄ is re-solved from the cell balance. This conserves particles and is continuous at
+    the switch. If a third axis would also go negative, it takes the step closure.
+    `OPENBNCT_FIXUP=theta` restores the earlier repair for A/B checks.
+  - Problems without upscatter (photons) sweep groups in descending order on every
+    outer. The alternating ascending pass only matters for thermal upscatter.
+  - The pair-production pass starts from the previous pass's flux.
+- **Effect on results:**
+  - Real-head neutron dose components in the body are unchanged to 4 decimals (same 18
+    outers).
+  - Photon flux in the body is within 0.3 % (p99) of the repaired solution. The larger
+    differences, up to 6 %, are in air outside the body.
+
 ## Unreleased — S_N sweep memory traffic and thread scaling (2026-10-01)
 
 - **The deterministic solve loop is 1.6–2.6× faster, and the flux output is
