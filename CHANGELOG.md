@@ -4,6 +4,12 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
+## Unreleased — user handbook (2026-10-01)
+
+- Added the hosted handbook at `https://openbnct.avilalabs.org/docs/`, with current task guides, source/release distinctions and benchmark interpretation. README and GUI Help link to it; the Pages bundle publishes it beside the workbench.
+- The CLI and Python workflows are covered by their handbook chapters. A runtime command or Python function for opening this hosted documentation is deliberately excluded because it adds no calculation or analysis operation.
+- Native debug captures can set `OPENBNCT_CAPTURE_HELP=1` with `OPENBNCT_CAPTURE` to review the Help window against a loaded case.
+
 
 
 ## Unreleased — real-anatomy mixture quantization (2026-09-30)

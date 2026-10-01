@@ -2520,6 +2520,9 @@ impl OpenBnctApp {
         }
         #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
         if std::env::var_os("OPENBNCT_CAPTURE").is_some() {
+            if std::env::var_os("OPENBNCT_CAPTURE_HELP").is_some() {
+                app.help.toggle_center();
+            }
             if let Ok(selected) = std::env::var("OPENBNCT_CAPTURE_WORKSPACE")
                 && let Some(workspace) = WorkspaceTab::ALL
                     .into_iter()

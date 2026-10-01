@@ -30,6 +30,8 @@ No new DNS configuration is needed. The workbench stays at `/` and the handbook 
 
 After deployment, check the live workbench, Help → Handbook link, book navigation/search, benchmark chapter and mobile layout. To republish the current revision, dispatch the Pages workflow after checking the source SHA; avoid publishing unrelated local edits.
 
+For native visual review, launch a debug build with a verified case directory and `OPENBNCT_CAPTURE=/absolute/path/help.png OPENBNCT_CAPTURE_HELP=1`. The existing capture mode saves the rendered window and closes it. The hosted book provides CLI/Python workflow chapters; those calculation APIs deliberately do not add a function or command solely for opening the documentation site.
+
 ## Keep content current
 
 Verify commands and defaults against the CLI, Python functions against the binding implementation, and units/geometry against Rust contracts. Distinguish current source from older packaged releases. Keep Python/PyPI availability current without rewriting historical ADRs.
