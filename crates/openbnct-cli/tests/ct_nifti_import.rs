@@ -427,7 +427,7 @@ fn body_crop_keeps_body_drops_couch_and_reports_roi_clipping() {
         crop["rule"]
             .as_str()
             .unwrap()
-            .contains("largest 26-connected")
+            .contains("largest 6-connected")
     );
     assert_eq!(crop["cropped_extent"]["min_lps_mm"][0], -57.5);
     // The ROI included the couch: the crop dropped exactly those voxels.

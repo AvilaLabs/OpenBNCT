@@ -875,7 +875,7 @@ ROI mask use the cropped box only.
 
 | Flag | Meaning |
 | --- | --- |
-| `--crop body` (default) | HU > -400 on the source CT, largest 26-connected component (this drops the couch), holes filled per axial slice, axis-aligned bounding box plus the margin, clipped to the CT. |
+| `--crop body` (default) | HU > -400 on the source CT, largest 6-connected component (this drops the couch), holes filled per axial slice, axis-aligned bounding box plus the margin, clipped to the CT. |
 | `--crop none` | Keep the full field of view. |
 | `--crop-margin-mm M` (default 15) | Margin around the body box, rounded out to whole CT voxels. |
 | `--crop-box-mm x0,x1,y0,y1,z0,z1` | Explicit box in patient LPS mm; replaces the body rule (no margin added). Keeps CT voxels whose centers lie in the box. Needs an axis-aligned CT. |

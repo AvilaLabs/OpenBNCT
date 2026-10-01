@@ -25,7 +25,7 @@ own versions independent of the crate version.
 - **`dicom import-ct` and `import ct-nifti` crop the CT to the body by default.** A real
   scan includes shoulders, couch and air; the benchmark head's full field of view is
   1.6 M voxels at 4 mm. `--crop body` (default) thresholds HU > -400, keeps the largest
-  26-connected component (the couch drops out), fills holes per axial slice and builds
+  6-connected component (the couch drops out), fills holes per axial slice and builds
   the covering grid over its bounding box plus `--crop-margin-mm` (default 15, rounded
   out to whole CT voxels). `--crop none` keeps the full field of view;
   `--crop-box-mm x0,x1,y0,y1,z0,z1` gives an explicit LPS box; `--crop-superior-of-mm Z`
