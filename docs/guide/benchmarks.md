@@ -55,6 +55,8 @@ The historical three-group FiR 1 cylindrical-water comparison records peak-norma
 
 Peak normalization removes overall amplitude, so a shape pass does not establish absolute dose. Later 28-group variants retain documented differences; the old three-group verdict cannot be transferred to them. Consult the [water](https://github.com/AvilaLabs/OpenBNCT/tree/main/validation/fir1-k63-cylindrical-phantom) and [PMMA](https://github.com/AvilaLabs/OpenBNCT/tree/main/validation/fir1-k63-pmma-phantom) records for the exact configurations.
 
+The [0.3.0 rerun of the water cylinder](https://github.com/AvilaLabs/OpenBNCT/tree/main/validation/fir1-k63-cylindrical-rerun-2026-10) uses current data, the solver after the September accuracy fixes, and the 118-bin INEEL spectrum. Its absolute χ² is 55 over 12 bins (132 for the September 28-group record). Computed/measured runs from 0.58 at 1 cm through 1.04 at 3.8 cm to 1.58 at 8.75 cm. The scale deficit is gone, but the profile is flatter than measured, so neither the absolute nor the peak-normalized comparison passes.
+
 ## Other research evidence
 
 NF-BNCT-001's 600-million-history OpenMC candidate passes its statistical gates; independent reproduction remains required for reference promotion. NF-BNCT-002's frozen deep-penetration case remains unexecuted in the evidence catalogue.
