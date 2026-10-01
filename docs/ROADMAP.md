@@ -1946,21 +1946,33 @@ already have.
     - mixture quantization (91k blended materials → ~150);
     - photon-solve CMFD;
     - mass-fraction dose blending (skin nitrogen 1.56× → 1.04×).
+- **R18-07 — Sub-minute real head (sprint, 2026-10).** Target: the real head
+  project end to end in under a minute on a laptop.
+  - Beam setup: analytic disk coverage with lit-region attenuation sampling
+    (ad0c300), so the real-head uncollided setup takes ~1 min instead of ~10 min.
+  - Auto body crop (030d425) and GUI catch-up: sidecar dose loading, CT volume
+    input, verify (5e8e156).
+  - Variance-reduced verify (landed): `project verify --variance-reduction
+    cadis|fw-cadis`, or `[verify] variance_reduction`, also in the GUI. Results:
+    - boron in small head structures gains 6–24× FOM in MC time;
+    - total dose gains 1.1–1.4×;
+    - large structures lose, so the default stays `none`.
+    - Open: total-dose noise is photon-limited, and the neutron-only adjoint does
+      not touch it; it needs a track-length photon-kerma tally.
+    - Open: the head adjoint (3–20 min under load) is re-solved on every verify;
+      cache it.
+  - Open: sweep thread scaling and memory traffic (in progress); then decide on
+    a GPU sweep.
 - **R18-06 — Open items.**
-  - Uncollided setup is ~40 % of a 4 mm run.
   - Voxel-level gamma pass rates are limited by MC statistics.
   - The CMFD od-θ uses a smoothstep with the published limits (replace with the
     published fit).
-  - The GUI does not read sidecar arrays.
   - The 11 % fast-flux deficit in the infinite medium is unexplained.
   - Real-CT imports crop to the body automatically (`--crop body`, default; see
     USAGE "Cropping the CT"). Open: the body crop alone keeps the neck and
     shoulders of a head scan; a head-only default needs `--crop-superior-of-mm`.
   - Python project API: the project workflow (`project init`/`run`, including the
     `[imaging] crop` keys) is CLI/GUI only; expose it from the `openbnct` package.
-  - On the real head, uncollided setup is ~10 min of a 16-min run.
-  - `verify` needs more histories, or importance weighting, to resolve small
-    structures.
   - The exponential closure and P1 do not converge together.
 
 **Input/output formats:**
