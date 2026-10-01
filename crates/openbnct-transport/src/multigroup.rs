@@ -1354,6 +1354,16 @@ fn default_spectrum_weighting() -> String {
 /// `OPENBNCT_UNC_POINTS=N` (full transverse points per cell edge) and
 /// `OPENBNCT_UNC_COARSE_POINTS=N` (coarse first pass, refined to the
 /// full count only in mixed-coverage cells).
+///
+/// This is the cone grid of the validated REFERENCE mode
+/// (`OPENBNCT_UNC_REFERENCE=1`: 8x16 directions, 8x8 points, illuminated
+/// fraction from the point count). The default mode computes each
+/// (cell, direction) coverage analytically (exact circle-rectangle
+/// overlap) and spends its attenuation samples only on the lit part of
+/// the cell; see `DEFAULT_CONE_GRID` and `DEFAULT_ATTEN_POINTS`. The
+/// reference's own rim coverage error (8x8 points) is ~1 % at p99 in the
+/// hydrogen component of the layered head, so the default is judged
+/// against a converged-coverage run as well (CHANGELOG).
 pub(crate) const CONE_GRID: (usize, usize) = (8, 16);
 
 /// Deterministic equal-area sample directions over an isotropic cone:
@@ -1432,6 +1442,56 @@ fn cone_directions_grid(
 /// Transverse sample points per cell edge for the uncollided beam's
 /// illumination and optical-depth quadrature (full and coarse).
 const TRANSVERSE_POINTS: u32 = 8;
+
+/// Default cone grid of the analytic-coverage uncollided beam.
+const DEFAULT_CONE_GRID: (usize, usize) = (8, 16);
+/// Default attenuation sample points per cell edge of the analytic-coverage
+/// uncollided beam.
+const DEFAULT_ATTEN_POINTS: u32 = 3;
+
+/// Area of the intersection of the disk of radius `r` centred at the origin
+/// with the axis-aligned rectangle `[x0,x1] x [y0,y1]` (closed form).
+///
+/// The chord length at abscissa `x` is `clamp(y1,-h,h) - clamp(y0,-h,h)` with
+/// `h = sqrt(r^2 - x^2)`; integrating each clamp over `[x0,x1]` needs only
+/// the antiderivative of `h`.
+pub(crate) fn circle_rect_area(r: f64, x0: f64, x1: f64, y0: f64, y1: f64) -> f64 {
+    if r <= 0.0 || x1 <= x0 || y1 <= y0 {
+        return 0.0;
+    }
+    // Antiderivative of h(x) = sqrt(r^2 - x^2).
+    let prim = |x: f64| {
+        let x = x.clamp(-r, r);
+        0.5 * (x * (r * r - x * x).max(0.0).sqrt() + r * r * (x / r).asin())
+    };
+    let xa = x0.max(-r);
+    let xb = x1.min(r);
+    if xb <= xa {
+        return 0.0;
+    }
+    // P(y) = integral over [xa,xb] of clamp(y, -h, h) dx.
+    let p = |y: f64| -> f64 {
+        let ya = y.abs();
+        let xc = if ya >= r {
+            0.0
+        } else {
+            (r * r - ya * ya).sqrt()
+        };
+        // Flat part: |x| <= xc where h >= |y|.
+        let flat_lo = xa.max(-xc);
+        let flat_hi = xb.min(xc);
+        let flat = (flat_hi - flat_lo).max(0.0);
+        let mut val = ya * flat;
+        // Remaining parts integrate h.
+        if flat > 0.0 {
+            val += (prim(xb) - prim(flat_hi)) + (prim(flat_lo) - prim(xa));
+        } else {
+            val += prim(xb) - prim(xa);
+        }
+        val.copysign(y)
+    };
+    (p(y1) - p(y0)).max(0.0)
+}
 
 /// Axis-aligned voxel grid for the uncollided beam's ray traversal.
 struct RayGrid {
@@ -1565,28 +1625,41 @@ pub(crate) fn uncollided_beam_moments(
     case_material: &[usize],
     weighting: SourceWeighting,
 ) -> Result<Option<UncollidedMoments>, MultigroupError> {
-    // Diagnostics for A/B studies: OPENBNCT_CONE_GRID=RxP overrides the
-    // cone direction grid, OPENBNCT_UNC_COARSE_POINTS=N enables the
-    // coarse-then-refine transverse sampling with an N x N first pass.
+    // Diagnostics for A/B studies. OPENBNCT_UNC_REFERENCE=1 selects the
+    // validated reference mode (8x16 cone, 8x8 points, point-count
+    // illuminated fraction). OPENBNCT_CONE_GRID=RxP overrides the cone
+    // direction grid, OPENBNCT_UNC_POINTS=N the points per cell edge,
+    // OPENBNCT_UNC_COARSE_POINTS=N enables the coarse-then-refine
+    // sampling (reference mode only).
+    let reference = std::env::var("OPENBNCT_UNC_REFERENCE")
+        .map(|v| !v.is_empty() && v != "0")
+        .unwrap_or(false);
     let cone_grid = std::env::var("OPENBNCT_CONE_GRID")
         .ok()
         .and_then(|v| {
             let (r, p) = v.split_once('x')?;
             Some((r.parse().ok()?, p.parse().ok()?))
         })
-        .unwrap_or(CONE_GRID);
-    // OPENBNCT_UNC_POINTS=N sets the full transverse point count per
-    // cell edge (default TRANSVERSE_POINTS).
+        .unwrap_or(if reference {
+            CONE_GRID
+        } else {
+            DEFAULT_CONE_GRID
+        });
     let full = std::env::var("OPENBNCT_UNC_POINTS")
         .ok()
         .and_then(|v| v.parse::<u32>().ok())
         .filter(|n| *n >= 1)
-        .unwrap_or(TRANSVERSE_POINTS);
+        .unwrap_or(if reference {
+            TRANSVERSE_POINTS
+        } else {
+            DEFAULT_ATTEN_POINTS
+        });
     let coarse = std::env::var("OPENBNCT_UNC_COARSE_POINTS")
         .ok()
         .and_then(|v| v.parse().ok())
         .unwrap_or(full);
-    uncollided_beam_moments_points(
+    let started = std::time::Instant::now();
+    let out = uncollided_beam_moments_points(
         case,
         data,
         case_material,
@@ -1594,7 +1667,24 @@ pub(crate) fn uncollided_beam_moments(
         cone_grid,
         coarse,
         full,
-    )
+        !reference,
+    );
+    if std::env::var_os("OPENBNCT_UNC_TIMING").is_some() {
+        eprintln!(
+            "[sn] uncollided beam setup: {:.2} s ({} cone {}x{}, {}x{} points)",
+            started.elapsed().as_secs_f64(),
+            if reference {
+                "reference"
+            } else {
+                "analytic coverage"
+            },
+            cone_grid.0,
+            cone_grid.1,
+            full,
+            full
+        );
+    }
+    out
 }
 
 /// [`uncollided_beam_moments`] with the cone direction grid and the
@@ -1616,11 +1706,13 @@ pub(crate) fn uncollided_beam_moments_grid(
         cone_grid,
         coarse_points,
         TRANSVERSE_POINTS,
+        false,
     )
 }
 
 /// [`uncollided_beam_moments_grid`] with the full (refined) transverse
 /// point count per cell edge explicit too.
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn uncollided_beam_moments_points(
     case: &TransportCase,
     data: &MultigroupData,
@@ -1629,8 +1721,12 @@ pub(crate) fn uncollided_beam_moments_points(
     cone_grid: (usize, usize),
     coarse_points: u32,
     full_points: u32,
+    analytic_coverage: bool,
 ) -> Result<Option<UncollidedMoments>, MultigroupError> {
     let invalid = |m: String| MultigroupError::Source(m);
+    let lattice_shift = std::env::var("OPENBNCT_UNC_SHIFT")
+        .map(|v| v != "0")
+        .unwrap_or(true);
     let source = &case.source;
     if matches!(source.space, SourceSpatialDistribution::PhaseSpace { .. }) {
         return uncollided_phase_space_moments(case, data, case_material, weighting).map(Some);
@@ -1747,6 +1843,24 @@ pub(crate) fn uncollided_beam_moments_points(
         }
     }
 
+    // Dense per-material optical-depth coefficients, one entry per
+    // (group, sub-bin node): lets the per-sample optical depth accumulate
+    // as a contiguous multiply-add per crossed material.
+    let sig_flat: Vec<Vec<f64>> = data
+        .materials
+        .iter()
+        .map(|mat| {
+            (0..groups * BEAM_KERNEL_NODES)
+                .map(|idx| {
+                    let (g, jn) = (idx / BEAM_KERNEL_NODES, idx % BEAM_KERNEL_NODES);
+                    match &mat.beam_sigma_nodes_per_cm {
+                        Some(nd) => nd[g * 2 * BEAM_KERNEL_NODES + 2 * jn + 1],
+                        None => mat.sigma_total_per_cm[g],
+                    }
+                })
+                .collect()
+        })
+        .collect();
     let per_cell: Vec<Option<CellUncollided>> = (0..n_cells)
         .into_par_iter()
         .map(|cell| -> Result<_, MultigroupError> {
@@ -1778,7 +1892,9 @@ pub(crate) fn uncollided_beam_moments_points(
             let mut path: Vec<(usize, f64)> = Vec::with_capacity(n_mat);
             let mut cache_path: Vec<(usize, f64)> = Vec::with_capacity(n_mat);
             let mut cache_surv = vec![0.0_f64; groups];
-            for (d_hat, w_dir) in &dirs {
+            let mut seg_tab = vec![0.0_f64; groups * BEAM_KERNEL_NODES];
+            let mut tau_buf = vec![0.0_f64; groups * BEAM_KERNEL_NODES];
+            for (d_idx, (d_hat, w_dir)) in dirs.iter().enumerate() {
                 let d_axis = d_hat[a];
                 if inward * d_axis <= 0.0 {
                     continue;
@@ -1799,11 +1915,77 @@ pub(crate) fn uncollided_beam_moments_points(
                 // [s_lo, s_lo + span], clipped at the face.
                 let s_lo = (s - chord / 2.0).max(0.0);
                 let span = (s + chord / 2.0) - s_lo;
-                // Illumination: a transverse sample point is lit when
-                // its back-ray lands inside the disk. Coarse
-                // COARSE_POINTS² first; only a mixed result (a rim
-                // cell) refines to TRANSVERSE_POINTS², and a cell no
-                // back-ray reaches is skipped before any traversal.
+                // Analytic coverage: the cell's transverse cross-section
+                // back-projected along -d onto the source plane is an
+                // axis-aligned su x sv rectangle; its exact overlap with
+                // the disk gives the illuminated fraction. Attenuation is
+                // sampled on a lattice mapped onto the LIT part of that
+                // rectangle (x over the rectangle's disk extent, y over
+                // the chord at each x, chord-length weighted), so a rim
+                // cell spends all of its samples where the beam is.
+                let mut cover = 1.0_f64;
+                let analytic_points = |n: u32| -> (Vec<([f64; 3], f64)>, f64) {
+                    let ru = c[u] - d_hat[u] * s - center_uv_cm[0];
+                    let rv = c[v] - d_hat[v] * s - center_uv_cm[1];
+                    let (x0, x1) = (ru - 0.5 * su, ru + 0.5 * su);
+                    let (y0, y1) = (rv - 0.5 * sv, rv + 0.5 * sv);
+                    let area = circle_rect_area(*radius_cm, x0, x1, y0, y1);
+                    let f = area / (su * sv);
+                    if f <= 1e-12 {
+                        return (Vec::new(), 0.0);
+                    }
+                    let nf = n as f64;
+                    // Cranley-Patterson rotation of the lattice, a different
+                    // shift per direction (R2 sequence): the sampling
+                    // aliasing at material interfaces decorrelates across
+                    // directions instead of adding coherently.
+                    let (shift_u, shift_v) = if lattice_shift {
+                        let k = (d_idx + 1) as f64;
+                        (
+                            (k * 0.754_877_666_246_693).fract(),
+                            (k * 0.569_840_290_998_053).fract(),
+                        )
+                    } else {
+                        (0.0, 0.0)
+                    };
+                    let xa = x0.max(-*radius_cm);
+                    let xb = x1.min(*radius_cm);
+                    let mut pts: Vec<([f64; 3], f64)> = Vec::new();
+                    let mut wsum = 0.0;
+                    for pu in 0..n {
+                        let tu = ((pu as f64 + 0.5) / nf + shift_u).fract();
+                        let x = xa + tu * (xb - xa);
+                        let h = (r2 - x * x).max(0.0).sqrt();
+                        let (lo, hi) = (y0.max(-h), y1.min(h));
+                        let len = hi - lo;
+                        if len <= 0.0 {
+                            continue;
+                        }
+                        for pv in 0..n {
+                            let tv = ((pv as f64 + 0.5) / nf + shift_v).fract();
+                            let y = lo + tv * len;
+                            let mut p = c;
+                            p[u] = x + center_uv_cm[0] + d_hat[u] * s;
+                            p[v] = y + center_uv_cm[1] + d_hat[v] * s;
+                            pts.push((p, len));
+                            wsum += len;
+                        }
+                    }
+                    if pts.is_empty() || wsum <= 0.0 {
+                        let mut p = c;
+                        p[u] += (-ru).clamp(-0.5 * su, 0.5 * su);
+                        p[v] += (-rv).clamp(-0.5 * sv, 0.5 * sv);
+                        return (vec![(p, 1.0)], f);
+                    }
+                    for q in &mut pts {
+                        q.1 /= wsum;
+                    }
+                    (pts, f)
+                };
+                // Reference mode: point-count illuminated fraction. Coarse
+                // COARSE_POINTS² first; only a mixed result (a rim cell)
+                // refines to TRANSVERSE_POINTS², and a cell no back-ray
+                // reaches is skipped before any traversal.
                 let lit_points = |n: u32| -> Vec<[f64; 3]> {
                     let nf = n as f64;
                     let mut pts = Vec::new();
@@ -1822,21 +2004,58 @@ pub(crate) fn uncollided_beam_moments_points(
                     pts
                 };
                 let mut n_side = coarse_points;
-                let mut points = lit_points(n_side);
-                if points.is_empty() {
-                    continue;
-                }
-                if n_side < full_points && points.len() < (n_side * n_side) as usize {
-                    n_side = full_points;
-                    points = lit_points(n_side);
+                let points: Vec<([f64; 3], f64)>;
+                if analytic_coverage {
+                    (points, cover) = analytic_points(full_points);
                     if points.is_empty() {
                         continue;
                     }
+                } else {
+                    let mut lit = lit_points(n_side);
+                    if lit.is_empty() {
+                        continue;
+                    }
+                    if n_side < full_points && lit.len() < (n_side * n_side) as usize {
+                        n_side = full_points;
+                        lit = lit_points(n_side);
+                        if lit.is_empty() {
+                            continue;
+                        }
+                    }
+                    let w = 1.0 / (n_side as f64 * n_side as f64);
+                    points = lit.into_iter().map(|p| (p, w)).collect();
                 }
-                let sub = n_side as f64;
+                // In-cell segment mean of e^{−σ·t} over the target cell's
+                // own span (closed form). The span is shared by every
+                // sample of this (cell, direction), so the factors are
+                // tabulated once here, not per sample.
+                let seg_factor = |sigma: f64| -> f64 {
+                    let x = sigma * span;
+                    if x > 1e-8 {
+                        (1.0 - (-x).exp()) / x
+                    } else {
+                        1.0
+                    }
+                };
+                seg_tab.iter_mut().for_each(|x| *x = 0.0);
+                for (g, w) in group_weights.iter().enumerate() {
+                    if *w <= 0.0 {
+                        continue;
+                    }
+                    if !kernel {
+                        seg_tab[g] = seg_factor(material.sigma_total_per_cm[g]);
+                    } else {
+                        let base = g * 2 * BEAM_KERNEL_NODES;
+                        let tgt_nodes = material.beam_sigma_nodes_per_cm.as_deref().unwrap_or(&[]);
+                        for jn in 0..BEAM_KERNEL_NODES {
+                            seg_tab[g * BEAM_KERNEL_NODES + jn] =
+                                seg_factor(tgt_nodes[base + 2 * jn + 1]);
+                        }
+                    }
+                }
                 let mut surv_sum = vec![0.0_f64; groups];
                 let mut cache_ok = false;
-                for p in points {
+                for (p, p_weight) in points {
                     {
                         lit_cell = true;
                         // Optical-depth path: per-material track
@@ -1865,16 +2084,6 @@ pub(crate) fn uncollided_beam_moments_points(
                                 .filter(|(_, l)| **l > 0.0)
                                 .map(|(m, l)| (m, *l)),
                         );
-                        // In-cell segment mean of e^{−σ·t} over the
-                        // target cell's own span (closed form).
-                        let seg_factor = |sigma: f64| -> f64 {
-                            let x = sigma * span;
-                            if x > 1e-8 {
-                                (1.0 - (-x).exp()) / x
-                            } else {
-                                1.0
-                            }
-                        };
                         // Points whose back-rays cross the same per-material
                         // lengths (homogeneous or layer-aligned stretches)
                         // share one survival evaluation.
@@ -1884,39 +2093,42 @@ pub(crate) fn uncollided_beam_moments_points(
                                 a.0 == b.0 && (a.1 - b.1).abs() <= 1e-12 * a.1.max(1.0)
                             });
                         if !same {
-                            for (g, w) in group_weights.iter().enumerate() {
-                                if *w <= 0.0 {
-                                    continue;
+                            if kernel {
+                                tau_buf.iter_mut().for_each(|t| *t = 0.0);
+                                for &(m, l) in &path {
+                                    for (t, sg) in tau_buf.iter_mut().zip(&sig_flat[m]) {
+                                        *t += sg * l;
+                                    }
                                 }
-                                cache_surv[g] = if !kernel {
+                                let tgt_nodes =
+                                    material.beam_sigma_nodes_per_cm.as_deref().unwrap_or(&[]);
+                                for (g, w) in group_weights.iter().enumerate() {
+                                    if *w <= 0.0 {
+                                        continue;
+                                    }
+                                    let base = g * 2 * BEAM_KERNEL_NODES;
+                                    let mut acc = 0.0;
+                                    for jn in 0..BEAM_KERNEL_NODES {
+                                        let tau = tau_buf[g * BEAM_KERNEL_NODES + jn];
+                                        if tau <= 60.0 {
+                                            acc += tgt_nodes[base + 2 * jn]
+                                                * (-tau).exp()
+                                                * seg_tab[g * BEAM_KERNEL_NODES + jn];
+                                        }
+                                    }
+                                    cache_surv[g] = acc;
+                                }
+                            } else {
+                                for (g, w) in group_weights.iter().enumerate() {
+                                    if *w <= 0.0 {
+                                        continue;
+                                    }
                                     let tau: f64 = path
                                         .iter()
                                         .map(|&(m, l)| data.materials[m].sigma_total_per_cm[g] * l)
                                         .sum();
-                                    (-tau).exp() * seg_factor(material.sigma_total_per_cm[g])
-                                } else {
-                                    let base = g * 2 * BEAM_KERNEL_NODES;
-                                    let tgt_nodes =
-                                        material.beam_sigma_nodes_per_cm.as_deref().unwrap_or(&[]);
-                                    (0..BEAM_KERNEL_NODES)
-                                        .map(|jn| {
-                                            let tau: f64 = path
-                                                .iter()
-                                                .map(|&(m, l)| {
-                                                    let mat = &data.materials[m];
-                                                    let sig = match &mat.beam_sigma_nodes_per_cm {
-                                                        Some(nd) => nd[base + 2 * jn + 1],
-                                                        None => mat.sigma_total_per_cm[g],
-                                                    };
-                                                    sig * l
-                                                })
-                                                .sum();
-                                            tgt_nodes[base + 2 * jn]
-                                                * (-tau).exp()
-                                                * seg_factor(tgt_nodes[base + 2 * jn + 1])
-                                        })
-                                        .sum()
-                                };
+                                    cache_surv[g] = (-tau).exp() * seg_tab[g];
+                                }
                             }
                             cache_path.clear();
                             cache_path.extend_from_slice(&path);
@@ -1924,7 +2136,7 @@ pub(crate) fn uncollided_beam_moments_points(
                         }
                         for (g, w) in group_weights.iter().enumerate() {
                             if *w > 0.0 {
-                                surv_sum[g] += cache_surv[g];
+                                surv_sum[g] += p_weight * cache_surv[g];
                             }
                         }
                     }
@@ -1933,7 +2145,7 @@ pub(crate) fn uncollided_beam_moments_points(
                     if *w <= 0.0 {
                         continue;
                     }
-                    let deposit = beam_intensity * w * frac / (sub * sub) * surv_sum[g];
+                    let deposit = beam_intensity * w * frac * cover * surv_sum[g];
                     cell_unc[g] += deposit;
                     let jc = &mut cell_cur[g];
                     jc[0] += deposit * d_hat[0];
@@ -5919,11 +6131,14 @@ pub(crate) mod tests {
         };
         let mg = data(&[0.0], vec![0.0]); // σ_t = 0: no attenuation
         mg.validate().unwrap();
-        let unc = uncollided_beam_flux(
+        // Reference mode: point-count illuminated fraction.
+        let (unc, _) = uncollided_beam_moments_grid(
             &case,
             &mg,
             &vec![0usize; case.geometry.voxel_count().unwrap()],
             SourceWeighting::CollapseConsistent,
+            CONE_GRID,
+            TRANSVERSE_POINTS,
         )
         .unwrap()
         .unwrap();
@@ -5940,6 +6155,27 @@ pub(crate) mod tests {
             );
         }
         // A corner cell away from the beam must carry zero.
+        assert_eq!(unc[0][0], 0.0);
+
+        // Default (analytic-coverage) mode: each of the four cells carries
+        // exactly a disk quadrant, so the deposit is the exact area
+        // fraction (A_disk/4)/(cell area) times J — no point-count error.
+        let (unc, _) = uncollided_beam_moments(
+            &case,
+            &mg,
+            &vec![0usize; case.geometry.voxel_count().unwrap()],
+            SourceWeighting::CollapseConsistent,
+        )
+        .unwrap()
+        .unwrap();
+        let exact = (1.0 / a_disk) * (a_disk / 4.0 / 0.01);
+        for cell in [5usize, 6, 9, 10] {
+            let deposit = unc[cell][0];
+            assert!(
+                (deposit - exact).abs() / exact < 1e-9,
+                "cell {cell}: analytic deposit {deposit} vs exact {exact}"
+            );
+        }
         assert_eq!(unc[0][0], 0.0);
     }
 
@@ -6270,10 +6506,36 @@ pub(crate) mod tests {
         let cm: Vec<usize> = (0..case.geometry.voxel_count().unwrap())
             .map(|c| usize::from(c % 24 >= 12))
             .collect();
-        let (unc, _) =
-            uncollided_beam_moments(&case, &mg, &cm, SourceWeighting::CollapseConsistent)
-                .unwrap()
-                .unwrap();
+        // Reference mode (8x8 centered lattice) ...
+        let (unc, _) = uncollided_beam_moments_grid(
+            &case,
+            &mg,
+            &cm,
+            SourceWeighting::CollapseConsistent,
+            CONE_GRID,
+            TRANSVERSE_POINTS,
+        )
+        .unwrap()
+        .unwrap();
+        // ... and the analytic-coverage mode with the same 8 points per
+        // edge, whose lattice is rotated by the direction-0 shift.
+        let (unc_an, _) = uncollided_beam_moments_points(
+            &case,
+            &mg,
+            &cm,
+            SourceWeighting::CollapseConsistent,
+            CONE_GRID,
+            TRANSVERSE_POINTS,
+            TRANSVERSE_POINTS,
+            true,
+        )
+        .unwrap()
+        .unwrap();
+        let shift_x = if std::env::var("OPENBNCT_UNC_SHIFT").map_or(true, |v| v != "0") {
+            (1.0_f64 * 0.754_877_666_246_693).fract()
+        } else {
+            0.0
+        };
         let intensity = 1.0 / (std::f64::consts::PI * 2.5 * 2.5 * cos_t);
         let dz = 0.1_f64;
         let chord = dz / cos_t;
@@ -6282,20 +6544,28 @@ pub(crate) mod tests {
             let cx = -1.15 + 0.1 * i as f64;
             let cz = -0.95 + 0.1 * k as f64;
             let mut sum = 0.0;
+            let mut sum_an = 0.0;
             for pu in 0..8 {
-                let px = cx + ((pu as f64 + 0.5) / 8.0 - 0.5) * 0.1;
-                let z_star = (cz - px / tan_t).max(-1.0);
-                let ell = (cz - dz / 2.0 - z_star).max(0.0) / cos_t;
-                sum += (-sigma * ell).exp();
+                let t = (pu as f64 + 0.5) / 8.0;
+                for (acc, frac) in [(&mut sum, t), (&mut sum_an, (t + shift_x).fract())] {
+                    let px = cx + (frac - 0.5) * 0.1;
+                    let z_star = (cz - px / tan_t).max(-1.0);
+                    let ell = (cz - dz / 2.0 - z_star).max(0.0) / cos_t;
+                    *acc += (-sigma * ell).exp();
+                }
             }
             // 8 transverse rows in y, all identical and fully lit.
-            let want = intensity * (sum / 8.0) * seg;
             let cell = i + 24 + 96 * k;
-            let got = unc[cell][0];
-            assert!(
-                (got - want).abs() <= 1e-9 * want,
-                "cell (i={i}, k={k}): {got} vs hand-computed {want}"
-            );
+            for (got, mean, label) in [
+                (unc[cell][0], sum / 8.0, "reference"),
+                (unc_an[cell][0], sum_an / 8.0, "analytic"),
+            ] {
+                let want = intensity * mean * seg;
+                assert!(
+                    (got - want).abs() <= 1e-9 * want,
+                    "{label} cell (i={i}, k={k}): {got} vs hand-computed {want}"
+                );
+            }
         }
     }
 
@@ -8129,5 +8399,59 @@ mod uncollided_sampling_study {
         assert!((vol.dose_response_gy_cm2["nitrogen"][0] - 18.0).abs() < 1e-12);
         // Macroscopic cross sections still blend by volume.
         assert!((mass.sigma_total_per_cm[0] - 1.0).abs() < 1e-12);
+    }
+}
+
+#[cfg(test)]
+mod circle_rect_area_tests {
+    use super::circle_rect_area;
+
+    /// Deterministic low-discrepancy (Halton 2,3) point count, 1e6 points.
+    fn mc(r: f64, x0: f64, x1: f64, y0: f64, y1: f64) -> f64 {
+        let halton = |mut i: u64, b: u64| {
+            let (mut f, mut v) = (1.0, 0.0);
+            while i > 0 {
+                f /= b as f64;
+                v += f * (i % b) as f64;
+                i /= b;
+            }
+            v
+        };
+        let n = 1_000_000u64;
+        let mut hit = 0u64;
+        for i in 1..=n {
+            let x = x0 + (x1 - x0) * halton(i, 2);
+            let y = y0 + (y1 - y0) * halton(i, 3);
+            if x * x + y * y <= r * r {
+                hit += 1;
+            }
+        }
+        (x1 - x0) * (y1 - y0) * hit as f64 / n as f64
+    }
+
+    #[test]
+    fn matches_point_counting() {
+        let r = 1.0;
+        let cases = [
+            ("inside", -0.3, 0.2, -0.1, 0.4),
+            ("outside", 1.2, 1.9, -0.5, 0.5),
+            ("edge", 0.6, 1.4, -0.3, 0.3),
+            ("corner", 0.5, 1.2, 0.5, 1.2),
+            ("larger", -2.0, 2.5, -1.5, 2.2),
+            ("offset-inside", 0.1, 0.5, -0.6, -0.2),
+            ("negative-corner", -1.1, -0.4, -1.0, -0.3),
+        ];
+        for (name, x0, x1, y0, y1) in cases {
+            let exact = circle_rect_area(r, x0, x1, y0, y1);
+            let est = mc(r, x0, x1, y0, y1);
+            assert!(
+                (exact - est).abs() < 2e-3,
+                "{name}: exact {exact} vs counted {est}"
+            );
+        }
+        let pi = std::f64::consts::PI;
+        assert!((circle_rect_area(r, -2.0, 2.0, -2.0, 2.0) - pi).abs() < 1e-12);
+        assert_eq!(circle_rect_area(r, 1.2, 1.9, -0.5, 0.5), 0.0);
+        assert!((circle_rect_area(r, -0.3, 0.2, -0.1, 0.4) - 0.25).abs() < 1e-12);
     }
 }

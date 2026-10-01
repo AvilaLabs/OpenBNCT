@@ -77,6 +77,31 @@ own versions independent of the crate version.
   `--scroll-results`, `--advanced`, `--openbnct`) writes one PNG of the window and
   exits. Screenshots under `docs/screenshots/project-*.png` come from it.
 
+## Unreleased — analytic-coverage uncollided beam (2026-10-01)
+
+- **The uncollided beam computes disk coverage analytically.** For each
+  (cell, direction) the cell's transverse cross-section, back-projected along the
+  direction onto the source plane, is an axis-aligned rectangle; its exact overlap
+  with the source disk (closed-form circle–rectangle area) is the illuminated
+  fraction. Attenuation is sampled on a 3x3 lattice mapped onto the lit part of that
+  rectangle (chord-weighted, rotated per direction), with the exact voxel traversal
+  and in-cell segment mean per sample unchanged. Default cone grid 8x16, 3x3
+  samples per (cell, direction) instead of up to 8x8 point-count samples. The old
+  8x16 / 8x8 point-count mode is kept as `OPENBNCT_UNC_REFERENCE=1`;
+  `OPENBNCT_CONE_GRID=RxP`, `OPENBNCT_UNC_POINTS=N` and `OPENBNCT_UNC_TIMING=1`
+  (prints the uncollided setup time) remain diagnostics. Per-sample optical-depth
+  accumulation is also cheaper (dense per-material coefficient table, in-cell
+  segment factors tabulated once per cell and direction).
+  Layered head (25^3 at 8 mm, vs the reference): region mean < 0.04 %, p99 and max
+  below 0.3 % / 0.8 % for boron, nitrogen, photon and total; the hydrogen
+  component differs by 1.2 % p99 / 1.3 % max because the reference's own 8x8
+  point-count rim coverage is not converged (the reference itself moves by 1.1 % p99
+  / 1.5 % max when its points go from 8x8 to 24x24); against that 24x24 run the
+  default is 0.12 % p99 / 0.26 % max and every component passes. Real head CT (54x67x57 at 4 mm), S4,
+  vs the reference: region mean 0.04 %, p99 0.41 %, max 1.73 % (hydrogen), others
+  below 0.5 %. Uncollided setup on the real head: 33.7 s against 219 s for the
+  reference mode on the same build and about 585 s before this change.
+
 ## Unreleased — real-anatomy mixture quantization (2026-09-30)
 
 - **HU-calibrated mixtures are quantized before blending.** A real head CT at 4 mm
