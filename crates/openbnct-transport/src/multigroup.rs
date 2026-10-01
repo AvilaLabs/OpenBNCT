@@ -3839,6 +3839,7 @@ pub fn cell_materials(
 fn blend_material(
     signature: &[(usize, f64)],
     materials: &[MultigroupMaterial],
+    densities: &[Option<f64>],
 ) -> MultigroupMaterial {
     let groups = materials[signature[0].0].sigma_total_per_cm.len();
     let gg = groups * groups;
@@ -3896,9 +3897,34 @@ fn blend_material(
             .map(|(&n, &d)| if d > 0.0 { n / d } else { 0.0 })
             .collect()
     });
-    // Dose responses blend by volume fraction — the first-order rule;
-    // exact when the components share a density (BNCT tissues do to
-    // within ~10%).
+    // Dose responses are MASS kerma (per gram), so they blend by each
+    // component's share of the voxel MASS, f_i·ρ_i / Σ f_j·ρ_j, not by
+    // volume fraction. Volume weighting is only right when the densities
+    // match; at an air/tissue boundary it let air's nitrogen (~75 % by
+    // mass at ~1/1000 the density) dominate the per-gram nitrogen kerma
+    // (skin N dose 1.56x continuous-energy MC on a real head). Falls back
+    // to volume weights when a component's density is unknown.
+    let mass_weights: Vec<f64> = {
+        let rho: Option<Vec<f64>> = signature
+            .iter()
+            .map(|&(mi, _)| densities.get(mi).copied().flatten())
+            .collect();
+        match rho {
+            Some(rho) => {
+                let total: f64 = signature.iter().zip(&rho).map(|(&(_, f), r)| f * r).sum();
+                if total > 0.0 {
+                    signature
+                        .iter()
+                        .zip(&rho)
+                        .map(|(&(_, f), r)| f * r / total)
+                        .collect()
+                } else {
+                    signature.iter().map(|&(_, f)| f).collect()
+                }
+            }
+            None => signature.iter().map(|&(_, f)| f).collect(),
+        }
+    };
     let mut dose_keys = std::collections::BTreeSet::new();
     for &(mi, _) in signature {
         dose_keys.extend(materials[mi].dose_response_gy_cm2.keys().cloned());
@@ -3907,10 +3933,10 @@ fn blend_material(
         .into_iter()
         .map(|k| {
             let mut v = vec![0.0; groups];
-            for &(mi, f) in signature {
+            for (&(mi, _), &w) in signature.iter().zip(&mass_weights) {
                 if let Some(r) = materials[mi].dose_response_gy_cm2.get(&k) {
                     for (o, &x) in v.iter_mut().zip(r.iter()) {
-                        *o += f * x;
+                        *o += w * x;
                     }
                 }
             }
@@ -4101,6 +4127,22 @@ pub fn material_composition_map(
     let mut signatures: std::collections::BTreeMap<Vec<(usize, u64)>, usize> =
         std::collections::BTreeMap::new();
     let levels = mixture_levels();
+    // Component densities by data-material index, from the case's base
+    // material and the assignment's region materials (matched on id).
+    let mut density_by_id: std::collections::BTreeMap<&str, f64> =
+        std::collections::BTreeMap::new();
+    density_by_id.insert(case.material.id.as_str(), case.material.density_g_cm3);
+    if let Some(a) = assignment {
+        density_by_id.insert(a.base_material.id.as_str(), a.base_material.density_g_cm3);
+        for r in &a.regions {
+            density_by_id.insert(r.material.id.as_str(), r.material.density_g_cm3);
+        }
+    }
+    let densities: Vec<Option<f64>> = data
+        .materials
+        .iter()
+        .map(|m| density_by_id.get(m.material_id.as_str()).copied())
+        .collect();
     for (cell, signature) in compositions.iter().enumerate() {
         if signature.len() == 1 && signature[0].1 == 1.0 {
             case_material[cell] = signature[0].0;
@@ -4135,7 +4177,7 @@ pub fn material_composition_map(
         let idx = *signatures.entry(key).or_insert_with(|| {
             effective
                 .materials
-                .push(blend_material(signature, &data.materials));
+                .push(blend_material(signature, &data.materials, &densities));
             effective.materials.len() - 1
         });
         case_material[cell] = idx;
@@ -8060,5 +8102,32 @@ mod uncollided_sampling_study {
                 rel.len()
             );
         }
+    }
+
+    #[test]
+    fn mixture_dose_response_blends_by_mass_not_volume() {
+        // Half tissue (rho 1.0) and half air (rho 0.0012) by volume: the
+        // voxel's mass is ~99.9 % tissue, so its per-gram kerma must be
+        // ~tissue's even though air's per-gram nitrogen kerma is far larger.
+        let mut tissue = super::tests::data(&[1.0], vec![0.5]).materials.remove(0);
+        tissue.material_id = "tissue".into();
+        tissue
+            .dose_response_gy_cm2
+            .insert("nitrogen".into(), vec![1.0]);
+        let mut air = tissue.clone();
+        air.material_id = "air".into();
+        air.dose_response_gy_cm2
+            .insert("nitrogen".into(), vec![35.0]);
+        let materials = vec![tissue, air];
+        let signature = [(0usize, 0.5), (1usize, 0.5)];
+        let mass = blend_material(&signature, &materials, &[Some(1.0), Some(0.0012)]);
+        let want = (0.5 * 1.0 * 1.0 + 0.5 * 0.0012 * 35.0) / (0.5 * 1.0 + 0.5 * 0.0012);
+        let got = mass.dose_response_gy_cm2["nitrogen"][0];
+        assert!((got - want).abs() < 1e-12, "mass-weighted {got} vs {want}");
+        // Unknown density falls back to volume weights.
+        let vol = blend_material(&signature, &materials, &[Some(1.0), None]);
+        assert!((vol.dose_response_gy_cm2["nitrogen"][0] - 18.0).abs() < 1e-12);
+        // Macroscopic cross sections still blend by volume.
+        assert!((mass.sigma_total_per_cm[0] - 1.0).abs() < 1e-12);
     }
 }

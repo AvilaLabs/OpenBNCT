@@ -22,6 +22,13 @@ own versions independent of the crate version.
   photon solve (`--no-cmfd`), the exponential closure is off (`--exp-source`), the
   outer budget is 32 and per-outer progress prints (`--quiet`). The head converges
   in 12 outers.
+- **Mixed voxels blend dose responses by mass, not volume.** Dose responses are mass
+  kerma; `voxel_fractions` blends weighted them by volume fraction, so at air/tissue
+  boundaries air's nitrogen (75 % by mass at ~1/1000 the density) dominated the
+  per-gram nitrogen kerma — skin nitrogen dose was 1.56× continuous-energy MC on a
+  real head while boron was 1.06×. Weights are now f_i·ρ_i / Σ f_j·ρ_j (densities
+  from the case and assignment material definitions; volume weights only when a
+  density is unknown). Macroscopic cross sections still blend by volume.
 
 ## Unreleased — deterministic-transport accuracy fixes (2026-09-29)
 
