@@ -3666,7 +3666,9 @@ fn apply_cmfd(
         },
     };
     let lo_started = std::time::Instant::now();
+    let t_lo = phase::start();
     let result = crate::cmfd::solve_lo(&problem, &mut phi_lo);
+    phase::add(phase::CMFD_LO, t_lo);
     let debug = std::env::var_os("CMFD_DEBUG").is_some();
     let res = match result {
         Ok(r) => r,
@@ -5078,6 +5080,7 @@ pub(crate) fn solve_sn_problem(
                 let t_cm = phase::start();
                 // Transport-consistent CMFD closure from this group's
                 // last sweep: net face currents against its flux.
+                let t_bg = phase::start();
                 let phi_g: Vec<f64> = flux.iter().map(|row| row[g]).collect();
                 let guards = crate::cmfd::build_group(
                     &cmfd_geom,
@@ -5086,6 +5089,7 @@ pub(crate) fn solve_sn_problem(
                     &cmfd_faces,
                     &mut cmfd_closures[g],
                 );
+                phase::add(phase::CMFD_BUILD, t_bg);
                 if let Some(st) = &options.stats {
                     st.dhat_guards
                         .fetch_add(guards, std::sync::atomic::Ordering::Relaxed);
@@ -8606,7 +8610,9 @@ mod phase {
     pub const SOURCE_WALL: usize = 5;
     pub const CMFD_WALL: usize = 6;
     pub const UPDATE_WALL: usize = 7;
-    pub const N: usize = 8;
+    pub const CMFD_BUILD: usize = 8;
+    pub const CMFD_LO: usize = 9;
+    pub const N: usize = 10;
     pub const NAMES: [&str; N] = [
         "kernel(cpu)",
         "alloc(cpu)",
@@ -8616,6 +8622,8 @@ mod phase {
         "source(wall)",
         "cmfd(wall)",
         "update(wall)",
+        "cmfd-build(wall,in cmfd)",
+        "cmfd-lo(wall,in cmfd)",
     ];
     static NS: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
     pub fn on() -> bool {
