@@ -249,6 +249,27 @@ can be traced back through the chain — that provenance is the point.
 Generation refuses to overwrite an existing destination. Generated DICOM files
 are ignored by default and contain visibly synthetic identity values only.
 
+The **Project** workspace drives the same `openbnct project` commands as the
+CLI (it launches the binary and parses its progress lines; it never re-implements
+the pipeline): choose a DICOM folder or a CT volume (NIfTI CT + labelmap +
+label-names JSON), scan the ROIs, pick the target, beam, approach, boron values and
+spacing (and, under *Advanced*, quadrature order, photon transport and source
+weighting), create the project, run it, then "Verify with Monte Carlo" for the
+independent OpenMC check, whose per-structure table appears in the results view.
+"Load boron dose" sends the result to the Dose workspace, including bundles with
+binary sidecar arrays. Phase-space (IAEA) beams are CLI-only: bin the header with
+`openbnct beam phsp-bin` and choose the resulting beam-description file.
+
+![The Project workspace: new-project form with a CT volume input](screenshots/project-new.png)
+
+![The Project workspace: results of a finished run with the Monte Carlo table](screenshots/project-results.png)
+
+![The Dose workspace after loading a project's boron dose](screenshots/project-dose.png)
+
+`openbnct-gui --workspace project --project-dir DIR --screenshot OUT.png
+[--wait-seconds N]` writes a PNG of the window and exits (review loop for GUI
+changes; see `openbnct-gui` usage for the other capture flags).
+
 Without a case argument, the GUI opens on a research-readiness overview. Passing
 a verified case opens its geometry workspace directly. Use the left navigation
 to see the current OpenMC capability gates, the dose workspace, and the evidence

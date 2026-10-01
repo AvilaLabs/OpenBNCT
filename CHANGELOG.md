@@ -45,6 +45,38 @@ own versions independent of the crate version.
   workflow is CLI/GUI-only), so there is deliberately no Python surface for this change;
   a Python project API is a roadmap item under R18-06.
 
+## Unreleased — GUI Project workspace parity (2026-09-30)
+
+- **The desktop Project workspace now covers what `openbnct project` does.**
+  - CT input: a DICOM folder (CT + RTSTRUCT or DICOM SEG) or a CT volume file set
+    (`project init --ct-nifti --labels-nifti --label-names`; NIfTI only, and all
+    three files are required, as on the CLI). "Scan ROIs" lists the names in the
+    label-names JSON.
+  - Import: spacing, plus `[imaging] crop` / `crop_margin_mm`.
+  - Advanced: quadrature order (S4/S8), `photon_transport`, `source_weighting`.
+  - Beam: the `project builtins` list (default `fir1-k63-ineel`) or a
+    beam-description JSON path.
+  - "Verify with Monte Carlo" runs `openbnct project verify <dir> --particles N`
+    through the bounded job runner (stage-line progress, Cancel); the results view
+    renders the report's "Independent Monte Carlo check" section as a table with a
+    coloured verdict banner and status cells.
+  - "Load boron dose" now uses the core sidecar-aware loader, so dose bundles whose
+    arrays live in binary sidecars (more than 1M values) load in the Dose workspace.
+  - Strings are English and Japanese.
+- **Gated by the installed CLI.** The crop controls and the `[verify]
+  variance_reduction` choice stay disabled (with a tooltip) until `openbnct project
+  init --help` mentions `crop` / `project verify --help` mentions variance
+  reduction, because the project runner rejects unknown `project.toml` keys.
+- **Deliberately CLI-only for now:** a phase-space (IAEA) beam source. A project's
+  `[beam] description` takes a built-in or a beam-description JSON, not a phase-space
+  header; bin the header with `openbnct beam phsp-bin` and pick the result under
+  "Beam-description file". The GUI shows the entry disabled with that explanation.
+  CMFD is not a `project.toml` option, so the GUI has no control for it.
+- **Headless capture:** `openbnct-gui --workspace project --project-dir DIR
+  --screenshot OUT.png [--wait-seconds N]` (also `--load-dose`, `--prefill-volume`,
+  `--scroll-results`, `--advanced`, `--openbnct`) writes one PNG of the window and
+  exits. Screenshots under `docs/screenshots/project-*.png` come from it.
+
 ## Unreleased — real-anatomy mixture quantization (2026-09-30)
 
 - **HU-calibrated mixtures are quantized before blending.** A real head CT at 4 mm

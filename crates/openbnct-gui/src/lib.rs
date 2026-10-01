@@ -77,10 +77,112 @@ fn capture_preview(context: &egui::Context) {
     context.request_repaint();
 }
 
+/// Command-line launch options of the native shell. The capture options
+/// drive a headless review loop: open a workspace, wait, write one PNG of
+/// the window and exit.
+#[cfg(not(target_arch = "wasm32"))]
+#[derive(Debug, Default, Clone)]
+pub struct LaunchOptions {
+    /// Case artifact to open (the positional argument).
+    pub initial_case: Option<PathBuf>,
+    /// Workspace tab to open: overview, geometry, transport, plan, dose,
+    /// evidence, avify or project.
+    pub workspace: Option<String>,
+    /// Open this project folder in the Project workspace.
+    pub project_dir: Option<PathBuf>,
+    /// With `project_dir`: send the finished boron dose to the Dose
+    /// workspace, as the "Load boron dose" button does.
+    pub load_dose: bool,
+    /// Pre-fill the new-project form from a folder holding `hu.nii.gz`,
+    /// `labels.nii.gz` and `label-names.json`.
+    pub prefill_volume: Option<PathBuf>,
+    /// Scroll the Project workspace to its Results card.
+    pub scroll_results: bool,
+    /// Start with the Advanced transport options expanded.
+    pub advanced_open: bool,
+    /// `openbnct` binary the Project workspace launches.
+    pub program: Option<String>,
+    /// Write a PNG of the window here, then exit.
+    pub screenshot: Option<PathBuf>,
+    /// Seconds to wait before the capture (default 4).
+    pub wait_seconds: Option<f64>,
+}
+
+/// Parse `openbnct-gui [CASE] [--workspace W] [--project-dir DIR]
+/// [--load-dose] [--prefill-volume DIR] [--scroll-results] [--advanced]
+/// [--openbnct PATH] [--screenshot OUT.png] [--wait-seconds N]`.
+#[cfg(not(target_arch = "wasm32"))]
+pub fn parse_launch_args(
+    args: impl IntoIterator<Item = std::ffi::OsString>,
+) -> Result<LaunchOptions, String> {
+    let mut options = LaunchOptions::default();
+    let mut args = args.into_iter();
+    let value = |args: &mut dyn Iterator<Item = std::ffi::OsString>, flag: &str| {
+        args.next().ok_or_else(|| format!("{flag} needs a value"))
+    };
+    while let Some(arg) = args.next() {
+        match arg.to_str() {
+            Some("--workspace") => {
+                options.workspace = Some(
+                    value(&mut args, "--workspace")?
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
+            Some("--project-dir") => {
+                options.project_dir = Some(value(&mut args, "--project-dir")?.into());
+            }
+            Some("--load-dose") => options.load_dose = true,
+            Some("--prefill-volume") => {
+                options.prefill_volume = Some(value(&mut args, "--prefill-volume")?.into());
+            }
+            Some("--scroll-results") => options.scroll_results = true,
+            Some("--advanced") => options.advanced_open = true,
+            Some("--openbnct") => {
+                options.program = Some(
+                    value(&mut args, "--openbnct")?
+                        .to_string_lossy()
+                        .into_owned(),
+                );
+            }
+            Some("--screenshot") => {
+                options.screenshot = Some(value(&mut args, "--screenshot")?.into());
+            }
+            Some("--wait-seconds") => {
+                let text = value(&mut args, "--wait-seconds")?;
+                options.wait_seconds = Some(
+                    text.to_string_lossy()
+                        .parse::<f64>()
+                        .ok()
+                        .filter(|v| v.is_finite() && *v >= 0.0)
+                        .ok_or("--wait-seconds needs a non-negative number")?,
+                );
+            }
+            Some(flag) if flag.starts_with("--") => return Err(format!("unknown option {flag}")),
+            _ => {
+                if options.initial_case.replace(PathBuf::from(&arg)).is_some() {
+                    return Err("only one case path may be given".into());
+                }
+            }
+        }
+    }
+    Ok(options)
+}
+
 /// Launch the native desktop shell. WASM builds enter through
 /// `start_web` in `web.rs` with no initial case path.
 #[cfg(not(target_arch = "wasm32"))]
 pub fn run_native(initial_case: Option<PathBuf>) -> eframe::Result {
+    run_native_with(LaunchOptions {
+        initial_case,
+        ..LaunchOptions::default()
+    })
+}
+
+/// [`run_native`] with the full set of [`LaunchOptions`].
+#[cfg(not(target_arch = "wasm32"))]
+pub fn run_native_with(launch: LaunchOptions) -> eframe::Result {
+    let initial_case = launch.initial_case.clone();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
             .with_inner_size([1_440.0, 900.0])
@@ -92,10 +194,9 @@ pub fn run_native(initial_case: Option<PathBuf>) -> eframe::Result {
         options,
         Box::new(move |creation_context| {
             configure_style(&creation_context.egui_ctx);
-            Ok(Box::new(OpenBnctApp::new(
-                initial_case,
-                &creation_context.egui_ctx,
-            )))
+            let mut app = OpenBnctApp::new(initial_case, &creation_context.egui_ctx);
+            app.apply_launch(&launch);
+            Ok(Box::new(app))
         }),
     )
 }
@@ -445,12 +546,19 @@ type DoseRows<'a> = Vec<(String, &'a [f64], Option<&'a [f64]>)>;
 
 impl DoseArtifact {
     fn load(path: &Path) -> Result<LoadedDose, String> {
-        Self::load_bytes(io::read_bytes(path)?)
+        Self::load_bytes_at(io::read_bytes(path)?, Some(path))
     }
 
     /// Web builds reach this through `io::dropped_bytes` — the same
     /// validation path runs on in-memory bytes.
     fn load_bytes(bytes: Vec<u8>) -> Result<LoadedDose, String> {
+        Self::load_bytes_at(bytes, None)
+    }
+
+    /// `document` is the bundle's path on disk: large bundles keep their
+    /// value arrays in binary sidecar files next to it, which the core
+    /// loader resolves and verifies. Web drops have no path (inline JSON).
+    fn load_bytes_at(bytes: Vec<u8>, document: Option<&Path>) -> Result<LoadedDose, String> {
         let sha256 = sha256_hex(&bytes);
         let schema: serde_json::Value =
             serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
@@ -462,8 +570,11 @@ impl DoseArtifact {
         );
         let artifact = match normalized.as_str() {
             openbnct_core::PHYSICAL_DOSE_BUNDLE_SCHEMA => {
-                let bundle: PhysicalDoseBundle =
-                    serde_json::from_slice(&bytes).map_err(|error| error.to_string())?;
+                let bundle: PhysicalDoseBundle = match document {
+                    Some(path) => openbnct_core::parse_physical_dose_bundle(&bytes, path)
+                        .map_err(|error| error.to_string())?,
+                    None => serde_json::from_slice(&bytes).map_err(|error| error.to_string())?,
+                };
                 bundle.validate().map_err(|error| error.to_string())?;
                 Self::Physical(Box::new(bundle))
             }
@@ -2476,9 +2587,98 @@ pub(crate) struct OpenBnctApp {
     /// Most recent recognized-but-unpaneled artifact — the floating
     /// inspector window shows it.
     inspector: Option<InspectorArtifact>,
+    /// Headless capture requested on the command line (native only).
+    #[cfg(not(target_arch = "wasm32"))]
+    capture: Option<CaptureJob>,
+}
+
+/// One scheduled window capture: wait, request the viewport screenshot,
+/// write the PNG when the frame arrives, close.
+#[cfg(not(target_arch = "wasm32"))]
+struct CaptureJob {
+    path: PathBuf,
+    started: std::time::Instant,
+    wait: std::time::Duration,
+    requested: bool,
 }
 
 impl OpenBnctApp {
+    /// Apply command-line launch options (workspace, project, capture).
+    #[cfg(not(target_arch = "wasm32"))]
+    fn apply_launch(&mut self, launch: &LaunchOptions) {
+        let project = &mut self.panels.project;
+        if let Some(program) = &launch.program {
+            project.set_program(program);
+        }
+        project.set_launch_view(launch.advanced_open, launch.scroll_results);
+        if let Some(dir) = &launch.prefill_volume {
+            project.prefill_volume(dir);
+            self.workspace = WorkspaceTab::Project;
+        }
+        if let Some(dir) = &launch.project_dir {
+            project.open_dir(dir, launch.load_dose);
+            self.workspace = WorkspaceTab::Project;
+        }
+        if let Some(name) = &launch.workspace {
+            let wanted = name.to_ascii_lowercase();
+            if let Some(tab) = WorkspaceTab::ALL
+                .iter()
+                .find(|tab| tab.label().to_ascii_lowercase().starts_with(&wanted))
+            {
+                self.workspace = *tab;
+            } else {
+                eprintln!("unknown workspace {name:?}");
+            }
+        }
+        if let Some(path) = &launch.screenshot {
+            self.capture = Some(CaptureJob {
+                path: path.clone(),
+                started: std::time::Instant::now(),
+                wait: std::time::Duration::from_secs_f64(launch.wait_seconds.unwrap_or(4.0)),
+                requested: false,
+            });
+        }
+    }
+
+    /// Drive the `--screenshot` capture; no-op without one.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn drive_capture(&mut self, context: &egui::Context) {
+        let Some(job) = &mut self.capture else { return };
+        context.request_repaint_after(std::time::Duration::from_millis(100));
+        let image = context.input(|input| {
+            input.events.iter().find_map(|event| {
+                if let egui::Event::Screenshot { image, .. } = event {
+                    Some(image.clone())
+                } else {
+                    None
+                }
+            })
+        });
+        if let Some(image) = image {
+            let bytes: Vec<u8> = image
+                .pixels
+                .iter()
+                .flat_map(|pixel| pixel.to_array())
+                .collect();
+            let saved = image::save_buffer(
+                &job.path,
+                &bytes,
+                image.size[0] as u32,
+                image.size[1] as u32,
+                image::ColorType::Rgba8,
+            );
+            match saved {
+                Ok(()) => eprintln!("screenshot written: {}", job.path.display()),
+                Err(error) => eprintln!("screenshot failed: {error}"),
+            }
+            context.send_viewport_cmd(egui::ViewportCommand::Close);
+            self.capture = None;
+        } else if !job.requested && job.started.elapsed() >= job.wait {
+            job.requested = true;
+            context.send_viewport_cmd(egui::ViewportCommand::Screenshot(egui::UserData::default()));
+        }
+    }
+
     fn new(initial_case: Option<PathBuf>, context: &egui::Context) -> Self {
         install_cjk_fonts(context);
         let has_initial_case = initial_case.is_some();
@@ -2513,6 +2713,8 @@ impl OpenBnctApp {
             language: Language::detect(),
             app_tour_slide: None,
             inspector: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            capture: None,
         };
         app.panels.avify.tutorial_seen = tour_seen_from_disk("avify-tutorial");
         if has_initial_case {
@@ -3227,6 +3429,8 @@ impl eframe::App for OpenBnctApp {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         #[cfg(all(debug_assertions, not(target_arch = "wasm32")))]
         capture_preview(ui.ctx());
+        #[cfg(not(target_arch = "wasm32"))]
+        self.drive_capture(ui.ctx());
         if self.want_screenshot {
             let captured = ui.input(|input| {
                 input.events.iter().find_map(|event| {

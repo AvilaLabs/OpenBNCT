@@ -137,6 +137,11 @@ lands at
 `p001/out/dvh/*.csv`. Every step is a hash-bound artifact under `p001/out/`;
 the report lists the exact command line of each, and rerunning skips steps
 whose inputs are unchanged. See [`docs/USAGE.md`](docs/USAGE.md#quick-start-project).
+The desktop app's Project tab runs the same workflow (DICOM folder or NIfTI CT
+volume in, report and Monte Carlo check out):
+
+![The Project workspace after a run, with the independent Monte Carlo table](docs/screenshots/project-results.png)
+
 With OpenMC 0.16.0 and the ENDF/B-VIII.1 library installed,
 `openbnct project verify p001` adds an independent continuous-energy Monte Carlo
 check of the same study and reports the agreement in the same report.

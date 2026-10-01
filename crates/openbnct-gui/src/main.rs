@@ -2,8 +2,18 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 fn main() -> eframe::Result {
-    let initial_case = std::env::args_os().nth(1).map(std::path::PathBuf::from);
-    openbnct_gui::run_native(initial_case)
+    match openbnct_gui::parse_launch_args(std::env::args_os().skip(1)) {
+        Ok(options) => openbnct_gui::run_native_with(options),
+        Err(message) => {
+            eprintln!("openbnct-gui: {message}");
+            eprintln!(
+                "usage: openbnct-gui [CASE] [--workspace W] [--project-dir DIR] [--load-dose]\n\
+                 \x20      [--prefill-volume DIR] [--scroll-results] [--advanced] [--openbnct PATH]\n\
+                 \x20      [--screenshot OUT.png] [--wait-seconds N]"
+            );
+            std::process::exit(2);
+        }
+    }
 }
 
 // The web build enters through the cdylib's `start_web`; this target is
