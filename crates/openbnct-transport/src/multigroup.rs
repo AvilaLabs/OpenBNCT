@@ -2924,6 +2924,7 @@ fn sweep_group(
     let volume = dx[0] * dx[1] * dx[2];
     let n_dirs = quadrature.len();
     let n_cells = nx * ny * nz;
+    let t_prelude = phase::start();
 
     // Each ordinate's sweep is independent given the lagged iterate, so
     // every direction owns its row with no shared writes. Per-ordinate
@@ -3026,8 +3027,17 @@ fn sweep_group(
             .collect(),
         None => Vec::new(),
     };
-    let sweep_one = |d: usize, psi_d: &mut Vec<f64>| {
-        let mut acc = want_faces.then(|| vec![[0.0_f64; 14]; n_cells]);
+    phase::add(phase::PRELUDE_WALL, t_prelude);
+    // `psi_d` is fully overwritten (every cell is visited exactly once),
+    // `part` (when faces are requested) is zeroed cell by cell inside the
+    // sweep, and `ey`/`ez` only ever carry values written earlier in the
+    // same sweep — so none of the scratch needs clearing between
+    // directions.
+    let sweep_one = |d: usize,
+                     psi_d: &mut [f64],
+                     mut part: Option<&mut [FacePart]>,
+                     ey: &mut [f64],
+                     ez: &mut [f64]| {
         let dir = quadrature[d].0;
         // Sweep order: ascend where the direction points positive,
         // descend where negative.
@@ -3046,14 +3056,13 @@ fn sweep_group(
         } else {
             (0..nz).rev().collect()
         };
-        // Per-axis *outflow edge* flux for this direction: psi_edge[a]
-        // indexes the same grid; entry [cell] is the edge the sweep
-        // writes toward the downstream neighbor.
-        let mut edge = [
-            vec![0.0; nx * ny * nz],
-            vec![0.0; nx * ny * nz],
-            vec![0.0; nx * ny * nz],
-        ];
+        // Outflow edge flux is carried in rolling buffers: the x upstream
+        // value is the previously visited cell's, the y upstream the
+        // previous row's (`ey`, by i), the z upstream the previous
+        // plane's (`ez`, by i + nx·j). Each is read before it is
+        // overwritten for the same cell.
+        let mut ex = 0.0_f64;
+        let t_kernel = phase::start();
         for &k in &zs {
             for &j in &ys {
                 for &i in &xs {
@@ -3070,9 +3079,11 @@ fn sweep_group(
                         };
                         inflow_inside[a] = inside;
                         psi_in[a] = if inside {
-                            let mut nc = coord;
-                            nc[a] = if positive { nc[a] - 1 } else { nc[a] + 1 };
-                            edge[a][nc[0] + nx * nc[1] + nx * ny * nc[2]]
+                            match a {
+                                0 => ex,
+                                1 => ey[i],
+                                _ => ez[i + nx * j],
+                            }
                         } else if periodic[a] {
                             // Periodic face: inflow is the wrap-around
                             // plane's previous-iterate cell average —
@@ -3334,18 +3345,20 @@ fn sweep_group(
                         (psi_avg, psi_avg_ideal)
                     };
                     psi_d[cell] = psi_avg;
-                    if let Some(acc) = acc.as_mut() {
+                    let mut p = [0.0_f64; 8];
+                    if want_faces {
                         // Clamp defect on the removal side: the
                         // clamped ψ̄ exceeds the balance's ideal by
                         // max(0, −ψ̄_ideal), contributing σ·V·defect
                         // to this ordinate's removal term.
-                        acc[cell][12] += quadrature[d].1 * st * volume * (-psi_avg_ideal).max(0.0);
+                        p[3] += quadrature[d].1 * st * volume * (-psi_avg_ideal).max(0.0);
                     }
+                    let mut outs = [0.0_f64; 3];
                     for a in 0..3 {
                         let psi_out_ideal = psi_out_ideal[a];
                         let psi_out = psi_out_ideal.max(0.0);
-                        edge[a][cell] = psi_out;
-                        if let Some(acc) = acc.as_mut() {
+                        outs[a] = psi_out;
+                        if want_faces {
                             // Partial currents, θ-WDD-consistent:
                             // the per-direction balance is
                             // σ_tVψ + Σ_a |μ_a|A(ψ_out−ψ_in) = qV,
@@ -3356,23 +3369,26 @@ fn sweep_group(
                             // inflow is the neighbor's outflow,
                             // read from its slot.
                             let wmu = quadrature[d].1 * dir[a].abs();
-                            let (in_pos, out_pos) = if dir[a] > 0.0 {
-                                (2 * a, 2 * a + 1)
-                            } else {
-                                (2 * a + 1, 2 * a)
-                            };
-                            acc[cell][out_pos] += wmu * psi_out;
+                            // Compact record: [0..3] outflow per axis,
+                            // [3] clamp defect, [4] balance defect,
+                            // [5..8] boundary inflow per axis; the fold
+                            // maps axis → face slot by the direction's
+                            // signs.
+                            p[a] += wmu * psi_out;
                             // Outflow-face clamp defect: clamped
                             // ψ_out exceeds the ideal by
                             // max(0, −ψ_out_ideal) — balance units
                             // w_d·|μ_a|A·defect.
-                            acc[cell][12] += wmu * face_area[a] * (-psi_out_ideal).max(0.0);
+                            p[3] += wmu * face_area[a] * (-psi_out_ideal).max(0.0);
                             if !inflow_inside[a] {
-                                acc[cell][in_pos + 6] += wmu * psi_in[a];
+                                p[5 + a] += wmu * psi_in[a];
                             }
                         }
                     }
-                    if let Some(acc) = acc.as_mut() {
+                    ex = outs[0];
+                    ey[i] = outs[1];
+                    ez[i + nx * j] = outs[2];
+                    if want_faces {
                         // Exact per-ordinate balance defect of the
                         // values this cell actually used and passed on
                         // (clamps, θ repair and the exponential-source
@@ -3381,13 +3397,16 @@ fn sweep_group(
                         // it on its right-hand side, which makes the
                         // transport fixed point an exact low-order
                         // solution whatever the closure did.
-                        let net: f64 = (0..3).map(|a| area[a] * (edge[a][cell] - psi_in[a])).sum();
-                        acc[cell][13] +=
-                            quadrature[d].1 * (q * volume - st * volume * psi_avg - net);
+                        let net: f64 = (0..3).map(|a| area[a] * (outs[a] - psi_in[a])).sum();
+                        p[4] += quadrature[d].1 * (q * volume - st * volume * psi_avg - net);
+                    }
+                    if let Some(part) = part.as_mut() {
+                        part[cell] = p;
                     }
                 }
             }
         }
+        phase::add(phase::KERNEL_CPU, t_kernel);
         // The wrap planes this direction's next iterate reads — the
         // far-side a-plane for each periodic axis.
         let wrap_row = if periodic.iter().any(|p| *p) {
@@ -3417,59 +3436,85 @@ fn sweep_group(
         } else {
             [Vec::new(), Vec::new(), Vec::new()]
         };
-        (wrap_row, acc)
+        wrap_row
     };
     // Floating-point addition is not associative, so both the face
     // sums and the per-cell moment accumulations must be formed in an
     // order that never depends on the thread pool: the ordinates are
     // swept in sequential contiguous chunks of `chunk_len` (the row
     // scratch is only that wide — see the doc comment), each chunk's
-    // directions sweep in parallel, and the folds over the chunk
-    // apply each direction in index order. Bit-identical for any
+    // directions sweep in parallel into their own slot of a reusable
+    // scratch pool, and one fused pass over cells then folds the
+    // chunk's directions in index order (per cell: scalar, current,
+    // kernel moments and face sums together). Bit-identical for any
     // thread count.
     let chunk_len = n_dirs.div_ceil(rayon::current_num_threads().max(1)).max(1);
-    /// One swept direction: its ψ̄ row, its wrap-plane snapshot, and
-    /// its face-current accumulator (when requested).
-    type SweptDir = (Vec<f64>, [Vec<f64>; 3], Option<Vec<[f64; 14]>>);
-    let mut face_sums: Option<Vec<[f64; 14]>> = None;
+    let t_alloc = phase::start();
+    let mut slots = SWEEP_POOL.with(|p| std::mem::take(&mut *p.borrow_mut()));
+    while slots.len() < chunk_len {
+        slots.push(SweepSlot::default());
+    }
+    for slot in slots.iter_mut().take(chunk_len) {
+        slot.fit(nx, ny, n_cells, want_faces);
+    }
+    phase::add(phase::ALLOC_CPU, t_alloc);
+    let mut face_out = face_current;
+    if let Some(out) = face_out.as_mut() {
+        out.clear();
+        out.resize(n_cells, [0.0; 14]);
+    }
+    const FOLD_BLOCK: usize = 512;
     for chunk_start in (0..n_dirs).step_by(chunk_len) {
         let d_end = (chunk_start + chunk_len).min(n_dirs);
-        // Sweep the chunk's directions in parallel, each into its own
-        // row scratch.
-        let mut swept: Vec<SweptDir> = Vec::with_capacity(d_end - chunk_start);
-        (chunk_start..d_end)
-            .into_par_iter()
-            .map(|d| {
-                let mut row = vec![0.0; n_cells];
-                let (wrap_row, acc) = sweep_one(d, &mut row);
-                (row, wrap_row, acc)
+        let nd = d_end - chunk_start;
+        // Sweep the chunk's directions in parallel.
+        let mut wraps: Vec<[Vec<f64>; 3]> = Vec::with_capacity(nd);
+        let t_par = phase::start();
+        slots[..nd]
+            .par_iter_mut()
+            .enumerate()
+            .map(|(s, slot)| {
+                let SweepSlot { row, part, ey, ez } = slot;
+                sweep_one(
+                    chunk_start + s,
+                    row,
+                    want_faces.then_some(part.as_mut_slice()),
+                    ey,
+                    ez,
+                )
             })
-            .collect_into_vec(&mut swept);
-        // Fold the chunk: wrap-plane snapshots, face sums, and the
-        // per-cell moment accumulators — all in direction order.
-        for (off, (row, wrap_row, part)) in swept.into_iter().enumerate() {
-            let d = chunk_start + off;
-            wrap_next[d] = wrap_row;
-            if let Some(part) = part {
-                match face_sums.as_mut() {
-                    None => face_sums = Some(part),
-                    Some(total) => {
-                        total
-                            .par_iter_mut()
-                            .zip(part.par_iter())
-                            .for_each(|(t, p)| {
-                                for f in 0..14 {
-                                    t[f] += p[f];
-                                }
-                            });
+            .collect_into_vec(&mut wraps);
+        phase::add(phase::PAR_WALL, t_par);
+        let t_fold = phase::start();
+        for (off, wrap_row) in wraps.into_iter().enumerate() {
+            wrap_next[chunk_start + off] = wrap_row;
+        }
+        // Fused fold, cell blocks in parallel, directions in index
+        // order within each cell.
+        let rows: Vec<&[f64]> = slots[..nd].iter().map(|s| s.row.as_slice()).collect();
+        let parts: Vec<&[FacePart]> = slots[..nd].iter().map(|s| s.part.as_slice()).collect();
+        // Face slots of each chunk direction's compact record:
+        // (outflow slot, inflow-boundary slot) per axis.
+        let face_slots: Vec<[(usize, usize); 3]> = (chunk_start..d_end)
+            .map(|d| {
+                let dir = quadrature[d].0;
+                std::array::from_fn(|a| {
+                    if dir[a] > 0.0 {
+                        (2 * a + 1, 2 * a + 6)
+                    } else {
+                        (2 * a, 2 * a + 1 + 6)
                     }
-                }
-            }
-            let (dir, w) = quadrature[d];
-            cell_acc
-                .par_iter_mut()
-                .zip(row.par_iter())
-                .for_each(|(acc, &psi_d)| {
+                })
+            })
+            .collect();
+        let fold_cells = |start: usize, acc_blk: &mut [CellAccum], mut faces: Option<&mut [[f64; 14]]>| {
+            for (ci, acc) in acc_blk.iter_mut().enumerate() {
+                let cell = start + ci;
+                let mut ft = faces.as_ref().map(|f| f[ci]);
+                for s in 0..nd {
+                    let d = chunk_start + s;
+                    let (dir, w) = quadrature[d];
+                    let psi_d = rows[s][cell];
                     acc.scalar += w * psi_d;
                     for (jc, &mu) in acc.current.iter_mut().zip(dir.iter()) {
                         *jc += w * mu * psi_d;
@@ -3481,11 +3526,85 @@ fn sweep_group(
                             kk += 1;
                         }
                     }
-                });
+                    if let Some(ft) = ft.as_mut() {
+                        let pr = &parts[s][cell];
+                        for a in 0..3 {
+                            ft[face_slots[s][a].0] += pr[a];
+                            ft[face_slots[s][a].1] += pr[5 + a];
+                        }
+                        ft[12] += pr[3];
+                        ft[13] += pr[4];
+                    }
+                }
+                if let (Some(ft), Some(f)) = (ft, faces.as_mut()) {
+                    f[ci] = ft;
+                }
+            }
+        };
+        match face_out.as_mut().map(|v| v.as_mut_slice()) {
+            Some(out) => cell_acc
+                .par_chunks_mut(FOLD_BLOCK)
+                .zip(out.par_chunks_mut(FOLD_BLOCK))
+                .enumerate()
+                .for_each(|(b, (acc_blk, f_blk))| fold_cells(b * FOLD_BLOCK, acc_blk, Some(f_blk))),
+            None => cell_acc
+                .par_chunks_mut(FOLD_BLOCK)
+                .enumerate()
+                .for_each(|(b, acc_blk)| fold_cells(b * FOLD_BLOCK, acc_blk, None)),
+        }
+        phase::add(phase::FOLD_WALL, t_fold);
+    }
+    SWEEP_POOL.with(|p| *p.borrow_mut() = slots);
+}
+
+/// Compact per-direction, per-cell face record: `[0..3]` partial
+/// outflow per axis, `[3]` clamp defect, `[4]` balance defect,
+/// `[5..8]` boundary inflow per axis.
+type FacePart = [f64; 8];
+
+/// Reusable per-direction sweep scratch (one slot per direction of a
+/// chunk). Contents are fully rewritten (or only read after being
+/// written) by each sweep, so slots are never cleared between uses.
+#[derive(Default)]
+struct SweepSlot {
+    row: Vec<f64>,
+    part: Vec<FacePart>,
+    ey: Vec<f64>,
+    ez: Vec<f64>,
+}
+
+impl SweepSlot {
+    fn fit(&mut self, nx: usize, ny: usize, n_cells: usize, want_faces: bool) {
+        if self.row.len() != n_cells {
+            self.row = vec![0.0; n_cells];
+        }
+        let part_len = if want_faces { n_cells } else { 0 };
+        if self.part.len() != part_len {
+            self.part = vec![[0.0; 8]; part_len];
+        }
+        if self.ey.len() != nx {
+            self.ey = vec![0.0; nx];
+        }
+        if self.ez.len() != nx * ny {
+            self.ez = vec![0.0; nx * ny];
         }
     }
-    if let (Some(out), Some(sums)) = (face_current, face_sums) {
-        out.clone_from(&sums);
+}
+
+thread_local! {
+    /// Sweep scratch kept on the thread that drives `sweep_group`, so the
+    /// ~hundreds of group sweeps in a solve reuse it instead of
+    /// reallocating. Released by [`SweepPoolGuard`].
+    static SWEEP_POOL: std::cell::RefCell<Vec<SweepSlot>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Frees the calling thread's sweep scratch when a solve ends.
+struct SweepPoolGuard;
+
+impl Drop for SweepPoolGuard {
+    fn drop(&mut self) {
+        SWEEP_POOL.with(|p| *p.borrow_mut() = Vec::new());
     }
 }
 
@@ -4730,6 +4849,7 @@ pub(crate) fn solve_sn_problem(
     // iteration — see `build_source_lambda`.
     let mut source_lambda_cache: Vec<Option<SourceRecon>> = vec![None; groups];
     let solve_started = std::time::Instant::now();
+    let _sweep_pool_guard = SweepPoolGuard;
     for outer in 0..options.max_outer_iterations {
         let previous = flux.clone();
         if anderson.is_some() && outer % 2 == 0 {
@@ -4745,6 +4865,7 @@ pub(crate) fn solve_sn_problem(
             let g = if ascending { groups - 1 - g } else { g };
             // Within-group Jacobi iteration on the scatter source.
             for inner_iter in 0..inner_limit {
+                let t_src = phase::start();
                 // P1 anisotropic source into group g:
                 // S_a(cell) = Σ_gp Σ_s1(gp→g)·J_{a,gp}(cell), with J
                 // the total current — the collided iterate plus the
@@ -4821,6 +4942,7 @@ pub(crate) fn solve_sn_problem(
                 } else {
                     None
                 };
+                phase::add(phase::SOURCE_WALL, t_src);
                 // The exponential-source reconstruction is rebuilt on
                 // the first inner pass of an outer — then frozen: the
                 // inner map stays affine in φ_g, and after a warmup
@@ -4906,6 +5028,7 @@ pub(crate) fn solve_sn_problem(
                 // apply the scalings (÷4π scalar/current, ×λ_k moments)
                 // and the iterate update serially so `change` and the
                 // stores stay deterministic.
+                let t_upd = phase::start();
                 let inv_4pi = 1.0 / (4.0 * std::f64::consts::PI);
                 let mut change = 0.0_f64;
                 for (cell, acc) in cell_acc.iter().enumerate() {
@@ -4938,6 +5061,7 @@ pub(crate) fn solve_sn_problem(
                         change.max((new_flux - flux[cell][g]).abs() / new_flux.abs().max(1e-30));
                     flux[cell][g] = new_flux;
                 }
+                phase::add(phase::UPDATE_WALL, t_upd);
                 if std::env::var_os("SN_INNER_DEBUG").is_some() && inner_iter % 50 == 0 {
                     eprintln!("[inner] outer={outer} g={g} i={inner_iter} change={change:.3e}");
                 }
@@ -4946,6 +5070,7 @@ pub(crate) fn solve_sn_problem(
                 }
             }
             if cmfd_on {
+                let t_cm = phase::start();
                 // Transport-consistent CMFD closure from this group's
                 // last sweep: net face currents against its flux.
                 let phi_g: Vec<f64> = flux.iter().map(|row| row[g]).collect();
@@ -4960,6 +5085,7 @@ pub(crate) fn solve_sn_problem(
                     st.dhat_guards
                         .fetch_add(guards, std::sync::atomic::Ordering::Relaxed);
                 }
+                phase::add(phase::CMFD_WALL, t_cm);
             }
         }
         // The convergence residual is the SWEEP's own iterate change —
@@ -5297,6 +5423,7 @@ pub(crate) fn solve_sn_problem(
             }
         }
         outer_done = outer + 1;
+        phase::report(outer, solve_started.elapsed().as_secs_f64());
         if options.progress {
             eprintln!(
                 "[sn] outer {}/{}: residual {:.3e} ({:.1}s)",
@@ -5329,6 +5456,7 @@ pub(crate) fn solve_sn_problem(
             break;
         }
         if cmfd_on {
+            let t_cm = phase::start();
             apply_cmfd(
                 &cmfd_geom,
                 &cmfd_closures,
@@ -5349,6 +5477,7 @@ pub(crate) fn solve_sn_problem(
                 upscatter_block_start.unwrap_or(groups),
                 residual,
             );
+            phase::add(phase::CMFD_WALL, t_cm);
         }
         // Anderson mix once per symmetric down+up cycle (the composed
         // map is the consistent operator the accelerator applies to).
@@ -8453,5 +8582,68 @@ mod circle_rect_area_tests {
         assert!((circle_rect_area(r, -2.0, 2.0, -2.0, 2.0) - pi).abs() < 1e-12);
         assert_eq!(circle_rect_area(r, 1.2, 1.9, -0.5, 0.5), 0.0);
         assert!((circle_rect_area(r, -0.3, 0.2, -0.1, 0.4) - 0.25).abs() < 1e-12);
+    }
+}
+
+/// Env-gated (`SN_PHASE_TIMING=1`) cumulative phase timers for the S_N
+/// solve loop. Thread-summed phases (kernel, alloc) are CPU time; the
+/// rest are wall time.
+mod phase {
+    use std::sync::OnceLock;
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::time::Instant;
+
+    pub const KERNEL_CPU: usize = 0;
+    pub const ALLOC_CPU: usize = 1;
+    pub const PAR_WALL: usize = 2;
+    pub const FOLD_WALL: usize = 3;
+    pub const PRELUDE_WALL: usize = 4;
+    pub const SOURCE_WALL: usize = 5;
+    pub const CMFD_WALL: usize = 6;
+    pub const UPDATE_WALL: usize = 7;
+    pub const N: usize = 8;
+    pub const NAMES: [&str; N] = [
+        "kernel(cpu)",
+        "alloc(cpu)",
+        "dir-loop(wall)",
+        "fold(wall)",
+        "prelude(wall)",
+        "source(wall)",
+        "cmfd(wall)",
+        "update(wall)",
+    ];
+    static NS: [AtomicU64; N] = [const { AtomicU64::new(0) }; N];
+    pub fn on() -> bool {
+        static ON: OnceLock<bool> = OnceLock::new();
+        *ON.get_or_init(|| std::env::var_os("SN_PHASE_TIMING").is_some())
+    }
+    #[inline]
+    pub fn start() -> Option<Instant> {
+        on().then(Instant::now)
+    }
+    #[inline]
+    pub fn add(i: usize, t: Option<Instant>) {
+        if let Some(t) = t {
+            NS[i].fetch_add(t.elapsed().as_nanos() as u64, Ordering::Relaxed);
+        }
+    }
+    pub fn report(outer: u32, total_wall_s: f64) {
+        if !on() {
+            return;
+        }
+        let v: Vec<f64> = NS
+            .iter()
+            .map(|a| a.load(Ordering::Relaxed) as f64 * 1e-9)
+            .collect();
+        let wall_listed: f64 = [PAR_WALL, FOLD_WALL, PRELUDE_WALL, SOURCE_WALL, CMFD_WALL, UPDATE_WALL]
+            .iter()
+            .map(|&i| v[i])
+            .sum();
+        let mut line = format!("[phase] outer {outer} total={total_wall_s:.2}s");
+        for (n, x) in NAMES.iter().zip(v.iter()) {
+            line.push_str(&format!(" {n}={x:.2}"));
+        }
+        line.push_str(&format!(" other(wall)={:.2}", total_wall_s - wall_listed));
+        eprintln!("{line}");
     }
 }
