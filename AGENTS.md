@@ -55,6 +55,15 @@ identity.
   both before pushing (`cargo fmt --all`, `cargo clippy --workspace
   --all-targets -- -D warnings`).
 
+## Definition of done for user-facing features
+
+A user-facing capability is done when it is reachable from all three surfaces —
+the CLI, the Python package and the desktop GUI (Project workspace or the
+relevant tab) — or when the change records, in its commit message and
+CHANGELOG entry, why a surface is deliberately excluded. GUI changes are
+checked by launching the app against a real case (screenshot), not only by
+compiling it.
+
 ## Positioning
 
 Reproducibility and provenance are engineering plumbing, not selling
