@@ -235,19 +235,19 @@
       "outputs": [
         {
           "path": "out/04-transport/boron-unit.json",
-          "sha256": "c705bade7e5f4c0de4a1dfc01b08ab351848ac27bfc4107f9217bb231c9fae77"
+          "sha256": "0e043717ea05fc610d40c262e82365c7fbf8fc324b4f64bfe8cab66b29020f76"
         },
         {
           "path": "out/04-transport/dose-local-photon.json",
-          "sha256": "bdd3932521184f52a03f4cbd1edeec5c9751bd1cb188baa5e4b39c6295f68b3b"
+          "sha256": "844138a24825108c526d9eb3d25e8e5c3d6f7c3397377ef5d178a1ae9079ddf6"
         },
         {
           "path": "out/04-transport/dose-photon.json",
-          "sha256": "aba5b5c9eb2f180055245cdefd76ad72114558af4292f7cbe48fac4a724e2adf"
+          "sha256": "b92bede0ca9b512bdb1a1cb0b8b6d7d63f486b1726996c90de712ba0535830f5"
         },
         {
           "path": "out/04-transport/dose.json",
-          "sha256": "5e8be8015d8a272df79f3c82adee440334008b3a0a38652b78ccdfcf76e8bf5c"
+          "sha256": "6574063e750fee43db35530ca2ca1c229ce43e9c4dc12b7e4e4a55191f66881d"
         },
         {
           "path": "out/04-transport/flux.flux.f64le",
@@ -266,8 +266,8 @@
           "sha256": "1f3095a67fe163c09585d63494f5073a9f6070c27a5a407764e34b60b29c0c78"
         }
       ],
-      "started_utc": "2026-09-30T19:26:30Z",
-      "seconds": 1248.56385064
+      "started_utc": "2026-10-01T00:38:21Z",
+      "seconds": 925.848403777
     },
     {
       "id": "05-boron",
@@ -279,11 +279,11 @@
       "inputs": [
         {
           "path": "out/04-transport/dose.json",
-          "sha256": "5e8be8015d8a272df79f3c82adee440334008b3a0a38652b78ccdfcf76e8bf5c"
+          "sha256": "6574063e750fee43db35530ca2ca1c229ce43e9c4dc12b7e4e4a55191f66881d"
         },
         {
           "path": "out/04-transport/boron-unit.json",
-          "sha256": "c705bade7e5f4c0de4a1dfc01b08ab351848ac27bfc4107f9217bb231c9fae77"
+          "sha256": "0e043717ea05fc610d40c262e82365c7fbf8fc324b4f64bfe8cab66b29020f76"
         },
         {
           "path": "out/01-import/masks/022-RESEARCH_TARGET.json",
@@ -297,11 +297,11 @@
       "outputs": [
         {
           "path": "out/05-boron/dose.json",
-          "sha256": "e8342d3b754415290e6305a476e55bdbbb60f333457fdb3d0e91c2f2e9d270e6"
+          "sha256": "e03ae6c4d495a0128b80a4a9d04f054efdb67524c2d49544437612a25b8a196c"
         }
       ],
-      "started_utc": "2026-09-30T19:47:19Z",
-      "seconds": 0.254531508
+      "started_utc": "2026-10-01T00:53:47Z",
+      "seconds": 0.264512421
     },
     {
       "id": "06-metrics",
@@ -432,7 +432,7 @@
       "inputs": [
         {
           "path": "out/05-boron/dose.json",
-          "sha256": "e8342d3b754415290e6305a476e55bdbbb60f333457fdb3d0e91c2f2e9d270e6"
+          "sha256": "e03ae6c4d495a0128b80a4a9d04f054efdb67524c2d49544437612a25b8a196c"
         },
         {
           "path": "out/01-import/masks/001-Brain.json",
@@ -518,487 +518,487 @@
       "outputs": [
         {
           "path": "out/06-metrics/BODY.component-boron.metrics.json",
-          "sha256": "cf930524d76a65e7d1949f1933576bbac07df9e252c17350c525968271e80e17"
+          "sha256": "a277ab6810cc6fab30b51691d841abdb3a92b62942d1fb0fd08d01659b816681"
         },
         {
           "path": "out/06-metrics/BODY.component-hydrogen.metrics.json",
-          "sha256": "d799817ad37005dbf3cd078bca8a2da80b6f210f68a9e545a4223213eca01470"
+          "sha256": "c1d16eb3b56542a3724d95453bf7e81a93d011847cb300703ecd71d02465ecbe"
         },
         {
           "path": "out/06-metrics/BODY.component-nitrogen.metrics.json",
-          "sha256": "23ca7938260c5201f87834afe4d7d4a37b04c1048678b442e517d28ec5c32f4b"
+          "sha256": "7272cc399f4997b1fbae1d412c75f20f080ba84e68002e5ce78cce681c574760"
         },
         {
           "path": "out/06-metrics/BODY.component-photon.metrics.json",
-          "sha256": "6750d8f669fb77277d96913c93d5cd25bf1506093541694ad621ad310b4deb28"
+          "sha256": "4d100c2046821cc720854205f1c701ed526d6e6d1bb31853f8d4725b833790f8"
         },
         {
           "path": "out/06-metrics/BODY.physical_total.dvh.json",
-          "sha256": "a3b5d0e54c90b30d4e3122dbae8a79cfe769d94ee15b27a5212e2edd829b0b50"
+          "sha256": "94549d7a7f22f0a09b859d2aa0aa59eed3e412bd6951e3a85bf7bca2178b0c39"
         },
         {
           "path": "out/06-metrics/BODY.physical_total.metrics.json",
-          "sha256": "461d656af5439bd61f0c867468e21ddcfa9531717650f0f50892dcb73515143a"
+          "sha256": "2d7d36dd52eaa48403efeb91bcde1a5a34c172f828aa7723e0786cafe2755d7a"
         },
         {
           "path": "out/06-metrics/Brain.component-boron.metrics.json",
-          "sha256": "eb30df07b0f470091309d160a1e3604a41f21bd9b9314532a11e34e039e6f822"
+          "sha256": "e59fb4b780f0f0a61f77e820b28377ac2d6c980301c32d5ae8784307287a7b55"
         },
         {
           "path": "out/06-metrics/Brain.component-hydrogen.metrics.json",
-          "sha256": "d69b18bd75bd1dc943069b30abae65aefee7d13c35ddfb90085605d13e641a26"
+          "sha256": "6c50b9eb7926862a31ef218aa0112ddbff79284372fd51267e1d5300108f1023"
         },
         {
           "path": "out/06-metrics/Brain.component-nitrogen.metrics.json",
-          "sha256": "46db070b1eef0f84ee945f20113116a90b30580923f2402daae2f5e3455d09ad"
+          "sha256": "3cd4728ecd24bba856a8aef92bd9a15a6565f15d7cafeb64d264b071e3aea30c"
         },
         {
           "path": "out/06-metrics/Brain.component-photon.metrics.json",
-          "sha256": "ddba2aa38b1b1c932b25ca81ee78d113220c5503ede29af5166e448faf4dcee6"
+          "sha256": "e7a6ea1dd9f43569b6a1f403bb07a84bd4acad294144537e5e2569828a60a5b2"
         },
         {
           "path": "out/06-metrics/Brain.physical_total.dvh.json",
-          "sha256": "729d9a3febb229cd6bb99c3a2e6e5874e5492975ee6880f0c63e423ceaab05b6"
+          "sha256": "1457b895a761c84135b79dae1564f607e7589cc3cc0faf1a0d49420fc59cff81"
         },
         {
           "path": "out/06-metrics/Brain.physical_total.metrics.json",
-          "sha256": "a9b2687bd86bf87bce7ecc10d57ebf49abbadda9be916f2b59035664aaa45aef"
+          "sha256": "34ddb3551bab3508e2946dc299bcc65f5742b9a1a8e3c4b3ab4d27a19feeb4d7"
         },
         {
           "path": "out/06-metrics/Brainstem.component-boron.metrics.json",
-          "sha256": "72cac0855b74db7d14637ef501536e1a5f65b98a9d30108d546cbd709ed5195d"
+          "sha256": "515b60c27be8ec19df40ad4441bc590d955104b644ea8c7c5302d6ac0204997c"
         },
         {
           "path": "out/06-metrics/Brainstem.component-hydrogen.metrics.json",
-          "sha256": "bd7fdf3888e12951f04b7ac479f334f0d4439f73063a7612ef4742b5dc3260b9"
+          "sha256": "c3a6acd829c09d33fb5ba80c886869ba774cbb5c595d9b90f3c0558b3c143597"
         },
         {
           "path": "out/06-metrics/Brainstem.component-nitrogen.metrics.json",
-          "sha256": "0ecbe6b2509c49eff028cc8f38c62bc9b7fa6864fbb8ebbd6782ef64cf6148a5"
+          "sha256": "db4149ecb0cbe696fc96ebe7d72714b7daa9d1357d267bc7cd7ad0c42e07fb7e"
         },
         {
           "path": "out/06-metrics/Brainstem.component-photon.metrics.json",
-          "sha256": "ec31497ad1f160ceb133cf5373d864a45a6bd0bff5e7ac428d429ceb503c9b37"
+          "sha256": "fbc9a244333dbe470d8fae5480b77c1a873a006735a10caf27053f8c9c91978c"
         },
         {
           "path": "out/06-metrics/Brainstem.physical_total.dvh.json",
-          "sha256": "3211a8f505d6341b58a666e0e627bf50bc97c7740a93a9ffa9429f02030fef40"
+          "sha256": "d301ee18390d78f957cf5ff6de8d338dee22b410522a7b288913d7e0929aee2a"
         },
         {
           "path": "out/06-metrics/Brainstem.physical_total.metrics.json",
-          "sha256": "4782a2aa48535a73fcdbf7a20170b1b3a155763f2c56ee2f0c47ecb8a16ff4f6"
+          "sha256": "fd4922d1afd303a3752bf09ba90653884ab157422a0b12594686518474b299e1"
         },
         {
           "path": "out/06-metrics/Lacrimal-Lt.component-boron.metrics.json",
-          "sha256": "3f976ad16e657faf3962acc5e40cd33af515fc63747f6e4d8b536ebcd2205171"
+          "sha256": "4f850ca8b7f1fc90104dbc7f0c6bd50c397eda85badeccf9057975b78d908358"
         },
         {
           "path": "out/06-metrics/Lacrimal-Lt.component-hydrogen.metrics.json",
-          "sha256": "2261c2eb76185c9f75f87226e52730dc5ee37fa65507bf35f00b3250bd6a6aea"
+          "sha256": "4daa7e1640f868b59a4816d034d95128e7c78f3445497a41d01b305f4d0380f0"
         },
         {
           "path": "out/06-metrics/Lacrimal-Lt.component-nitrogen.metrics.json",
-          "sha256": "578b7cae6c5294d202608bf2b04ac421e3f04a83764f5cb4d711d204e4d1a14e"
+          "sha256": "a81c172991f6fd9366605f0a4f7ff9c6d3e7ebb4136f3d8e413f4c7d6284bdf7"
         },
         {
           "path": "out/06-metrics/Lacrimal-Lt.component-photon.metrics.json",
-          "sha256": "40422fae5062a6da197222533a45bf65212cdabe62fee1dc56d1a6c86cdd4b2b"
+          "sha256": "071291d5392e55c29e65a341a327b12bbcc6c904a5216fb92271c95d0adba0ec"
         },
         {
           "path": "out/06-metrics/Lacrimal-Lt.physical_total.dvh.json",
-          "sha256": "3c2ef730b6a14b4c4313e041656c10612c2c14cc1822c534fac84fab16a14f1b"
+          "sha256": "40c91286457a3386c9f0e7cb2f65de8199080f867888b73e4ce32f7815f0dcc5"
         },
         {
           "path": "out/06-metrics/Lacrimal-Lt.physical_total.metrics.json",
-          "sha256": "d27d3c6328f100652baa209d7982ef142bdb2f05bdc259c5e8000a5e166fc83c"
+          "sha256": "3f6825edb8c206ef6e1038db646426880f847724471fd9333cd91106c78c321d"
         },
         {
           "path": "out/06-metrics/Lacrimal-Rt.component-boron.metrics.json",
-          "sha256": "bd27ac95b770ed9eed765701111fc54ae5cababe78c56003929316b0cdcbf9dc"
+          "sha256": "725471714fdbc78c0a852cb53d558555cbf1b7621b46d78c5b1be2c78a696688"
         },
         {
           "path": "out/06-metrics/Lacrimal-Rt.component-hydrogen.metrics.json",
-          "sha256": "3a0e3f0591cb8f7ffa36118e4119916f69090a31c1fff17e2e3be6298f69cf80"
+          "sha256": "2956f286bf57cc9f4c9aa763a760253e4670283c48d4e9fe12ec29d55e0f392f"
         },
         {
           "path": "out/06-metrics/Lacrimal-Rt.component-nitrogen.metrics.json",
-          "sha256": "234a8fa668799201b998c23fd8eda0ea73407b2b9f624f56958a7189b2d3797f"
+          "sha256": "b0e234172ff75b9d8e43a5cb678fc1d269090d51e07568b4cce81b674cf03621"
         },
         {
           "path": "out/06-metrics/Lacrimal-Rt.component-photon.metrics.json",
-          "sha256": "8e1f800c0a9667d62915999976b4d67d6f9cf1d07ae19307e879891d9f9742e8"
+          "sha256": "f36c9e64361350f10cfbc929690265c580b31dee081815a06219f0183f3b2530"
         },
         {
           "path": "out/06-metrics/Lacrimal-Rt.physical_total.dvh.json",
-          "sha256": "0edb6559d1f9720235e646cc6f2f69b3716448d149a83fdcd7163b4237ae15af"
+          "sha256": "52191228ed189d25eb0793c99dfcc3e0668a5baddd80701c244fb30ed5343222"
         },
         {
           "path": "out/06-metrics/Lacrimal-Rt.physical_total.metrics.json",
-          "sha256": "4dc4813cb35d9351289245d824bfdc40da608958dc1e6cf3a57d9c628031047b"
+          "sha256": "c73723490f575e70d0af293536bbbfbf4073b8a37ca6de46b4e6945e7c1b6b25"
         },
         {
           "path": "out/06-metrics/Lens-Lt.component-boron.metrics.json",
-          "sha256": "2ed32f155f555d20358548d1fca24c3a09adc529e199138d77d0641f845b3848"
+          "sha256": "d8fd559940b8c0ee506f894b55b81af7d5acd9f9d9df1c7fdcec45c806d3cc43"
         },
         {
           "path": "out/06-metrics/Lens-Lt.component-hydrogen.metrics.json",
-          "sha256": "edb2c0b4b31e291bf7cfbf362cff13664c9f2cf17017c514fbe6c0f8bc0b37b7"
+          "sha256": "49b4cb0c2f3beb8b1e8bf958c17ee321ad44602d690074eb576429b7b4b21f36"
         },
         {
           "path": "out/06-metrics/Lens-Lt.component-nitrogen.metrics.json",
-          "sha256": "e5cd06082c8fdcbb56f873b8a00f5a81983355bd4d89b1e63a4459a5c56f8072"
+          "sha256": "afda1e2e80aa9430e1301ddcac03c0104568fd0b0a9c1633b5bd6c4f6bce2e4f"
         },
         {
           "path": "out/06-metrics/Lens-Lt.component-photon.metrics.json",
-          "sha256": "47d8d5b45ce786176f3062c2e4b22072711656dc78ae88352d1af724590de800"
+          "sha256": "3cd8b4699c27185a8398e543f2b9a50d05a860da89c908fac103446e111c0bd2"
         },
         {
           "path": "out/06-metrics/Lens-Lt.physical_total.dvh.json",
-          "sha256": "935e21a2ee14c3cdf0228f2779a00c5afb3c6163924688547828f9c8a70b27da"
+          "sha256": "e600c9046e76b58135f7dfa8e77c637e7708ce87b58e609c22fa5c2edc0d3519"
         },
         {
           "path": "out/06-metrics/Lens-Lt.physical_total.metrics.json",
-          "sha256": "0529432e2f88dd23cdee16ddf0de963a860ff993345f547dffe50633d2f5bd18"
+          "sha256": "822b64c201511f7aba923cf84b0d1107fec48f499472f742f683298422b346bf"
         },
         {
           "path": "out/06-metrics/Lens-Rt.component-boron.metrics.json",
-          "sha256": "aec59faa1530701a62c24cfded0d28eeff5ee4e0523f30d1deef9110212dddfc"
+          "sha256": "4e5356c992d33e5149cc1f15449a828437c56db4651bb73ac1e8fe3a175c31cf"
         },
         {
           "path": "out/06-metrics/Lens-Rt.component-hydrogen.metrics.json",
-          "sha256": "f91396ed1f04225859a05b268022b76ff04564743cad243f7a1edcd2cb0a5e01"
+          "sha256": "339092f86445b14b7d8e01fb0a5e0790a02845a432b6dd6984488443ca278537"
         },
         {
           "path": "out/06-metrics/Lens-Rt.component-nitrogen.metrics.json",
-          "sha256": "7873b9b911850e377a715447d9d156cffd45c15716f116c04551526589cb98d9"
+          "sha256": "9bcfd0d0d07f5be31dd6066b7283c1a17e7b8ae6a7969da0d65469505f17cafd"
         },
         {
           "path": "out/06-metrics/Lens-Rt.component-photon.metrics.json",
-          "sha256": "e5d8c62ab00693f16f44ca275240c65cd107b1aaf3255127b3802a08f87e9f2f"
+          "sha256": "6d8efce14bedec3ae14e78f03ecf7494ce479030a835e1afb4983a330464276d"
         },
         {
           "path": "out/06-metrics/Lens-Rt.physical_total.dvh.json",
-          "sha256": "ee6cd833a2befa8665871b42d9fb4a9d7778014d39fb9456713c8b430ecd9066"
+          "sha256": "653dab3af450c7b1e6730bf441d7fbd1889f57b10f095f9e7fbcca88a3d79e63"
         },
         {
           "path": "out/06-metrics/Lens-Rt.physical_total.metrics.json",
-          "sha256": "fdb8a4bf39d397c83205f21a7e77535863eeb4be885c525e11d38b3e99fc4fff"
+          "sha256": "298423d05d70f181cb0fbe52cd3bff5e88e7cd6504535dd0fba616ff75053c89"
         },
         {
           "path": "out/06-metrics/Mandible.component-boron.metrics.json",
-          "sha256": "96ca9faa6f151262133f7846955c52404e3ddf7caed3d51a339880e07b98bce1"
+          "sha256": "43968231a38b8ae01554d14d227f129b11e356625c4f85e5571b232646a084c1"
         },
         {
           "path": "out/06-metrics/Mandible.component-hydrogen.metrics.json",
-          "sha256": "edaf90b3954fbb99982e27e2b447652e8ad14ef67fb000f5d0c0879d7f40d10e"
+          "sha256": "db43fef2f409ed13d76dc0f118a69719273c29e37d1ff1a65ef733a5fb47f69f"
         },
         {
           "path": "out/06-metrics/Mandible.component-nitrogen.metrics.json",
-          "sha256": "ef31e2af3ce85ad94e2c677fdb33e43fef5080265384471a59146e9bbb9096da"
+          "sha256": "39dc85242d6cbe004d326ae7cedf347e993dd6896d0eed980b7d07a10272de30"
         },
         {
           "path": "out/06-metrics/Mandible.component-photon.metrics.json",
-          "sha256": "3ff34f1aaa5e6cd9f0edf9822562d6f12dfab411f59c0058bb2ac90d0d3911ac"
+          "sha256": "53a951636e2f648121abd8782d47972eec8b01cc0475ad42ff75c4e7a54cda85"
         },
         {
           "path": "out/06-metrics/Mandible.physical_total.dvh.json",
-          "sha256": "b85f13258d814e19c7ea9d567e8822ca8a483a6f76d054adb9a26acf8f65f242"
+          "sha256": "5962dc25416336c0965e5ea693870053cd504d920cef45f5ab80be73aaa12abe"
         },
         {
           "path": "out/06-metrics/Mandible.physical_total.metrics.json",
-          "sha256": "58d8904c29c4a359dce581ca7260d94bbd3072fdde10bd2e552c793f01b6f6b8"
+          "sha256": "7d7adf53b57ae718b4f8a4954e21403d546f1b5a7861bff67a03343daf511f11"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Lt.component-boron.metrics.json",
-          "sha256": "25320dd73164cf0250438bcedc6bff8ecff2820d499117816ddd7803db8bfcc5"
+          "sha256": "3e91751f94c118222d5941fb2f49d749efbfce9881fa390e13ef8689e0064543"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Lt.component-hydrogen.metrics.json",
-          "sha256": "d8dffddf5bc637f6227fb49358b588413ab9791e4c59bb845b7cd1c897b4fbb6"
+          "sha256": "d3c74d983bafa18663d48bb2af090efa805c0a70734c7ffd2f05b5886c669b3b"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Lt.component-nitrogen.metrics.json",
-          "sha256": "06d159f54305eb0ac457e3cbd72aba4b4052ea844e40014c6893870101cb1c3b"
+          "sha256": "77aa5a79d956f7506b5d4662830c2ab985adc174ff3c4484888c6f400d6f0fe4"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Lt.component-photon.metrics.json",
-          "sha256": "c4355a54a8338bd831abcae9802b67f7f7922515c21faede34ebcd6da5033b7d"
+          "sha256": "8505b9bfa20aa6a06d94cb596a3c278a29596b2fe218027d4d663425aabe192d"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Lt.physical_total.dvh.json",
-          "sha256": "3322fe34f68eef2d35e2ae0b1ef549acae42fecc9035dff0242d5741f6ced6f5"
+          "sha256": "2eb715f877ded6ff1a3d8acf84e71620d8b0364e918c4b115ab974b2881d5b71"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Lt.physical_total.metrics.json",
-          "sha256": "86a9a0448d0074d0477ed82a3d30fac403ece9bff06008ccd261d7560de931c1"
+          "sha256": "93b24aa03c14910fdf85335bb0b1f6e9d2422b852d82c0eb6ef8d6df5c183d4e"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Rt.component-boron.metrics.json",
-          "sha256": "e7263dd1af32cdff6ca718da72a55be56a204dc7b8a9cd35cec80fc20d1f5d68"
+          "sha256": "f5539c7236d6f49707c32b246ef0beabc017092276803107b0c183b5e9bdab8d"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Rt.component-hydrogen.metrics.json",
-          "sha256": "b05d6c4c4014923dda27b8fc407a3338d99d496b441445b27448e97d8ceb60e4"
+          "sha256": "523cca276377ab0359485ae7efc06dcd74739fd635a458b9c61c33e4eadd3e6e"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Rt.component-nitrogen.metrics.json",
-          "sha256": "9e5364ccb8fd52eebf6f38271bebdcedac4ca316073e5dae3a6b69651843511f"
+          "sha256": "b03aa1bcdad25bb1e00c821e65debaa233dbdbe867320ac9bfc00f7ffb0f14c9"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Rt.component-photon.metrics.json",
-          "sha256": "83cf6b4f75749f40f8fb768da132920f99592f656272f5dffadacccf0e736919"
+          "sha256": "ef15873fc73666baa00e31a8ca380f7e13737e93bf5961619096c48e3d13e9bc"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Rt.physical_total.dvh.json",
-          "sha256": "ca4dd85eeb096712f5c9040595ebba374db3c33d4792f84d9180a2a7abdee968"
+          "sha256": "37d952f7110b85c3cfaa8d778a8a64b009e55853a5f1c7e9532e45e573123adc"
         },
         {
           "path": "out/06-metrics/Optic-Nerve-Rt.physical_total.metrics.json",
-          "sha256": "2a261e5339df78172db05ddda155814a8adc91b2b1dcad7331e13d6dcf2c5af2"
+          "sha256": "5db344ac0c7243da37a43a4db3bf637ac1c0f4d28444b25a3c4a96b09f95ed4f"
         },
         {
           "path": "out/06-metrics/Orbit-Lt.component-boron.metrics.json",
-          "sha256": "31ea13b740b07793f33d257493a546bf8ba48e770ca0ecfdab8499ab74b66597"
+          "sha256": "4bf64e3320bfb6bca92ebe85e2fe70a16b7421274307b359156db74e130a0fe4"
         },
         {
           "path": "out/06-metrics/Orbit-Lt.component-hydrogen.metrics.json",
-          "sha256": "325177419a8542ecadd92b10ad6f2a435dfaa4d5a302cc4a7d29c609e27bce17"
+          "sha256": "8bf4c9560e1fb559a657163144cbbe292651b38f879b28c6392c15710a1e5626"
         },
         {
           "path": "out/06-metrics/Orbit-Lt.component-nitrogen.metrics.json",
-          "sha256": "4c4147ed5784278f15924f7fda20976e4fd643c6301124e579ff2e4f717c3337"
+          "sha256": "2b2e8fbfd0a80ad016a5f759781317fa7c071dafc29bba6ea4445cb65cffcc85"
         },
         {
           "path": "out/06-metrics/Orbit-Lt.component-photon.metrics.json",
-          "sha256": "dcaece6a1c677fe16c754477d961bf27c86b62d72a0fecb45559206dc12edbb2"
+          "sha256": "aeed2dada571d3bd2a5f878180cc798a5d7a51a645537bd99af3dfe5ec32c9a9"
         },
         {
           "path": "out/06-metrics/Orbit-Lt.physical_total.dvh.json",
-          "sha256": "fee66373d9a29c0746c025690aad864972ed697594a8530f9c29433fa5f2d835"
+          "sha256": "3236ca1946d739b922887190639298b206a3e8c871a1ea4242853c0fbef95449"
         },
         {
           "path": "out/06-metrics/Orbit-Lt.physical_total.metrics.json",
-          "sha256": "51f315f70c1d47672c4a7111d8a18f51bb8bb43153c276531c7c3df4fcceab49"
+          "sha256": "d142735b5fdcbb0c403d5b1adb72848cb9fa04a78a00d82714b2057dd061849a"
         },
         {
           "path": "out/06-metrics/Orbit-Rt.component-boron.metrics.json",
-          "sha256": "0d592504a7ec5c83bd86ecd996b048dc6e9d0cf7364466721bad39fbac9c93e4"
+          "sha256": "ee4835b72093345cea1f8db95e5a128fa1cddfa7a05b41f3c61fe1ecf76fc39c"
         },
         {
           "path": "out/06-metrics/Orbit-Rt.component-hydrogen.metrics.json",
-          "sha256": "8038466c27b15e623c6038233c9f351a32ecf9885907f4b4aae5b2a56d891e1d"
+          "sha256": "165e3a2b0aeb5c6963a78546cdb2691ca33c1e7caaf5f707e1c599418e013a89"
         },
         {
           "path": "out/06-metrics/Orbit-Rt.component-nitrogen.metrics.json",
-          "sha256": "d1e04ce3f5a0764e15f482a300cd1a4903755650d3ebed838853c8879c87f02a"
+          "sha256": "460d490ebfe22048787fba19dcdcecd76165699b3dca91e8a81eac59c72a2e27"
         },
         {
           "path": "out/06-metrics/Orbit-Rt.component-photon.metrics.json",
-          "sha256": "a8a39a9c0c5e4d06a0643a884c9528a418972802d79698517712b88a000c196a"
+          "sha256": "cc83d73891c2606673069ddf854f2388b3150f7ca275fb5a451f035e7dc14fcb"
         },
         {
           "path": "out/06-metrics/Orbit-Rt.physical_total.dvh.json",
-          "sha256": "2e52f000e1ce425c9faf2c5d9d193305c8cd1a5dfd10248f606e6982db7d2b3b"
+          "sha256": "a84884fe92d2e2033b53bedaa8aa46bb1bda44d227255e3ed6463fb3d7929475"
         },
         {
           "path": "out/06-metrics/Orbit-Rt.physical_total.metrics.json",
-          "sha256": "9281484be9d59370ce4e6b2b49cef51f2e92ccde1bf5fdb462953a93fe148395"
+          "sha256": "7b292f6f808932f9a86bbfc9e13ce54b9ff0a2e390e091f0cbb548834be77311"
         },
         {
           "path": "out/06-metrics/Parotid-Lt.component-boron.metrics.json",
-          "sha256": "71d0b25b75dfee97f03792570ccc64b46772334e32b252607cfbe59ecd7aa5a9"
+          "sha256": "a760577bc17e8551eecc4fd2c288c6f7b52a3aa033131e395d17e55444650872"
         },
         {
           "path": "out/06-metrics/Parotid-Lt.component-hydrogen.metrics.json",
-          "sha256": "94a63ebce2b386655140350139ad5655ae561da646f6c9e6d4f88d9b60bfdd10"
+          "sha256": "0464b6e81a08667ad8a7f7e5756c0961e7ad2a9b4b0a09279965968a1f9f8fd6"
         },
         {
           "path": "out/06-metrics/Parotid-Lt.component-nitrogen.metrics.json",
-          "sha256": "02daf36545ac2b911ce9fe31f6d45fae3a41dc3baf65ec74e44aee38a079c53e"
+          "sha256": "cc01f63b33c4994c8782d112b747dee16ca462e26fe08dc3720cf83ebee4f9a9"
         },
         {
           "path": "out/06-metrics/Parotid-Lt.component-photon.metrics.json",
-          "sha256": "736e832f6fa926fa6c049d69f139429681f339f171601208eaf6f8cc14cfa91d"
+          "sha256": "3b3ff968b74ea05f46bbe8cd2c4dbc47984b32e8e102635d9a1fe8788a3e916b"
         },
         {
           "path": "out/06-metrics/Parotid-Lt.physical_total.dvh.json",
-          "sha256": "9a5e89164b39579f1d28b1be65e4148e94e8321f7af6529aa2815f7ac4751c70"
+          "sha256": "c35e241b32f3d60ba51b828bfb2275148cbc76a251d6c57ed46c243414e17acf"
         },
         {
           "path": "out/06-metrics/Parotid-Lt.physical_total.metrics.json",
-          "sha256": "64dd7afee94d19dd983d0e8277f33231d532bc3d1a6e1a59d262d6db639122bb"
+          "sha256": "6f815fa749fe76b0e069883268aefdf3267200c4a5593f1638ad5ef4ad067347"
         },
         {
           "path": "out/06-metrics/Parotid-Rt.component-boron.metrics.json",
-          "sha256": "be3fa23929509ad2aca9047ce8cb00a67558afd49900c4ebf15b786d280ab75d"
+          "sha256": "657042372e4592ee686b739918266bf8029d5196a1824e762ebbfe8ad2cf16aa"
         },
         {
           "path": "out/06-metrics/Parotid-Rt.component-hydrogen.metrics.json",
-          "sha256": "5fb6e10e8220e59a18bcc79b78a3eb7d1c322578840089325392ae0d620613cf"
+          "sha256": "6596dc1ce7adb93ae062a741f060488d36b5e690d0d378b946d0b964aefbaefe"
         },
         {
           "path": "out/06-metrics/Parotid-Rt.component-nitrogen.metrics.json",
-          "sha256": "a01e46dd8c69ce00aaadef88cc6e510c40905dba461392d28edb1149afc3df2f"
+          "sha256": "52fbce428a5920c484b56cf10ecbbfed1747dcee7dec88a9c7a2a71569560a40"
         },
         {
           "path": "out/06-metrics/Parotid-Rt.component-photon.metrics.json",
-          "sha256": "28be31dd9fa05ac99459e37ee77da615728af27d89008578c37807da715b207c"
+          "sha256": "d3785e3a7fe582d3a5546d0f11dd433770414c9e12214a49bb7d32db4cbdf46d"
         },
         {
           "path": "out/06-metrics/Parotid-Rt.physical_total.dvh.json",
-          "sha256": "00b10255e2a6b47bc90291267d8a4baa19dd5ce13b8bfb136029b1be5c3b562e"
+          "sha256": "828167c35b04599f77e9c725511f45313d638e3c1822c7d45f3eaa37ebdee08f"
         },
         {
           "path": "out/06-metrics/Parotid-Rt.physical_total.metrics.json",
-          "sha256": "7429af45d0572909614290d395012fa3d6705650c7bfb1e73f77bc6839579b29"
+          "sha256": "b9ba90831a943a8d482c3f40b8669bfe1c772ba5a7b39a38990518d04081a847"
         },
         {
           "path": "out/06-metrics/RESEARCH_TARGET.component-boron.metrics.json",
-          "sha256": "44e757384b63b8ed7a8b50a92754804ad51176735d03acd14535923269e983b0"
+          "sha256": "d8b22c6e509fb08d66ca5ca19cc14aa5b7c26ec955764fc428854a4f7d8e9ece"
         },
         {
           "path": "out/06-metrics/RESEARCH_TARGET.component-hydrogen.metrics.json",
-          "sha256": "96b6401bcc76957fcc28e2200f589ffd6408f236143ce80be4c84ef41d9b1d21"
+          "sha256": "fc45ede7741f4ded343785493bc9c6243a5274df55a78baf84bf49ea09d370d6"
         },
         {
           "path": "out/06-metrics/RESEARCH_TARGET.component-nitrogen.metrics.json",
-          "sha256": "dbcde83375ebb0373fb4940e71bba2d35b3f846db4054aac45e6ccdfb9b80799"
+          "sha256": "b4174c5625bafa0ece800cd90eecaacf7ec5c776bfd3a9900fcfd59056040991"
         },
         {
           "path": "out/06-metrics/RESEARCH_TARGET.component-photon.metrics.json",
-          "sha256": "7ea55d547de3aec118e57ba54df25f1a3dfc71566e64627faa2cf1b1486412e8"
+          "sha256": "330a19e9f4c228d47e88dcc4c45dbf066a44e64d0511569d07a8cee53648ed7a"
         },
         {
           "path": "out/06-metrics/RESEARCH_TARGET.physical_total.dvh.json",
-          "sha256": "9e42b6456e18881f555a81252ce4ab38dd065a220b9a496238473057d69c7a11"
+          "sha256": "7d042a211b044842b8ff4894fc62b0def1e077e8578a39a85202f0571f4e3776"
         },
         {
           "path": "out/06-metrics/RESEARCH_TARGET.physical_total.metrics.json",
-          "sha256": "80b86580f49b6f2bd8bf840921ed7028a5b912a44b292fb23ac442988ab7bccb"
+          "sha256": "02421911b5113ef711e289ecd339c02b06ae621a025604c7675a6df1211f1d0a"
         },
         {
           "path": "out/06-metrics/SKIN.component-boron.metrics.json",
-          "sha256": "929dc97dea51f4703f59e4abf532f497fba722e5f28453a3eacbe55c212460e7"
+          "sha256": "5b7dddd5afaf9ff7663c640dac1dc5b8ad146bea21123ac75ae2ce9a4ddd340b"
         },
         {
           "path": "out/06-metrics/SKIN.component-hydrogen.metrics.json",
-          "sha256": "ff216175727960620940dc9fdd4794b6f360106d4b774d3495222b08b220ce08"
+          "sha256": "8688b62cccc5dada5a7575dffd775bce887309eb5ad9ef32a28d491ccca9b0e3"
         },
         {
           "path": "out/06-metrics/SKIN.component-nitrogen.metrics.json",
-          "sha256": "3a9988f433c4c1412c953fe0fa5520576c1323fc232230676ba1b7cf1c2751b6"
+          "sha256": "08d2025a5afe2b9dff1e0a0e67e2276d378e6568109dffe461e53cb13fd10087"
         },
         {
           "path": "out/06-metrics/SKIN.component-photon.metrics.json",
-          "sha256": "b299ad01dfc46181c36158d54326a192a059f43b7bcd58d990045963f5fb9727"
+          "sha256": "bbda0bea2f7771d365dde1a08b4a579e27d5ebd3fa51251bc9d5192a9758b8b1"
         },
         {
           "path": "out/06-metrics/SKIN.physical_total.dvh.json",
-          "sha256": "a659c77f4f620de5190089d5fd8af7fb2e1f7e8a02c6c2996a5d205a33567539"
+          "sha256": "b82af42ea85fa195b8deeb3b9ad4a0fe0cac12990dd6d331888f6ef012d755a0"
         },
         {
           "path": "out/06-metrics/SKIN.physical_total.metrics.json",
-          "sha256": "73ff81006eb8397e912bebf339f4edaef3f221059044dc3682ea65c34290407c"
+          "sha256": "67a29611b52f2a98b0e9d65d1a0317ebcf16b92c730fa2933e8a1922bcdeab91"
         },
         {
           "path": "out/06-metrics/Spinal-Canal.component-boron.metrics.json",
-          "sha256": "645006dd3f5b07c0ba6d3c5402d3ec69ac907439c4345c69ffa715a4ccc8f354"
+          "sha256": "a551dfb8c136d91195368608ee212b10e606b97bbe44590298b8b6b7ff744a36"
         },
         {
           "path": "out/06-metrics/Spinal-Canal.component-hydrogen.metrics.json",
-          "sha256": "4ab7de0fd730d59ad460a8f44768a68b2d49dd7de57f5e0aa2a56c5f958df626"
+          "sha256": "8a1480548884ea02c34e851b9c40be948ddca6d52de50a98c3aafdbf544df361"
         },
         {
           "path": "out/06-metrics/Spinal-Canal.component-nitrogen.metrics.json",
-          "sha256": "b1922f212460cb9b2f386bc4c0cb3d729c6c243efd518156289cef5f19e9a0d2"
+          "sha256": "7c56796822984fe7017d376c3e04fc0a8c510435e54a581f2da6adb0b1c17eeb"
         },
         {
           "path": "out/06-metrics/Spinal-Canal.component-photon.metrics.json",
-          "sha256": "df0c99870dc869fe29b9de5cb4093175b25aeb36ce03fc2e4c2cefc693f7355a"
+          "sha256": "80d189571418e60f72ef16796401e30e692cb985ea3b1ecbf2e4695413bc3c3b"
         },
         {
           "path": "out/06-metrics/Spinal-Canal.physical_total.dvh.json",
-          "sha256": "0c402d4f3a73b309cdd7a16c1a12fd701a5496396acea3fa42a68e59f9c23113"
+          "sha256": "1cf3b5b0b9f2cb555dd3c47a193cc41174ca9dc20edc4a32db0cd9f29694b65b"
         },
         {
           "path": "out/06-metrics/Spinal-Canal.physical_total.metrics.json",
-          "sha256": "8a778669de63f629e1be57fd5ca8591acc931bd6fad872371ca2b305902dfa9b"
+          "sha256": "b4bcfdd6cae308d9af87e35e7121d1c2793510b5f90a787c69969c4ec3dc07d5"
         },
         {
           "path": "out/06-metrics/Spinal-Cord.component-boron.metrics.json",
-          "sha256": "af885ec9da46920eb3858fa209bef3af8c8f5b9f10fed726d952f129ebbf2c49"
+          "sha256": "37a8f329d4a588b4b0eb8b3d78fd1528b66ea79f2329567453b0f2b9b9638220"
         },
         {
           "path": "out/06-metrics/Spinal-Cord.component-hydrogen.metrics.json",
-          "sha256": "6a949f24aee50cac28a9aa68086fbb6d460a0a018075d5a98dfbca8cc5ef0dfb"
+          "sha256": "bd58620bc08cbbfa4372938e76ac08f82e34710a10a0ebf7148351a44521ba42"
         },
         {
           "path": "out/06-metrics/Spinal-Cord.component-nitrogen.metrics.json",
-          "sha256": "29aa361307e2c2cfddc8719a1c1ce69285effdb1445758f9b34e4020b5eebab6"
+          "sha256": "b987d65bae726c2703a8807ba72008bebff351a1dbdfbd94659b80335622f8af"
         },
         {
           "path": "out/06-metrics/Spinal-Cord.component-photon.metrics.json",
-          "sha256": "e6b813905bc7b31b06e7f8fbb5aecb34b340e77ec132f7776dfe206dd094935c"
+          "sha256": "b80a1240e8eb2fa3a53cce67b12fd2305a7a0373576cabb0463eb4bcfe76d7a7"
         },
         {
           "path": "out/06-metrics/Spinal-Cord.physical_total.dvh.json",
-          "sha256": "355caf041a50f95f3f21fa2df3d79002bbb08c4e28f01645dd8afe61b1873f97"
+          "sha256": "7d04544981e858099f59674619697c0c1a9614c90cba82a02cbe28d75522f0b2"
         },
         {
           "path": "out/06-metrics/Spinal-Cord.physical_total.metrics.json",
-          "sha256": "1a27499e04427241ea866cfd7b8651dc650969e494e87eaa5a2725825ed44a28"
+          "sha256": "28ad9c52307899a7387b968285e7c0841fd8f8e4cd9c695b6c297a210783ad0f"
         },
         {
           "path": "out/06-metrics/Submandibular-Lt.component-boron.metrics.json",
-          "sha256": "9b93fc0bc707fccd3c9b2a61d4840e86307388dbbfe070e9deb1ea94f6daff04"
+          "sha256": "88a2cf37095782ed5898cf18cc36864c7bef2b12aa3c123b4dcc5a78804d7b0c"
         },
         {
           "path": "out/06-metrics/Submandibular-Lt.component-hydrogen.metrics.json",
-          "sha256": "90933ce222b0514b90d2f7cdbf1c0848b76dee6f044b6399d2a37096a4282a67"
+          "sha256": "f90deea51c1c38735d4df4421c955a2976be8ed370ae517fec68b061e7b3a2e8"
         },
         {
           "path": "out/06-metrics/Submandibular-Lt.component-nitrogen.metrics.json",
-          "sha256": "03bed92d649ec01550ae1bd66affd824c3bd051e7c62b76c10f69ad3a865991e"
+          "sha256": "1f65aadf3e7135553116d5292aad482912f12e3c3457842e9c6ffb62dc7e2dda"
         },
         {
           "path": "out/06-metrics/Submandibular-Lt.component-photon.metrics.json",
-          "sha256": "ac9382ac3ab38cfc79c10bf76deded1687c56d08838f152a7e729c6430ab77f6"
+          "sha256": "8522e3a77c6b7bc1ca804c6f1a8d95c02f3ec52cad7466bba42c9b2366aceceb"
         },
         {
           "path": "out/06-metrics/Submandibular-Lt.physical_total.dvh.json",
-          "sha256": "bc1dccea1b3d05d7fd1a0d6c2c466fb81932a6331e68010dcc115b1e8c1a829c"
+          "sha256": "139332c7cc4731572dc0da97f06a3277a7c0ae094f349f16d42bb94795ce0a7e"
         },
         {
           "path": "out/06-metrics/Submandibular-Lt.physical_total.metrics.json",
-          "sha256": "c97237bcc3f36c5614ce9bf5280492780b1ec6dcea373d33aec4d79b761d351c"
+          "sha256": "39528c3ddcdec58eedf7d1385501a4991684b82d4f743b0a0a194e018b21154b"
         },
         {
           "path": "out/06-metrics/Submandibular-Rt.component-boron.metrics.json",
-          "sha256": "39da19eb8871ae8bad3f91157adcdad201e14c324b6de9377ffc93331f15def8"
+          "sha256": "cd8a3c24e64c9738cf3857e57ecd808041314fe12e6cb6b00ab7c9064474bd49"
         },
         {
           "path": "out/06-metrics/Submandibular-Rt.component-hydrogen.metrics.json",
-          "sha256": "f988128eb306f8da02bb8df73becd38b96b9febf22f74164201c77752708be18"
+          "sha256": "c2c4af03e2101bef8e77da34d4aed5832ed15ee133c46e1556af874997e740b7"
         },
         {
           "path": "out/06-metrics/Submandibular-Rt.component-nitrogen.metrics.json",
-          "sha256": "258c708473d813aa95e656fbc5fb33f0516496958cc3407b346e4c1a21796f06"
+          "sha256": "b2893e59453ca558c321a7df0bf829c8cea43dc9d961ac8bbc729c53e37f0c96"
         },
         {
           "path": "out/06-metrics/Submandibular-Rt.component-photon.metrics.json",
-          "sha256": "11d7d68eb8be3b0face813aa808eb9c7eb0b1f246490f35849428fade4a3883d"
+          "sha256": "ff62082e6693c79b1960a0864c4a6700ae578b689550be5fef0260796bc1eb7f"
         },
         {
           "path": "out/06-metrics/Submandibular-Rt.physical_total.dvh.json",
-          "sha256": "8ca9e0481389fdbad33fc08d6ec6e8a95b50306689ee300c89c09bb0d12903f1"
+          "sha256": "ca1cad3ecbe2a0966f724bf0b67560c463f82e919dee7e4bb4f46338d5f86481"
         },
         {
           "path": "out/06-metrics/Submandibular-Rt.physical_total.metrics.json",
-          "sha256": "7d9e19b8dea9db50f09f3f936f43d3707d56ff2b5e0346f1c1be32ea8987e154"
+          "sha256": "f21aabbdd2084d59ecdcd7c1b387b1d62bf0835ac562e3634808ee4f76c2e1f1"
         }
       ],
-      "started_utc": "2026-09-30T19:47:19Z",
-      "seconds": 28.56179718
+      "started_utc": "2026-10-01T00:53:48Z",
+      "seconds": 27.392377554
     },
     {
       "id": "07-report",
@@ -1035,7 +1035,7 @@
       "inputs": [
         {
           "path": "out/06-metrics",
-          "sha256": "016ac0b188f39d7b848cda3b0df22df122896740dee4618bf634efbe5f6a9a9a",
+          "sha256": "885f08f4fc7ba54f81581e09b0527cf6b3a5f4c7cf1d6ed3ca391c092be3bdab",
           "files": 120
         },
         {
@@ -1044,33 +1044,33 @@
         },
         {
           "path": "out/08-verify/verification.json",
-          "sha256": "e9aab611422011225f4b926046ae512c2d272501dc3b2c897e8d2df9ab294fc5"
+          "sha256": "c8121c3f34fcd86ab05ceae2434674c8b065142d39a2513a0a57c8598764229f"
         }
       ],
       "outputs": [
         {
           "path": "out/dvh/BODY.csv",
-          "sha256": "4eb85cedc10143d2f045398885200b55a5bd79e7c60b39e6e954943c8f8c6e53"
+          "sha256": "e7ce564e2b13ece91117de959cededa7ad277840967a4bab5e450090bcf758a5"
         },
         {
           "path": "out/dvh/Brain.csv",
-          "sha256": "1709792c655b1bf0d01d9c809d0558f56c506fdef2035e6025e6eb4b34a08538"
+          "sha256": "aec001edbd0ebac146af96a67258738548e5dd48c6b87a0d7ed218af697ca4f4"
         },
         {
           "path": "out/dvh/Brainstem.csv",
-          "sha256": "7eb4ba3140c47b58496e8f6c32105267f3e4ee61ffe4935005e75b38ee68a5ad"
+          "sha256": "8eacc2ae7255b31e5c2de551388c3ddb96911ea094024f427d80591e9904009e"
         },
         {
           "path": "out/dvh/Lacrimal-Lt.csv",
-          "sha256": "1b62d12d44601d4ac9c81d4b89f49dc9e9a87c55883f16c8e6267e45aa44bcc0"
+          "sha256": "4d58c375ed30a2010d1b24d7d39c58e0ab13f8a313d87d88ff4cbf7edb1d6799"
         },
         {
           "path": "out/dvh/Lacrimal-Rt.csv",
-          "sha256": "b10efd27908868be290a8cd124a9ccf4bd2eeb5011bc66207ae014711645a5c8"
+          "sha256": "33b184bc609eb12c62cd13573387d61bc883765d47f9b8da463cd14f85361fe6"
         },
         {
           "path": "out/dvh/Lens-Lt.csv",
-          "sha256": "5878fe6ef64200893ec088a0b13e02337956abf2699545b798aea407c9bed215"
+          "sha256": "cd0e00dda6b0954a7f327b11f2549c2bc909281854d9d97413cb5b432452cd25"
         },
         {
           "path": "out/dvh/Lens-Rt.csv",
@@ -1078,15 +1078,15 @@
         },
         {
           "path": "out/dvh/Mandible.csv",
-          "sha256": "793c086321fc9b3c2faae582c0541bb11eead87b6f42725c558bcc20b6de3ebf"
+          "sha256": "b5e37d84d8daa7bb54b480d6d30abd3b204860e01bb544e32190bb29b2755cfa"
         },
         {
           "path": "out/dvh/Optic-Nerve-Lt.csv",
-          "sha256": "dcb6da911ed1b71a1780a49e366c24319face7b200aeb71c0fd0721f2bd191c8"
+          "sha256": "fd800690bb0d5f9eaa53a4eb965ec362829feead5abbc63619a46b9c4e1dbe27"
         },
         {
           "path": "out/dvh/Optic-Nerve-Rt.csv",
-          "sha256": "a1e56c4cb16d2860afb9ae7f6eb347bb772846898f1c5d80d521b7d683bf93ac"
+          "sha256": "b311664dd801e2ddbb0cb9c9f352171d73294f10c1702395f5345b3a8fddad89"
         },
         {
           "path": "out/dvh/Orbit-Lt.csv",
@@ -1094,23 +1094,23 @@
         },
         {
           "path": "out/dvh/Orbit-Rt.csv",
-          "sha256": "b1f0c854861fae212b8ee6bd150f3008a3881273b9695a8526fb7ee9bea7d93a"
+          "sha256": "dc58788c4627e5ed3e4b738c6dc86ad1daddd582c4be734365a520b039e93437"
         },
         {
           "path": "out/dvh/Parotid-Lt.csv",
-          "sha256": "85da0710dde5bc2bc7843612afe5ab578b9f309ce5b88af7869e122cf4a0e4ea"
+          "sha256": "8fb14afd0f623775211393ac03582efd45e40b73f8df735d595d93e4088cc1b1"
         },
         {
           "path": "out/dvh/Parotid-Rt.csv",
-          "sha256": "26f30f20d59eee6d2f21ead83b094d6f3705fb19c929979b9f31e5b94f954c22"
+          "sha256": "bac697e5ee0b5566c91292a2e41a1b0fe086a9958625c79f84481782ca227aa9"
         },
         {
           "path": "out/dvh/RESEARCH_TARGET.csv",
-          "sha256": "e32efedb2f051858b519f9934175f7cb84153b613220dfbf75274a4cf1035b8d"
+          "sha256": "af5ddf3b9c7b7a1a06594e5f46d05f4e13da95b5f9fc65530df68436a91cd6cb"
         },
         {
           "path": "out/dvh/SKIN.csv",
-          "sha256": "30016f5c048ab6494afc6721cac1b4de1d716772fc25c542f42dc875f8085ff3"
+          "sha256": "808fa2e461130a7664a9ae03945bf81c90f4d62b82b94f171737902ca57d37fd"
         },
         {
           "path": "out/dvh/Spinal-Canal.csv",
@@ -1118,27 +1118,27 @@
         },
         {
           "path": "out/dvh/Spinal-Cord.csv",
-          "sha256": "3ec64079686c6b55bed45d5c5ff2f93fb95faa212b7e1900fea0d2dd1938033e"
+          "sha256": "8ae3cf7fafe19127e6c3ec7a8835c2d09fffbcb577db6a26678890f6df876c53"
         },
         {
           "path": "out/dvh/Submandibular-Lt.csv",
-          "sha256": "9729622d676f2a020654adb8672c544a0f3a9e1dc57e265436e386634cdf4c25"
+          "sha256": "af1a7ee526c76e2163bca42eab3d079b0799c3a0aa5f89dbba6cd71ffe9bb5f5"
         },
         {
           "path": "out/dvh/Submandibular-Rt.csv",
-          "sha256": "7c792f7f88d48c05b12297dd0470477f474f6a2dfbaa7207e30fb113c78c310b"
+          "sha256": "9f3cf7a6fe6607b8eb490f011e867a04689f55e722a9cc7f1f857c564cd79fdc"
         },
         {
           "path": "out/report.json",
-          "sha256": "039b9c32bf6321f16ff9f48c6da60d10ea71f8670f4aad630e2a3aa000173f17"
+          "sha256": "55c4de32475170aa6aeab49e14129b9b108856d4d06650edac1214738a659403"
         },
         {
           "path": "out/report.md",
-          "sha256": "908c5d30cbca064d2cf01aa960c0077d9273f584f976df2c8fa9befbcdfe4b5c"
+          "sha256": "312535a48dfff5fd0aca131d0f91cc1685ad74b3d537523b1333fa7ee1d4bf81"
         }
       ],
-      "started_utc": "2026-09-30T19:47:48Z",
-      "seconds": 0.045734493
+      "started_utc": "2026-10-01T00:54:15Z",
+      "seconds": 0.062615528
     },
     {
       "id": "08-verify",
@@ -1239,7 +1239,7 @@
         },
         {
           "path": "out/05-boron/dose.json",
-          "sha256": "e8342d3b754415290e6305a476e55bdbbb60f333457fdb3d0e91c2f2e9d270e6"
+          "sha256": "e03ae6c4d495a0128b80a4a9d04f054efdb67524c2d49544437612a25b8a196c"
         },
         {
           "path": "out/01-import/masks",
@@ -1254,7 +1254,7 @@
         },
         {
           "path": "out/08-verify/comparison.json",
-          "sha256": "a00aa8bc557334f9df677a1d226e4bf85e193c8d1143afbde034a89bc2232519"
+          "sha256": "e949f1cde5d0bf1935b6f3c165740b33cd83d96666c58bf1b36f90845d2d291d"
         },
         {
           "path": "out/08-verify/execution-profile.json",
@@ -1262,19 +1262,19 @@
         },
         {
           "path": "out/08-verify/gamma.json",
-          "sha256": "0e09ecb210089b73351ebb34373fd062a801acdc696defd7efa572e608164cdf"
+          "sha256": "8be51b57abdd858e4f0d2a7ba7ee4002c46548293db4d9404a3d6660af929885"
         },
         {
           "path": "out/08-verify/mc-boron-unit.json",
-          "sha256": "b8fdc86e795ec19075ab712d6a21ed1a59a3ae5fb40f6045cdc6bdb5519dd404"
+          "sha256": "a821f7fe9c945620750125bfd4d3e1d5a9e26a421814ad7eaddbddd176f38b75"
         },
         {
           "path": "out/08-verify/mc-dose.json",
-          "sha256": "6f89a56de67246508b9a609ab47dc8e854c9ba3c51f7917181299238b3d90e5b"
+          "sha256": "ba7b3d88d19a41bc8118d11d403898a7969789953e326bc5abe164053899b165"
         },
         {
           "path": "out/08-verify/mc-physical-dose.json",
-          "sha256": "d2030acf210d147b17a0f260c8c87572a7e83da0d951997d328203325e089072"
+          "sha256": "9148ae26d90f40850f492b9966fe87784adf779e04b29b9d46191d350147f245"
         },
         {
           "path": "out/08-verify/nuclear-data-manifest.json",
@@ -1302,7 +1302,7 @@
         },
         {
           "path": "out/08-verify/openmc-run/openbnct-openmc-run-receipt.json",
-          "sha256": "9d272d65ebf6b541b9ef87e7f3622d7f6373c9f719fc4494bbca1391d8c6cfcc"
+          "sha256": "a5c7f97f1a2b4a186efb442c366bba8aa0d0091e3f170941db2830e6b56450d6"
         },
         {
           "path": "out/08-verify/openmc-run/openmc.stderr.log",
@@ -1310,7 +1310,7 @@
         },
         {
           "path": "out/08-verify/openmc-run/openmc.stdout.log",
-          "sha256": "82ee6f2f35cf117b176b107581420d1e3512113b0b0e5a11014ddd303497112c"
+          "sha256": "1a9b55b5be32131560378642a4940a3916a2cea7ca1e6517429fb5a9d50f6e2b"
         },
         {
           "path": "out/08-verify/openmc-run/settings.xml",
@@ -1318,11 +1318,11 @@
         },
         {
           "path": "out/08-verify/openmc-run/statepoint.10.h5",
-          "sha256": "96d67bdd7159fddbfe6fd4fefc147dcd5c7484f0f5d4efdded26e9c8ca98c2dc"
+          "sha256": "8a5e8038ae67bb027c5dad537d14b144a2f3b1e2a7490406a30c75dcc7cac8b3"
         },
         {
           "path": "out/08-verify/openmc-run/summary.h5",
-          "sha256": "84dff06e58d65eb3834927a2a5fa64d5b398e3a7d392a0042aea794bca7dcb67"
+          "sha256": "468cda12bb0b76432c3adc93f528b570dd2016bdeb2e9c31d8895314bf5303b2"
         },
         {
           "path": "out/08-verify/openmc-run/tallies.xml",
@@ -1330,23 +1330,23 @@
         },
         {
           "path": "out/08-verify/ratio-boron.nii",
-          "sha256": "a4a1cea49e619a5af3c31deadb637cd49d212067d2847ea0ee90e72f1abe9716"
+          "sha256": "79036b986444d29417d993a219b37ca78f67195e70873fd08dadef37c59d1e94"
         },
         {
           "path": "out/08-verify/ratio-hydrogen.nii",
-          "sha256": "3bba3b11da5640f431f6ca9e95670653ff7ba4a264dfee962cbc2904c92f82b8"
+          "sha256": "780083743db1beae01ef43c89ae5178bffcd288ec266c9a9b6427aea3b9242d6"
         },
         {
           "path": "out/08-verify/ratio-nitrogen.nii",
-          "sha256": "e992ff97b0c2a31ad67aa72aca91a4925f7cd49b63c4f70a03baaf561f8db4fc"
+          "sha256": "3dadb0bebe88ff9afd1594b26098b54baa3a5fd145755c90e72b43c34b5f2b78"
         },
         {
           "path": "out/08-verify/ratio-photon.nii",
-          "sha256": "fe8efac71bd5620a376f9d0e080e6a43a5c9572f27e2e873807d70e0ca2a8ab5"
+          "sha256": "07881eb1b8491bd766afbd230410c03f5aeccf660db9ea78dbc388bdb145da18"
         },
         {
           "path": "out/08-verify/ratio-total.nii",
-          "sha256": "03a5e04ef5b778ea246bfe8661969df8f9383188e061ef3a92b16a4c33c76bc0"
+          "sha256": "4d29620d0ef0882c93df2e82867f176aae76231baedeca8df8175bb88d91bf57"
         },
         {
           "path": "out/08-verify/source.json",
@@ -1354,11 +1354,11 @@
         },
         {
           "path": "out/08-verify/verification.json",
-          "sha256": "e9aab611422011225f4b926046ae512c2d272501dc3b2c897e8d2df9ab294fc5"
+          "sha256": "c8121c3f34fcd86ab05ceae2434674c8b065142d39a2513a0a57c8598764229f"
         }
       ],
-      "started_utc": "2026-09-30T19:48:18Z",
-      "seconds": 1270.519474716
+      "started_utc": "2026-10-01T00:54:25Z",
+      "seconds": 1267.943575836
     }
   ]
 }

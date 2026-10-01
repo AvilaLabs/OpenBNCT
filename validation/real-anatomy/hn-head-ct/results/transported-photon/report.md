@@ -8,7 +8,7 @@
 |---|---|
 | Project id | openbnct.hn-head-ct.v1 |
 | OpenBNCT version | 0.2.2 |
-| Generated (UTC) | 2026-09-30T20:09:29Z |
+| Generated (UTC) | 2026-10-01T01:15:33Z |
 | Transport status | converged |
 | Transport | S4 discrete ordinates, 18 outer iterations, residual 5.561e-7 |
 | Beam spectrum bins | spread uniformly per eV (OpenMC/MCNP convention) within each histogram bin |
@@ -43,10 +43,10 @@ D95, D50, D2 are the doses received by at least 95 %, 50 % and 2 % of the struct
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 1.2669e-14 | 1.1035e-13 | 1.1016e-15 | 6.3407e-15 | 9.9836e-14 |
-| component:nitrogen | 4.3196e-16 | 5.2367e-15 | 2.9659e-17 | 1.7210e-16 | 3.2776e-15 |
-| component:hydrogen | 3.4074e-16 | 1.1278e-15 | 9.8071e-17 | 2.6421e-16 | 9.4848e-16 |
-| component:photon | 6.7547e-15 | 1.5293e-14 | 2.4737e-15 | 5.8732e-15 | 1.4348e-14 |
-| physical_total | 2.0197e-14 | 1.2982e-13 | 3.7793e-15 | 1.2760e-14 | 1.1584e-13 |
+| component:nitrogen | 4.3349e-16 | 5.2367e-15 | 2.9965e-17 | 1.7399e-16 | 3.2698e-15 |
+| component:hydrogen | 3.3970e-16 | 1.1278e-15 | 9.7689e-17 | 2.6372e-16 | 9.4255e-16 |
+| component:photon | 6.7536e-15 | 1.5292e-14 | 2.4730e-15 | 5.8729e-15 | 1.4348e-14 |
+| physical_total | 2.0196e-14 | 1.2982e-13 | 3.7779e-15 | 1.2761e-14 | 1.1585e-13 |
 
 DVH (physical total): `out/dvh/Brain.csv`
 
@@ -55,10 +55,10 @@ DVH (physical total): `out/dvh/Brain.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 6.6019e-15 | 1.4316e-14 | 3.3698e-15 | 6.3239e-15 | 1.1472e-14 |
-| component:nitrogen | 1.0806e-16 | 7.0132e-16 | 0.0000e0 | 9.3669e-17 | 3.0302e-16 |
-| component:hydrogen | 2.2915e-16 | 3.6778e-16 | 9.6229e-17 | 2.3544e-16 | 3.3285e-16 |
-| component:photon | 6.5962e-15 | 1.0565e-14 | 4.4386e-15 | 6.5274e-15 | 9.2628e-15 |
-| physical_total | 1.3535e-14 | 2.5269e-14 | 8.0860e-15 | 1.3227e-14 | 2.1159e-14 |
+| component:nitrogen | 1.0960e-16 | 7.0132e-16 | 0.0000e0 | 9.5327e-17 | 3.0354e-16 |
+| component:hydrogen | 2.2914e-16 | 3.6765e-16 | 9.6224e-17 | 2.3543e-16 | 3.3283e-16 |
+| component:photon | 6.5962e-15 | 1.0565e-14 | 4.4386e-15 | 6.5273e-15 | 9.2627e-15 |
+| physical_total | 1.3537e-14 | 2.5268e-14 | 8.0862e-15 | 1.3229e-14 | 2.1162e-14 |
 
 DVH (physical total): `out/dvh/Brainstem.csv`
 
@@ -67,10 +67,10 @@ DVH (physical total): `out/dvh/Brainstem.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 5.8422e-16 | 7.0166e-16 | 4.7983e-16 | 5.7312e-16 | 6.9780e-16 |
-| component:nitrogen | 5.3506e-17 | 1.0573e-16 | 1.9611e-18 | 7.7803e-17 | 1.0384e-16 |
-| component:hydrogen | 5.0646e-17 | 6.3428e-17 | 4.0023e-17 | 5.2079e-17 | 6.3291e-17 |
-| component:photon | 1.7959e-15 | 1.9307e-15 | 1.6764e-15 | 1.8064e-15 | 1.9273e-15 |
-| physical_total | 2.4843e-15 | 2.6978e-15 | 2.2757e-15 | 2.4467e-15 | 2.6904e-15 |
+| component:nitrogen | 5.3113e-17 | 1.0515e-16 | 1.8218e-18 | 7.7077e-17 | 1.0326e-16 |
+| component:hydrogen | 4.9552e-17 | 6.3385e-17 | 3.7633e-17 | 5.0533e-17 | 6.3248e-17 |
+| component:photon | 1.7934e-15 | 1.9306e-15 | 1.6711e-15 | 1.8063e-15 | 1.9273e-15 |
+| physical_total | 2.4803e-15 | 2.6976e-15 | 2.2674e-15 | 2.4469e-15 | 2.6902e-15 |
 
 DVH (physical total): `out/dvh/Lacrimal-Lt.csv`
 
@@ -79,10 +79,10 @@ DVH (physical total): `out/dvh/Lacrimal-Lt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 8.5561e-15 | 9.5255e-15 | 7.0370e-15 | 9.0612e-15 | 9.5175e-15 |
-| component:nitrogen | 5.1381e-16 | 1.4805e-15 | 5.5536e-18 | 2.1106e-16 | 1.4482e-15 |
-| component:hydrogen | 2.0632e-16 | 2.6041e-16 | 1.1811e-16 | 2.3566e-16 | 2.6030e-16 |
-| component:photon | 5.7304e-15 | 6.1333e-15 | 5.1245e-15 | 5.9082e-15 | 6.1288e-15 |
-| physical_total | 1.5007e-14 | 1.6391e-14 | 1.3041e-14 | 1.5720e-14 | 1.6347e-14 |
+| component:nitrogen | 5.1237e-16 | 1.4723e-15 | 5.7213e-18 | 2.1371e-16 | 1.4402e-15 |
+| component:hydrogen | 2.0463e-16 | 2.6040e-16 | 1.1550e-16 | 2.3234e-16 | 2.6029e-16 |
+| component:photon | 5.7269e-15 | 6.1333e-15 | 5.1171e-15 | 5.9025e-15 | 6.1288e-15 |
+| physical_total | 1.5000e-14 | 1.6364e-14 | 1.3038e-14 | 1.5720e-14 | 1.6324e-14 |
 
 DVH (physical total): `out/dvh/Lacrimal-Rt.csv`
 
@@ -91,8 +91,8 @@ DVH (physical total): `out/dvh/Lacrimal-Rt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 6.4596e-16 | 6.4596e-16 | 6.4596e-16 | 6.4596e-16 | 6.4596e-16 |
-| component:nitrogen | 3.7819e-17 | 3.7819e-17 | 3.7819e-17 | 3.7819e-17 | 3.7819e-17 |
-| component:hydrogen | 3.0341e-17 | 3.0341e-17 | 3.0341e-17 | 3.0341e-17 | 3.0341e-17 |
+| component:nitrogen | 3.7872e-17 | 3.7872e-17 | 3.7872e-17 | 3.7872e-17 | 3.7872e-17 |
+| component:hydrogen | 3.0337e-17 | 3.0337e-17 | 3.0337e-17 | 3.0337e-17 | 3.0337e-17 |
 | component:photon | 1.7684e-15 | 1.7684e-15 | 1.7684e-15 | 1.7684e-15 | 1.7684e-15 |
 | physical_total | 2.4826e-15 | 2.4826e-15 | 2.4826e-15 | 2.4826e-15 | 2.4826e-15 |
 
@@ -103,10 +103,10 @@ DVH (physical total): `out/dvh/Lens-Lt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 3.7289e-15 | 4.3037e-15 | 3.2115e-15 | 3.7289e-15 | 4.2807e-15 |
-| component:nitrogen | 1.6802e-16 | 2.0706e-16 | 1.3289e-16 | 1.6802e-16 | 2.0549e-16 |
-| component:hydrogen | 5.5091e-17 | 6.0742e-17 | 5.0005e-17 | 5.5091e-17 | 6.0516e-17 |
-| component:photon | 3.9551e-15 | 4.2289e-15 | 3.7088e-15 | 3.9551e-15 | 4.2179e-15 |
-| physical_total | 7.9071e-15 | 8.8004e-15 | 7.1032e-15 | 7.9071e-15 | 8.7647e-15 |
+| component:nitrogen | 1.6832e-16 | 2.0706e-16 | 1.3346e-16 | 1.6832e-16 | 2.0551e-16 |
+| component:hydrogen | 5.5090e-17 | 6.0742e-17 | 5.0004e-17 | 5.5090e-17 | 6.0516e-17 |
+| component:photon | 3.9551e-15 | 4.2289e-15 | 3.7087e-15 | 3.9551e-15 | 4.2179e-15 |
+| physical_total | 7.9074e-15 | 8.8004e-15 | 7.1037e-15 | 7.9074e-15 | 8.7647e-15 |
 
 DVH (physical total): `out/dvh/Lens-Rt.csv`
 
@@ -115,10 +115,10 @@ DVH (physical total): `out/dvh/Lens-Rt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 1.7312e-15 | 2.2551e-14 | 1.0413e-16 | 4.2657e-16 | 1.7777e-14 |
-| component:nitrogen | 2.7874e-16 | 3.7203e-15 | 1.6429e-17 | 6.8518e-17 | 2.9053e-15 |
-| component:hydrogen | 3.0613e-17 | 7.5672e-16 | 2.8847e-18 | 7.7117e-18 | 4.8781e-16 |
-| component:photon | 1.9305e-15 | 1.0896e-14 | 7.7115e-16 | 1.2945e-15 | 9.3130e-15 |
-| physical_total | 3.9711e-15 | 3.7770e-14 | 9.0429e-16 | 1.8028e-15 | 3.0762e-14 |
+| component:nitrogen | 2.7566e-16 | 3.6856e-15 | 1.6276e-17 | 6.7902e-17 | 2.8751e-15 |
+| component:hydrogen | 2.8426e-17 | 7.0298e-16 | 2.7055e-18 | 7.1877e-18 | 4.5719e-16 |
+| component:photon | 1.9238e-15 | 1.0853e-14 | 7.6851e-16 | 1.2896e-15 | 9.2761e-15 |
+| physical_total | 3.9591e-15 | 3.7662e-14 | 9.0186e-16 | 1.7961e-15 | 3.0670e-14 |
 
 DVH (physical total): `out/dvh/Mandible.csv`
 
@@ -127,10 +127,10 @@ DVH (physical total): `out/dvh/Mandible.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 2.3500e-15 | 2.6168e-15 | 1.9680e-15 | 2.4149e-15 | 2.6140e-15 |
-| component:nitrogen | 1.8430e-17 | 2.6446e-17 | 6.4694e-18 | 2.1963e-17 | 2.6137e-17 |
-| component:hydrogen | 1.4351e-16 | 1.7052e-16 | 1.2302e-16 | 1.4373e-16 | 1.6901e-16 |
-| component:photon | 3.2965e-15 | 3.4875e-15 | 3.0190e-15 | 3.3375e-15 | 3.4865e-15 |
-| physical_total | 5.8085e-15 | 6.2891e-15 | 5.1321e-15 | 5.9135e-15 | 6.2840e-15 |
+| component:nitrogen | 1.7439e-17 | 2.5062e-17 | 6.0376e-18 | 2.0897e-17 | 2.4768e-17 |
+| component:hydrogen | 1.4331e-16 | 1.7023e-16 | 1.2280e-16 | 1.4353e-16 | 1.6874e-16 |
+| component:photon | 3.2965e-15 | 3.4875e-15 | 3.0189e-15 | 3.3374e-15 | 3.4865e-15 |
+| physical_total | 5.8072e-15 | 6.2873e-15 | 5.1308e-15 | 5.9122e-15 | 6.2824e-15 |
 
 DVH (physical total): `out/dvh/Optic-Nerve-Lt.csv`
 
@@ -139,10 +139,10 @@ DVH (physical total): `out/dvh/Optic-Nerve-Lt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 9.6101e-15 | 1.0271e-14 | 9.0452e-15 | 9.6801e-15 | 1.0232e-14 |
-| component:nitrogen | 2.7012e-16 | 1.0137e-15 | 3.4530e-17 | 9.7829e-17 | 9.4506e-16 |
-| component:hydrogen | 3.5662e-16 | 3.9378e-16 | 3.4091e-16 | 3.5025e-16 | 3.9054e-16 |
-| component:photon | 7.1857e-15 | 7.5669e-15 | 6.9126e-15 | 7.0477e-15 | 7.5586e-15 |
-| physical_total | 1.7422e-14 | 1.8594e-14 | 1.6497e-14 | 1.7028e-14 | 1.8568e-14 |
+| component:nitrogen | 2.6733e-16 | 1.0155e-15 | 3.2156e-17 | 9.2706e-17 | 9.4632e-16 |
+| component:hydrogen | 3.5625e-16 | 3.9352e-16 | 3.4080e-16 | 3.4963e-16 | 3.9027e-16 |
+| component:photon | 7.1855e-15 | 7.5668e-15 | 6.9124e-15 | 7.0475e-15 | 7.5585e-15 |
+| physical_total | 1.7419e-14 | 1.8596e-14 | 1.6492e-14 | 1.7023e-14 | 1.8569e-14 |
 
 DVH (physical total): `out/dvh/Optic-Nerve-Rt.csv`
 
@@ -151,10 +151,10 @@ DVH (physical total): `out/dvh/Optic-Nerve-Rt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 1.0121e-15 | 1.7901e-15 | 5.7236e-16 | 9.9977e-16 | 1.6154e-15 |
-| component:nitrogen | 7.6296e-18 | 4.6554e-17 | 0.0000e0 | 2.8352e-18 | 3.6583e-17 |
-| component:hydrogen | 5.1494e-17 | 8.8236e-17 | 3.0318e-17 | 4.9737e-17 | 8.3409e-17 |
-| component:photon | 2.1456e-15 | 2.8311e-15 | 1.6890e-15 | 2.1265e-15 | 2.6812e-15 |
-| physical_total | 3.2169e-15 | 4.7095e-15 | 2.3079e-15 | 3.2064e-15 | 4.3431e-15 |
+| component:nitrogen | 7.6442e-18 | 4.6843e-17 | 0.0000e0 | 2.8155e-18 | 3.6762e-17 |
+| component:hydrogen | 5.1480e-17 | 8.8236e-17 | 3.0314e-17 | 4.9728e-17 | 8.3389e-17 |
+| component:photon | 2.1456e-15 | 2.8311e-15 | 1.6890e-15 | 2.1264e-15 | 2.6812e-15 |
+| physical_total | 3.2168e-15 | 4.7095e-15 | 2.3081e-15 | 3.2064e-15 | 4.3434e-15 |
 
 DVH (physical total): `out/dvh/Orbit-Lt.csv`
 
@@ -163,10 +163,10 @@ DVH (physical total): `out/dvh/Orbit-Lt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 5.5749e-15 | 9.4573e-15 | 3.1303e-15 | 5.4715e-15 | 9.1809e-15 |
-| component:nitrogen | 5.9561e-17 | 3.4675e-16 | 0.0000e0 | 3.5284e-17 | 2.1096e-16 |
-| component:hydrogen | 1.0430e-16 | 2.9939e-16 | 4.8522e-17 | 8.0291e-17 | 2.3874e-16 |
-| component:photon | 4.7414e-15 | 6.5520e-15 | 3.6569e-15 | 4.6685e-15 | 6.0983e-15 |
-| physical_total | 1.0480e-14 | 1.6336e-14 | 6.9805e-15 | 1.0261e-14 | 1.5531e-14 |
+| component:nitrogen | 6.0093e-17 | 3.4782e-16 | 0.0000e0 | 3.5979e-17 | 2.1282e-16 |
+| component:hydrogen | 1.0428e-16 | 2.9920e-16 | 4.8520e-17 | 8.0291e-17 | 2.3874e-16 |
+| component:photon | 4.7413e-15 | 6.5519e-15 | 3.6568e-15 | 4.6685e-15 | 6.0983e-15 |
+| physical_total | 1.0481e-14 | 1.6334e-14 | 6.9811e-15 | 1.0260e-14 | 1.5532e-14 |
 
 DVH (physical total): `out/dvh/Orbit-Rt.csv`
 
@@ -175,10 +175,10 @@ DVH (physical total): `out/dvh/Orbit-Rt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 2.7279e-16 | 9.0136e-16 | 1.1663e-16 | 2.3156e-16 | 7.4767e-16 |
-| component:nitrogen | 8.1257e-18 | 1.4775e-16 | 2.6035e-19 | 1.7477e-18 | 9.1319e-17 |
-| component:hydrogen | 2.4627e-17 | 5.4119e-17 | 9.6061e-18 | 2.3449e-17 | 4.7545e-17 |
-| component:photon | 1.2071e-15 | 2.1016e-15 | 8.9148e-16 | 1.1678e-15 | 1.9081e-15 |
-| physical_total | 1.5126e-15 | 3.1621e-15 | 1.0294e-15 | 1.4217e-15 | 2.7383e-15 |
+| component:nitrogen | 8.0398e-18 | 1.4775e-16 | 2.4090e-19 | 1.6613e-18 | 9.1467e-17 |
+| component:hydrogen | 2.4598e-17 | 5.4118e-17 | 9.5914e-18 | 2.3415e-17 | 4.7494e-17 |
+| component:photon | 1.2071e-15 | 2.1016e-15 | 8.9147e-16 | 1.1678e-15 | 1.9081e-15 |
+| physical_total | 1.5125e-15 | 3.1627e-15 | 1.0294e-15 | 1.4215e-15 | 2.7384e-15 |
 
 DVH (physical total): `out/dvh/Parotid-Lt.csv`
 
@@ -187,10 +187,10 @@ DVH (physical total): `out/dvh/Parotid-Lt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 8.0785e-15 | 2.2413e-14 | 1.8744e-15 | 7.1703e-15 | 1.8809e-14 |
-| component:nitrogen | 1.6195e-16 | 3.6463e-15 | 3.0773e-18 | 4.8965e-17 | 1.8461e-15 |
-| component:hydrogen | 2.4806e-16 | 1.6518e-15 | 1.9439e-17 | 9.1911e-17 | 1.2756e-15 |
-| component:photon | 5.1698e-15 | 1.0169e-14 | 2.3479e-15 | 5.0545e-15 | 8.9175e-15 |
-| physical_total | 1.3658e-14 | 3.6200e-14 | 4.2957e-15 | 1.2309e-14 | 2.9540e-14 |
+| component:nitrogen | 1.5983e-16 | 3.6463e-15 | 2.8473e-18 | 4.5485e-17 | 1.8451e-15 |
+| component:hydrogen | 2.4776e-16 | 1.6508e-15 | 1.9422e-17 | 9.1795e-17 | 1.2735e-15 |
+| component:photon | 5.1696e-15 | 1.0169e-14 | 2.3479e-15 | 5.0543e-15 | 8.9174e-15 |
+| physical_total | 1.3656e-14 | 3.6200e-14 | 4.2951e-15 | 1.2305e-14 | 2.9543e-14 |
 
 DVH (physical total): `out/dvh/Parotid-Rt.csv`
 
@@ -199,10 +199,10 @@ DVH (physical total): `out/dvh/Parotid-Rt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 1.4990e-15 | 4.1452e-15 | 2.2565e-16 | 1.3769e-15 | 3.5800e-15 |
-| component:nitrogen | 9.3397e-17 | 6.9710e-16 | 3.4257e-18 | 4.8279e-17 | 5.1062e-16 |
-| component:hydrogen | 2.5935e-17 | 6.9466e-17 | 8.0844e-18 | 2.1430e-17 | 6.4667e-17 |
-| component:photon | 2.6807e-15 | 4.7100e-15 | 1.4542e-15 | 2.6194e-15 | 4.4445e-15 |
-| physical_total | 4.2990e-15 | 9.6162e-15 | 1.6858e-15 | 4.0878e-15 | 8.2593e-15 |
+| component:nitrogen | 9.3465e-17 | 6.9710e-16 | 3.1697e-18 | 4.8882e-17 | 5.0789e-16 |
+| component:hydrogen | 2.5850e-17 | 6.9466e-17 | 8.0676e-18 | 2.1240e-17 | 6.4638e-17 |
+| component:photon | 2.6801e-15 | 4.7100e-15 | 1.4541e-15 | 2.6193e-15 | 4.4444e-15 |
+| physical_total | 4.2983e-15 | 9.6162e-15 | 1.6858e-15 | 4.0882e-15 | 8.2609e-15 |
 
 DVH (physical total): `out/dvh/Spinal-Canal.csv`
 
@@ -211,10 +211,10 @@ DVH (physical total): `out/dvh/Spinal-Canal.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 1.3928e-15 | 3.2493e-15 | 1.8026e-16 | 1.2929e-15 | 2.9257e-15 |
-| component:nitrogen | 3.0453e-17 | 1.2514e-16 | 4.0901e-18 | 2.4680e-17 | 1.1448e-16 |
-| component:hydrogen | 2.4768e-17 | 6.3007e-17 | 8.5041e-18 | 2.0407e-17 | 5.9590e-17 |
+| component:nitrogen | 3.0784e-17 | 1.2552e-16 | 3.7971e-18 | 2.5106e-17 | 1.1479e-16 |
+| component:hydrogen | 2.4767e-17 | 6.3005e-17 | 8.5039e-18 | 2.0406e-17 | 5.9578e-17 |
 | component:photon | 2.6200e-15 | 4.2362e-15 | 1.4615e-15 | 2.5604e-15 | 4.0108e-15 |
-| physical_total | 4.0680e-15 | 7.5509e-15 | 1.6578e-15 | 3.9048e-15 | 7.0922e-15 |
+| physical_total | 4.0683e-15 | 7.5505e-15 | 1.6578e-15 | 3.9053e-15 | 7.0930e-15 |
 
 DVH (physical total): `out/dvh/Spinal-Cord.csv`
 
@@ -223,10 +223,10 @@ DVH (physical total): `out/dvh/Spinal-Cord.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 1.8069e-16 | 4.3327e-16 | 6.4563e-17 | 1.7031e-16 | 3.7246e-16 |
-| component:nitrogen | 3.9937e-18 | 1.9723e-17 | 1.5541e-19 | 2.4701e-18 | 1.5896e-17 |
-| component:hydrogen | 6.5274e-18 | 1.2579e-17 | 4.2351e-18 | 5.9725e-18 | 1.0980e-17 |
-| component:photon | 1.0136e-15 | 1.3729e-15 | 8.3351e-16 | 1.0069e-15 | 1.2945e-15 |
-| physical_total | 1.2048e-15 | 1.8261e-15 | 9.3837e-16 | 1.1797e-15 | 1.6924e-15 |
+| component:nitrogen | 4.0379e-18 | 1.9723e-17 | 1.5241e-19 | 2.5167e-18 | 1.5914e-17 |
+| component:hydrogen | 6.5270e-18 | 1.2579e-17 | 4.2350e-18 | 5.9723e-18 | 1.0979e-17 |
+| component:photon | 1.0136e-15 | 1.3729e-15 | 8.3350e-16 | 1.0069e-15 | 1.2945e-15 |
+| physical_total | 1.2049e-15 | 1.8262e-15 | 9.3837e-16 | 1.1797e-15 | 1.6925e-15 |
 
 DVH (physical total): `out/dvh/Submandibular-Lt.csv`
 
@@ -235,10 +235,10 @@ DVH (physical total): `out/dvh/Submandibular-Lt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 5.4985e-16 | 1.5896e-15 | 1.4550e-16 | 4.7165e-16 | 1.3406e-15 |
-| component:nitrogen | 1.7080e-17 | 8.7446e-17 | 1.2321e-18 | 1.0998e-17 | 7.4029e-17 |
-| component:hydrogen | 9.0138e-18 | 1.6596e-17 | 5.9957e-18 | 8.4260e-18 | 1.4677e-17 |
-| component:photon | 1.3169e-15 | 2.2376e-15 | 9.7190e-16 | 1.2476e-15 | 2.0054e-15 |
-| physical_total | 1.8928e-15 | 3.9165e-15 | 1.1522e-15 | 1.7222e-15 | 3.4206e-15 |
+| component:nitrogen | 1.7211e-17 | 8.7540e-17 | 1.2412e-18 | 1.1135e-17 | 7.4136e-17 |
+| component:hydrogen | 9.0133e-18 | 1.6596e-17 | 5.9955e-18 | 8.4257e-18 | 1.4676e-17 |
+| component:photon | 1.3169e-15 | 2.2376e-15 | 9.7189e-16 | 1.2476e-15 | 2.0053e-15 |
+| physical_total | 1.8930e-15 | 3.9166e-15 | 1.1522e-15 | 1.7223e-15 | 3.4208e-15 |
 
 DVH (physical total): `out/dvh/Submandibular-Rt.csv`
 
@@ -247,10 +247,10 @@ DVH (physical total): `out/dvh/Submandibular-Rt.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 6.5500e-15 | 1.1035e-13 | 1.6158e-16 | 2.2319e-15 | 2.8617e-14 |
-| component:nitrogen | 4.5307e-16 | 3.0656e-14 | 1.6363e-18 | 1.0276e-16 | 3.8267e-15 |
-| component:hydrogen | 2.2432e-16 | 2.0797e-15 | 6.2839e-18 | 8.0005e-17 | 1.5765e-15 |
-| component:photon | 4.2562e-15 | 1.5293e-14 | 9.8141e-16 | 3.0852e-15 | 1.3070e-14 |
-| physical_total | 1.1484e-14 | 1.2982e-13 | 1.1784e-15 | 5.6441e-15 | 4.5240e-14 |
+| component:nitrogen | 3.9150e-16 | 1.8211e-14 | 1.5394e-18 | 9.9768e-17 | 3.4463e-15 |
+| component:hydrogen | 2.2245e-16 | 2.1369e-15 | 6.3018e-18 | 7.9071e-17 | 1.5816e-15 |
+| component:photon | 4.2555e-15 | 1.5292e-14 | 9.8093e-16 | 3.0871e-15 | 1.3058e-14 |
+| physical_total | 1.1419e-14 | 1.2982e-13 | 1.1777e-15 | 5.6011e-15 | 4.5172e-14 |
 
 DVH (physical total): `out/dvh/BODY.csv`
 
@@ -259,10 +259,10 @@ DVH (physical total): `out/dvh/BODY.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 4.7625e-15 | 3.9380e-14 | 8.3186e-17 | 9.9465e-16 | 2.8190e-14 |
-| component:nitrogen | 2.3441e-16 | 3.0656e-14 | 8.9065e-19 | 1.8517e-17 | 1.4913e-15 |
-| component:hydrogen | 3.1581e-16 | 2.0797e-15 | 4.5710e-18 | 5.1640e-17 | 1.9226e-15 |
-| component:photon | 2.8371e-15 | 1.1823e-14 | 7.3716e-16 | 1.8403e-15 | 9.4383e-15 |
-| physical_total | 8.1498e-15 | 5.9626e-14 | 8.3560e-16 | 2.9080e-15 | 3.9762e-14 |
+| component:nitrogen | 1.5597e-16 | 1.7631e-14 | 8.2771e-19 | 1.6226e-17 | 1.0152e-15 |
+| component:hydrogen | 3.1879e-16 | 2.1369e-15 | 4.5957e-18 | 5.2828e-17 | 1.9572e-15 |
+| component:photon | 2.8404e-15 | 1.1811e-14 | 7.3733e-16 | 1.8403e-15 | 9.4416e-15 |
+| physical_total | 8.0776e-15 | 5.5946e-14 | 8.3625e-16 | 2.8992e-15 | 3.9592e-14 |
 
 DVH (physical total): `out/dvh/SKIN.csv`
 
@@ -271,10 +271,10 @@ DVH (physical total): `out/dvh/SKIN.csv`
 | quantity | mean | max | D95 | D50 | D2 |
 |---|---|---|---|---|---|
 | component:boron | 9.2858e-14 | 1.1035e-13 | 6.8632e-14 | 9.6394e-14 | 1.0964e-13 |
-| component:nitrogen | 9.3670e-16 | 5.2367e-15 | 1.8294e-16 | 6.0389e-16 | 5.0441e-15 |
-| component:hydrogen | 7.0678e-16 | 1.0948e-15 | 4.5690e-16 | 6.8638e-16 | 1.0349e-15 |
-| component:photon | 1.3932e-14 | 1.5293e-14 | 1.2319e-14 | 1.4075e-14 | 1.5173e-14 |
-| physical_total | 1.0843e-13 | 1.2982e-13 | 8.1700e-14 | 1.1192e-13 | 1.2789e-13 |
+| component:nitrogen | 9.4345e-16 | 5.2367e-15 | 1.8757e-16 | 6.1432e-16 | 5.0289e-15 |
+| component:hydrogen | 7.0594e-16 | 1.0948e-15 | 4.5689e-16 | 6.8636e-16 | 1.0285e-15 |
+| component:photon | 1.3931e-14 | 1.5292e-14 | 1.2319e-14 | 1.4069e-14 | 1.5173e-14 |
+| physical_total | 1.0844e-13 | 1.2982e-13 | 8.1705e-14 | 1.1193e-13 | 1.2789e-13 |
 
 DVH (physical total): `out/dvh/RESEARCH_TARGET.csv`
 
@@ -286,7 +286,7 @@ Definition: a structure agrees when its S_N/MC mean total-dose ratio is within +
 
 | | |
 |---|---|
-| Monte Carlo | OpenMC (commit 617d35a5063c), continuous energy, ENDF/B-VIII.1; 6000000 histories (6000000 requested) in 10 batches, 3 threads, 1270 s wall |
+| Monte Carlo | OpenMC (commit 617d35a5063c), continuous energy, ENDF/B-VIII.1; 6000000 histories (6000000 requested) in 10 batches, 3 threads, 1268 s wall |
 | Thermal scattering | S_N: bound-atom kernel for H1; MC: H1=c_H_in_H2O; consistent |
 | MC statistical uncertainty | total dose, voxels above 10% of the maximum (172 voxels): median relative 1-sigma 99.8%, 95th percentile 100.0% |
 | Artifacts | `out/08-verify/` (MC dose, comparison, gamma, `ratio-<component>.nii`) |
@@ -295,26 +295,26 @@ S_N/MC ratio of structure-mean dose per component (S_N is the boron-scaled deter
 
 | structure | voxels | boron | nitrogen | hydrogen | photon | total | MC 2 sigma (total) | gamma pass | status |
 |---|---|---|---|---|---|---|---|---|---|
-| Brain | 19291 | 0.951 | 0.955 | 0.933 | 1.050 | 0.982 | 20.5% | n/a | agrees |
-| Brainstem | 357 | 0.981 | 0.972 | 0.961 | 1.099 | 1.035 | 32.4% | n/a | agrees |
-| Lacrimal-Lt | 7 | 1.146 | 1.157 | 1.245 | 0.972 | 0.985 | 81.2% | n/a | agrees |
-| Lacrimal-Rt | 6 | 0.953 | 0.960 | 1.081 | 0.902 | 0.920 | 23.7% | n/a | unresolved |
-| Lens-Lt | 1 | 1.047 | 1.046 | 1.229 | 0.836 | 0.895 | 62.5% | n/a | unresolved |
-| Lens-Rt | 2 | 1.019 | 1.018 | 1.186 | 1.352 | 1.169 | 41.4% | n/a | unresolved |
-| Mandible | 1222 | 0.996 | 1.008 | 1.049 | 1.026 | 1.011 | 42.6% | n/a | agrees |
-| Optic-Nerve-Lt | 5 | 1.022 | 1.079 | 1.014 | 0.789 | 0.868 | 42.8% | n/a | unresolved |
-| Optic-Nerve-Rt | 5 | 0.957 | 0.981 | 0.904 | 0.973 | 0.946 | 25.2% | n/a | unresolved |
-| Orbit-Lt | 116 | 1.038 | 1.041 | 1.005 | 1.140 | 1.096 | 71.7% | n/a | unresolved |
-| Orbit-Rt | 116 | 0.973 | 0.978 | 1.049 | 1.045 | 1.006 | 34.0% | n/a | agrees |
-| Parotid-Lt | 520 | 1.150 | 1.132 | 1.233 | 0.993 | 1.020 | 105.4% | n/a | agrees |
-| Parotid-Rt | 579 | 0.984 | 0.979 | 1.065 | 1.034 | 1.003 | 27.9% | n/a | agrees |
-| Spinal-Canal | 277 | 1.059 | 1.059 | 1.230 | 1.186 | 1.135 | 59.3% | n/a | unresolved |
-| Spinal-Cord | 73 | 1.077 | 1.075 | 1.247 | 1.105 | 1.097 | 63.8% | n/a | unresolved |
-| Submandibular-Lt | 115 | 1.077 | 1.055 | 0.837 | 1.023 | 1.029 | 116.4% | n/a | agrees |
-| Submandibular-Rt | 95 | 1.113 | 1.103 | 0.857 | 0.865 | 0.930 | 90.8% | n/a | unresolved |
-| BODY | 66852 | 0.976 | 1.136 | 0.988 | 1.053 | 1.009 | 27.4% | 0.0% (1 vox) | unresolved |
-| SKIN | 10415 | 1.064 | 1.558 | 1.057 | 1.041 | 1.064 | 36.5% | n/a | unresolved |
-| RESEARCH_TARGET | 959 | 0.941 | 0.943 | 0.932 | 1.032 | 0.952 | 6.9% | n/a | agrees |
+| Brain | 19291 | 0.951 | 0.958 | 0.930 | 1.050 | 0.982 | 20.5% | n/a | agrees |
+| Brainstem | 357 | 0.981 | 0.986 | 0.961 | 1.099 | 1.036 | 32.4% | n/a | agrees |
+| Lacrimal-Lt | 7 | 1.146 | 1.148 | 1.218 | 0.970 | 0.983 | 81.2% | n/a | agrees |
+| Lacrimal-Rt | 6 | 0.953 | 0.957 | 1.072 | 0.902 | 0.920 | 23.7% | n/a | unresolved |
+| Lens-Lt | 1 | 1.047 | 1.048 | 1.228 | 0.836 | 0.895 | 62.5% | n/a | unresolved |
+| Lens-Rt | 2 | 1.019 | 1.020 | 1.186 | 1.352 | 1.169 | 41.4% | n/a | unresolved |
+| Mandible | 1222 | 0.996 | 0.997 | 0.974 | 1.022 | 1.008 | 42.6% | n/a | agrees |
+| Optic-Nerve-Lt | 5 | 1.022 | 1.021 | 1.012 | 0.789 | 0.868 | 42.8% | n/a | unresolved |
+| Optic-Nerve-Rt | 5 | 0.957 | 0.971 | 0.903 | 0.973 | 0.946 | 25.2% | n/a | unresolved |
+| Orbit-Lt | 116 | 1.038 | 1.043 | 1.005 | 1.139 | 1.096 | 71.7% | n/a | unresolved |
+| Orbit-Rt | 116 | 0.973 | 0.986 | 1.049 | 1.045 | 1.006 | 34.0% | n/a | agrees |
+| Parotid-Lt | 520 | 1.150 | 1.120 | 1.231 | 0.993 | 1.020 | 105.4% | n/a | agrees |
+| Parotid-Rt | 579 | 0.984 | 0.967 | 1.064 | 1.034 | 1.003 | 27.9% | n/a | agrees |
+| Spinal-Canal | 277 | 1.059 | 1.059 | 1.226 | 1.186 | 1.134 | 59.3% | n/a | unresolved |
+| Spinal-Cord | 73 | 1.077 | 1.086 | 1.246 | 1.105 | 1.097 | 63.8% | n/a | unresolved |
+| Submandibular-Lt | 115 | 1.077 | 1.067 | 0.837 | 1.023 | 1.029 | 116.4% | n/a | agrees |
+| Submandibular-Rt | 95 | 1.113 | 1.111 | 0.857 | 0.865 | 0.930 | 90.8% | n/a | unresolved |
+| BODY | 66852 | 0.976 | 0.982 | 0.980 | 1.052 | 1.003 | 27.4% | 0.0% (1 vox) | unresolved |
+| SKIN | 10415 | 1.064 | 1.037 | 1.067 | 1.042 | 1.054 | 36.5% | n/a | unresolved |
+| RESEARCH_TARGET | 959 | 0.941 | 0.950 | 0.931 | 1.032 | 0.952 | 6.9% | n/a | agrees |
 
 - Lacrimal-Rt: total-dose ratio 0.920 is outside 1 +- 5.0%
 - Lens-Lt: total-dose ratio 0.895 is outside 1 +- 5.0%
@@ -322,19 +322,19 @@ S_N/MC ratio of structure-mean dose per component (S_N is the boron-scaled deter
 - Optic-Nerve-Lt: total-dose ratio 0.868 is outside 1 +- 5.0%
 - Optic-Nerve-Rt: total-dose ratio 0.946 is outside 1 +- 5.0%
 - Orbit-Lt: total-dose ratio 1.096 is outside 1 +- 5.0%
-- Spinal-Canal: total-dose ratio 1.135 is outside 1 +- 5.0%
+- Spinal-Canal: total-dose ratio 1.134 is outside 1 +- 5.0%
 - Spinal-Cord: total-dose ratio 1.097 is outside 1 +- 5.0%
 - Submandibular-Rt: total-dose ratio 0.930 is outside 1 +- 5.0%
 - BODY: gamma pass rate 0.0% is below 95.0%
-- SKIN: total-dose ratio 1.064 is outside 1 +- 5.0%
+- SKIN: total-dose ratio 1.054 is outside 1 +- 5.0%
 
 Whole-volume agreement (S_N against MC as reference):
 
 | quantity | gamma pass | evaluated voxels | within 2 combined sigma | max difference / MC maximum |
 |---|---|---|---|---|
 | component:boron | 92.5% | 11674 | n/a | 0.091 |
-| component:nitrogen | 66.8% | 16114 | n/a | 0.861 |
-| component:hydrogen | 41.7% | 21189 | n/a | 0.663 |
+| component:nitrogen | 66.8% | 16114 | n/a | 0.115 |
+| component:hydrogen | 44.4% | 21189 | n/a | 0.269 |
 | component:photon | 0.0% | 168 | n/a | 1.000 |
 | physical_total | 0.0% | 172 | n/a | 0.998 |
 

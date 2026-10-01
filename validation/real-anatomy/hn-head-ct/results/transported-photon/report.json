@@ -175,7 +175,7 @@
   "delivery_normalization": null,
   "disclaimer": "Research software output. OpenBNCT is not a medical device and has not been clinically validated or commissioned for any treatment facility; these results are not for diagnosis, treatment planning, or any clinical decision. See docs/DISCLAIMER.md.",
   "dose_unit": "Gy per source particle",
-  "generated_utc": "2026-09-30T20:09:29Z",
+  "generated_utc": "2026-10-01T01:15:33Z",
   "independent_mc_check": {
     "status": "fresh",
     "verification": {
@@ -187,9 +187,9 @@
         "openmc_commit": "617d35a5063c57796b43428bc401e627d2011046",
         "particles_requested": 6000000,
         "threads": 3,
-        "wall_seconds": 1270.049308664
+        "wall_seconds": 1267.521379387
       },
-      "generated_utc": "2026-09-30T20:09:29Z",
+      "generated_utc": "2026-10-01T01:15:33Z",
       "project_id": "openbnct.hn-head-ct.v1",
       "schema_version": "openbnct.project-verify/0.1.0",
       "statistics": {
@@ -206,38 +206,38 @@
           "quantities": [
             {
               "mc_mean": 1.3320411113566149e-14,
-              "mc_rel_sigma": 0.014718509803558748,
+              "mc_rel_sigma": 0.014718509803558783,
               "quantity": "component:boron",
               "ratio": 0.9511290930353022,
               "sn_mean": 1.266943054130353e-14
             },
             {
               "mc_mean": 4.523903877416659e-16,
-              "mc_rel_sigma": 0.01607613878023445,
+              "mc_rel_sigma": 0.016076138780234454,
               "quantity": "component:nitrogen",
-              "ratio": 0.9548377757057677,
-              "sn_mean": 4.319594315819221e-16
+              "ratio": 0.9582184450513045,
+              "sn_mean": 4.3348881389797585e-16
             },
             {
-              "mc_mean": 3.65193601131164e-16,
-              "mc_rel_sigma": 0.2472740021031311,
+              "mc_mean": 3.651936011311641e-16,
+              "mc_rel_sigma": 0.24727400210313086,
               "quantity": "component:hydrogen",
-              "ratio": 0.9330480736844241,
-              "sn_mean": 3.407431860573105e-16
+              "ratio": 0.9301823364992292,
+              "sn_mean": 3.3969663717475377e-16
             },
             {
               "mc_mean": 6.432775277022735e-15,
               "mc_rel_sigma": 0.2923631678075698,
               "quantity": "component:photon",
-              "ratio": 1.0500402323892173,
-              "sn_mean": 6.754672846792564e-15
+              "ratio": 1.0498674678188051,
+              "sn_mean": 6.7535614911352716e-15
             },
             {
               "mc_mean": 2.056989855600717e-14,
-              "mc_rel_sigma": 0.10231078530779278,
+              "mc_rel_sigma": 0.10231078530779288,
               "quantity": "physical_total",
-              "ratio": 0.9818622075720941,
-              "sn_mean": 2.0196806005735233e-14
+              "ratio": 0.9818316521358519,
+              "sn_mean": 2.0196177483511395e-14
             }
           ],
           "reasons": [],
@@ -250,39 +250,39 @@
           "name": "Brainstem",
           "quantities": [
             {
-              "mc_mean": 6.726847285077046e-15,
-              "mc_rel_sigma": 0.02057105073147999,
+              "mc_mean": 6.7268472850770454e-15,
+              "mc_rel_sigma": 0.020571050731480016,
               "quantity": "component:boron",
-              "ratio": 0.9814248059534159,
+              "ratio": 0.981424805953416,
               "sn_mean": 6.601894791435002e-15
             },
             {
               "mc_mean": 1.1114906727887503e-16,
-              "mc_rel_sigma": 0.022562092843335577,
+              "mc_rel_sigma": 0.022562092843335584,
               "quantity": "component:nitrogen",
-              "ratio": 0.9721821655517209,
-              "sn_mean": 1.0805714092623064e-16
+              "ratio": 0.9860873935360113,
+              "sn_mean": 1.0960269404698464e-16
             },
             {
               "mc_mean": 2.3838833122162686e-16,
-              "mc_rel_sigma": 0.323909723201101,
+              "mc_rel_sigma": 0.32390972320110106,
               "quantity": "component:hydrogen",
-              "ratio": 0.9612370847176137,
-              "sn_mean": 2.291477045341735e-16
+              "ratio": 0.9611922499719429,
+              "sn_mean": 2.2913701645397227e-16
             },
             {
               "mc_mean": 6.004327173023143e-15,
               "mc_rel_sigma": 0.3260757640123467,
               "quantity": "component:photon",
-              "ratio": 1.0985825816637778,
-              "sn_mean": 6.596249246893737e-15
+              "ratio": 1.098570695718412,
+              "sn_mean": 6.5961778797890004e-15
             },
             {
               "mc_mean": 1.3071370916554543e-14,
-              "mc_rel_sigma": 0.16181401673064333,
+              "mc_rel_sigma": 0.16181401673064338,
               "quantity": "physical_total",
-              "ratio": 1.035495738755832,
-              "sn_mean": 1.3535348883789141e-14
+              "ratio": 1.035607700840388,
+              "sn_mean": 1.3536812381724964e-14
             }
           ],
           "reasons": [],
@@ -296,38 +296,38 @@
           "quantities": [
             {
               "mc_mean": 5.099708099604573e-16,
-              "mc_rel_sigma": 0.07392621117400432,
+              "mc_rel_sigma": 0.07392621117400437,
               "quantity": "component:boron",
-              "ratio": 1.1456006351944188,
-              "sn_mean": 5.842228838213121e-16
+              "ratio": 1.145600635194419,
+              "sn_mean": 5.842228838213123e-16
             },
             {
               "mc_mean": 4.6260267172273777e-17,
               "mc_rel_sigma": 0.07760646762277963,
               "quantity": "component:nitrogen",
-              "ratio": 1.1566190276187969,
-              "sn_mean": 5.350550523418104e-17
+              "ratio": 1.1481262943639026,
+              "sn_mean": 5.3112629124786784e-17
             },
             {
               "mc_mean": 4.06877229808228e-17,
               "mc_rel_sigma": 0.6274446984039904,
               "quantity": "component:hydrogen",
-              "ratio": 1.2447495180538437,
-              "sn_mean": 5.064602357108748e-17
+              "ratio": 1.2178532111385365,
+              "sn_mean": 4.9551674086110274e-17
             },
             {
               "mc_mean": 1.848175921481052e-15,
               "mc_rel_sigma": 0.514464416917195,
               "quantity": "component:photon",
-              "ratio": 0.9717168201030996,
-              "sn_mean": 1.7959036294126836e-15
+              "ratio": 0.970368102852433,
+              "sn_mean": 1.7934109626651156e-15
             },
             {
               "mc_mean": 2.5221070723995157e-15,
               "mc_rel_sigma": 0.4061206242573185,
               "quantity": "physical_total",
-              "ratio": 0.9850010212594739,
-              "sn_mean": 2.4842780420392648e-15
+              "ratio": 0.9834230183326776,
+              "sn_mean": 2.4802981496973248e-15
             }
           ],
           "reasons": [],
@@ -340,39 +340,39 @@
           "name": "Lacrimal-Rt",
           "quantities": [
             {
-              "mc_mean": 8.978592293457897e-15,
-              "mc_rel_sigma": 0.02008874006734416,
+              "mc_mean": 8.978592293457895e-15,
+              "mc_rel_sigma": 0.020088740067344367,
               "quantity": "component:boron",
-              "ratio": 0.9529416624947077,
+              "ratio": 0.9529416624947079,
               "sn_mean": 8.556074666989939e-15
             },
             {
               "mc_mean": 5.352724391313006e-16,
-              "mc_rel_sigma": 0.01998987788211984,
+              "mc_rel_sigma": 0.019989877882119145,
               "quantity": "component:nitrogen",
-              "ratio": 0.9599042054520569,
-              "sn_mean": 5.138102653847156e-16
+              "ratio": 0.9572206323601978,
+              "sn_mean": 5.123738226702491e-16
             },
             {
               "mc_mean": 1.9080391854360477e-16,
-              "mc_rel_sigma": 0.31765358461280285,
+              "mc_rel_sigma": 0.3176535846128023,
               "quantity": "component:hydrogen",
-              "ratio": 1.0812951918012639,
-              "sn_mean": 2.0631535969803986e-16
+              "ratio": 1.0724481656439078,
+              "sn_mean": 2.0462731243975854e-16
             },
             {
               "mc_mean": 6.3499502260562356e-15,
               "mc_rel_sigma": 0.25541588618254696,
               "quantity": "component:photon",
-              "ratio": 0.9024327821094771,
-              "sn_mean": 5.730403248756632e-15
+              "ratio": 0.9018734867707486,
+              "sn_mean": 5.7268517511940404e-15
             },
             {
               "mc_mean": 1.63102703676226e-14,
-              "mc_rel_sigma": 0.11846199272471546,
+              "mc_rel_sigma": 0.11846199272471554,
               "quantity": "physical_total",
-              "ratio": 0.9200708021749795,
-              "sn_mean": 1.5006603540829323e-14
+              "ratio": 0.9196614902883666,
+              "sn_mean": 1.4999927553293985e-14
             }
           ],
           "reasons": [
@@ -397,29 +397,29 @@
               "mc_mean": 3.614364418021597e-17,
               "mc_rel_sigma": 0.05644068096598939,
               "quantity": "component:nitrogen",
-              "ratio": 1.0463652064553008,
-              "sn_mean": 3.781945170467862e-17
+              "ratio": 1.047810884702605,
+              "sn_mean": 3.787170378484826e-17
             },
             {
               "mc_mean": 2.4696673955483395e-17,
-              "mc_rel_sigma": 0.6082587877546511,
+              "mc_rel_sigma": 0.6082587877546514,
               "quantity": "component:hydrogen",
-              "ratio": 1.228561903558813,
-              "sn_mean": 3.034139276632004e-17
+              "ratio": 1.228400849535546,
+              "sn_mean": 3.0337415267618197e-17
             },
             {
               "mc_mean": 2.115210031483949e-15,
               "mc_rel_sigma": 0.3912108146312993,
               "quantity": "component:photon",
-              "ratio": 0.8360586452245512,
-              "sn_mean": 1.7684396332878508e-15
+              "ratio": 0.8360477918863451,
+              "sn_mean": 1.7684166761980023e-15
             },
             {
               "mc_mean": 2.77470316547212e-15,
               "mc_rel_sigma": 0.3126557573468455,
               "quantity": "physical_total",
-              "ratio": 0.8947119420255258,
-              "sn_mean": 2.4825600577239346e-15
+              "ratio": 0.8947210664219422,
+              "sn_mean": 2.482585375215554e-15
             }
           ],
           "reasons": [
@@ -435,38 +435,38 @@
           "quantities": [
             {
               "mc_mean": 3.6590292532416345e-15,
-              "mc_rel_sigma": 0.027686906423244402,
+              "mc_rel_sigma": 0.027686906423244582,
               "quantity": "component:boron",
               "ratio": 1.0190898281895908,
               "sn_mean": 3.728879493026704e-15
             },
             {
-              "mc_mean": 1.6503539692824398e-16,
-              "mc_rel_sigma": 0.027839260556937005,
+              "mc_mean": 1.6503539692824393e-16,
+              "mc_rel_sigma": 0.02783926055693737,
               "quantity": "component:nitrogen",
-              "ratio": 1.0180773692353813,
-              "sn_mean": 1.6801880273542354e-16
+              "ratio": 1.0198950783116167,
+              "sn_mean": 1.683187890743201e-16
             },
             {
-              "mc_mean": 4.646701559069223e-17,
-              "mc_rel_sigma": 0.673336856151951,
+              "mc_mean": 4.6467015590692255e-17,
+              "mc_rel_sigma": 0.6733368561519503,
               "quantity": "component:hydrogen",
-              "ratio": 1.1855916331885519,
-              "sn_mean": 5.5090904903566706e-17
+              "ratio": 1.1855796702981758,
+              "sn_mean": 5.509034902375312e-17
             },
             {
               "mc_mean": 2.925561854537555e-15,
               "mc_rel_sigma": 0.4440456370047943,
               "quantity": "component:photon",
-              "ratio": 1.3519220465640023,
-              "sn_mean": 3.955131569735989e-15
+              "ratio": 1.351916919704377,
+              "sn_mean": 3.955116570791036e-15
             },
             {
               "mc_mean": 6.765896562021113e-15,
-              "mc_rel_sigma": 0.2068618377480273,
+              "mc_rel_sigma": 0.20686183774802738,
               "quantity": "physical_total",
-              "ratio": 1.1686730203335631,
-              "sn_mean": 7.907120770401685e-15
+              "ratio": 1.1687150593318718,
+              "sn_mean": 7.907405201915813e-15
             }
           ],
           "reasons": [
@@ -482,38 +482,38 @@
           "quantities": [
             {
               "mc_mean": 1.7382319382941259e-15,
-              "mc_rel_sigma": 0.03093793602890842,
+              "mc_rel_sigma": 0.030937936028908403,
               "quantity": "component:boron",
               "ratio": 0.995959938984064,
               "sn_mean": 1.7312093752035688e-15
             },
             {
               "mc_mean": 2.7660926914325905e-16,
-              "mc_rel_sigma": 0.03079289219729768,
+              "mc_rel_sigma": 0.030792892197297844,
               "quantity": "component:nitrogen",
-              "ratio": 1.007706100586713,
-              "sn_mean": 2.7874084799449417e-16
+              "ratio": 0.9965514011815045,
+              "sn_mean": 2.756553547445067e-16
             },
             {
-              "mc_mean": 2.919646092366792e-17,
-              "mc_rel_sigma": 0.5833360916983356,
+              "mc_mean": 2.919646092366791e-17,
+              "mc_rel_sigma": 0.583336091698337,
               "quantity": "component:hydrogen",
-              "ratio": 1.0485007769284065,
-              "sn_mean": 3.061251196202568e-17
+              "ratio": 0.9735972153478901,
+              "sn_mean": 2.842559305329657e-17
             },
             {
               "mc_mean": 1.8823281924171253e-15,
               "mc_rel_sigma": 0.4143100827592562,
               "quantity": "component:photon",
-              "ratio": 1.0255888719879254,
-              "sn_mean": 1.9304948475721503e-15
+              "ratio": 1.02205674851352,
+              "sn_mean": 1.9238462319771783e-15
             },
             {
               "mc_mean": 3.926299794500214e-15,
-              "mc_rel_sigma": 0.21301112463893837,
+              "mc_rel_sigma": 0.21301112463893834,
               "quantity": "physical_total",
-              "ratio": 1.011399483120143,
-              "sn_mean": 3.97105758273224e-15
+              "ratio": 1.0083632840580166,
+              "sn_mean": 3.959136554978551e-15
             }
           ],
           "reasons": [],
@@ -527,38 +527,38 @@
           "quantities": [
             {
               "mc_mean": 2.3004755873109947e-15,
-              "mc_rel_sigma": 0.040943951394977474,
+              "mc_rel_sigma": 0.040943951394977265,
               "quantity": "component:boron",
-              "ratio": 1.0215244883384105,
-              "sn_mean": 2.349992147262868e-15
+              "ratio": 1.0215244883384103,
+              "sn_mean": 2.3499921472628678e-15
             },
             {
               "mc_mean": 1.7073411145669264e-17,
-              "mc_rel_sigma": 0.04375265172474344,
+              "mc_rel_sigma": 0.04375265172474361,
               "quantity": "component:nitrogen",
-              "ratio": 1.0794681454128736,
-              "sn_mean": 1.8430203465287088e-17
+              "ratio": 1.021408196048676,
+              "sn_mean": 1.74389220786954e-17
             },
             {
               "mc_mean": 1.4158500684842082e-16,
               "mc_rel_sigma": 0.3871527302314489,
               "quantity": "component:hydrogen",
-              "ratio": 1.013575917912161,
-              "sn_mean": 1.4350715327898775e-16
+              "ratio": 1.0121839420053502,
+              "sn_mean": 1.433100703606891e-16
             },
             {
               "mc_mean": 4.178444145548395e-15,
               "mc_rel_sigma": 0.31562923353995576,
               "quantity": "component:photon",
-              "ratio": 0.788938496941642,
-              "sn_mean": 3.296535443743554e-15
+              "ratio": 0.7889238511027965,
+              "sn_mean": 3.296474246923974e-15
             },
             {
               "mc_mean": 6.692463945094916e-15,
-              "mc_rel_sigma": 0.21399286638690046,
+              "mc_rel_sigma": 0.2139928663869004,
               "quantity": "physical_total",
-              "ratio": 0.8679112798221159,
-              "sn_mean": 5.808464947750695e-15
+              "ratio": 0.867724568151389,
+              "sn_mean": 5.807215386626227e-15
             }
           ],
           "reasons": [
@@ -574,38 +574,38 @@
           "quantities": [
             {
               "mc_mean": 1.0037752884767094e-14,
-              "mc_rel_sigma": 0.019252956667547012,
+              "mc_rel_sigma": 0.019252956667546693,
               "quantity": "component:boron",
               "ratio": 0.9573965469138759,
               "sn_mean": 9.610109950650812e-15
             },
             {
               "mc_mean": 2.7533200251493848e-16,
-              "mc_rel_sigma": 0.018514656073328112,
+              "mc_rel_sigma": 0.01851465607332803,
               "quantity": "component:nitrogen",
-              "ratio": 0.9810727050025914,
-              "sn_mean": 2.70120712481111e-16
+              "ratio": 0.9709283001119997,
+              "sn_mean": 2.6732763316826205e-16
             },
             {
               "mc_mean": 3.9455923090670133e-16,
-              "mc_rel_sigma": 0.3215969819335151,
+              "mc_rel_sigma": 0.32159698193351505,
               "quantity": "component:hydrogen",
-              "ratio": 0.9038395173426073,
-              "sn_mean": 3.5661822482578326e-16
+              "ratio": 0.9029026105328437,
+              "sn_mean": 3.562485595954917e-16
             },
             {
               "mc_mean": 7.381823549692372e-15,
               "mc_rel_sigma": 0.26314118799323755,
               "quantity": "component:photon",
-              "ratio": 0.9734248376882607,
-              "sn_mean": 7.185650390702677e-15
+              "ratio": 0.9734097568388029,
+              "sn_mean": 7.185539066533001e-15
             },
             {
               "mc_mean": 1.842237655603864e-14,
-              "mc_rel_sigma": 0.12589635902817303,
+              "mc_rel_sigma": 0.12589635902817287,
               "quantity": "physical_total",
-              "ratio": 0.945724848564638,
-              "sn_mean": 1.742249927866038e-14
+              "ratio": 0.945547126178883,
+              "sn_mean": 1.7419225209947565e-14
             }
           ],
           "reasons": [
@@ -621,38 +621,38 @@
           "quantities": [
             {
               "mc_mean": 9.750193904844846e-16,
-              "mc_rel_sigma": 0.05401527295831861,
+              "mc_rel_sigma": 0.05401527295831856,
               "quantity": "component:boron",
               "ratio": 1.038077289232578,
               "sn_mean": 1.0121454858233342e-15
             },
             {
               "mc_mean": 7.331299652166398e-18,
-              "mc_rel_sigma": 0.05824876342519529,
+              "mc_rel_sigma": 0.05824876342519525,
               "quantity": "component:nitrogen",
-              "ratio": 1.0406831009687407,
-              "sn_mean": 7.629559656147578e-18
+              "ratio": 1.0426745167400124,
+              "sn_mean": 7.644159321898821e-18
             },
             {
               "mc_mean": 5.121679649865085e-17,
               "mc_rel_sigma": 0.5952045812888983,
               "quantity": "component:hydrogen",
-              "ratio": 1.0054103243986223,
-              "sn_mean": 5.149389598236677e-17
+              "ratio": 1.0051351066525807,
+              "sn_mean": 5.147980021107494e-17
             },
             {
               "mc_mean": 1.8829009810153907e-15,
               "mc_rel_sigma": 0.5253954349480684,
               "quantity": "component:photon",
-              "ratio": 1.139508767700986,
-              "sn_mean": 2.1455821765798258e-15
+              "ratio": 1.1394998128534581,
+              "sn_mean": 2.1455653154886306e-15
             },
             {
-              "mc_mean": 2.933796628109712e-15,
-              "mc_rel_sigma": 0.3583443725192576,
+              "mc_mean": 2.9337966281097117e-15,
+              "mc_rel_sigma": 0.35834437251925766,
               "quantity": "physical_total",
-              "ratio": 1.0964806105576375,
-              "sn_mean": 3.216851118041675e-15
+              "ratio": 1.09647503512116,
+              "sn_mean": 3.2168347608449373e-15
             }
           ],
           "reasons": [
@@ -667,39 +667,39 @@
           "name": "Orbit-Rt",
           "quantities": [
             {
-              "mc_mean": 5.731907972161667e-15,
-              "mc_rel_sigma": 0.021967644476809645,
+              "mc_mean": 5.731907972161665e-15,
+              "mc_rel_sigma": 0.021967644476809628,
               "quantity": "component:boron",
-              "ratio": 0.9726060406722707,
+              "ratio": 0.972606040672271,
               "sn_mean": 5.574888318301983e-15
             },
             {
-              "mc_mean": 6.092679387688391e-17,
-              "mc_rel_sigma": 0.024057821305340753,
+              "mc_mean": 6.09267938768839e-17,
+              "mc_rel_sigma": 0.02405782130534081,
               "quantity": "component:nitrogen",
-              "ratio": 0.9775865588475907,
-              "sn_mean": 5.95612147677194e-17
+              "ratio": 0.9863073845551169,
+              "sn_mean": 6.009254671803807e-17
             },
             {
-              "mc_mean": 9.942103661423852e-17,
-              "mc_rel_sigma": 0.384458958619682,
+              "mc_mean": 9.94210366142385e-17,
+              "mc_rel_sigma": 0.38445895861968216,
               "quantity": "component:hydrogen",
-              "ratio": 1.0490380125957395,
-              "sn_mean": 1.0429644666000903e-16
+              "ratio": 1.0488744252974112,
+              "sn_mean": 1.0428018264123226e-16
             },
             {
               "mc_mean": 4.535106398626405e-15,
               "mc_rel_sigma": 0.3613910427900063,
               "quantity": "component:photon",
-              "ratio": 1.0454810351726782,
-              "sn_mean": 4.7413677322541704e-15
+              "ratio": 1.0454725373756408,
+              "sn_mean": 4.741329193840452e-15
             },
             {
               "mc_mean": 1.0420303437199284e-14,
-              "mc_rel_sigma": 0.16985557342361648,
+              "mc_rel_sigma": 0.16985557342361646,
               "quantity": "physical_total",
-              "ratio": 1.0057397824492404,
-              "sn_mean": 1.0480113711983881e-14
+              "ratio": 1.0057855133169353,
+              "sn_mean": 1.0480590241501708e-14
             }
           ],
           "reasons": [],
@@ -713,7 +713,7 @@
           "quantities": [
             {
               "mc_mean": 2.3731214500822606e-16,
-              "mc_rel_sigma": 0.11539464690152322,
+              "mc_rel_sigma": 0.11539464690152326,
               "quantity": "component:boron",
               "ratio": 1.1495048941888806,
               "sn_mean": 2.7279147213741717e-16
@@ -722,29 +722,29 @@
               "mc_mean": 7.181329691674792e-18,
               "mc_rel_sigma": 0.08739145801005768,
               "quantity": "component:nitrogen",
-              "ratio": 1.131500859858301,
-              "sn_mean": 8.125680721055975e-18
+              "ratio": 1.1195425290518932,
+              "sn_mean": 8.039804004973049e-18
             },
             {
               "mc_mean": 1.9978514595237734e-17,
               "mc_rel_sigma": 0.7767327671381291,
               "quantity": "component:hydrogen",
-              "ratio": 1.2326561980719646,
-              "sn_mean": 2.4626639844090998e-17
+              "ratio": 1.2312018899688433,
+              "sn_mean": 2.4597584928426818e-17
             },
             {
               "mc_mean": 1.2156671711322893e-15,
               "mc_rel_sigma": 0.6165160275869644,
               "quantity": "component:photon",
-              "ratio": 0.9929500824766043,
-              "sn_mean": 1.207096817839907e-15
+              "ratio": 0.9929278536310236,
+              "sn_mean": 1.2070697949620824e-15
             },
             {
               "mc_mean": 1.4827401419203904e-15,
               "mc_rel_sigma": 0.5270770418759806,
               "quantity": "physical_total",
-              "ratio": 1.0201656836398554,
-              "sn_mean": 1.5126406105424712e-15
+              "ratio": 1.0200699456844589,
+              "sn_mean": 1.5124986560328994e-15
             }
           ],
           "reasons": [],
@@ -758,38 +758,38 @@
           "quantities": [
             {
               "mc_mean": 8.211725896820583e-15,
-              "mc_rel_sigma": 0.018440448715798783,
+              "mc_rel_sigma": 0.018440448715798675,
               "quantity": "component:boron",
               "ratio": 0.9837749819042214,
               "sn_mean": 8.078490495547096e-15
             },
             {
               "mc_mean": 1.6536649009810349e-16,
-              "mc_rel_sigma": 0.016545884931098064,
+              "mc_rel_sigma": 0.016545884931098147,
               "quantity": "component:nitrogen",
-              "ratio": 0.9793269645747255,
-              "sn_mean": 1.6194786279015208e-16
+              "ratio": 0.9665465086715256,
+              "sn_mean": 1.5983440365558634e-16
             },
             {
               "mc_mean": 2.3284236370864793e-16,
-              "mc_rel_sigma": 0.20166231997261472,
+              "mc_rel_sigma": 0.2016623199726148,
               "quantity": "component:hydrogen",
-              "ratio": 1.0653561803413922,
-              "sn_mean": 2.4806005122230637e-16
+              "ratio": 1.0640667159506414,
+              "sn_mean": 2.477598092856458e-16
             },
             {
               "mc_mean": 5.0006712423352545e-15,
               "mc_rel_sigma": 0.346676488751083,
               "quantity": "component:photon",
-              "ratio": 1.0338187952235087,
-              "sn_mean": 5.169787919059879e-15
+              "ratio": 1.0337821858535265,
+              "sn_mean": 5.169604847636209e-15
             },
             {
               "mc_mean": 1.3612641392941504e-14,
               "mc_rel_sigma": 0.13971239827300744,
               "quantity": "physical_total",
-              "ratio": 1.0033531284899344,
-              "sn_mean": 1.3658286328619436e-14
+              "ratio": 1.003162366651732,
+              "sn_mean": 1.3655689556124527e-14
             }
           ],
           "reasons": [],
@@ -810,35 +810,35 @@
             },
             {
               "mc_mean": 8.823277337011237e-17,
-              "mc_rel_sigma": 0.046531340560443585,
+              "mc_rel_sigma": 0.046531340560443536,
               "quantity": "component:nitrogen",
-              "ratio": 1.0585246871756055,
-              "sn_mean": 9.339656883023429e-17
+              "ratio": 1.0593033298939694,
+              "sn_mean": 9.346527063673998e-17
             },
             {
-              "mc_mean": 2.108222544072182e-17,
+              "mc_mean": 2.1082225440721814e-17,
               "mc_rel_sigma": 0.7467549975613329,
               "quantity": "component:hydrogen",
-              "ratio": 1.2301642402407698,
-              "sn_mean": 2.5934599841870185e-17
+              "ratio": 1.2261412621292411,
+              "sn_mean": 2.5849786510379842e-17
             },
             {
               "mc_mean": 2.260072663864531e-15,
-              "mc_rel_sigma": 0.46695357590423864,
+              "mc_rel_sigma": 0.4669535759042387,
               "quantity": "component:photon",
-              "ratio": 1.1861020783751026,
-              "sn_mean": 2.680676883888475e-15
+              "ratio": 1.1858282668232298,
+              "sn_mean": 2.680058049885037e-15
             },
             {
               "mc_mean": 3.7891667206007545e-15,
               "mc_rel_sigma": 0.2964257176806052,
               "quantity": "physical_total",
-              "ratio": 1.1345438742422032,
-              "sn_mean": 4.2989758913400036e-15
+              "ratio": 1.134376305598423,
+              "sn_mean": 4.298340945811576e-15
             }
           ],
           "reasons": [
-            "total-dose ratio 1.135 is outside 1 +- 5.0%"
+            "total-dose ratio 1.134 is outside 1 +- 5.0%"
           ],
           "status": "unresolved",
           "voxels": 277
@@ -850,38 +850,38 @@
           "quantities": [
             {
               "mc_mean": 1.2937834169731696e-15,
-              "mc_rel_sigma": 0.041658801185181824,
+              "mc_rel_sigma": 0.0416588011851818,
               "quantity": "component:boron",
               "ratio": 1.07652289868843,
               "sn_mean": 1.3927874743149782e-15
             },
             {
               "mc_mean": 2.833673267063261e-17,
-              "mc_rel_sigma": 0.04455548420082948,
+              "mc_rel_sigma": 0.04455548420082952,
               "quantity": "component:nitrogen",
-              "ratio": 1.0746881808956688,
-              "sn_mean": 3.0453151686329025e-17
+              "ratio": 1.0863742249586072,
+              "sn_mean": 3.0784295992917745e-17
             },
             {
-              "mc_mean": 1.986961030581699e-17,
-              "mc_rel_sigma": 0.6755251070244541,
+              "mc_mean": 1.9869610305816988e-17,
+              "mc_rel_sigma": 0.6755251070244543,
               "quantity": "component:hydrogen",
-              "ratio": 1.246550893256102,
-              "sn_mean": 2.476848047536682e-17
+              "ratio": 1.246495568138035,
+              "sn_mean": 2.47673811868307e-17
             },
             {
               "mc_mean": 2.371234836043488e-15,
               "mc_rel_sigma": 0.4739478950189691,
               "quantity": "component:photon",
-              "ratio": 1.1049092801203113,
-              "sn_mean": 2.6199993756890145e-15
+              "ratio": 1.1048973763344272,
+              "sn_mean": 2.6199711490172454e-15
             },
             {
               "mc_mean": 3.707303019212731e-15,
-              "mc_rel_sigma": 0.31886931731119694,
+              "mc_rel_sigma": 0.3188693173111968,
               "quantity": "physical_total",
-              "ratio": 1.0972959213432614,
-              "sn_mean": 4.068008482165689e-15
+              "ratio": 1.097377333179499,
+              "sn_mean": 4.0683103005119715e-15
             }
           ],
           "reasons": [
@@ -906,29 +906,29 @@
               "mc_mean": 3.785144029644311e-18,
               "mc_rel_sigma": 0.1209136365419466,
               "quantity": "component:nitrogen",
-              "ratio": 1.055109857287218,
-              "sn_mean": 3.9937427769295744e-18
+              "ratio": 1.066779839808403,
+              "sn_mean": 4.037915341595691e-18
             },
             {
               "mc_mean": 7.794942172760017e-18,
               "mc_rel_sigma": 0.9473174565199869,
               "quantity": "component:hydrogen",
-              "ratio": 0.8373848929897781,
-              "sn_mean": 6.527366817198156e-18
+              "ratio": 0.837340004675156,
+              "sn_mean": 6.527016915381443e-18
             },
             {
               "mc_mean": 9.911364614475606e-16,
               "mc_rel_sigma": 0.6628039529342433,
               "quantity": "component:photon",
-              "ratio": 1.0226995680975426,
-              "sn_mean": 1.0136348310481468e-15
+              "ratio": 1.0226883284412929,
+              "sn_mean": 1.0136236910150236e-15
             },
             {
               "mc_mean": 1.1708968100792659e-15,
               "mc_rel_sigma": 0.5817564758839401,
               "quantity": "physical_total",
-              "ratio": 1.0289932749286326,
-              "sn_mean": 1.2048449432069529e-15
+              "ratio": 1.0290211874051596,
+              "sn_mean": 1.2048776258366797e-15
             }
           ],
           "reasons": [],
@@ -949,31 +949,31 @@
             },
             {
               "mc_mean": 1.5489843939955315e-17,
-              "mc_rel_sigma": 0.07396725293970301,
+              "mc_rel_sigma": 0.07396725293970298,
               "quantity": "component:nitrogen",
-              "ratio": 1.1026352791963285,
-              "sn_mean": 1.7079648397440186e-17
+              "ratio": 1.1111432606409255,
+              "sn_mean": 1.7211435702261028e-17
             },
             {
-              "mc_mean": 1.0516669899223725e-17,
-              "mc_rel_sigma": 0.9434548485248101,
+              "mc_mean": 1.0516669899223723e-17,
+              "mc_rel_sigma": 0.9434548485248102,
               "quantity": "component:hydrogen",
-              "ratio": 0.8570970755597515,
-              "sn_mean": 9.01380701525192e-18
+              "ratio": 0.8570485328677467,
+              "sn_mean": 9.013296507784086e-18
             },
             {
               "mc_mean": 1.5225218556480049e-15,
               "mc_rel_sigma": 0.581428509308062,
               "quantity": "component:photon",
-              "ratio": 0.8649479736838164,
-              "sn_mean": 1.3169021939320657e-15
+              "ratio": 0.8649377969019805,
+              "sn_mean": 1.3168866995593005e-15
             },
             {
               "mc_mean": 2.034632192922029e-15,
               "mc_rel_sigma": 0.4541359967383149,
               "quantity": "physical_total",
-              "ratio": 0.9303122415511825,
-              "sn_mean": 1.8928432361294907e-15
+              "ratio": 0.9303691473767127,
+              "sn_mean": 1.892959018554079e-15
             }
           ],
           "reasons": [
@@ -988,39 +988,39 @@
           "name": "BODY",
           "quantities": [
             {
-              "mc_mean": 6.712515241760275e-15,
-              "mc_rel_sigma": 0.01788572881453754,
+              "mc_mean": 6.712515241760276e-15,
+              "mc_rel_sigma": 0.01788572881453752,
               "quantity": "component:boron",
-              "ratio": 0.9757884003324789,
-              "sn_mean": 6.549994509964642e-15
+              "ratio": 0.9757884003324792,
+              "sn_mean": 6.549994509964644e-15
             },
             {
-              "mc_mean": 3.98855936619753e-16,
-              "mc_rel_sigma": 0.019280612152852622,
+              "mc_mean": 3.9885593661975294e-16,
+              "mc_rel_sigma": 0.019280612152852695,
               "quantity": "component:nitrogen",
-              "ratio": 1.1359291184139855,
-              "sn_mean": 4.530720724586604e-16
+              "ratio": 0.9815500358252118,
+              "sn_mean": 3.914970588782169e-16
             },
             {
-              "mc_mean": 2.269909301609942e-16,
-              "mc_rel_sigma": 0.2427094665686587,
+              "mc_mean": 2.2699093016099423e-16,
+              "mc_rel_sigma": 0.2427094665686588,
               "quantity": "component:hydrogen",
-              "ratio": 0.9882419381859309,
-              "sn_mean": 2.2432195677292816e-16
+              "ratio": 0.9799879672185063,
+              "sn_mean": 2.2244838022551067e-16
             },
             {
               "mc_mean": 4.0432739666570615e-15,
               "mc_rel_sigma": 0.34873452496291635,
               "quantity": "component:photon",
-              "ratio": 1.052657814403731,
-              "sn_mean": 4.256183936776727e-15
+              "ratio": 1.0524915252519291,
+              "sn_mean": 4.255511584178308e-15
             },
             {
               "mc_mean": 1.1382445292160038e-14,
               "mc_rel_sigma": 0.1367904512352644,
               "quantity": "physical_total",
-              "ratio": 1.0088844867001094,
-              "sn_mean": 1.1483572475972957e-14
+              "ratio": 1.0032511679289264,
+              "sn_mean": 1.1419451533246669e-14
             }
           ],
           "reasons": [
@@ -1036,42 +1036,42 @@
           "quantities": [
             {
               "mc_mean": 4.475888415232771e-15,
-              "mc_rel_sigma": 0.022052986114942597,
+              "mc_rel_sigma": 0.022052986114942625,
               "quantity": "component:boron",
               "ratio": 1.0640295390134633,
               "sn_mean": 4.7624774871358264e-15
             },
             {
               "mc_mean": 1.5045259243887608e-16,
-              "mc_rel_sigma": 0.02306226548869679,
+              "mc_rel_sigma": 0.023062265488696783,
               "quantity": "component:nitrogen",
-              "ratio": 1.5580198397026437,
-              "sn_mean": 2.344081239544649e-16
+              "ratio": 1.036650860796486,
+              "sn_mean": 1.5596680946082376e-16
             },
             {
-              "mc_mean": 2.988980550699986e-16,
-              "mc_rel_sigma": 0.17200040675760803,
+              "mc_mean": 2.9889805506999853e-16,
+              "mc_rel_sigma": 0.1720004067576081,
               "quantity": "component:hydrogen",
-              "ratio": 1.0565786413190716,
-              "sn_mean": 3.1580930091877217e-16
+              "ratio": 1.0665489436620643,
+              "sn_mean": 3.1878940489755247e-16
             },
             {
               "mc_mean": 2.7246587526394487e-15,
               "mc_rel_sigma": 0.45345768975611894,
               "quantity": "component:photon",
-              "ratio": 1.0412863346237942,
-              "sn_mean": 2.8371499256365705e-15
+              "ratio": 1.042461053395785,
+              "sn_mean": 2.8403506334205656e-15
             },
             {
-              "mc_mean": 7.661863206660294e-15,
-              "mc_rel_sigma": 0.18252677625512984,
+              "mc_mean": 7.661863206660295e-15,
+              "mc_rel_sigma": 0.18252677625512964,
               "quantity": "physical_total",
-              "ratio": 1.0636896819772488,
-              "sn_mean": 8.149844837645671e-15
+              "ratio": 1.0542584900097283,
+              "sn_mean": 8.077584334914778e-15
             }
           ],
           "reasons": [
-            "total-dose ratio 1.064 is outside 1 +- 5.0%"
+            "total-dose ratio 1.054 is outside 1 +- 5.0%"
           ],
           "status": "unresolved",
           "voxels": 10415
@@ -1082,39 +1082,39 @@
           "name": "RESEARCH_TARGET",
           "quantities": [
             {
-              "mc_mean": 9.86494467633204e-14,
-              "mc_rel_sigma": 0.010547785384773259,
+              "mc_mean": 9.864944676332039e-14,
+              "mc_rel_sigma": 0.010547785384773275,
               "quantity": "component:boron",
-              "ratio": 0.9412961245024938,
+              "ratio": 0.9412961245024939,
               "sn_mean": 9.285834192262858e-14
             },
             {
               "mc_mean": 9.93584305792079e-16,
-              "mc_rel_sigma": 0.010122152949557435,
+              "mc_rel_sigma": 0.010122152949557438,
               "quantity": "component:nitrogen",
-              "ratio": 0.9427495571091135,
-              "sn_mean": 9.367011642360484e-16
+              "ratio": 0.9495371895658941,
+              "sn_mean": 9.434452493185905e-16
             },
             {
-              "mc_mean": 7.586674388922064e-16,
-              "mc_rel_sigma": 0.17073482583814234,
+              "mc_mean": 7.586674388922066e-16,
+              "mc_rel_sigma": 0.1707348258381423,
               "quantity": "component:hydrogen",
-              "ratio": 0.9316055130505346,
-              "sn_mean": 7.067787686439091e-16
+              "ratio": 0.9305040984389633,
+              "sn_mean": 7.0594316124139e-16
             },
             {
               "mc_mean": 1.3497192178426741e-14,
               "mc_rel_sigma": 0.21384652488037145,
               "quantity": "component:photon",
-              "ratio": 1.0322271102825946,
-              "sn_mean": 1.3932167679266274e-14
+              "ratio": 1.0321621503525737,
+              "sn_mean": 1.3931290902606884e-14
             },
             {
-              "mc_mean": 1.1389994684672023e-13,
+              "mc_mean": 1.1389994684672025e-13,
               "mc_rel_sigma": 0.03471758671596621,
               "quantity": "physical_total",
-              "ratio": 0.9520108879479897,
-              "sn_mean": 1.0843398953477495e-13
+              "ratio": 0.952055064448154,
+              "sn_mean": 1.0843902123579557e-13
             }
           ],
           "reasons": [],
@@ -1153,14 +1153,14 @@
         {
           "gamma_evaluated": 16114,
           "gamma_pass_rate": 0.6684870299118779,
-          "max_normalized_difference": 0.8611513463951989,
+          "max_normalized_difference": 0.11480985484435627,
           "quantity": "component:nitrogen",
           "within_sigma_fraction": null
         },
         {
           "gamma_evaluated": 21189,
-          "gamma_pass_rate": 0.4168200481381849,
-          "max_normalized_difference": 0.6626872816360018,
+          "gamma_pass_rate": 0.44400396432111,
+          "max_normalized_difference": 0.2694619802281107,
           "quantity": "component:hydrogen",
           "within_sigma_fraction": null
         },
@@ -1212,43 +1212,43 @@
       "name": "Brain",
       "quantities": [
         {
-          "d2": 9.983583728232028e-14,
+          "d2": 9.983583728232027e-14,
           "d50": 6.340717952021838e-15,
           "d95": 1.1016335670287174e-15,
-          "max": 1.1035301803799666e-13,
+          "max": 1.103530180379967e-13,
           "mean": 1.266943054130353e-14,
           "quantity": "component:boron"
         },
         {
-          "d2": 3.277618314303765e-15,
-          "d50": 1.720970171224011e-16,
-          "d95": 2.965916909065564e-17,
+          "d2": 3.2697525166439454e-15,
+          "d50": 1.7398821706365243e-16,
+          "d95": 2.9965344561546015e-17,
           "max": 5.236659865334505e-15,
-          "mean": 4.319594315819221e-16,
+          "mean": 4.3348881389797585e-16,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 9.484834776488403e-16,
-          "d50": 2.642134927702911e-16,
-          "d95": 9.80706025961827e-17,
+          "d2": 9.425450845002404e-16,
+          "d50": 2.6372131732651054e-16,
+          "d95": 9.768886553799607e-17,
           "max": 1.1277666965967797e-15,
-          "mean": 3.407431860573105e-16,
+          "mean": 3.3969663717475377e-16,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 1.4348379021751345e-14,
-          "d50": 5.873181808615299e-15,
-          "d95": 2.4736784037370888e-15,
-          "max": 1.5292582044389878e-14,
-          "mean": 6.754672846792564e-15,
+          "d2": 1.434794054409922e-14,
+          "d50": 5.872929573698046e-15,
+          "d95": 2.4729884660996455e-15,
+          "max": 1.5292356811730932e-14,
+          "mean": 6.7535614911352716e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 1.1583767575752216e-13,
-          "d50": 1.2759585628699578e-14,
-          "d95": 3.779311521282322e-15,
+          "d2": 1.1584736403791033e-13,
+          "d50": 1.2761237380476812e-14,
+          "d95": 3.777923495985353e-15,
           "max": 1.2981815867342293e-13,
-          "mean": 2.0196806005735233e-14,
+          "mean": 2.0196177483511395e-14,
           "quantity": "physical_total"
         }
       ],
@@ -1267,35 +1267,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 3.0302209751055625e-16,
-          "d50": 9.366927908088081e-17,
+          "d2": 3.035410804300008e-16,
+          "d50": 9.532669279310479e-17,
           "d95": 0.0,
           "max": 7.013179643755346e-16,
-          "mean": 1.0805714092623064e-16,
+          "mean": 1.0960269404698464e-16,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 3.32845378999633e-16,
-          "d50": 2.354399909941586e-16,
-          "d95": 9.622891125930606e-17,
-          "max": 3.677813219157415e-16,
-          "mean": 2.291477045341735e-16,
+          "d2": 3.3283372403818435e-16,
+          "d50": 2.3543336064099243e-16,
+          "d95": 9.622435408598855e-17,
+          "max": 3.6765324634241853e-16,
+          "mean": 2.2913701645397227e-16,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 9.262806631805969e-15,
-          "d50": 6.52737211668249e-15,
-          "d95": 4.438646660411048e-15,
-          "max": 1.0564705059312339e-14,
-          "mean": 6.596249246893737e-15,
+          "d2": 9.262713484937803e-15,
+          "d50": 6.527295496100817e-15,
+          "d95": 4.438612970829864e-15,
+          "max": 1.0564642028568574e-14,
+          "mean": 6.5961778797890004e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 2.115907226426721e-14,
-          "d50": 1.3227254091055832e-14,
-          "d95": 8.08598224659069e-15,
-          "max": 2.526928368571938e-14,
-          "mean": 1.3535348883789141e-14,
+          "d2": 2.116176663680777e-14,
+          "d50": 1.322916118933833e-14,
+          "d95": 8.086238210464968e-15,
+          "max": 2.526754817960721e-14,
+          "mean": 1.3536812381724964e-14,
           "quantity": "physical_total"
         }
       ],
@@ -1307,42 +1307,42 @@
       "quantities": [
         {
           "d2": 6.97802221211361e-16,
-          "d50": 5.73118800162022e-16,
-          "d95": 4.798318530306357e-16,
-          "max": 7.016625120660435e-16,
-          "mean": 5.842228838213121e-16,
+          "d50": 5.731188001620219e-16,
+          "d95": 4.798318530306356e-16,
+          "max": 7.016625120660436e-16,
+          "mean": 5.842228838213123e-16,
           "quantity": "component:boron"
         },
         {
-          "d2": 1.0383576215872594e-16,
-          "d50": 7.780306303684316e-17,
-          "d95": 1.9611424464362066e-18,
-          "max": 1.0573030124469109e-16,
-          "mean": 5.350550523418104e-17,
+          "d2": 1.0326150773503436e-16,
+          "d50": 7.70770229008429e-17,
+          "d95": 1.8217649524446273e-18,
+          "max": 1.0514556924151867e-16,
+          "mean": 5.3112629124786784e-17,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 6.32911572538116e-17,
-          "d50": 5.207921571488121e-17,
-          "d95": 4.0023430729730955e-17,
-          "max": 6.34280905071379e-17,
-          "mean": 5.064602357108748e-17,
+          "d2": 6.324840572088672e-17,
+          "d50": 5.053317015298605e-17,
+          "d95": 3.7633380221555107e-17,
+          "max": 6.338524713367544e-17,
+          "mean": 4.9551674086110274e-17,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 1.927305746776224e-15,
-          "d50": 1.8063545375236858e-15,
-          "d95": 1.6763575995150568e-15,
-          "max": 1.930658298722609e-15,
-          "mean": 1.7959036294126836e-15,
+          "d2": 1.927289737894778e-15,
+          "d50": 1.8063264810398537e-15,
+          "d95": 1.6710638326524025e-15,
+          "max": 1.9306422583038336e-15,
+          "mean": 1.7934109626651156e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 2.690414142053752e-15,
-          "d50": 2.4467192642790495e-15,
-          "d95": 2.2757252112052348e-15,
-          "max": 2.6977750645286804e-15,
-          "mean": 2.4842780420392648e-15,
+          "d2": 2.690212175318919e-15,
+          "d50": 2.4469031580210223e-15,
+          "d95": 2.2673901749089472e-15,
+          "max": 2.6975721822449867e-15,
+          "mean": 2.4802981496973248e-15,
           "quantity": "physical_total"
         }
       ],
@@ -1361,35 +1361,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 1.4482201140293186e-15,
-          "d50": 2.1106166811224384e-16,
-          "d95": 5.553577534316539e-18,
-          "max": 1.4804596492933304e-15,
-          "mean": 5.138102653847156e-16,
+          "d2": 1.4402108618249652e-15,
+          "d50": 2.1371285914873936e-16,
+          "d95": 5.721348296522135e-18,
+          "max": 1.4722720992139656e-15,
+          "mean": 5.123738226702491e-16,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 2.6030161614300005e-16,
-          "d50": 2.3565722202760783e-16,
-          "d95": 1.181071974119903e-16,
-          "max": 2.6041232344876005e-16,
-          "mean": 2.0631535969803986e-16,
+          "d2": 2.602918775130088e-16,
+          "d50": 2.3233607378084432e-16,
+          "d95": 1.155046853764841e-16,
+          "max": 2.6040175021434197e-16,
+          "mean": 2.0462731243975854e-16,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 6.128826755321026e-15,
-          "d50": 5.908152524312302e-15,
-          "d95": 5.124542129964895e-15,
+          "d2": 6.128817810644364e-15,
+          "d50": 5.9025109288202045e-15,
+          "d95": 5.1171213429945085e-15,
           "max": 6.133309358505982e-15,
-          "mean": 5.730403248756632e-15,
+          "mean": 5.7268517511940404e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 1.634683168163233e-14,
-          "d50": 1.5720100050838453e-14,
-          "d95": 1.3041351980391886e-14,
-          "max": 1.639052589722996e-14,
-          "mean": 1.5006603540829323e-14,
+          "d2": 1.6323662368489904e-14,
+          "d50": 1.5720425164749448e-14,
+          "d95": 1.3037898958168527e-14,
+          "max": 1.6364431487709547e-14,
+          "mean": 1.4999927553293985e-14,
           "quantity": "physical_total"
         }
       ],
@@ -1408,35 +1408,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 3.781945170467862e-17,
-          "d50": 3.781945170467862e-17,
-          "d95": 3.781945170467862e-17,
-          "max": 3.781945170467862e-17,
-          "mean": 3.781945170467862e-17,
+          "d2": 3.787170378484826e-17,
+          "d50": 3.787170378484826e-17,
+          "d95": 3.787170378484826e-17,
+          "max": 3.787170378484826e-17,
+          "mean": 3.787170378484826e-17,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 3.034139276632004e-17,
-          "d50": 3.034139276632004e-17,
-          "d95": 3.034139276632004e-17,
-          "max": 3.034139276632004e-17,
-          "mean": 3.034139276632004e-17,
+          "d2": 3.0337415267618197e-17,
+          "d50": 3.0337415267618197e-17,
+          "d95": 3.0337415267618197e-17,
+          "max": 3.0337415267618197e-17,
+          "mean": 3.0337415267618197e-17,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 1.7684396332878508e-15,
-          "d50": 1.7684396332878508e-15,
-          "d95": 1.7684396332878508e-15,
-          "max": 1.7684396332878508e-15,
-          "mean": 1.7684396332878508e-15,
+          "d2": 1.7684166761980023e-15,
+          "d50": 1.7684166761980023e-15,
+          "d95": 1.7684166761980023e-15,
+          "max": 1.7684166761980023e-15,
+          "mean": 1.7684166761980023e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 2.4825600577239346e-15,
-          "d50": 2.4825600577239346e-15,
-          "d95": 2.4825600577239346e-15,
-          "max": 2.4825600577239346e-15,
-          "mean": 2.4825600577239346e-15,
+          "d2": 2.482585375215554e-15,
+          "d50": 2.482585375215554e-15,
+          "d95": 2.482585375215554e-15,
+          "max": 2.482585375215554e-15,
+          "mean": 2.482585375215554e-15,
           "quantity": "physical_total"
         }
       ],
@@ -1455,35 +1455,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 2.054937489698635e-16,
-          "d50": 1.6801880273542354e-16,
-          "d95": 1.328860406406361e-16,
+          "d2": 2.0550574842341936e-16,
+          "d50": 1.683187890743201e-16,
+          "d95": 1.3345601468453958e-16,
           "max": 2.0705520506296516e-16,
-          "mean": 1.6801880273542354e-16,
+          "mean": 1.683187890743201e-16,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 6.051633629464604e-17,
-          "d50": 5.5090904903566706e-17,
-          "d95": 5.000456297442984e-17,
+          "d2": 6.05163140594535e-17,
+          "d50": 5.509034902375312e-17,
+          "d95": 5.0003506802784027e-17,
           "max": 6.0742395935941e-17,
-          "mean": 5.5090904903566706e-17,
+          "mean": 5.509034902375312e-17,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 4.21792396595956e-15,
-          "d50": 3.955131569735989e-15,
-          "d95": 3.708763698276393e-15,
+          "d2": 4.217923366001762e-15,
+          "d50": 3.955116570791036e-15,
+          "d95": 3.708735200280981e-15,
           "max": 4.2288736491355415e-15,
-          "mean": 3.955131569735989e-15,
+          "mean": 3.955116570791036e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 8.76465530471615e-15,
-          "d50": 7.907120770401685e-15,
-          "d95": 7.103182144481874e-15,
+          "d2": 8.764666681976715e-15,
+          "d50": 7.907405201915813e-15,
+          "d95": 7.103722564358718e-15,
           "max": 8.800385910312585e-15,
-          "mean": 7.907120770401685e-15,
+          "mean": 7.907405201915813e-15,
           "quantity": "physical_total"
         }
       ],
@@ -1494,43 +1494,43 @@
       "name": "Mandible",
       "quantities": [
         {
-          "d2": 1.777712055373218e-14,
-          "d50": 4.2657278129405644e-16,
+          "d2": 1.7777120553732183e-14,
+          "d50": 4.265727812940565e-16,
           "d95": 1.0413100562831692e-16,
-          "max": 2.2551368764756202e-14,
+          "max": 2.2551368764756196e-14,
           "mean": 1.7312093752035688e-15,
           "quantity": "component:boron"
         },
         {
-          "d2": 2.9053052180238213e-15,
-          "d50": 6.85179222128961e-17,
-          "d95": 1.6428767113825633e-17,
-          "max": 3.720278098623997e-15,
-          "mean": 2.7874084799449417e-16,
+          "d2": 2.875137478977156e-15,
+          "d50": 6.790223460509517e-17,
+          "d95": 1.627636453219023e-17,
+          "max": 3.6855613264140825e-15,
+          "mean": 2.756553547445067e-16,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 4.878117900000026e-16,
-          "d50": 7.711728560072049e-18,
-          "d95": 2.884690326130451e-18,
-          "max": 7.56724548904437e-16,
-          "mean": 3.061251196202568e-17,
+          "d2": 4.571851810237229e-16,
+          "d50": 7.187730662228477e-18,
+          "d95": 2.7054750400053342e-18,
+          "max": 7.029775672733312e-16,
+          "mean": 2.842559305329657e-17,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 9.312987076920589e-15,
-          "d50": 1.2945111322801074e-15,
-          "d95": 7.711528159004317e-16,
-          "max": 1.0896237992529027e-14,
-          "mean": 1.9304948475721503e-15,
+          "d2": 9.2760675853165e-15,
+          "d50": 1.289569628703458e-15,
+          "d95": 7.685082133553436e-16,
+          "max": 1.0852741420652913e-14,
+          "mean": 1.9238462319771783e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 3.076211456903535e-14,
-          "d50": 1.802774166533384e-15,
-          "d95": 9.04287689385463e-16,
-          "max": 3.777023383877056e-14,
-          "mean": 3.97105758273224e-15,
+          "d2": 3.066980786626853e-14,
+          "d50": 1.7960649267927497e-15,
+          "d95": 9.01862965835591e-16,
+          "max": 3.766196013551569e-14,
+          "mean": 3.959136554978551e-15,
           "quantity": "physical_total"
         }
       ],
@@ -1545,39 +1545,39 @@
           "d50": 2.4149284298199566e-15,
           "d95": 1.9680458218410184e-15,
           "max": 2.6167710602965793e-15,
-          "mean": 2.349992147262868e-15,
+          "mean": 2.3499921472628678e-15,
           "quantity": "component:boron"
         },
         {
-          "d2": 2.6137042754038227e-17,
-          "d50": 2.1962541257338858e-17,
-          "d95": 6.4694122222942584e-18,
-          "max": 2.6446293913740042e-17,
-          "mean": 1.8430203465287088e-17,
+          "d2": 2.476846269399371e-17,
+          "d50": 2.0896713472216075e-17,
+          "d95": 6.037560370235476e-18,
+          "max": 2.506152093643643e-17,
+          "mean": 1.74389220786954e-17,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 1.6901357855069686e-16,
-          "d50": 1.4372706910790822e-16,
-          "d95": 1.2301593127777137e-16,
-          "max": 1.7051629176779527e-16,
-          "mean": 1.4350715327898775e-16,
+          "d2": 1.687415188345254e-16,
+          "d50": 1.4352523437174088e-16,
+          "d95": 1.2279797174893134e-16,
+          "max": 1.7022529291375862e-16,
+          "mean": 1.433100703606891e-16,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 3.4865336202248723e-15,
-          "d50": 3.337455516267391e-15,
-          "d95": 3.018985018806444e-15,
-          "max": 3.4875057723694405e-15,
-          "mean": 3.296535443743554e-15,
+          "d2": 3.4865126236778528e-15,
+          "d50": 3.337392268202515e-15,
+          "d95": 3.0189126082129053e-15,
+          "max": 3.4874899734340525e-15,
+          "mean": 3.296474246923974e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 6.28399633305245e-15,
-          "d50": 5.913544031808617e-15,
-          "d95": 5.132132935814598e-15,
-          "max": 6.289087516540452e-15,
-          "mean": 5.808464947750695e-15,
+          "d2": 6.2823524223386424e-15,
+          "d50": 5.912234109215716e-15,
+          "d95": 5.1307534311618085e-15,
+          "max": 6.287330975628333e-15,
+          "mean": 5.807215386626227e-15,
           "quantity": "physical_total"
         }
       ],
@@ -1588,43 +1588,43 @@
       "name": "Optic-Nerve-Rt",
       "quantities": [
         {
-          "d2": 1.023172071469425e-14,
+          "d2": 1.0231720714694251e-14,
           "d50": 9.680127366741845e-15,
           "d95": 9.045167848422074e-15,
-          "max": 1.0271223153023652e-14,
+          "max": 1.0271223153023654e-14,
           "mean": 9.610109950650812e-15,
           "quantity": "component:boron"
         },
         {
-          "d2": 9.450607813921311e-16,
-          "d50": 9.782883783116262e-17,
-          "d95": 3.452984224100948e-17,
-          "max": 1.0137295592860271e-15,
-          "mean": 2.70120712481111e-16,
+          "d2": 9.463207110535983e-16,
+          "d50": 9.270635331701949e-17,
+          "d95": 3.2155700840373836e-17,
+          "max": 1.01554333631066e-15,
+          "mean": 2.6732763316826205e-16,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 3.9053711645324262e-16,
-          "d50": 3.5024550388050623e-16,
-          "d95": 3.409117652204912e-16,
-          "max": 3.9377505614782187e-16,
-          "mean": 3.5661822482578326e-16,
+          "d2": 3.9026509868865396e-16,
+          "d50": 3.4963331609039625e-16,
+          "d95": 3.408026025618154e-16,
+          "max": 3.93515294985287e-16,
+          "mean": 3.562485595954917e-16,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 7.558608787838699e-15,
-          "d50": 7.0476642450372104e-15,
-          "d95": 6.912595903711177e-15,
-          "max": 7.566867463248246e-15,
-          "mean": 7.185650390702677e-15,
+          "d2": 7.558544097627654e-15,
+          "d50": 7.047547063517987e-15,
+          "d95": 6.9124245410405655e-15,
+          "max": 7.566799189778155e-15,
+          "mean": 7.185539066533001e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 1.856777229288641e-14,
-          "d50": 1.7028427366037825e-14,
-          "d95": 1.6497287372807537e-14,
-          "max": 1.8594402611143543e-14,
-          "mean": 1.742249927866038e-14,
+          "d2": 1.8569229894519783e-14,
+          "d50": 1.7022565897865325e-14,
+          "d95": 1.6491773842798257e-14,
+          "max": 1.859619877050855e-14,
+          "mean": 1.7419225209947565e-14,
           "quantity": "physical_total"
         }
       ],
@@ -1643,35 +1643,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 3.6583413044700767e-17,
-          "d50": 2.8352378158974724e-18,
+          "d2": 3.6762394071613185e-17,
+          "d50": 2.815493560909315e-18,
           "d95": 0.0,
-          "max": 4.655394555479888e-17,
-          "mean": 7.629559656147578e-18,
+          "max": 4.684312682297028e-17,
+          "mean": 7.644159321898821e-18,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 8.340921480089542e-17,
-          "d50": 4.973728301180485e-17,
-          "d95": 3.031761163871997e-17,
+          "d2": 8.338851729952514e-17,
+          "d50": 4.972778759323865e-17,
+          "d95": 3.0314346966467386e-17,
           "max": 8.82359890102817e-17,
-          "mean": 5.149389598236677e-17,
+          "mean": 5.147980021107494e-17,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 2.6812190981082815e-15,
-          "d50": 2.126474844121872e-15,
-          "d95": 1.6890482919596437e-15,
+          "d2": 2.6812103192008768e-15,
+          "d50": 2.126447228736866e-15,
+          "d95": 1.6890228219682609e-15,
           "max": 2.8311247372842573e-15,
-          "mean": 2.1455821765798258e-15,
+          "mean": 2.1455653154886306e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 4.343122561185039e-15,
-          "d50": 3.2064138956270423e-15,
-          "d95": 2.3078870962105763e-15,
+          "d2": 4.343435497330769e-15,
+          "d50": 3.20638228055258e-15,
+          "d95": 2.3080738933586425e-15,
           "max": 4.709510044187881e-15,
-          "mean": 3.216851118041675e-15,
+          "mean": 3.2168347608449373e-15,
           "quantity": "physical_total"
         }
       ],
@@ -1690,35 +1690,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 2.1096314957850758e-16,
-          "d50": 3.528384460244332e-17,
+          "d2": 2.128239023894976e-16,
+          "d50": 3.597879196253108e-17,
           "d95": 0.0,
-          "max": 3.4674657997675817e-16,
-          "mean": 5.95612147677194e-17,
+          "max": 3.47820196238799e-16,
+          "mean": 6.009254671803807e-17,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 2.3873781872468837e-16,
+          "d2": 2.387372321566647e-16,
           "d50": 8.029095889413601e-17,
-          "d95": 4.8522020937421524e-17,
-          "max": 2.9939342989086917e-16,
-          "mean": 1.0429644666000903e-16,
+          "d95": 4.8520473527211874e-17,
+          "max": 2.992004085649474e-16,
+          "mean": 1.0428018264123226e-16,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 6.0983067678227345e-15,
-          "d50": 4.668521737870614e-15,
-          "d95": 3.656879413455283e-15,
-          "max": 6.5519693097593524e-15,
-          "mean": 4.7413677322541704e-15,
+          "d2": 6.098293541314945e-15,
+          "d50": 4.6684946267264436e-15,
+          "d95": 3.656843046875316e-15,
+          "max": 6.5519068436824865e-15,
+          "mean": 4.741329193840452e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 1.5531418713695236e-14,
-          "d50": 1.0260665828738864e-14,
-          "d95": 6.980494315570341e-15,
-          "max": 1.6335982877259475e-14,
-          "mean": 1.0480113711983881e-14,
+          "d2": 1.5531871573792752e-14,
+          "d50": 1.0259732292761096e-14,
+          "d95": 6.981148870789865e-15,
+          "max": 1.633378664831279e-14,
+          "mean": 1.0480590241501708e-14,
           "quantity": "physical_total"
         }
       ],
@@ -1732,40 +1732,40 @@
           "d2": 7.476741166544642e-16,
           "d50": 2.31557028086487e-16,
           "d95": 1.1662523731161376e-16,
-          "max": 9.013644851160013e-16,
+          "max": 9.013644851160011e-16,
           "mean": 2.7279147213741717e-16,
           "quantity": "component:boron"
         },
         {
-          "d2": 9.131865748088507e-17,
-          "d50": 1.74769891137785e-18,
-          "d95": 2.603508084416393e-19,
+          "d2": 9.146716391367986e-17,
+          "d50": 1.6612840320812977e-18,
+          "d95": 2.408966617420547e-19,
           "max": 1.4775102008126024e-16,
-          "mean": 8.125680721055975e-18,
+          "mean": 8.039804004973049e-18,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 4.754517345221776e-17,
-          "d50": 2.344905717345071e-17,
-          "d95": 9.606085488676395e-18,
-          "max": 5.4118814439345045e-17,
-          "mean": 2.4626639844090998e-17,
+          "d2": 4.7493740040499195e-17,
+          "d50": 2.3414727523509892e-17,
+          "d95": 9.591396642970641e-18,
+          "max": 5.411755771907801e-17,
+          "mean": 2.4597584928426818e-17,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 1.9080709285370686e-15,
-          "d50": 1.1678145556489518e-15,
-          "d95": 8.914824057230754e-16,
-          "max": 2.101620589683207e-15,
-          "mean": 1.207096817839907e-15,
+          "d2": 1.9080515591428163e-15,
+          "d50": 1.1678086557959236e-15,
+          "d95": 8.914656375278386e-16,
+          "max": 2.1015936648466463e-15,
+          "mean": 1.2070697949620824e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 2.7382946248352122e-15,
-          "d50": 1.4216635939678746e-15,
-          "d95": 1.0294477875702333e-15,
-          "max": 3.1620554012235564e-15,
-          "mean": 1.5126406105424712e-15,
+          "d2": 2.738364683596826e-15,
+          "d50": 1.4214866881794892e-15,
+          "d95": 1.0294076238866125e-15,
+          "max": 3.1626849519841913e-15,
+          "mean": 1.5124986560328994e-15,
           "quantity": "physical_total"
         }
       ],
@@ -1777,42 +1777,42 @@
       "quantities": [
         {
           "d2": 1.880890805056001e-14,
-          "d50": 7.170271802154819e-15,
+          "d50": 7.17027180215482e-15,
           "d95": 1.874363408472732e-15,
           "max": 2.241278175287495e-14,
           "mean": 8.078490495547096e-15,
           "quantity": "component:boron"
         },
         {
-          "d2": 1.8461465295587345e-15,
-          "d50": 4.896467229378794e-17,
-          "d95": 3.0772737538674163e-18,
+          "d2": 1.845133539087043e-15,
+          "d50": 4.548477549647538e-17,
+          "d95": 2.8473311798425784e-18,
           "max": 3.646325025215642e-15,
-          "mean": 1.6194786279015208e-16,
+          "mean": 1.5983440365558634e-16,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 1.2755666478195643e-15,
-          "d50": 9.191110962046945e-17,
-          "d95": 1.943928307419641e-17,
-          "max": 1.6517747813895053e-15,
-          "mean": 2.4806005122230637e-16,
+          "d2": 1.2734947731053896e-15,
+          "d50": 9.179483404527891e-17,
+          "d95": 1.942214849366313e-17,
+          "max": 1.6507511041978543e-15,
+          "mean": 2.477598092856458e-16,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 8.917479739644048e-15,
-          "d50": 5.0544616122607186e-15,
-          "d95": 2.347944289122219e-15,
-          "max": 1.0169248150725595e-14,
-          "mean": 5.169787919059879e-15,
+          "d2": 8.917384941366738e-15,
+          "d50": 5.054344960527486e-15,
+          "d95": 2.347909974219442e-15,
+          "max": 1.0169061630914516e-14,
+          "mean": 5.169604847636209e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 2.9540345332491903e-14,
-          "d50": 1.230937275071197e-14,
-          "d95": 4.2957193385812996e-15,
+          "d2": 2.954333866999791e-14,
+          "d50": 1.2305314634216581e-14,
+          "d95": 4.295147208691521e-15,
           "max": 3.6200310139401523e-14,
-          "mean": 1.3658286328619436e-14,
+          "mean": 1.3655689556124527e-14,
           "quantity": "physical_total"
         }
       ],
@@ -1831,35 +1831,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 5.106181098923278e-16,
-          "d50": 4.827891921150947e-17,
-          "d95": 3.425680829607924e-18,
+          "d2": 5.078896035215659e-16,
+          "d50": 4.888246099103882e-17,
+          "d95": 3.1697042962372342e-18,
           "max": 6.970996032398914e-16,
-          "mean": 9.339656883023429e-17,
+          "mean": 9.346527063673998e-17,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 6.466702489924377e-17,
-          "d50": 2.1429917268112094e-17,
-          "d95": 8.0843625511999e-18,
+          "d2": 6.463806675896447e-17,
+          "d50": 2.1239722126082706e-17,
+          "d95": 8.067552129180046e-18,
           "max": 6.946555859412363e-17,
-          "mean": 2.5934599841870185e-17,
+          "mean": 2.5849786510379842e-17,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 4.444462992886861e-15,
-          "d50": 2.619389609946168e-15,
-          "d95": 1.4541590665552303e-15,
+          "d2": 4.444419054359055e-15,
+          "d50": 2.6193487729411642e-15,
+          "d95": 1.4541410421851007e-15,
           "max": 4.709983454582037e-15,
-          "mean": 2.680676883888475e-15,
+          "mean": 2.680058049885037e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 8.259295023829924e-15,
-          "d50": 4.087762341627512e-15,
-          "d95": 1.685838274855733e-15,
+          "d2": 8.26088764623207e-15,
+          "d50": 4.08822521085491e-15,
+          "d95": 1.6858443066583227e-15,
           "max": 9.61618291135375e-15,
-          "mean": 4.2989758913400036e-15,
+          "mean": 4.298340945811576e-15,
           "quantity": "physical_total"
         }
       ],
@@ -1878,35 +1878,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 1.144779915887752e-16,
-          "d50": 2.4679797196019415e-17,
-          "d95": 4.090074871010752e-18,
-          "max": 1.2513686284242492e-16,
-          "mean": 3.0453151686329025e-17,
+          "d2": 1.1478541537999615e-16,
+          "d50": 2.5106018166467554e-17,
+          "d95": 3.79714383451383e-18,
+          "max": 1.2552431863488695e-16,
+          "mean": 3.0784295992917745e-17,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 5.958990311254393e-17,
-          "d50": 2.0407236160603148e-17,
-          "d95": 8.504095162605722e-18,
-          "max": 6.30070127842084e-17,
-          "mean": 2.476848047536682e-17,
+          "d2": 5.957801890952472e-17,
+          "d50": 2.0406420066659297e-17,
+          "d95": 8.503934486652545e-18,
+          "max": 6.300453156489505e-17,
+          "mean": 2.47673811868307e-17,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 4.010833950482646e-15,
-          "d50": 2.5604402856284107e-15,
-          "d95": 1.4615448787158737e-15,
-          "max": 4.236179153493021e-15,
-          "mean": 2.6199993756890145e-15,
+          "d2": 4.0107886831477965e-15,
+          "d50": 2.5603997546206332e-15,
+          "d95": 1.4615338299492364e-15,
+          "max": 4.23616149211339e-15,
+          "mean": 2.6199711490172454e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 7.0922166993945024e-15,
-          "d50": 3.904843995683008e-15,
-          "d95": 1.6577533338071303e-15,
-          "max": 7.550930440274694e-15,
-          "mean": 4.068008482165689e-15,
+          "d2": 7.092963877415751e-15,
+          "d50": 3.905290169848178e-15,
+          "d95": 1.6577735649299447e-15,
+          "max": 7.550541678461447e-15,
+          "mean": 4.0683103005119715e-15,
           "quantity": "physical_total"
         }
       ],
@@ -1925,35 +1925,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 1.589577161035936e-17,
-          "d50": 2.4701356434233482e-18,
-          "d95": 1.5540676975242065e-19,
+          "d2": 1.591394054406433e-17,
+          "d50": 2.516746273089564e-18,
+          "d95": 1.5241072271133831e-19,
           "max": 1.9722697362910798e-17,
-          "mean": 3.9937427769295744e-18,
+          "mean": 4.037915341595691e-18,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 1.0979742906545808e-17,
-          "d50": 5.97249944771533e-18,
-          "d95": 4.235093786885434e-18,
-          "max": 1.2579028882522147e-17,
-          "mean": 6.527366817198156e-18,
+          "d2": 1.0979498731411075e-17,
+          "d50": 5.972284896159804e-18,
+          "d95": 4.235008796027858e-18,
+          "max": 1.2578596325269234e-17,
+          "mean": 6.527016915381443e-18,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 1.2945427607311222e-15,
-          "d50": 1.0069020354217878e-15,
-          "d95": 8.3350692752177e-16,
-          "max": 1.3729389729010707e-15,
-          "mean": 1.0136348310481468e-15,
+          "d2": 1.2945310041495168e-15,
+          "d50": 1.0068876542628297e-15,
+          "d95": 8.334994233725517e-16,
+          "max": 1.3729196427029294e-15,
+          "mean": 1.0136236910150236e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 1.6923846008707905e-15,
-          "d50": 1.1796688729355902e-15,
-          "d95": 9.38368770299618e-16,
-          "max": 1.826085981559665e-15,
-          "mean": 1.2048449432069529e-15,
+          "d2": 1.6924561187208863e-15,
+          "d50": 1.1797205283871104e-15,
+          "d95": 9.38374001783276e-16,
+          "max": 1.8262155969139974e-15,
+          "mean": 1.2048776258366797e-15,
           "quantity": "physical_total"
         }
       ],
@@ -1972,35 +1972,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 7.402885869886811e-17,
-          "d50": 1.0997736985653327e-17,
-          "d95": 1.2320598190176357e-18,
-          "max": 8.74459813176294e-17,
-          "mean": 1.7079648397440186e-17,
+          "d2": 7.413630439822384e-17,
+          "d50": 1.1135221292666037e-17,
+          "d95": 1.2411594250784345e-18,
+          "max": 8.754049117502935e-17,
+          "mean": 1.7211435702261028e-17,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 1.4676546497646295e-17,
-          "d50": 8.426049472002258e-18,
-          "d95": 5.995664503251166e-18,
-          "max": 1.6596419447814615e-17,
-          "mean": 9.01380701525192e-18,
+          "d2": 1.467621311700042e-17,
+          "d50": 8.425746479369686e-18,
+          "d95": 5.995456519738464e-18,
+          "max": 1.6596286697002945e-17,
+          "mean": 9.013296507784086e-18,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 2.0053609890544442e-15,
-          "d50": 1.2476328429357749e-15,
-          "d95": 9.71903093337116e-16,
-          "max": 2.237643970969264e-15,
-          "mean": 1.3169021939320657e-15,
+          "d2": 2.005349395515716e-15,
+          "d50": 1.2476143086690297e-15,
+          "d95": 9.718891752758487e-16,
+          "max": 2.2376373739520652e-15,
+          "mean": 1.3168866995593005e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 3.42061700053332e-15,
-          "d50": 1.7221873187553619e-15,
-          "d95": 1.1521707615698139e-15,
-          "max": 3.916470238287618e-15,
-          "mean": 1.8928432361294907e-15,
+          "d2": 3.420768047940954e-15,
+          "d50": 1.7223342349234978e-15,
+          "d95": 1.1522218137222221e-15,
+          "max": 3.916575808312084e-15,
+          "mean": 1.892959018554079e-15,
           "quantity": "physical_total"
         }
       ],
@@ -2014,40 +2014,40 @@
           "d2": 2.861734946436275e-14,
           "d50": 2.231874612423625e-15,
           "d95": 1.6158474917508072e-16,
-          "max": 1.1035301803799666e-13,
-          "mean": 6.549994509964642e-15,
+          "max": 1.103530180379967e-13,
+          "mean": 6.549994509964644e-15,
           "quantity": "component:boron"
         },
         {
-          "d2": 3.826671298841224e-15,
-          "d50": 1.0276066352946e-16,
-          "d95": 1.6362801322351164e-18,
-          "max": 3.065605196143114e-14,
-          "mean": 4.530720724586604e-16,
+          "d2": 3.4463078881549934e-15,
+          "d50": 9.976847010788585e-17,
+          "d95": 1.5394294749625622e-18,
+          "max": 1.8211108473489387e-14,
+          "mean": 3.914970588782169e-16,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 1.5764926359565968e-15,
-          "d50": 8.00045777581289e-17,
-          "d95": 6.283922029904949e-18,
-          "max": 2.079745588642298e-15,
-          "mean": 2.2432195677292816e-16,
+          "d2": 1.5815559625814423e-15,
+          "d50": 7.907103157886816e-17,
+          "d95": 6.301784141043759e-18,
+          "max": 2.1369323142022796e-15,
+          "mean": 2.2244838022551067e-16,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 1.3070105349137615e-14,
-          "d50": 3.0852141177503544e-15,
-          "d95": 9.814114333636126e-16,
-          "max": 1.5292582044389878e-14,
-          "mean": 4.256183936776727e-15,
+          "d2": 1.3058347841654053e-14,
+          "d50": 3.087134517494372e-15,
+          "d95": 9.809344699927237e-16,
+          "max": 1.5292356811730932e-14,
+          "mean": 4.255511584178308e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 4.5239921680194034e-14,
-          "d50": 5.644128757826655e-15,
-          "d95": 1.178359582842807e-15,
+          "d2": 4.517232192289788e-14,
+          "d50": 5.601057048207662e-15,
+          "d95": 1.1776645942641202e-15,
           "max": 1.2981815867342293e-13,
-          "mean": 1.1483572475972957e-14,
+          "mean": 1.1419451533246669e-14,
           "quantity": "physical_total"
         }
       ],
@@ -2066,35 +2066,35 @@
           "quantity": "component:boron"
         },
         {
-          "d2": 1.4912987744248202e-15,
-          "d50": 1.8516531214680015e-17,
-          "d95": 8.906481736238667e-19,
-          "max": 3.065605196143114e-14,
-          "mean": 2.344081239544649e-16,
+          "d2": 1.0151674797909199e-15,
+          "d50": 1.62263791034417e-17,
+          "d95": 8.277102633994735e-19,
+          "max": 1.7631341468650874e-14,
+          "mean": 1.5596680946082376e-16,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 1.922553456128739e-15,
-          "d50": 5.164013699814938e-17,
-          "d95": 4.571048506803207e-18,
-          "max": 2.079745588642298e-15,
-          "mean": 3.1580930091877217e-16,
+          "d2": 1.9572430702588936e-15,
+          "d50": 5.282841402821114e-17,
+          "d95": 4.5956609434539526e-18,
+          "max": 2.1369323142022796e-15,
+          "mean": 3.1878940489755247e-16,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 9.438335425168595e-15,
-          "d50": 1.8403100210136505e-15,
-          "d95": 7.37156369145016e-16,
-          "max": 1.1823169049090956e-14,
-          "mean": 2.8371499256365705e-15,
+          "d2": 9.441576406397473e-15,
+          "d50": 1.840291527229159e-15,
+          "d95": 7.373283560325241e-16,
+          "max": 1.1810795711548956e-14,
+          "mean": 2.8403506334205656e-15,
           "quantity": "component:photon"
         },
         {
-          "d2": 3.9761834774832835e-14,
-          "d50": 2.9079716123445012e-15,
-          "d95": 8.355966851397004e-16,
-          "max": 5.962598034226493e-14,
-          "mean": 8.149844837645671e-15,
+          "d2": 3.959249342157474e-14,
+          "d50": 2.8992324371772758e-15,
+          "d95": 8.362476897361762e-16,
+          "max": 5.5946438155007313e-14,
+          "mean": 8.077584334914778e-15,
           "quantity": "physical_total"
         }
       ],
@@ -2107,41 +2107,41 @@
         {
           "d2": 1.0964173640811556e-13,
           "d50": 9.63943300590753e-14,
-          "d95": 6.863244905088901e-14,
-          "max": 1.1035301803799666e-13,
+          "d95": 6.863244905088904e-14,
+          "max": 1.103530180379967e-13,
           "mean": 9.285834192262858e-14,
           "quantity": "component:boron"
         },
         {
-          "d2": 5.044112348254236e-15,
-          "d50": 6.038919856307612e-16,
-          "d95": 1.8293870969166852e-16,
+          "d2": 5.028877881093158e-15,
+          "d50": 6.143212215810027e-16,
+          "d95": 1.8757049911167433e-16,
           "max": 5.236659865334505e-15,
-          "mean": 9.367011642360484e-16,
+          "mean": 9.434452493185905e-16,
           "quantity": "component:nitrogen"
         },
         {
-          "d2": 1.0349082170252505e-15,
-          "d50": 6.86383568767053e-16,
-          "d95": 4.569027735505485e-16,
+          "d2": 1.0285494744157355e-15,
+          "d50": 6.863561958642092e-16,
+          "d95": 4.568868615501439e-16,
           "max": 1.0947681329199663e-15,
-          "mean": 7.067787686439091e-16,
+          "mean": 7.0594316124139e-16,
           "quantity": "component:hydrogen"
         },
         {
-          "d2": 1.5172735910749558e-14,
-          "d50": 1.4075331052442258e-14,
-          "d95": 1.2319212599089441e-14,
-          "max": 1.5292582044389878e-14,
-          "mean": 1.3932167679266274e-14,
+          "d2": 1.5172526158619083e-14,
+          "d50": 1.4069244594135964e-14,
+          "d95": 1.2319064051403381e-14,
+          "max": 1.5292356811730932e-14,
+          "mean": 1.3931290902606884e-14,
           "quantity": "component:photon"
         },
         {
-          "d2": 1.2789211663074508e-13,
-          "d50": 1.1192094139966409e-13,
-          "d95": 8.170049515373921e-14,
+          "d2": 1.2788530496311552e-13,
+          "d50": 1.119302130812631e-13,
+          "d95": 8.170539070768618e-14,
           "max": 1.2981815867342293e-13,
-          "mean": 1.0843398953477495e-13,
+          "mean": 1.0843902123579557e-13,
           "quantity": "physical_total"
         }
       ],

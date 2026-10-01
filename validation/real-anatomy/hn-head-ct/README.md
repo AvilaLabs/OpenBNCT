@@ -83,82 +83,88 @@ S4, P1 scattering (from the data), CMFD, Anderson depth 3.
 
 To regenerate everything: `python prepare.py` (writes `data/`), then steps 2 to 4.
 
-## Two runs
+## Runs
 
-Both use the same neutron solve (18 outer iterations, residual 5.6e-7).
+**Final run (headline).** Transported photons (`photon_transport = true`, the
+project default), OpenBNCT built from origin/main `b46ffb2` (S_N mass-fraction
+blending of mixed voxels, photon solve with CMFD): capture and inelastic photons
+solved with `sn photon-solve`. Import, calibrate and beam-bind outputs were
+reused (`project run --from transport`); `project verify` re-ran OpenMC. Results in
+`results/transported-photon/`. The committed `project/project.toml` is this
+configuration.
 
-- **Local capture-gamma deposition** (`photon_transport = false`): capture-gamma
-  energy is deposited where it is born. This is known to over-predict the photon
-  dose in a finite head; it is reported for comparison only. Results in
-  `results/local-photon/`.
-- **Transported photons** (`photon_transport = true`, the project default): capture
-  and inelastic photons solved with `sn photon-solve` (CMFD, 12 outer iterations
-  each). Results in `results/transported-photon/`.
+**Comparison run (earlier build, not the headline).** Local capture-gamma
+deposition (`photon_transport = false`): capture-gamma energy is deposited where it
+is born, which is known to over-predict the photon dose in a finite head. It was
+run on the build before the mass-fraction change, so its neutron-component ratios
+differ slightly from the final run (for example SKIN nitrogen 1.56 there). Results
+in `results/local-photon/`, with the `project.toml` it used.
 
-The committed `project/project.toml` is the transported-photon configuration;
-`results/*/project.toml` are the exact files each run used.
+## Timing and memory (final run, build `b46ffb2`)
 
-## Timing and memory
+Shared 8-thread laptop with other jobs running, so wall times are not clean
+benchmarks. `RAYON_NUM_THREADS=6` for the run, `OMP_NUM_THREADS=3` for OpenMC.
 
-Machine: shared 8-thread laptop, other jobs running at the same time; wall times
-are therefore not clean benchmarks. `RAYON_NUM_THREADS=6`.
-
-| step | local capture-gamma run | transported-photon run |
+| step | final run | earlier local-deposition run |
 |---|---|---|
-| import (`import ct-nifti`) | 2.7 s | reused |
-| calibrate | 0.4 s | reused |
-| beam bind | <0.1 s | reused |
-| transport | 1538.5 s (neutron only; outer loop 728 s) | 1248.6 s (neutron outer loop 310 s; two photon solves, loops 81 s and 83 s; the rest is setup) |
-| boron | 0.2 s | 0.3 s |
-| metrics (+ DVH) | 29.4 s | 28.6 s |
-| `project run` total wall | 26:08 | 21:18 (steps 4 to 7 only) |
-| `project run` peak memory | 2.30 GB | 2.28 GB |
-| `project verify`, 6e6 histories, 10 batches, 3 OpenMP threads | 1687 s | 1270 s |
-| `project verify` peak memory | 0.35 GB | 0.35 GB |
+| import (`import ct-nifti`) | 2.7 s (first run, reused) | 2.7 s |
+| calibrate | 0.4 s (reused) | 0.4 s |
+| beam bind | <0.1 s (reused) | <0.1 s |
+| transport (neutron + photon) | 925.8 s: neutron S4 outer loop 300 s (18 outers, residual 5.6e-7), two photon solves 12 outers each (loops 85 s and 80 s), remainder is setup | 1538.5 s (neutron only; loop 728 s) |
+| boron | 0.3 s | 0.2 s |
+| metrics (+ DVH) | 27.4 s | 29.4 s |
+| `project run --from transport` wall | 15:54, peak 2.28 GB | 26:08, peak 2.30 GB |
+| `project verify`: 6e6 histories, 10 batches, 3 threads | 1268 s, peak 0.35 GB | 1687 s |
 
-## Dose (Gy per source particle, structure means)
+Grid: 54 x 67 x 57 = 206,226 voxels at 4 mm; 28 neutron groups, 16 photon groups.
+
+## Dose (Gy per source particle, structure means; final run, local-photon column from the earlier run)
 
 | structure | boron | nitrogen | hydrogen | photon, local | photon, transported |
 |---|---|---|---|---|---|
 | RESEARCH_TARGET (synthetic) | 9.29e-14 | 9.4e-16 | 7.1e-16 | 1.09e-13 | 1.39e-14 |
 | Brain | 1.27e-14 | 4.3e-16 | 3.4e-16 | 3.88e-14 | 6.75e-15 |
-| SKIN | 4.76e-15 | 2.3e-16 | 3.2e-16 | 1.31e-14 | 2.84e-15 |
+| SKIN | 4.76e-15 | 1.56e-16 | 3.2e-16 | 1.31e-14 | 2.84e-15 |
 
 Boron dose is scaled by blood 25 ug/g and the illustrative ratios above.
 
 ## Independent check (OpenMC, continuous energy, ENDF/B-VIII.1)
 
-S_N / MC ratio of structure-mean dose per component, 6e6 histories. The photon
+S_N / MC ratio of structure-mean dose per component, 6e6 histories, final run
+(build `b46ffb2`). **Statistics caveat: 6e6 histories leave the small structures
+unresolved (median voxel 1-sigma about 100 %); the structure-mean results for the
+large structures (Brain, BODY, SKIN, Mandible, the parotids, RESEARCH_TARGET) are
+the meaningful result.** The photon
 column is the point of the two runs: local deposition overshoots by a factor of
 3 to 8 in the larger structures (6.0 in the brain, 8.1 in the target); transported photons
 agree to within the MC noise. The MC photon tally is noisy (median relative 1-sigma
 of individual voxels near 100 %), so read the photon and total columns as
 structure means only.
 
-Transported-photon run:
+Final run (transported photons):
 
 | structure | voxels | boron | nitrogen | hydrogen | photon | total | status |
 |---|---|---|---|---|---|---|---|
-| Brain | 19291 | 0.951 | 0.955 | 0.933 | 1.050 | 0.982 | agrees |
-| Brainstem | 357 | 0.981 | 0.972 | 0.961 | 1.099 | 1.035 | agrees |
-| Lacrimal-Lt | 7 | 1.146 | 1.157 | 1.245 | 0.972 | 0.985 | agrees |
-| Lacrimal-Rt | 6 | 0.953 | 0.960 | 1.081 | 0.902 | 0.920 | unresolved |
-| Lens-Lt | 1 | 1.047 | 1.046 | 1.229 | 0.836 | 0.895 | unresolved |
-| Lens-Rt | 2 | 1.019 | 1.018 | 1.186 | 1.352 | 1.169 | unresolved |
-| Mandible | 1222 | 0.996 | 1.008 | 1.049 | 1.026 | 1.011 | agrees |
-| Optic-Nerve-Lt | 5 | 1.022 | 1.079 | 1.014 | 0.789 | 0.868 | unresolved |
-| Optic-Nerve-Rt | 5 | 0.957 | 0.981 | 0.904 | 0.973 | 0.946 | unresolved |
-| Orbit-Lt | 116 | 1.038 | 1.041 | 1.005 | 1.140 | 1.096 | unresolved |
-| Orbit-Rt | 116 | 0.973 | 0.978 | 1.049 | 1.045 | 1.006 | agrees |
-| Parotid-Lt | 520 | 1.150 | 1.132 | 1.233 | 0.993 | 1.020 | agrees |
-| Parotid-Rt | 579 | 0.984 | 0.979 | 1.065 | 1.034 | 1.003 | agrees |
-| Spinal-Canal | 277 | 1.059 | 1.059 | 1.230 | 1.186 | 1.135 | unresolved |
-| Spinal-Cord | 73 | 1.077 | 1.075 | 1.247 | 1.105 | 1.097 | unresolved |
-| Submandibular-Lt | 115 | 1.077 | 1.055 | 0.837 | 1.023 | 1.029 | agrees |
-| Submandibular-Rt | 95 | 1.113 | 1.103 | 0.857 | 0.865 | 0.930 | unresolved |
-| BODY | 66852 | 0.976 | 1.136 | 0.988 | 1.053 | 1.009 | unresolved |
-| SKIN | 10415 | 1.064 | 1.558 | 1.057 | 1.041 | 1.064 | unresolved |
-| **RESEARCH_TARGET** (synthetic) | 959 | 0.941 | 0.943 | 0.932 | 1.032 | 0.952 | agrees |
+| Brain | 19291 | 0.951 | 0.958 | 0.930 | 1.050 | 0.982 | agrees |
+| Brainstem | 357 | 0.981 | 0.986 | 0.961 | 1.099 | 1.036 | agrees |
+| Lacrimal-Lt | 7 | 1.146 | 1.148 | 1.218 | 0.970 | 0.983 | agrees |
+| Lacrimal-Rt | 6 | 0.953 | 0.957 | 1.072 | 0.902 | 0.920 | unresolved |
+| Lens-Lt | 1 | 1.047 | 1.048 | 1.228 | 0.836 | 0.895 | unresolved |
+| Lens-Rt | 2 | 1.019 | 1.020 | 1.186 | 1.352 | 1.169 | unresolved |
+| Mandible | 1222 | 0.996 | 0.997 | 0.974 | 1.022 | 1.008 | agrees |
+| Optic-Nerve-Lt | 5 | 1.022 | 1.021 | 1.012 | 0.789 | 0.868 | unresolved |
+| Optic-Nerve-Rt | 5 | 0.957 | 0.971 | 0.903 | 0.973 | 0.946 | unresolved |
+| Orbit-Lt | 116 | 1.038 | 1.043 | 1.005 | 1.139 | 1.096 | unresolved |
+| Orbit-Rt | 116 | 0.973 | 0.986 | 1.049 | 1.045 | 1.006 | agrees |
+| Parotid-Lt | 520 | 1.150 | 1.120 | 1.231 | 0.993 | 1.020 | agrees |
+| Parotid-Rt | 579 | 0.984 | 0.967 | 1.064 | 1.034 | 1.003 | agrees |
+| Spinal-Canal | 277 | 1.059 | 1.059 | 1.226 | 1.186 | 1.134 | unresolved |
+| Spinal-Cord | 73 | 1.077 | 1.086 | 1.246 | 1.105 | 1.097 | unresolved |
+| Submandibular-Lt | 115 | 1.077 | 1.067 | 0.837 | 1.023 | 1.029 | agrees |
+| Submandibular-Rt | 95 | 1.113 | 1.111 | 0.857 | 0.865 | 0.930 | unresolved |
+| BODY | 66852 | 0.976 | 0.982 | 0.980 | 1.052 | 1.003 | unresolved |
+| SKIN | 10415 | 1.064 | 1.037 | 1.067 | 1.042 | 1.054 | unresolved |
+| **RESEARCH_TARGET** (synthetic) | 959 | 0.941 | 0.950 | 0.931 | 1.032 | 0.952 | agrees |
 
 **Verdict (as configured: total-dose ratio within +-5 %, gamma 3 %/3 mm pass
 >= 95 % where evaluated): INCONCLUSIVE.** No structure with resolved MC statistics
@@ -167,19 +173,21 @@ tested at +-5 % with 6e6 histories. "agrees" means the structure-mean total-dose
 ratio is within 5 % of 1; BODY's gamma pass rate is 0.0 % on a single evaluated
 voxel, which is the MC photon noise rather than a disagreement. Whole-volume gamma
 (3 %/3 mm, global, S_N against MC): boron 92.5 % (11674 voxels), nitrogen 66.8 %,
-hydrogen 41.7 %, photon and total 0 % on 168 and 172 voxels.
+hydrogen 44.4 %, photon and total 0 % on 168 and 172 voxels.
 
-Local capture-gamma run, same MC (6e6 histories): boron, nitrogen and hydrogen
-ratios are identical (0.94 to 1.15 in resolved structures, because the neutron
-solve is the same), while the photon ratio is 6.03 in the brain, 8.10 in the
-target and 4.8 to 6.3 in most other large structures (total ratio 2.5 in the
-brain, 1.79 in the target). Verdict: INCONCLUSIVE, all structures unresolved or
-outside the band.
+Neutron components in the large structures (final run): boron 0.95 to 1.06
+(Brain 0.951, target 0.941, SKIN 1.064, BODY 0.976), nitrogen 0.95 to 1.04 (SKIN
+1.037, BODY 0.982), hydrogen 0.93 to 1.07 (Brain 0.930, SKIN 1.067, BODY 0.980).
+The mass-fraction blending of mixed voxels moved SKIN nitrogen from 1.56 to 1.04
+and BODY from 1.14 to 0.98 relative to the earlier build. The hydrogen ratios near
+1.2 in the spine and some small structures rest on a few voxels and were not
+investigated. SKIN's total ratio is 1.054, just outside the 5 % band, with a
+36 % (2 sigma) MC uncertainty, so it is unresolved rather than a disagreement.
 
-Where the neutron components are concerned, the nitrogen ratio in SKIN (1.56) and
-the hydrogen ratios near 1.2 in the spine and small structures are the largest
-departures, and are plausibly 4 mm resolution and statistics; they were not
-investigated.
+Earlier local capture-gamma run (previous build, same MC statistics): photon ratio
+6.03 in the brain, 8.10 in the target and 4.8 to 6.3 in most other large
+structures (total ratio 2.5 in the brain, 1.79 in the target); verdict
+INCONCLUSIVE, with every structure unresolved or outside the band.
 
 ## What is committed and what is regenerated
 

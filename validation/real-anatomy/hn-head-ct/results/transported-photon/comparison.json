@@ -6,15 +6,15 @@
       "role": "reference",
       "content": {
         "id": "out/08-verify/mc-dose.json",
-        "sha256": "6f89a56de67246508b9a609ab47dc8e854c9ba3c51f7917181299238b3d90e5b"
+        "sha256": "ba7b3d88d19a41bc8118d11d403898a7969789953e326bc5abe164053899b165"
       },
-      "provenance_id": "openmc-input-manifest:7e26f39a5e1d1e146d2564c36075c7811eb2ef2417c65b0cd9c0f7c6bdc17a0f+statepoint:96d67bdd7159fddbfe6fd4fefc147dcd5c7484f0f5d4efdded26e9c8ca98c2dc|posthoc-boron[blood 25 ug/g; ratios [RESEARCH_TARGET=3.5, SKIN=1.5]; default ratio 1; unit_dose=openmc-input-manifest:7e26f39a5e1d1e146d2564c36075c7811eb2ef2417c65b0cd9c0f7c6bdc17a0f+statepoint:96d67bdd7159fddbfe6fd4fefc147dcd5c7484f0f5d4efdded26e9c8ca98c2dc; trace-10B: applied 10B does not perturb the flux]"
+      "provenance_id": "openmc-input-manifest:7e26f39a5e1d1e146d2564c36075c7811eb2ef2417c65b0cd9c0f7c6bdc17a0f+statepoint:8a5e8038ae67bb027c5dad537d14b144a2f3b1e2a7490406a30c75dcc7cac8b3|posthoc-boron[blood 25 ug/g; ratios [RESEARCH_TARGET=3.5, SKIN=1.5]; default ratio 1; unit_dose=openmc-input-manifest:7e26f39a5e1d1e146d2564c36075c7811eb2ef2417c65b0cd9c0f7c6bdc17a0f+statepoint:8a5e8038ae67bb027c5dad537d14b144a2f3b1e2a7490406a30c75dcc7cac8b3; trace-10B: applied 10B does not perturb the flux]"
     },
     {
       "role": "candidate",
       "content": {
         "id": "out/05-boron/dose.json",
-        "sha256": "e8342d3b754415290e6305a476e55bdbbb60f333457fdb3d0e91c2f2e9d270e6"
+        "sha256": "e03ae6c4d495a0128b80a4a9d04f054efdb67524c2d49544437612a25b8a196c"
       },
       "provenance_id": "sn-s4-openbnct.hn-head-ct.v1+transported-photon[sn-s4-openbnct.hn-head-ct.v1;local capture-gamma kerma of out/04-transport/dose-local-photon.json replaced]|posthoc-boron[blood 25 ug/g; ratios [RESEARCH_TARGET=3.5, SKIN=1.5]; default ratio 1; unit_dose=sn-s4-openbnct.hn-head-ct.v1; trace-10B: applied 10B does not perturb the flux]"
     }
@@ -26,40 +26,40 @@
       "quantity": "component:boron",
       "unit": "gray_per_source_particle",
       "max_abs_difference": 1.0883000391516062e-14,
-      "mean_abs_difference": 1.8683577608540278e-16,
+      "mean_abs_difference": 1.8683577608540268e-16,
       "rms_difference": 5.198727476346069e-16,
       "max_normalized_difference": 0.09086331736650807
     },
     {
       "quantity": "component:nitrogen",
       "unit": "gray_per_source_particle",
-      "max_abs_difference": 3.65860487615888e-14,
-      "mean_abs_difference": 3.4664496561432365e-16,
-      "rms_difference": 1.3322103186763685e-15,
-      "max_normalized_difference": 0.8611513463951989
+      "max_abs_difference": 4.8777011906556185e-15,
+      "mean_abs_difference": 1.7780689453560492e-16,
+      "rms_difference": 4.1615711755113536e-16,
+      "max_normalized_difference": 0.11480985484435627
     },
     {
       "quantity": "component:hydrogen",
       "unit": "gray_per_source_particle",
-      "max_abs_difference": 1.6334594989037892e-15,
-      "mean_abs_difference": 2.6391896827281985e-17,
-      "rms_difference": 9.054277138596666e-17,
-      "max_normalized_difference": 0.6626872816360018
+      "max_abs_difference": 6.64197493137946e-16,
+      "mean_abs_difference": 2.0961764003031255e-17,
+      "rms_difference": 4.7644544910440274e-17,
+      "max_normalized_difference": 0.2694619802281107
     },
     {
       "quantity": "component:photon",
       "unit": "gray_per_source_particle",
       "max_abs_difference": 2.5662023856795014e-12,
-      "mean_abs_difference": 1.810548327006187e-15,
-      "rms_difference": 2.0343947269376654e-14,
+      "mean_abs_difference": 1.814402360626633e-15,
+      "rms_difference": 2.0343923163595933e-14,
       "max_normalized_difference": 0.9995245386285094
     },
     {
       "quantity": "physical_total",
       "unit": "gray_per_source_particle",
       "max_abs_difference": 2.5640923909541475e-12,
-      "mean_abs_difference": 3.44581472655446e-15,
-      "rms_difference": 2.1110074102978613e-14,
+      "mean_abs_difference": 3.3393398705413266e-15,
+      "rms_difference": 2.1073902786850484e-14,
       "max_normalized_difference": 0.9984036089990169
     }
   ],
