@@ -4,7 +4,7 @@ OpenBNCT is an open-source research workbench for boron neutron capture therapy.
 
 The Rust engine powers the CLI, Python package, desktop application and browser workbench. A deterministic multigroup solver works without an external transport code. OpenMC integration and MCNP/PHITS interchange support independent comparisons.
 
-**OpenBNCT 0.2.2** is the current workspace version. This handbook describes the current source tree. Packaged v0.2.2 releases predate later transport and research-workflow changes; build current source when following newer commands or reproducing current-source results.
+**OpenBNCT 0.3.0** is the current release. This handbook describes the current source tree; build current source when following commands added after 0.3.0.
 
 ## Choose a starting point
 

@@ -4,12 +4,30 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
-## Unreleased — faster project metrics step (2026-10-01)
+## [0.3.0] — 2026-10-01
+
+Highlights:
+- **Real patient CT to dose report in one command.** `openbnct project init`/`run` (DICOM CT
+  + RTSTRUCT/SEG, NIfTI, NRRD, MetaImage) with automatic body crop, a standard tissue
+  library and HU calibration.
+- **Independent Monte Carlo check.** `openbnct project verify` re-runs the project in
+  continuous-energy OpenMC and reports per-structure agreement. Optional CADIS / FW-CADIS
+  weight windows are available.
+- **Deterministic accuracy repaired against continuous-energy MC.** On a real head CT,
+  total-dose S_N/MC is 0.95–1.00. Photons are transported.
+- **About 4× faster on a real head** (~16 min → ~4 min on a laptop). The changes: analytic
+  beam coverage, sweep memory and thread scaling, a convergent photon fixup, batched
+  metrics and a 1e-4 project tolerance.
+- **IAEA phase-space beam sources.**
+- **GUI Project workspace.**
+- `openbnct-avify` is now on crates.io, and `openbnct-boron` follows the workspace version.
+
+### faster project metrics step (2026-10-01)
 
 - **`openbnct project run` finishes its metrics step in about 1.4 s instead of 25.7 s on the 54x67x57 real-head project (20 structures).** The step parses the dose bundle and each mask once instead of once per structure and quantity. Every metrics and DVH file is byte-identical to before (checked by sha256).
 - Internal plumbing only, with no new user-facing capability: the GUI and Python surfaces are unchanged. The step now records one `metrics-batch` command (its plan is written to `out/06-metrics/metrics-batch-plan.json`) in the run manifest instead of 120 separate `metrics` and `dvh` lines. `openbnct metrics` and `openbnct dvh` work as before.
 
-## Unreleased — user handbook (2026-10-01)
+### user handbook (2026-10-01)
 
 - Added the hosted handbook at `https://openbnct.avilalabs.org/docs/`, with current task guides, source/release distinctions and benchmark interpretation. README and GUI Help link to it; the Pages bundle publishes it beside the workbench.
 - The CLI and Python workflows are covered by their handbook chapters. A runtime command or Python function for opening this hosted documentation is deliberately excluded because it adds no calculation or analysis operation.
@@ -18,7 +36,7 @@ own versions independent of the crate version.
 
 
 
-## Unreleased — project convergence tolerance (2026-10-01)
+### project convergence tolerance (2026-10-01)
 
 - **New `[transport] convergence` key, default 1e-4.** It sets the outer-iteration
   tolerance (largest relative flux change between outers) for the project's neutron and
@@ -31,7 +49,7 @@ own versions independent of the crate version.
   a numerical-precision setting whose default is right for dose, and it can be edited in
   `project.toml`. Python has no project API yet (R18-06).
 
-## Unreleased — photon solve convergence (2026-10-01)
+### photon solve convergence (2026-10-01)
 
 - **The real-head photon solve now converges instead of cycling.** It drops from 101 s to
   ~54 s, two passes of 9 and 8 outers.
@@ -53,7 +71,7 @@ own versions independent of the crate version.
   - Photon flux in the body is within 0.3 % (p99) of the repaired solution. The larger
     differences, up to 6 %, are in air outside the body.
 
-## Unreleased — S_N sweep memory traffic and thread scaling (2026-10-01)
+### S_N sweep memory traffic and thread scaling (2026-10-01)
 
 - **The deterministic solve loop is 1.6–2.6× faster, and the flux output is
   bit-identical.**
@@ -77,14 +95,14 @@ own versions independent of the crate version.
   direction loop, fold, source, update, CMFD build and low-order solve. The CMFD
   low-order solve is now the largest single phase, 27–40 % of the loop.
 
-## Unreleased — CT crop connectivity (2026-10-01)
+### CT crop connectivity (2026-10-01)
 
 - Body crop uses 6-connectivity (face neighbours): 26-connectivity let thin bridges
   such as head supports join the body and widened the real-head crop box. The
   `validation/real-anatomy/hn-head-ct` project predates automatic cropping; set
   `[imaging] crop = "none"` to reproduce its committed results.
 
-## Unreleased — automatic CT crop (2026-10-01)
+### automatic CT crop (2026-10-01)
 
 - **`dicom import-ct` and `import ct-nifti` crop the CT to the body by default.** A real
   scan includes shoulders, couch and air; the benchmark head's full field of view is
@@ -109,7 +127,7 @@ own versions independent of the crate version.
   workflow is CLI/GUI-only), so there is deliberately no Python surface for this change;
   a Python project API is a roadmap item under R18-06.
 
-## Unreleased — GUI Project workspace parity (2026-09-30)
+### GUI Project workspace parity (2026-09-30)
 
 - **The desktop Project workspace now covers what `openbnct project` does.**
   - CT input: a DICOM folder (CT + RTSTRUCT or DICOM SEG) or a CT volume file set
@@ -141,7 +159,7 @@ own versions independent of the crate version.
   `--scroll-results`, `--advanced`, `--openbnct`) writes one PNG of the window and
   exits. Screenshots under `docs/screenshots/project-*.png` come from it.
 
-## Unreleased — analytic-coverage uncollided beam (2026-10-01)
+### analytic-coverage uncollided beam (2026-10-01)
 
 - **The uncollided beam computes disk coverage analytically.** For each
   (cell, direction) the cell's transverse cross-section, back-projected along the
@@ -166,7 +184,7 @@ own versions independent of the crate version.
   below 0.5 %. Uncollided setup on the real head: 33.7 s against 219 s for the
   reference mode on the same build and about 585 s before this change.
 
-## Unreleased — variance reduction for `project verify` (2026-10-01)
+### variance reduction for `project verify` (2026-10-01)
 
 - **`project verify --variance-reduction none|cadis|fw-cadis`**, with the project key
   `[verify] variance_reduction` (same three values; the flag overrides the key; default
@@ -213,7 +231,7 @@ own versions independent of the crate version.
   `[verify] variance_reduction`). Python: the project workflow (`project init|run|verify`)
   is CLI/GUI-only today, so there is no Python surface to extend.
 
-## Unreleased — real-anatomy mixture quantization (2026-09-30)
+### real-anatomy mixture quantization (2026-09-30)
 
 - **HU-calibrated mixtures are quantized before blending.** A real head CT at 4 mm
   (206k voxels) produced 91 695 distinct `voxel_fractions` signatures, and the S_N
@@ -237,7 +255,7 @@ own versions independent of the crate version.
   from the case and assignment material definitions; volume weights only when a
   density is unknown). Macroscopic cross sections still blend by volume.
 
-## Unreleased — deterministic-transport accuracy fixes (2026-09-29)
+### deterministic-transport accuracy fixes (2026-09-29)
 
 - **IAEA phase-space beam sources (R18-11).** `beam phsp-info` reads a
   `.IAEAheader`/`.IAEAphsp` pair (streaming, constant or stored variables, both
@@ -367,9 +385,9 @@ own versions independent of the crate version.
 - Correction to the first entry above: absorption per source neutron in the
   continuous-energy reference is ~0.19 (the reference tallies are already per cm³).
 
-## [Unreleased]
+### Further changes since 0.2.2
 
-### Added — `openbnct project`
+#### Added — `openbnct project`
 
 - `project init` / `project run` / `project status` / `project builtins`:
   CT + RT Structure Set to component dose, boron-scaled dose, per-structure
@@ -384,7 +402,7 @@ own versions independent of the crate version.
 - `beam bind --aim-mask MASK --approach=+x`: aim the bound disk source at a
   mask centroid.
 
-### Added — Python: NumPy arrays and `sn_solve`
+#### Added — Python: NumPy arrays and `sn_solve`
 
 - Voxel fields in the Python package return C-order `np.ndarray`s of shape
   `(nz, ny, nx)` through `as_array()` / `uncertainty_array()` (multigroup
@@ -398,7 +416,7 @@ own versions independent of the crate version.
 - `OpenBnctError` is the primary exception; `NctForgeError` remains as an
   alias of the same class.
 
-### Fixed — OpenMC collection
+#### Fixed — OpenMC collection
 
 - `openmc collect` no longer multiplies folded neutron components by the
   region/base density ratio. The folded responses are mass KERMA (Gy cm^2),
@@ -407,7 +425,7 @@ own versions independent of the crate version.
   covered-nuclide mass-fraction ratio remains. Committed OpenMC evidence is
   unaffected (its only assigned region has the base density).
 
-### Added — OpenMC multi-material decks
+#### Added — OpenMC multi-material decks
 
 - Component profile with `unit_mass_fraction_kerma_fold` and
   `native_heating_residual` estimators lets `openmc generate` accept a
@@ -422,7 +440,7 @@ own versions independent of the crate version.
 - `openmc collect --boron-unit-dose-output` writes an
   `openbnct.boron-unit-dose/0.1.0` artifact for such decks.
 
-### Added — post-hoc boron
+#### Added — post-hoc boron
 
 - `sn collapse` emits an optional `boron_unit_response_gy_cm2_per_ug_g`
   vector (tissue-independent ¹⁰B kerma per µg/g; additive optional field
@@ -433,7 +451,7 @@ own versions independent of the crate version.
   `boron-field`, to re-total a physical dose bundle without re-solving.
   Trace-¹⁰B approximation (no flux depression from the applied boron).
 
-### Added — transport
+#### Added — transport
 
 - Exponential within-cell source reconstruction (`SnOptions.exp_source`,
   default on; `OPENBNCT_NO_EXP_SOURCE` A/B kill-switch): in optically
@@ -533,7 +551,7 @@ own versions independent of the crate version.
   the bisected-56 structure (sub-bin σ_t spread is already small);
   it matters for coarse or adaptively wide groups.
 
-### Fixed — transport
+#### Fixed — transport
 
 - P1 `uncollided_split` dropped the beam's first-scatter anisotropy:
   the collided solve's first-collision source carried only
@@ -583,7 +601,7 @@ own versions independent of the crate version.
   where it removed the coverage component of the near-face
   overshoot by exactly the predicted factor.
 
-### Added — interoperability
+#### Added — interoperability
 
 - `export meshtal`: emits an MCNP `meshtal`-layout file from a
   physical dose bundle in the OpenPINT convention — one mesh, tallies
@@ -599,7 +617,7 @@ own versions independent of the crate version.
 - `openbnct_mcnp::pint_meshtal` / `meshtal_from_dose_bundle` with
   round-trip coverage through the existing parser.
 
-### Added — transport
+#### Added — transport
 
 - Volumetric fixed sources: `SourceSpatialDistribution::UniformBox`
   declares an axis-aligned emission box in cm. Emission is isotropic
@@ -618,7 +636,7 @@ own versions independent of the crate version.
   diamond-difference/periodic-seam parity artifact of ~1% can appear
   locally at a source discontinuity — discretization, not solver bias.
 
-### Added — validation
+#### Added — validation
 
 - `validation/intercomparison-kobayashi-p1/` — first MC↔S_N
   cross-code harness case: Kobayashi P1-ii through OpenMC
@@ -653,7 +671,7 @@ own versions independent of the crate version.
   Ships generator, run script, reference CSV provenance, and a graded
   `comparison.json`.
 
-### Added — pharmacokinetics
+#### Added — pharmacokinetics
 
 - `openbnct pk` is now a subcommand family (`pk fit|tissue-scale|
   schedule|dose`). `pk tissue-scale` declares per-region T/B evolution
@@ -670,7 +688,7 @@ own versions independent of the crate version.
   the region's `I_r(t)/C_plan`, non-boron by `t` — directly consumable
   by `bio apply`, `dvh`, and `report`.
 
-### Added — robust / scenario planning
+#### Added — robust / scenario planning
 
 - `openbnct.scenario-set/0.1.0` declares named discrete plan
   perturbations: global component scales (uptake), per-region component
@@ -786,7 +804,7 @@ own versions independent of the crate version.
   `--emit-plan`. This is the dosimetric counterpart of the geometric
   `plan directions` pre-filter, on real dose fields.
 
-### Added — boron microdistribution
+#### Added — boron microdistribution
 
 - `openbnct.boron-microdistribution-measurement/0.1.0` declares an
   assay (autoradiography, ion microbeam, track imaging, fluorescence,
@@ -798,7 +816,7 @@ own versions independent of the crate version.
   into compartments by annulus overlap; membrane declared explicitly),
   `evaluate` keeps the existing correction contract.
 
-### Added — registration
+#### Added — registration
 
 - `openbnct.registration` gains the `shared_frame_of_reference` method:
   identity transform by construction, with the shared DICOM
@@ -806,7 +824,7 @@ own versions independent of the crate version.
   frame-of-reference` creates it and `register info` prints the FoR
   basis.
 
-### Fixed — solver
+#### Fixed — solver
 
 - The θ-WDD multigroup sweep now records the positivity-clamp excess
   (ideal-vs-clamped cell-average and outgoing-edge flux) in balance
@@ -816,7 +834,7 @@ own versions independent of the crate version.
   `OPENBNCT_NO_CMR` remains as an A/B override and `CMR_DEBUG` now
   prints the per-region defect.
 
-### Added — transport
+#### Added — transport
 
 - `SnOptions::inner_convergence` / `sn solve --inner-convergence`:
   the within-group sweep break tolerance now splits from the outer
@@ -910,7 +928,7 @@ own versions independent of the crate version.
   nuclear-data contribution to the folded boron dose is a 0.34%
   relative 1σ, computed analytically (zero perturbed solves).
 
-### Added — imaging
+#### Added — imaging
 
 - `dicom synth-pet`: writes a deterministic synthetic PET DICOM
   series (standard PET SOP class, modality PT) on any case's grid —
