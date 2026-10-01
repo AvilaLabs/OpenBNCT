@@ -12,6 +12,14 @@ own versions independent of the crate version.
 
 
 
+
+## Unreleased — CT crop connectivity (2026-10-01)
+
+- Body crop uses 6-connectivity (face neighbours): 26-connectivity let thin bridges
+  such as head supports join the body and widened the real-head crop box. The
+  `validation/real-anatomy/hn-head-ct` project predates automatic cropping; set
+  `[imaging] crop = "none"` to reproduce its committed results.
+
 ## Unreleased — automatic CT crop (2026-10-01)
 
 - **`dicom import-ct` and `import ct-nifti` crop the CT to the body by default.** A real

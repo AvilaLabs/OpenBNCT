@@ -32,7 +32,7 @@ pub(crate) enum CropMode {
 #[derive(Debug, Clone, clap::Args)]
 pub(crate) struct CropArgs {
     /// Crop the CT before the transport grid is built. `body` (default):
-    /// threshold HU > -400, keep the largest 26-connected component (drops
+    /// threshold HU > -400, keep the largest 6-connected component (drops
     /// the couch), fill holes per axial slice, and use its bounding box plus
     /// `--crop-margin-mm`, clipped to the CT. `none`: keep the full field of
     /// view (a whole-body CT can exhaust memory). ROI masks use the cropped
@@ -80,7 +80,7 @@ fn lattice_index(shape: [usize; 3], i: usize, j: usize, k: usize) -> usize {
     i + shape[0] * (j + shape[1] * k)
 }
 
-/// Body mask: HU > threshold, largest 26-connected component, holes filled
+/// Body mask: HU > threshold, largest 6-connected component, holes filled
 /// per axial slice (4-connected background reachable from the slice border
 /// stays outside).
 pub(crate) fn body_mask(hu: &[f64], shape: [usize; 3]) -> io::Result<Vec<bool>> {
@@ -105,6 +105,12 @@ pub(crate) fn body_mask(hu: &[f64], shape: [usize; 3]) -> io::Result<Vec<bool>> 
             for kk in k.saturating_sub(1)..=(k + 1).min(shape[2] - 1) {
                 for jj in j.saturating_sub(1)..=(j + 1).min(shape[1] - 1) {
                     for ii in i.saturating_sub(1)..=(i + 1).min(shape[0] - 1) {
+                        // 6-connectivity: face neighbours only. 26-connectivity
+                        // let thin bridges (head supports) join the body and
+                        // widened the real-head box ~1.3x per transverse axis.
+                        if usize::from(ii != i) + usize::from(jj != j) + usize::from(kk != k) != 1 {
+                            continue;
+                        }
                         let q = lattice_index(shape, ii, jj, kk);
                         if foreground[q] && label[q] == 0 {
                             label[q] = id;
@@ -296,7 +302,7 @@ pub(crate) fn plan_crop(
         params.insert("hu_threshold".into(), json!(BODY_HU_THRESHOLD));
         params.insert("margin_mm".into(), json!(crop.crop_margin_mm));
         rule = format!(
-            "body: HU > {BODY_HU_THRESHOLD}, largest 26-connected component, holes filled per \
+            "body: HU > {BODY_HU_THRESHOLD}, largest 6-connected component, holes filled per \
              axial slice, axis-aligned bounding box plus {} mm margin (rounded out to whole CT \
              voxels), clipped to the CT extent",
             crop.crop_margin_mm,
