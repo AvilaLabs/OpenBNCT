@@ -13,6 +13,30 @@ own versions independent of the crate version.
 
 
 
+## Unreleased — S_N sweep memory traffic and thread scaling (2026-10-01)
+
+- **The deterministic solve loop is 1.6–2.6× faster, and the flux output is
+  bit-identical.**
+  - Each sweep now reuses its per-direction scratch instead of allocating and
+    zeroing a full-grid row for every direction of every group sweep.
+  - Edge fluxes are carried in rolling row/plane buffers, the face record shrinks
+    from 14 to 8 values, and one fused per-cell fold replaces the separate
+    per-direction passes.
+  - The sweep chunk width now follows the worker count. Before, S4's 24 directions
+    kept only 3 of 8 threads busy.
+- **Measured** (solve loop, machine shared with other jobs):
+
+  | Case | Before | After |
+  |---|---|---|
+  | README case, 4 threads | 24.5 s | 9.95 s |
+  | 50³ upsampled head, 4 threads | 168 s | 80 s |
+  | Real head (54×67×57), 6 threads | 300 s | 192 s |
+
+  The README flux sha256 is unchanged at 1, 2, 4 and 8 threads.
+- `SN_PHASE_TIMING=1` prints cumulative per-outer phase times: kernel, allocation,
+  direction loop, fold, source, update, CMFD build and low-order solve. The CMFD
+  low-order solve is now the largest single phase, 27–40 % of the loop.
+
 ## Unreleased — CT crop connectivity (2026-10-01)
 
 - Body crop uses 6-connectivity (face neighbours): 26-connectivity let thin bridges
