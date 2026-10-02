@@ -4,6 +4,25 @@ All notable changes to OpenBNCT are documented here. The project follows
 [Semantic Versioning](https://semver.org/); schema documents carry their
 own versions independent of the crate version.
 
+## [0.4.0] — 2026-10-02
+
+Added:
+- **Optional Avila Labs sign-in in the GUI.** The browser viewer has a Sign in button and a
+  first-visit prompt; the desktop app uses a device sign-in that you approve in the browser.
+  One sign-in works across ACTINV, Converra and OpenBNCT. Nothing from your work is sent
+  (no inputs, results, images or files), and every feature works without signing in.
+  See the handbook page "Avila Labs account (optional)".
+- Avila Labs tool launcher in the GUI header.
+- New OpenBNCT app icon (desktop window and installers, browser favicon and touch icon).
+- Handbook page "Review a real-head case" for researchers asked to review OpenBNCT.
+- FiR 1 K63 water-cylinder rerun on 0.3.0 with the 118-bin INEEL spectrum
+  (`validation/fir1-k63-cylindrical-rerun-2026-10`). Absolute chi2 is 55 (was 132); the
+  profile is flatter than measured and does not pass.
+
+Changed:
+- The GUI depends on the published `avila-account` crate (default features off).
+- Workspace, crates, Python package and citation metadata are version 0.4.0.
+
 ## [0.3.0] — 2026-10-01
 
 Highlights:

@@ -29,4 +29,5 @@
 - [Benchmarks and code comparisons](benchmarks.md)
 - [Research scope and qualification](scope.md)
 - [Troubleshooting](troubleshooting.md)
+- [Avila Labs account (optional)](account.md)
 - [Contribute and cite](contributing.md)

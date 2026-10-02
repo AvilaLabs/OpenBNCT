@@ -496,6 +496,22 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f2032f911046de80f0a198e0901378627c33f59ea0ac00e363d481118bd70a53"
 
 [[package]]
+name = "avila-account"
+version = "0.1.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "96c769f51033a9893d0d6ca569bccfd30d8d640fcbca42812a34579ad4b831a5"
+dependencies = [
+ "egui",
+ "image",
+ "serde",
+ "serde_json",
+ "ureq",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
 name = "aws-lc-rs"
 version = "1.18.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -3116,7 +3132,7 @@ checksum = "384b8ab6d37215f3c5301a95a4accb5d64aa607f1fcb26a11b5303878451b4fe"
 
 [[package]]
 name = "openbnct"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "openbnct-bio",
  "openbnct-boron",
@@ -3135,7 +3151,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-avify"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "openbnct-transport",
  "serde",
@@ -3147,7 +3163,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-bio"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "openbnct-boron",
  "openbnct-core",
@@ -3161,7 +3177,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-boron"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "openbnct-core",
  "openbnct-transport",
@@ -3172,7 +3188,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-cli"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "clap",
  "openbnct-avify",
@@ -3196,7 +3212,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-core"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "serde",
  "serde_json",
@@ -3207,7 +3223,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-dicom"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "dicom-core",
  "dicom-dictionary-std",
@@ -3223,7 +3239,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-evidence"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "openbnct-core",
  "serde",
@@ -3235,8 +3251,9 @@ dependencies = [
 
 [[package]]
 name = "openbnct-gui"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
+ "avila-account",
  "base64",
  "console_error_panic_hook",
  "eframe",
@@ -3264,7 +3281,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-mcnp"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "openbnct-core",
  "openbnct-transport",
@@ -3276,7 +3293,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-nifti"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "flate2",
  "openbnct-core",
@@ -3289,7 +3306,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-njoy"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "openbnct-core",
  "openbnct-openmc",
@@ -3303,7 +3320,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-openmc"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "hdf5-pure",
  "md-5",
@@ -3320,7 +3337,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-phits"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "openbnct-core",
  "openbnct-transport",
@@ -3332,7 +3349,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-plan"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "calamine",
  "clarabel",
@@ -3349,7 +3366,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-transport"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "openbnct-core",
  "rayon",
@@ -3361,7 +3378,7 @@ dependencies = [
 
 [[package]]
 name = "openbnct-view"
-version = "0.3.0"
+version = "0.4.0"
 dependencies = [
  "openbnct-core",
  "thiserror 2.0.20",
@@ -4018,7 +4035,9 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "0d41d731c7d2f962d1ccc364cec258de3c0e93b38c2fb3ba97ac74513048d634"
 dependencies = [
  "aws-lc-rs",
+ "log",
  "once_cell",
+ "ring",
  "rustls-pki-types",
  "rustls-webpki",
  "subtle",
@@ -4909,6 +4928,23 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "8ecb6da28b8a351d773b68d5825ac39017e680750f980f3a1a85cd8dd28a47c1"
 
 [[package]]
+name = "ureq"
+version = "2.12.1"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "02d1a66277ed75f640d608235660df48c8e3c19f3b4edb6a263315626cc3c01d"
+dependencies = [
+ "base64",
+ "log",
+ "once_cell",
+ "rustls",
+ "rustls-pki-types",
+ "serde",
+ "serde_json",
+ "url",
+ "webpki-roots 0.26.11",
+]
+
+[[package]]
 name = "url"
 version = "2.5.8"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5252,6 +5288,24 @@ name = "webpki-root-certs"
 version = "1.0.9"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "b96554aa2acc8ccdb7e1c9a58a7a68dd5d13bccc69cd124cb09406db612a1c9b"
+dependencies = [
+ "rustls-pki-types",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "0.26.11"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "521bc38abb08001b01866da9f51eb7c5d647a19260e00054a8c7fd5f9e57f7a9"
+dependencies = [
+ "webpki-roots 1.0.9",
+]
+
+[[package]]
+name = "webpki-roots"
+version = "1.0.9"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "7dcd9d09a39985f5344844e66b0c530a33843579125f23e21e9f0f220850f22a"
 dependencies = [
  "rustls-pki-types",
 ]
