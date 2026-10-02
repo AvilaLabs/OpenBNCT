@@ -185,6 +185,9 @@ pub fn run_native_with(launch: LaunchOptions) -> eframe::Result {
     let initial_case = launch.initial_case.clone();
     let options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
+            .with_icon(
+                eframe::icon_data::from_png_bytes(brand::ICON_PNG).expect("embedded OpenBNCT icon"),
+            )
             .with_inner_size([1_440.0, 900.0])
             .with_min_inner_size([960.0, 640.0]),
         ..Default::default()
@@ -2550,6 +2553,13 @@ fn install_cjk_fonts(context: &egui::Context) {
     context.set_fonts(fonts);
 }
 
+/// Avila Labs sign-in controls: device sign-in on the desktop, the account
+/// service's session cookie in the browser.
+#[cfg(target_arch = "wasm32")]
+type Suite = avila_account::ui_web::WebSuite;
+#[cfg(not(target_arch = "wasm32"))]
+type Suite = avila_account::ui_desktop::DesktopSuite;
+
 pub(crate) struct OpenBnctApp {
     case_path: String,
     load_error: Option<String>,
@@ -2569,6 +2579,7 @@ pub(crate) struct OpenBnctApp {
     /// Set by View → Screenshot; consumed when the viewport delivers the
     /// `Event::Screenshot` frame on the next update.
     want_screenshot: bool,
+    suite: Suite,
     brand_logo: Option<egui::TextureHandle>,
     help: GuidedHelp,
     panels: WorkbenchPanels,
@@ -2703,6 +2714,7 @@ impl OpenBnctApp {
             case_drop_note: None,
             pending_study_files: Vec::new(),
             want_screenshot: false,
+            suite: Suite::new(context, "openbnct"),
             brand_logo: brand::load_logo_texture(context).ok(),
             help: GuidedHelp::default(),
             panels: WorkbenchPanels::default(),
@@ -2979,6 +2991,7 @@ impl OpenBnctApp {
                 }
             });
             tour_targets.set(TourTarget::HelpButton, help.response.rect);
+            self.suite.header_right(ui);
         });
     }
 
@@ -3493,9 +3506,15 @@ impl eframe::App for OpenBnctApp {
 
         let mut tour_targets = TourTargets::default();
         let dark_before = self.dark_mode;
-        egui::Panel::top("openbnct-menu-bar").show(ui, |ui| {
+        let menu_panel = egui::Panel::top("openbnct-menu-bar").show(ui, |ui| {
             self.show_menu_bar(ui, &mut tour_targets);
         });
+        self.suite
+            .prompt(ui.ctx(), menu_panel.response.rect.bottom());
+        #[cfg(not(target_arch = "wasm32"))]
+        if let Some(notice) = self.suite.take_notice() {
+            self.template_status = Some(notice);
+        }
         if self.dark_mode != dark_before {
             ui.ctx().set_theme(if self.dark_mode {
                 egui::ThemePreference::Dark
